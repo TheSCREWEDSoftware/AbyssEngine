@@ -8,6 +8,7 @@ typedef struct ListBox ListBox;
 
 ListBox *ListBox_Create(const char *font_path, int x, int y, int width, int visible_rows, int row_height);
 void     ListBox_Destroy(ListBox **list_box);
+void     ListBox_SetPosition(ListBox *list_box, int x, int y);
 void     ListBox_SetItems(ListBox *list_box, const char *const *items, int item_count);
 int      ListBox_GetSelectedIndex(const ListBox *list_box); // -1 when empty
 void     ListBox_SetSelectedIndex(ListBox *list_box, int index);

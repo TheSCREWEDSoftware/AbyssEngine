@@ -29,6 +29,7 @@ typedef struct ButtonLayout {
 #define BUTTON_COLOR_LIGHT_GREY_A75  0x808080C3
 #define BUTTON_PRESSED_TEXT_OFFSET_X (-2)
 #define BUTTON_PRESSED_TEXT_OFFSET_Y 2
+#define BUTTON_TEXT_MARGIN           24 // room for the button's end caps
 
 // Frame layout of the *ButtonBlank.dc6 files: all segments of the normal state, followed by all segments of the
 // pressed state.
@@ -129,6 +130,15 @@ Button *Button_Create(const ButtonType button_type, const char *text) {
 
     button->label = Label_Create(button->layout->font_path, PALETTE_UNITS);
     Label_SetText(button->label, upper_text);
+
+    // Text too wide for the button: fall back to the smaller Exocet font
+    int text_w = 0;
+    Label_GetSize(button->label, &text_w, NULL);
+    if (text_w > button->width - BUTTON_TEXT_MARGIN && strcmp(button->layout->font_path, FONTS_FONTEXOCET8) != 0) {
+        Label_Destroy(&button->label);
+        button->label = Label_Create(FONTS_FONTEXOCET8, PALETTE_UNITS);
+        Label_SetText(button->label, upper_text);
+    }
     Label_SetAlignment(button->label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     free(upper_text);
 

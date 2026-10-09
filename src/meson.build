@@ -50,6 +50,7 @@ sources = [
     'managers/InputManager.c',
     'managers/VideoManager.c',
 
+    'scenes/CatalogCharacters.c',
     'scenes/CatalogClasses.c',
     'scenes/CatalogSprites.c',
     'scenes/Scene.c',

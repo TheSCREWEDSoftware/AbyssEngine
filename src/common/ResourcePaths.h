@@ -17,6 +17,9 @@
 #define EXCEL_CHARSTATS "/data/global/excel/charstats.txt"
 #define EXCEL_SKILLS    "/data/global/excel/skills.txt"
 #define EXCEL_SKILLDESC "/data/global/excel/skilldesc.txt"
+#define EXCEL_MONSTATS  "/data/global/excel/monstats.txt"
+#define EXCEL_MONSTATS2 "/data/global/excel/monstats2.txt"
+#define EXCEL_OBJECTS   "/data/global/excel/objects.txt"
 
 // -- Buttons
 #define BUTTON_WIDE_BLANK   "/data/global/ui/FrontEnd/WideButtonBlank.dc6"

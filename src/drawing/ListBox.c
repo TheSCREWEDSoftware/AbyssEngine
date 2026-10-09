@@ -117,6 +117,11 @@ void ListBox_SetItems(ListBox *list_box, const char *const *items, const int ite
     list_box->hovered_index  = -1;
 }
 
+void ListBox_SetPosition(ListBox *list_box, const int x, const int y) {
+    list_box->x = x;
+    list_box->y = y;
+}
+
 int ListBox_GetSelectedIndex(const ListBox *list_box) { return list_box->selected_index; }
 
 void ListBox_SetSelectedIndex(ListBox *list_box, const int index) {
