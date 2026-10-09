@@ -11,6 +11,12 @@
 #define D2LOGO_FIRE_LEFT   "/data/global/ui/FrontEnd/D2logoFireLeft.DC6"
 #define D2LOGO_FIRE_RIGHT  "/data/global/ui/FrontEnd/D2logoFireRight.DC6"
 
+// -- Buttons
+#define BUTTON_WIDE_BLANK   "/data/global/ui/FrontEnd/WideButtonBlank.dc6"
+#define BUTTON_MEDIUM_BLANK "/data/global/ui/FrontEnd/MediumButtonBlank.dc6"
+#define BUTTON_CANCEL_BLANK "/data/global/ui/FrontEnd/CancelButtonBlank.dc6"
+#define BUTTON_SHORT_BLANK  "/data/global/ui/CharSelect/ShortButtonBlank.dc6"
+
 // --- Credits ---
 
 #define RESOURCE_PATH_CREDITS_TEXT = "/data/local/ui/%s/ExpansionCredits.txt"

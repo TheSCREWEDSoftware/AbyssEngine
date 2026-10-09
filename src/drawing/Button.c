@@ -2,124 +2,264 @@
 
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
+#include "../managers/InputManager.h"
 #include "Label.h"
 #include "Sprite.h"
 
-#include <SDL2/SDL.h>
-#include <stdbool.h>
+#include <ctype.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct ButtonLayout {
-    ButtonType    button_type;
-    char         *resource_name;
-    char         *palette_name;
-    char         *font_path;
-    SDL_Rect      clickable_rect;
-    uint8_t       segments_x;
-    uint8_t       segments_y;
-    int           base_frame;
-    int           disabled_frame;
-    uint32_t      disabled_color;
-    int           text_offset;
-    uint32_t      fixed_width;
-    uint32_t      fixed_height;
-    uint32_t      label_color;
-    bool          toggleable;
-    bool          allow_frame_change;
-    bool          has_image;
-    ButtonToolTip tooltip;
-    int           tooltip_offset_x;
-    int           tooltip_offset_y;
+    ButtonType  button_type;
+    const char *resource_name;
+    const char *palette_name;
+    const char *font_path;
+    uint8_t     segments_x;
+    uint8_t     segments_y;
+    int         base_frame;
+    int         text_offset;
+    uint32_t    label_color;
+    uint32_t    disabled_color;
+    bool        allow_frame_change;
 } ButtonLayout;
 
-#define BTN_COLOR_LLIGHT_GRAY_ALPHA_75 0x808080c3
-#define BTN_COLOR_LLIGHT_GRAY_ALPHA_100
+#define BUTTON_COLOR_GREY            0x646464FF
+#define BUTTON_COLOR_LIGHT_GREY_A75  0x808080C3
+#define BUTTON_PRESSED_TEXT_OFFSET_X (-2)
+#define BUTTON_PRESSED_TEXT_OFFSET_Y 2
 
-static ButtonLayout button_layouts[] = {
+// Frame layout of the *ButtonBlank.dc6 files: all segments of the normal state, followed by all segments of the
+// pressed state.
+static const ButtonLayout button_layouts[] = {
     {.button_type        = BUTTON_TYPE_WIDE,
-     .segments_x         = 2,
-     .segments_y         = 1,
-     .disabled_frame     = -1,
-     .disabled_color     = BTN_COLOR_LLIGHT_GRAY_ALPHA_75,
-     .text_offset        = 1,
-     .resource_name      = "/data/global/ui/FrontEnd/WideButtonBlank.dc6",
+     .resource_name      = BUTTON_WIDE_BLANK,
      .palette_name       = PALETTE_UNITS,
      .font_path          = FONTS_FONTEXOCET10,
-     .allow_frame_change = true,
-     .has_image          = true,
-     .label_color        = 0x646464ff},
-    {.button_type = 0x9999}
+     .segments_x         = 2,
+     .segments_y         = 1,
+     .text_offset        = 1,
+     .label_color        = BUTTON_COLOR_GREY,
+     .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
+     .allow_frame_change = true},
+    {.button_type        = BUTTON_TYPE_MEDIUM,
+     .resource_name      = BUTTON_MEDIUM_BLANK,
+     .palette_name       = PALETTE_UNITS,
+     .font_path          = FONTS_FONTEXOCET10,
+     .segments_x         = 1,
+     .segments_y         = 1,
+     .text_offset        = 1,
+     .label_color        = BUTTON_COLOR_GREY,
+     .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
+     .allow_frame_change = true},
+    {.button_type        = BUTTON_TYPE_SHORT,
+     .resource_name      = BUTTON_SHORT_BLANK,
+     .palette_name       = PALETTE_UNITS,
+     .font_path          = FONTS_FONTREDICULOUS,
+     .segments_x         = 1,
+     .segments_y         = 1,
+     .text_offset        = -1,
+     .label_color        = BUTTON_COLOR_GREY,
+     .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
+     .allow_frame_change = true},
+    {.button_type        = BUTTON_TYPE_CANCEL,
+     .resource_name      = BUTTON_CANCEL_BLANK,
+     .palette_name       = PALETTE_UNITS,
+     .font_path          = FONTS_FONTEXOCET10,
+     .segments_x         = 1,
+     .segments_y         = 1,
+     .text_offset        = 1,
+     .label_color        = BUTTON_COLOR_GREY,
+     .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
+     .allow_frame_change = true},
 };
+
+#define BUTTON_LAYOUT_COUNT (sizeof(button_layouts) / sizeof(button_layouts[0]))
 
 struct Button {
     const ButtonLayout *layout;
-    SDL_Texture        *normal_surface;
-    SDL_Texture        *pressed_surface;
-    SDL_Texture        *toggled_surface;
-    SDL_Texture        *pressed_toggled_surface;
-    SDL_Texture        *disabled_surface;
-    void (*on_click)(void);
-    void *opaque;
-    bool  enabled;
-    bool  pressed;
-    bool  toggled;
-    int   x;
-    int   y;
-    int   width;
-    int   height;
-    bool  visible;
-    // ButtonToolTip *tooltip;
+    Sprite             *sprite;
+    Label              *label;
+    ButtonClickHandler  on_click;
+    void               *user_data;
+    int                 x;
+    int                 y;
+    int                 width;
+    int                 height;
+    bool                enabled;
+    bool                visible;
+    bool                hovered;
+    bool                armed;           // left mouse button went down while over this button
+    bool                prev_mouse_left; // left mouse button state on the previous update
 };
 
-const ButtonLayout *Button__GetLayout(const ButtonType button_type);
+static const ButtonLayout *Button__GetLayout(ButtonType button_type);
+static void                Button__ApplyLabelColor(const Button *button, uint32_t rgba);
 
 Button *Button_Create(const ButtonType button_type, const char *text) {
     Button *button = malloc(sizeof(Button));
+    FAIL_IF_NULL(button);
     memset(button, 0, sizeof(Button));
 
-    button->layout = Button__GetLayout(button_type);
+    button->layout  = Button__GetLayout(button_type);
+    button->enabled = true;
+    button->visible = true;
+    button->sprite  = Sprite_Create(button->layout->resource_name, button->layout->palette_name);
 
-    Label  *label  = Label_Create(button->layout->font_path, PALETTE_UNITS);
-    Sprite *sprite = Sprite_Create(button->layout->resource_name, button->layout->palette_name);
-
-    if (button->layout->fixed_width > 0) {
-        button->width = button->layout->fixed_width;
-    } else {
-        for (int i = 0; i < button->layout->segments_x; i++) {
-            int w;
-            Sprite_GetFrameSize(sprite, i, &w, NULL);
-            button->width += w;
-        }
+    for (int i = 0; i < button->layout->segments_x; i++) {
+        int w;
+        Sprite_GetFrameSize(button->sprite, button->layout->base_frame + i, &w, NULL);
+        button->width += w;
     }
 
-    if (button->layout->fixed_height > 0) {
-        button->height = button->layout->fixed_height;
-    } else {
-        for (int i = 0; i < button->layout->segments_y; i++) {
-            int h;
-            Sprite_GetFrameSize(sprite, i * button->layout->segments_y, NULL, &h);
-            button->height += h;
-        }
+    for (int i = 0; i < button->layout->segments_y; i++) {
+        int h;
+        Sprite_GetFrameSize(button->sprite, button->layout->base_frame + (i * button->layout->segments_x), NULL, &h);
+        button->height += h;
     }
 
-    Sprite_Destroy(&sprite);
-    Label_Destroy(&label);
+    // The button fonts only contain upper case glyphs.
+    char *upper_text = strdup(text != NULL ? text : "");
+    FAIL_IF_NULL(upper_text);
+    for (char *ch = upper_text; *ch != '\0'; ch++) {
+        *ch = (char)toupper((unsigned char)*ch);
+    }
+
+    button->label = Label_Create(button->layout->font_path, PALETTE_UNITS);
+    Label_SetText(button->label, upper_text);
+    Label_SetAlignment(button->label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    free(upper_text);
+
     return button;
 }
 
 void Button_Destroy(Button **button) {
+    if (button == NULL || *button == NULL) {
+        return;
+    }
+
+    Label_Destroy(&(*button)->label);
+    Sprite_Destroy(&(*button)->sprite);
+
     free(*button);
     *button = NULL;
 }
 
-const ButtonLayout *Button__GetLayout(const ButtonType button_type) {
-    for (const ButtonLayout *button_layout = button_layouts; button_layout->button_type != 0xFFFF; button_layout++) {
-        if (button_layout->button_type != button_type) {
-            continue;
-        }
+void Button_SetPosition(Button *button, const int x, const int y) {
+    button->x = x;
+    button->y = y;
+}
 
-        return button_layout;
+void Button_GetSize(const Button *button, int *width, int *height) {
+    if (width != NULL) {
+        *width = button->width;
     }
 
-    LOG_FATAL("Could not locate button type.");
+    if (height != NULL) {
+        *height = button->height;
+    }
+}
+
+void Button_SetEnabled(Button *button, const bool enabled) {
+    button->enabled = enabled;
+    if (!enabled) {
+        button->armed = false;
+    }
+}
+
+void Button_SetVisible(Button *button, const bool visible) {
+    button->visible = visible;
+    if (!visible) {
+        button->armed = false;
+    }
+}
+
+void Button_SetClickHandler(Button *button, const ButtonClickHandler handler, void *user_data) {
+    button->on_click  = handler;
+    button->user_data = user_data;
+}
+
+bool Button_Update(Button *button) {
+    int  mouse_x;
+    int  mouse_y;
+    bool mouse_left;
+
+    InputManager_GetMousePosition(&mouse_x, &mouse_y);
+    InputManager_GetMouseButtons(&mouse_left, NULL, NULL);
+
+    const bool was_mouse_left = button->prev_mouse_left;
+    button->prev_mouse_left   = mouse_left;
+
+    if (!button->visible || !button->enabled) {
+        button->hovered = false;
+        button->armed   = false;
+        return false;
+    }
+
+    button->hovered = mouse_x >= button->x && mouse_x < button->x + button->width && mouse_y >= button->y &&
+                      mouse_y < button->y + button->height;
+
+    // Press started on this button
+    if (mouse_left && !was_mouse_left && button->hovered) {
+        button->armed = true;
+        return false;
+    }
+
+    // Released: it's a click only if the press started here and the mouse is still over the button
+    if (!mouse_left && was_mouse_left) {
+        const bool clicked = button->armed && button->hovered;
+        button->armed      = false;
+
+        if (clicked) {
+            if (button->on_click != NULL) {
+                button->on_click(button->user_data);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void Button_Draw(const Button *button) {
+    if (!button->visible) {
+        return;
+    }
+
+    const ButtonLayout *layout     = button->layout;
+    const int           segments   = layout->segments_x * layout->segments_y;
+    const bool          is_pressed = button->armed && button->hovered;
+
+    int frame = layout->base_frame;
+    if (is_pressed && layout->allow_frame_change) {
+        frame += segments;
+    }
+
+    Sprite_DrawMulti(button->sprite, (uint8_t)frame, button->x, button->y, layout->segments_x, layout->segments_y);
+
+    int text_x = button->x + (button->width / 2);
+    int text_y = button->y + (button->height / 2) + layout->text_offset;
+    if (is_pressed) {
+        text_x += BUTTON_PRESSED_TEXT_OFFSET_X;
+        text_y += BUTTON_PRESSED_TEXT_OFFSET_Y;
+    }
+
+    Button__ApplyLabelColor(button, button->enabled ? layout->label_color : layout->disabled_color);
+    Label_Draw(button->label, text_x, text_y);
+}
+
+static const ButtonLayout *Button__GetLayout(const ButtonType button_type) {
+    for (size_t i = 0; i < BUTTON_LAYOUT_COUNT; i++) {
+        if (button_layouts[i].button_type == button_type) {
+            return &button_layouts[i];
+        }
+    }
+
+    LOG_FATAL("Could not locate button type %d.", (int)button_type);
+    return NULL;
+}
+
+static void Button__ApplyLabelColor(const Button *button, const uint32_t rgba) {
+    Label_SetColor(button->label, (uint8_t)(rgba >> 24), (uint8_t)(rgba >> 16), (uint8_t)(rgba >> 8), (uint8_t)rgba);
 }

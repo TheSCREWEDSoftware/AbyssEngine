@@ -36,12 +36,12 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
     case SDL_MOUSEBUTTONDOWN:
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
-        input_manager->mouse_buttons |= sdl_event->button.button;
+        input_manager->mouse_buttons |= SDL_BUTTON(sdl_event->button.button);
         return true;
     case SDL_MOUSEBUTTONUP:
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
-        input_manager->mouse_buttons &= ~sdl_event->button.button;
+        input_manager->mouse_buttons &= ~SDL_BUTTON(sdl_event->button.button);
         return true;
     case SDL_KEYDOWN:
         if (sdl_event->key.keysym.sym == SDLK_RETURN &&
@@ -94,15 +94,15 @@ void InputManager_GetMousePosition(int *mouse_x, int *mouse_y) {
 
 void InputManager_GetMouseButtons(bool *left, bool *middle, bool *right) {
     if (left != NULL) {
-        *left = (input_manager->mouse_buttons & SDL_BUTTON_LEFT) > 0;
+        *left = (input_manager->mouse_buttons & SDL_BUTTON_LMASK) != 0;
     }
 
     if (middle != NULL) {
-        *middle = (input_manager->mouse_buttons & SDL_BUTTON_MIDDLE) > 0;
+        *middle = (input_manager->mouse_buttons & SDL_BUTTON_MMASK) != 0;
     }
 
     if (right != NULL) {
-        *right = (input_manager->mouse_buttons & SDL_BUTTON_RIGHT) > 0;
+        *right = (input_manager->mouse_buttons & SDL_BUTTON_RMASK) != 0;
     }
 }
 

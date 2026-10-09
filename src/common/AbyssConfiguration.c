@@ -158,7 +158,7 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             } else {
                 LOG_FATAL("Invalid value '%s' for key '%s' in the configuration file!", value, key);
             }
-            LOG_DEBUG("Setting fullscreen to '%s'", abyss_configuration.graphics.fullscreen ? "true" : "false");
+            LOG_DEBUG("Setting skip intro movies to '%s'", abyss_configuration.skip_intro_movies ? "true" : "false");
         } else {
             LOG_FATAL("Invalid key '%s' in the configuration file!", key);
         }

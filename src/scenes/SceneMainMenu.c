@@ -17,7 +17,14 @@ typedef struct SceneMainMenu {
     Label  *copyright_label;
     Label  *build_label;
     Button *single_player_button;
+    Button *battle_net_button;
+    Button *other_multiplayer_button;
+    Button *credits_button;
+    Button *cinematics_button;
+    Button *exit_button;
 } SceneMainMenu;
+
+static void MainMenu__OnExitClicked(void *user_data);
 
 DEFINE_SCENE_CALLBACKS(MainMenu);
 
@@ -35,7 +42,6 @@ void *MainMenu_Create(void) {
     result->d2logo_black_right_sprite = Sprite_Create(D2LOGO_BLACK_RIGHT, PALETTE_UNITS);
     result->d2logo_fire_left_sprite   = Sprite_Create(D2LOGO_FIRE_LEFT, PALETTE_UNITS);
     result->d2logo_fire_right_sprite  = Sprite_Create(D2LOGO_FIRE_RIGHT, PALETTE_UNITS);
-    result->single_player_button      = Button_Create(BUTTON_TYPE_WIDE, "Single Player");
 
     Sprite_SetBlendMode(result->d2logo_black_left_sprite, SDL_BLENDMODE_BLEND);
     Sprite_SetBlendMode(result->d2logo_black_right_sprite, SDL_BLENDMODE_BLEND);
@@ -51,6 +57,33 @@ void *MainMenu_Create(void) {
     Label_SetText(result->copyright_label, ABYSS_COPYRIGHT);
     Label_SetColor(result->copyright_label, 0xFF, 0xFF, 0x8C, 0xFF);
     Label_SetAlignment(result->copyright_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+
+    // Button positions match the original 800x600 main menu.
+    result->single_player_button = Button_Create(BUTTON_TYPE_WIDE, "Single Player");
+    Button_SetPosition(result->single_player_button, 264, 290);
+
+    result->battle_net_button = Button_Create(BUTTON_TYPE_WIDE, "Battle.net");
+    Button_SetPosition(result->battle_net_button, 264, 330);
+
+    result->other_multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Other Multiplayer");
+    Button_SetPosition(result->other_multiplayer_button, 264, 380);
+
+    result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
+    Button_SetPosition(result->credits_button, 264, 505);
+
+    result->cinematics_button = Button_Create(BUTTON_TYPE_SHORT, "Cinematics");
+    Button_SetPosition(result->cinematics_button, 401, 505);
+
+    result->exit_button = Button_Create(BUTTON_TYPE_WIDE, "Exit Diablo II");
+    Button_SetPosition(result->exit_button, 264, 535);
+    Button_SetClickHandler(result->exit_button, MainMenu__OnExitClicked, NULL);
+
+    // Not implemented yet: shown, but greyed out.
+    Button_SetEnabled(result->single_player_button, false);
+    Button_SetEnabled(result->battle_net_button, false);
+    Button_SetEnabled(result->other_multiplayer_button, false);
+    Button_SetEnabled(result->credits_button, false);
+    Button_SetEnabled(result->cinematics_button, false);
 
     result->build_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     Label_SetText(result->build_label, ABYSS_VERSION_TEXT);
@@ -71,19 +104,45 @@ void MainMenu_Render(void *scene_ref) {
     Label_Draw(mainmenu->copyright_label, 400, 578);
     Label_Draw(mainmenu->disclaimer_label, 400, 590);
     Label_Draw(mainmenu->build_label, 797, 1);
+
+    Button_Draw(mainmenu->single_player_button);
+    Button_Draw(mainmenu->battle_net_button);
+    Button_Draw(mainmenu->other_multiplayer_button);
+    Button_Draw(mainmenu->credits_button);
+    Button_Draw(mainmenu->cinematics_button);
+    Button_Draw(mainmenu->exit_button);
 }
 
 void MainMenu_Update(void *scene_ref, const uint64_t delta) {
-    (void)(scene_ref);
     (void)(delta);
+    const SceneMainMenu *mainmenu = (SceneMainMenu *)scene_ref;
+
+    Button_Update(mainmenu->single_player_button);
+    Button_Update(mainmenu->battle_net_button);
+    Button_Update(mainmenu->other_multiplayer_button);
+    Button_Update(mainmenu->credits_button);
+    Button_Update(mainmenu->cinematics_button);
+    Button_Update(mainmenu->exit_button);
+}
+
+static void MainMenu__OnExitClicked(void *user_data) {
+    (void)(user_data);
+    LOG_INFO("Exit requested from the main menu.");
+    running = false;
 }
 
 void MainMenu_Free(void **scene_ref) {
     SceneMainMenu *mainmenu = *((SceneMainMenu **)scene_ref);
 
     Button_Destroy(&mainmenu->single_player_button);
+    Button_Destroy(&mainmenu->battle_net_button);
+    Button_Destroy(&mainmenu->other_multiplayer_button);
+    Button_Destroy(&mainmenu->credits_button);
+    Button_Destroy(&mainmenu->cinematics_button);
+    Button_Destroy(&mainmenu->exit_button);
     Label_Destroy(&mainmenu->copyright_label);
     Label_Destroy(&mainmenu->disclaimer_label);
+    Label_Destroy(&mainmenu->build_label);
     Sprite_Destroy(&mainmenu->d2logo_black_left_sprite);
     Sprite_Destroy(&mainmenu->d2logo_black_right_sprite);
     Sprite_Destroy(&mainmenu->d2logo_fire_left_sprite);
