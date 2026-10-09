@@ -17,8 +17,7 @@ typedef struct SceneMainMenu {
     Label  *copyright_label;
     Label  *build_label;
     Button *single_player_button;
-    Button *battle_net_button;
-    Button *other_multiplayer_button;
+    Button *multiplayer_button;
     Button *credits_button;
     Button *cinematics_button;
     Button *exit_button;
@@ -62,11 +61,8 @@ void *MainMenu_Create(void) {
     result->single_player_button = Button_Create(BUTTON_TYPE_WIDE, "Single Player");
     Button_SetPosition(result->single_player_button, 264, 290);
 
-    result->battle_net_button = Button_Create(BUTTON_TYPE_WIDE, "Battle.net");
-    Button_SetPosition(result->battle_net_button, 264, 330);
-
-    result->other_multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Other Multiplayer");
-    Button_SetPosition(result->other_multiplayer_button, 264, 380);
+    result->multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Multiplayer");
+    Button_SetPosition(result->multiplayer_button, 264, 330);
 
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
     Button_SetPosition(result->credits_button, 264, 505);
@@ -80,8 +76,7 @@ void *MainMenu_Create(void) {
 
     // Not implemented yet: shown, but greyed out.
     Button_SetEnabled(result->single_player_button, false);
-    Button_SetEnabled(result->battle_net_button, false);
-    Button_SetEnabled(result->other_multiplayer_button, false);
+    Button_SetEnabled(result->multiplayer_button, false);
     Button_SetEnabled(result->credits_button, false);
     Button_SetEnabled(result->cinematics_button, false);
 
@@ -106,8 +101,7 @@ void MainMenu_Render(void *scene_ref) {
     Label_Draw(mainmenu->build_label, 797, 1);
 
     Button_Draw(mainmenu->single_player_button);
-    Button_Draw(mainmenu->battle_net_button);
-    Button_Draw(mainmenu->other_multiplayer_button);
+    Button_Draw(mainmenu->multiplayer_button);
     Button_Draw(mainmenu->credits_button);
     Button_Draw(mainmenu->cinematics_button);
     Button_Draw(mainmenu->exit_button);
@@ -118,8 +112,7 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
     const SceneMainMenu *mainmenu = (SceneMainMenu *)scene_ref;
 
     Button_Update(mainmenu->single_player_button);
-    Button_Update(mainmenu->battle_net_button);
-    Button_Update(mainmenu->other_multiplayer_button);
+    Button_Update(mainmenu->multiplayer_button);
     Button_Update(mainmenu->credits_button);
     Button_Update(mainmenu->cinematics_button);
     Button_Update(mainmenu->exit_button);
@@ -135,8 +128,7 @@ void MainMenu_Free(void **scene_ref) {
     SceneMainMenu *mainmenu = *((SceneMainMenu **)scene_ref);
 
     Button_Destroy(&mainmenu->single_player_button);
-    Button_Destroy(&mainmenu->battle_net_button);
-    Button_Destroy(&mainmenu->other_multiplayer_button);
+    Button_Destroy(&mainmenu->multiplayer_button);
     Button_Destroy(&mainmenu->credits_button);
     Button_Destroy(&mainmenu->cinematics_button);
     Button_Destroy(&mainmenu->exit_button);
