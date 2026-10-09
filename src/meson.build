@@ -13,33 +13,56 @@ build_opts = [
 dependencies = [
     dependency('zlib'),
     dependency('sdl2'),
+    dependency('libavcodec'),
+    dependency('libavformat'),
+    dependency('libavutil'),
+    dependency('libswscale'),
+    dependency('libswresample'),
+    dependency('threads'),
+    cc.find_library('m', required: false),
 ]
 
 sources = [
-    'abyss.c',
+    'AbyssEngine.c',
 
-    'common/config.c',
-    'common/fileman.c',
-    'common/globals.c',
-    'common/log.c',
-    'common/mpq_stream.c',
+    'audio/AudioStream.c',
 
-    'drawing/cursor.c',
-    'drawing/sprite.c',
+    'common/AbyssConfiguration.c',
+    'common/FileManager.c',
+    'common/Globals.c',
+    'common/Logging.c',
+    'common/MemoryStream.c',
+    'common/MpqStream.c',
+    'common/RingBuffer.c',
 
-    'scenes/scene.c',
-    'scenes/scene_mainmenu.c',
+    'drawing/Button.c',
+    'drawing/Cursor.c',
+    'drawing/Label.c',
+    'drawing/Sprite.c',
 
-    'types/dc6.c',
-    'types/font.c',
-    'types/mpq.c',
-    'types/mpq_block.c',
-    'types/mpq_hash.c',
-    'types/mpq_header.c',
-    'types/palette.c',
+    'managers/AudioManager.c',
+    'managers/InputManager.c',
+    'managers/VideoManager.c',
 
-    'util/crypto.c',
-    'util/implode.c',
+    'scenes/Scene.c',
+    'scenes/SceneIntroVideos.c',
+    'scenes/SceneMainMenu.c',
+
+    'types/DC6.c',
+    'types/DC6Frame.c',
+    'types/Font.c',
+    'types/MPQ.c',
+    'types/MPQBlock.c',
+    'types/MPQHash.c',
+    'types/MPQHeader.c',
+    'types/Palette.c',
+
+    'util/BitReader.c',
+    'util/Crypto.c',
+    'util/Huffman.c',
+    'util/Implode.c',
+    'util/Mutex.c',
+    'util/WavDecompress.c',
 ]
 
 add_global_arguments(build_opts, language: 'c')
@@ -49,3 +72,10 @@ executable('AbyssEngine',
     sources: sources,
     dependencies: dependencies,
 )
+
+ring_buffer_test = executable('ring_buffer_test',
+    sources: ['../tests/RingBufferTest.c', 'common/RingBuffer.c', 'util/Mutex.c'],
+    c_args: ['-DNO_LOGGING'],
+    dependencies: dependencies,
+)
+test('ring_buffer_test', ring_buffer_test)
