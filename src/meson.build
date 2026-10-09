@@ -42,12 +42,14 @@ sources = [
     'drawing/Cursor.c',
     'drawing/Label.c',
     'drawing/ListBox.c',
+    'drawing/TextBox.c',
     'drawing/Sprite.c',
 
     'managers/AudioManager.c',
     'managers/InputManager.c',
     'managers/VideoManager.c',
 
+    'scenes/CatalogClasses.c',
     'scenes/Scene.c',
     'scenes/SceneCatalog.c',
     'scenes/SceneIntroVideos.c',

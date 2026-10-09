@@ -118,3 +118,18 @@ int InputManager_ConsumeMouseWheel(void) {
     input_manager->mouse_wheel_y = 0;
     return result;
 }
+
+const char *InputManager_GetTextInput(void) { return input_manager->text_input; }
+
+void InputManager_SetTextInput(const char *text) {
+    memset(input_manager->text_input, 0, sizeof(input_manager->text_input));
+    if (text != NULL) {
+        strncat(input_manager->text_input, text, MAX_TEXT_INPUT_LENGTH - 1);
+    }
+}
+
+bool InputManager_ConsumeKeyPress(const SDL_Scancode scancode) {
+    const bool pressed                   = input_manager->key_pressed[scancode];
+    input_manager->key_pressed[scancode] = false;
+    return pressed;
+}

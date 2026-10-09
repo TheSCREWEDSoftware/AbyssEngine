@@ -157,6 +157,17 @@ void Label_Draw(const Label *Label, const int x, const int y) {
     SDL_RenderCopy(sdl_renderer, Label->texture, NULL, &dest);
 }
 
+int Label_MeasureText(const Label *label, const char *text) {
+    int width = 0;
+    for (const char *ch = text; ch != NULL && *ch != '\0'; ch++) {
+        uint16_t frame_index;
+        uint8_t  glyph_width;
+        Font_GetGlyphMetrics(label->Font, (unsigned char)*ch, &frame_index, &glyph_width, NULL);
+        width += glyph_width;
+    }
+    return width;
+}
+
 void Label_GetSize(const Label *label, int *width, int *height) {
     if (width != NULL) {
         *width = label->width;

@@ -10,8 +10,11 @@
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
 #include "../drawing/Sprite.h"
+#include "../drawing/TextBox.h"
 #include "../managers/AudioManager.h"
+#include "CatalogClasses.h"
 #include "SceneMainMenu.h"
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,9 +24,11 @@
 #define CATALOG_TEXT_LEN       128
 
 #define CATALOG_LIST_X      40
-#define CATALOG_LIST_Y      112
+#define CATALOG_SEARCH_Y    112
+#define CATALOG_SEARCH_H    22
+#define CATALOG_LIST_Y      140
 #define CATALOG_LIST_WIDTH  300
-#define CATALOG_LIST_ROWS   23
+#define CATALOG_LIST_ROWS   21
 #define CATALOG_LIST_ROW_H  18
 #define CATALOG_DETAIL_X    360
 #define CATALOG_DETAIL_Y    112
@@ -35,6 +40,7 @@
 typedef enum CatalogCategory {
     CATALOG_CATEGORY_WEAPONS,
     CATALOG_CATEGORY_ARMOR,
+    CATALOG_CATEGORY_CLASSES,
     CATALOG_CATEGORY_COUNT
 } CatalogCategory;
 
@@ -63,15 +69,20 @@ typedef struct SceneCatalog {
     Button         *category_buttons[CATALOG_CATEGORY_COUNT];
     Button         *back_button;
     ListBox        *list_box;
-    CatalogItemList categories[CATALOG_CATEGORY_COUNT];
+    TextBox        *search_box;
+    CatalogClasses *classes;
+    CatalogItemList categories[CATALOG_CATEGORY_COUNT]; // items for the weapon/armor tabs
     CatalogCategory current_category;
-    int             shown_item; // index of the item shown in the detail panel, -1 for none
+    int            *visible; // list row -> item/class index, after the search filter
+    int             visible_count;
+    int             shown_item; // item/class index shown in the detail panel, -1 for none
 } SceneCatalog;
 
 DEFINE_SCENE_CALLBACKS(Catalog);
 
 static void Catalog__LoadCategory(CatalogItemList *list, CatalogCategory category);
 static void Catalog__SelectCategory(SceneCatalog *catalog, CatalogCategory category);
+static void Catalog__RefreshList(SceneCatalog *catalog);
 static void Catalog__ShowItem(SceneCatalog *catalog, int index);
 static void Catalog__OnBackClicked(void *user_data);
 
@@ -361,22 +372,102 @@ void *Catalog_Create(void) {
     Label_SetText(result->empty_label, "No picture");
     Label_SetAlignment(result->empty_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
 
-    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor"};
+    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor", "Classes"};
     for (int i = 0; i < CATALOG_CATEGORY_COUNT; i++) {
         result->category_buttons[i] = Button_Create(BUTTON_TYPE_MEDIUM, category_names[i]);
         Button_SetPosition(result->category_buttons[i], CATALOG_LIST_X + (i * 136), 68);
-        Catalog__LoadCategory(&result->categories[i], (CatalogCategory)i);
+        if (i != CATALOG_CATEGORY_CLASSES) {
+            Catalog__LoadCategory(&result->categories[i], (CatalogCategory)i);
+        }
     }
+    result->classes = CatalogClasses_Create();
 
     result->back_button = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     Button_SetPosition(result->back_button, CATALOG_LIST_X, 540);
-    Button_SetClickHandler(result->back_button, Catalog__OnBackClicked, NULL);
+    Button_SetClickHandler(result->back_button, Catalog__OnBackClicked, result);
+
+    result->search_box = TextBox_Create(FONTS_FONT16, CATALOG_LIST_X, CATALOG_SEARCH_Y, CATALOG_LIST_WIDTH,
+                                        CATALOG_SEARCH_H, "Type to search...");
+    TextBox_Focus(result->search_box);
 
     result->list_box = ListBox_Create(FONTS_FONT16, CATALOG_LIST_X, CATALOG_LIST_Y, CATALOG_LIST_WIDTH,
                                       CATALOG_LIST_ROWS, CATALOG_LIST_ROW_H);
 
     Catalog__SelectCategory(result, CATALOG_CATEGORY_WEAPONS);
     return result;
+}
+
+static int Catalog__SourceCount(const SceneCatalog *catalog) {
+    if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
+        return CatalogClasses_GetCount(catalog->classes);
+    }
+    return catalog->categories[catalog->current_category].count;
+}
+
+static const char *Catalog__SourceName(const SceneCatalog *catalog, const int index) {
+    if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
+        return CatalogClasses_GetName(catalog->classes, index);
+    }
+    return catalog->categories[catalog->current_category].items[index].name;
+}
+
+// Case-insensitive "contains".
+static bool Catalog__Matches(const char *text, const char *query) {
+    if (query[0] == '\0') {
+        return true;
+    }
+
+    for (const char *start = text; *start != '\0'; start++) {
+        const char *t = start;
+        const char *q = query;
+        while (*t != '\0' && *q != '\0' && tolower((unsigned char)*t) == tolower((unsigned char)*q)) {
+            t++;
+            q++;
+        }
+        if (*q == '\0') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void Catalog__RefreshList(SceneCatalog *catalog) {
+    const int   source_count = Catalog__SourceCount(catalog);
+    const char *query        = TextBox_GetText(catalog->search_box);
+
+    free(catalog->visible);
+    catalog->visible       = calloc(source_count > 0 ? source_count : 1, sizeof(int));
+    catalog->visible_count = 0;
+    FAIL_IF_NULL(catalog->visible);
+
+    const char **names = calloc(source_count > 0 ? source_count : 1, sizeof(char *));
+    FAIL_IF_NULL(names);
+
+    for (int i = 0; i < source_count; i++) {
+        const char *name = Catalog__SourceName(catalog, i);
+        if (Catalog__Matches(name, query)) {
+            names[catalog->visible_count]            = name;
+            catalog->visible[catalog->visible_count] = i;
+            catalog->visible_count++;
+        }
+    }
+
+    ListBox_SetItems(catalog->list_box, names, catalog->visible_count);
+    free(names);
+
+    char count_text[48];
+    if (query[0] != '\0') {
+        snprintf(count_text, sizeof(count_text), "%d of %d", catalog->visible_count, source_count);
+    } else {
+        snprintf(count_text, sizeof(count_text), "%d entries", source_count);
+    }
+    Label_SetText(catalog->count_label, count_text);
+    Label_SetColor(catalog->count_label, 0xA0, 0xA0, 0xA0, 0xFF);
+
+    catalog->shown_item = -2; // force a refresh
+    const int row       = ListBox_GetSelectedIndex(catalog->list_box);
+    Catalog__ShowItem(catalog, row >= 0 ? catalog->visible[row] : -1);
 }
 
 static void Catalog__SelectCategory(SceneCatalog *catalog, const CatalogCategory category) {
@@ -386,22 +477,8 @@ static void Catalog__SelectCategory(SceneCatalog *catalog, const CatalogCategory
         Button_SetToggled(catalog->category_buttons[i], i == (int)category);
     }
 
-    const CatalogItemList *list  = &catalog->categories[category];
-    const char           **names = calloc(list->count > 0 ? list->count : 1, sizeof(char *));
-    FAIL_IF_NULL(names);
-    for (int i = 0; i < list->count; i++) {
-        names[i] = list->items[i].name;
-    }
-    ListBox_SetItems(catalog->list_box, names, list->count);
-    free(names);
-
-    char count_text[32];
-    snprintf(count_text, sizeof(count_text), "%d items", list->count);
-    Label_SetText(catalog->count_label, count_text);
-    Label_SetColor(catalog->count_label, 0xA0, 0xA0, 0xA0, 0xFF);
-
-    catalog->shown_item = -1;
-    Catalog__ShowItem(catalog, ListBox_GetSelectedIndex(catalog->list_box));
+    TextBox_Clear(catalog->search_box); // a search in one tab rarely makes sense in another
+    Catalog__RefreshList(catalog);
 }
 
 static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
@@ -409,6 +486,11 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
         return;
     }
     catalog->shown_item = index;
+
+    if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
+        CatalogClasses_Select(catalog->classes, index);
+        return;
+    }
 
     if (catalog->icon_sprite != NULL) {
         Sprite_Destroy(&catalog->icon_sprite);
@@ -441,8 +523,30 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
     }
 }
 
+static void Catalog__DrawItemDetail(const SceneCatalog *catalog, const SDL_Rect *panel) {
+    const int center_x = panel->x + (panel->w / 2);
+    const int icon_box = panel->y + 8;
+
+    if (catalog->icon_sprite != NULL) {
+        Sprite_DrawMulti(catalog->icon_sprite, 0, center_x - (catalog->icon_width / 2),
+                         icon_box + ((CATALOG_ICON_BOX_H - catalog->icon_height) / 2), 1, 1);
+    } else {
+        Label_SetColor(catalog->empty_label, 0x80, 0x80, 0x80, 0xFF);
+        Label_Draw(catalog->empty_label, center_x, icon_box + (CATALOG_ICON_BOX_H / 2));
+    }
+
+    int y = icon_box + CATALOG_ICON_BOX_H + 18;
+    Label_Draw(catalog->name_label, center_x, y);
+    y += 32;
+
+    for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
+        Label_Draw(catalog->stat_labels[i], center_x, y);
+        y += CATALOG_STAT_LINE_H;
+    }
+}
+
 void Catalog_Render(void *scene_ref) {
-    const SceneCatalog *catalog = (SceneCatalog *)scene_ref;
+    SceneCatalog *catalog = (SceneCatalog *)scene_ref;
 
     if (catalog->background_sprite != NULL) {
         Sprite_DrawMulti(catalog->background_sprite, 0, 0, 0, 4, 3);
@@ -450,7 +554,7 @@ void Catalog_Render(void *scene_ref) {
 
     // Darken the background so the text stays readable
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 140);
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 190);
     SDL_RenderFillRect(sdl_renderer, NULL);
 
     Label_Draw(catalog->title_label, 400, 34);
@@ -458,8 +562,17 @@ void Catalog_Render(void *scene_ref) {
     for (int i = 0; i < CATALOG_CATEGORY_COUNT; i++) {
         Button_Draw(catalog->category_buttons[i]);
     }
+    Button_Draw(catalog->back_button);
 
+    if (CatalogClasses_IsSkillTreeOpen(catalog->classes)) {
+        CatalogClasses_DrawSkillTree(catalog->classes);
+        return;
+    }
+
+    TextBox_Draw(catalog->search_box);
     ListBox_Draw(catalog->list_box);
+    Label_Draw(catalog->count_label, CATALOG_LIST_X + CATALOG_LIST_WIDTH,
+               CATALOG_LIST_Y + (CATALOG_LIST_ROWS * CATALOG_LIST_ROW_H) + 12);
 
     // Detail panel
     const SDL_Rect panel = {CATALOG_DETAIL_X, CATALOG_DETAIL_Y, CATALOG_DETAIL_W, CATALOG_DETAIL_H};
@@ -468,31 +581,15 @@ void Catalog_Render(void *scene_ref) {
     SDL_SetRenderDrawColor(sdl_renderer, 120, 95, 40, 255);
     SDL_RenderDrawRect(sdl_renderer, &panel);
 
-    const int center_x = CATALOG_DETAIL_X + (CATALOG_DETAIL_W / 2);
-    const int icon_box = CATALOG_DETAIL_Y + 8;
-
-    if (catalog->shown_item >= 0) {
-        if (catalog->icon_sprite != NULL) {
-            Sprite_DrawMulti(catalog->icon_sprite, 0, center_x - (catalog->icon_width / 2),
-                             icon_box + ((CATALOG_ICON_BOX_H - catalog->icon_height) / 2), 1, 1);
-        } else {
-            Label_SetColor(catalog->empty_label, 0x80, 0x80, 0x80, 0xFF);
-            Label_Draw(catalog->empty_label, center_x, icon_box + (CATALOG_ICON_BOX_H / 2));
-        }
-
-        int y = icon_box + CATALOG_ICON_BOX_H + 18;
-        Label_Draw(catalog->name_label, center_x, y);
-        y += 32;
-
-        for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
-            Label_Draw(catalog->stat_labels[i], center_x, y);
-            y += CATALOG_STAT_LINE_H;
-        }
+    if (catalog->shown_item < 0) {
+        return;
     }
 
-    Label_Draw(catalog->count_label, CATALOG_LIST_X + CATALOG_LIST_WIDTH,
-               CATALOG_LIST_Y + (CATALOG_LIST_ROWS * CATALOG_LIST_ROW_H) + 12);
-    Button_Draw(catalog->back_button);
+    if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
+        CatalogClasses_DrawDetail(catalog->classes, &panel);
+    } else {
+        Catalog__DrawItemDetail(catalog, &panel);
+    }
 }
 
 void Catalog_Update(void *scene_ref, const uint64_t delta) {
@@ -500,16 +597,35 @@ void Catalog_Update(void *scene_ref, const uint64_t delta) {
     SceneCatalog *catalog = (SceneCatalog *)scene_ref;
 
     for (int i = 0; i < CATALOG_CATEGORY_COUNT; i++) {
-        if (Button_Update(catalog->category_buttons[i]) && (int)catalog->current_category != i) {
-            Catalog__SelectCategory(catalog, (CatalogCategory)i);
+        if (Button_Update(catalog->category_buttons[i])) {
+            CatalogClasses_CloseSkillTree(catalog->classes);
+            if ((int)catalog->current_category != i) {
+                Catalog__SelectCategory(catalog, (CatalogCategory)i);
+            }
         }
     }
 
-    if (ListBox_Update(catalog->list_box)) {
-        Catalog__ShowItem(catalog, ListBox_GetSelectedIndex(catalog->list_box));
+    if (Button_Update(catalog->back_button)) {
+        return; // the handler either closed the skill tree or left the scene
     }
 
-    Button_Update(catalog->back_button);
+    if (CatalogClasses_IsSkillTreeOpen(catalog->classes)) {
+        CatalogClasses_UpdateSkillTree(catalog->classes);
+        return;
+    }
+
+    if (TextBox_Update(catalog->search_box)) {
+        Catalog__RefreshList(catalog);
+    }
+
+    if (ListBox_Update(catalog->list_box)) {
+        const int row = ListBox_GetSelectedIndex(catalog->list_box);
+        Catalog__ShowItem(catalog, row >= 0 ? catalog->visible[row] : -1);
+    }
+
+    if (catalog->current_category == CATALOG_CATEGORY_CLASSES && CatalogClasses_UpdateDetail(catalog->classes)) {
+        CatalogClasses_OpenSkillTree(catalog->classes);
+    }
 }
 
 void Catalog_Free(void **scene_ref) {
@@ -526,6 +642,9 @@ void Catalog_Free(void **scene_ref) {
         Sprite_Destroy(&catalog->icon_sprite);
     }
 
+    CatalogClasses_Destroy(&catalog->classes);
+    TextBox_Destroy(&catalog->search_box);
+    free(catalog->visible);
     Button_Destroy(&catalog->back_button);
     ListBox_Destroy(&catalog->list_box);
     Label_Destroy(&catalog->title_label);
@@ -541,6 +660,12 @@ void Catalog_Free(void **scene_ref) {
 }
 
 static void Catalog__OnBackClicked(void *user_data) {
-    (void)(user_data);
+    SceneCatalog *catalog = (SceneCatalog *)user_data;
+
+    if (CatalogClasses_IsSkillTreeOpen(catalog->classes)) {
+        CatalogClasses_CloseSkillTree(catalog->classes);
+        return;
+    }
+
     Scene_Set(SCENE_REF(MainMenu));
 }
