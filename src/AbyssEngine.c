@@ -12,6 +12,7 @@
 #include "types/Palette.h"
 #include "util/Crypto.h"
 #include <libavutil/log.h>
+#include <stdio.h>
 
 int main(int argc, char **argv) {
     (void)(argc);
@@ -32,6 +33,22 @@ int main(int argc, char **argv) {
     LOG_DEBUG("Loading configuration...");
     char config_path[4096];
     memset(config_path, 0, 4096);
+
+    // Prefer an abyss.ini next to the executable (portable setup)
+    char *exe_dir = SDL_GetBasePath();
+    if (exe_dir != NULL) {
+        snprintf(config_path, 4096, "%sabyss.ini", exe_dir);
+        SDL_free(exe_dir);
+        FILE *local_config = fopen(config_path, "r");
+        if (local_config != NULL) {
+            fclose(local_config);
+        } else {
+            memset(config_path, 0, 4096);
+        }
+    }
+
+    // Otherwise fall back to the per-user settings folder
+    if (config_path[0] == '\0') {
 #ifdef _WIN32
     snprintf(config_path, 4096, "%s\\abyss\\abyss.ini", getenv("APPDATA"));
 #elif __APPLE__
@@ -39,6 +56,8 @@ int main(int argc, char **argv) {
 #else
     snprintf(config_path, 4096, "%s/.config/abyss/abyss.ini", getenv("HOME"));
 #endif
+    }
+    LOG_INFO("Using configuration file '%s'", config_path);
     AbyssConfiguration_LoadSingleton(config_path);
 
     LOG_DEBUG("Initializing file manager...");

@@ -73,6 +73,7 @@ include_directories(${FFMPEG_INCLUDE_DIRS})
 #add_link_options(-fsanitize=address)
 
 add_executable(${PROJECT_NAME} WIN32)
+set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PRIVATE src/AbyssEngine.c)
 add_subdirectory(src)
 setup_source_groups(src)
@@ -151,9 +152,11 @@ if (APPLE)
 
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Install path prefix, prepended onto install directories" FORCE)
 else ()
+    # Ship the config template next to the executable as abyss.ini.dist.
+    # Copy it to abyss.ini (same folder) and edit it; the engine reads that file first.
     add_custom_command(TARGET AbyssEngine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/content $<TARGET_FILE_DIR:AbyssEngine>)
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/content/abyss.ini $<TARGET_FILE_DIR:AbyssEngine>/abyss.ini.dist)
 endif ()
 
 
