@@ -8,3 +8,4 @@ cmake-build-*/
 out/
 CMakeSettings.json
 dist/
+/Diablo
