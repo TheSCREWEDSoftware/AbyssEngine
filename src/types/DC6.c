@@ -62,6 +62,8 @@ void DC6_Destroy(struct DC6 **dc6) {
     *dc6 = NULL;
 }
 
+uint32_t DC6_GetDirectionCount(const DC6 *dc6) { return dc6->header.directions; }
+
 uint32_t DC6_GetTotalFrameCount(const DC6 *dc6) { return dc6->header.directions * dc6->header.frames_per_direction; }
 
 void DC6_GetFrameSize(const DC6 *dc6, const uint32_t frame_index, uint32_t *width, uint32_t *height) {

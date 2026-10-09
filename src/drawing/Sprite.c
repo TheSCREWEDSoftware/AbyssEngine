@@ -18,6 +18,7 @@ typedef struct SpriteFrame {
 struct Sprite {
     struct SpriteFrame *frames;
     uint32_t            frame_count;
+    uint32_t            direction_count;
     double              play_length;
     uint32_t            ticks_per_frame;
     uint64_t            last_ticks;
@@ -63,6 +64,7 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
     const struct Palette *Palette = Palette_Get(palette_name);
 
     sprite->frame_count     = DC6_GetTotalFrameCount(dc6);
+    sprite->direction_count = DC6_GetDirectionCount(dc6);
     sprite->frames          = malloc(sizeof(SpriteFrame) * sprite->frame_count);
     sprite->last_ticks      = SDL_GetTicks64();
     sprite->animation_index = 0;
@@ -77,6 +79,11 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
 
         DC6_GetFrameSize(dc6, i, &spr_frame->width, &spr_frame->height);
         DC6_GetFrameOffset(dc6, i, &spr_frame->offset_x, &spr_frame->offset_y);
+
+        if (spr_frame->width == 0 || spr_frame->height == 0) {
+            spr_frame->texture = NULL; // empty frame (some DC6 files have blank frames)
+            continue;
+        }
 
         spr_frame->texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC,
                                                (int)spr_frame->width, (int)spr_frame->height);
@@ -100,7 +107,9 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
 
 void Sprite_Destroy(Sprite **sprite) {
     for (uint32_t i = 0; i < (*sprite)->frame_count; i++) {
-        SDL_DestroyTexture((*sprite)->frames[i].texture);
+        if ((*sprite)->frames[i].texture != NULL) {
+            SDL_DestroyTexture((*sprite)->frames[i].texture);
+        }
     }
 
     free((*sprite)->frames);
@@ -164,9 +173,48 @@ void Sprite_DrawMulti(const Sprite *sprite, const uint8_t frame_index, const int
     }
 }
 
+uint32_t Sprite_GetFrameCount(const Sprite *sprite) { return sprite->frame_count; }
+
+uint32_t Sprite_GetDirectionCount(const Sprite *sprite) {
+    return sprite->direction_count > 0 ? sprite->direction_count : 1;
+}
+
+void Sprite_GetFrameOffset(const Sprite *sprite, const int frame_index, int *offset_x, int *offset_y) {
+    if (offset_x != NULL) {
+        *offset_x = sprite->frames[frame_index].offset_x;
+    }
+
+    if (offset_y != NULL) {
+        *offset_y = sprite->frames[frame_index].offset_y;
+    }
+}
+
+void Sprite_DrawScaled(const Sprite *sprite, const int frame_index, const int x, const int y, const float scale) {
+    const SpriteFrame *frame = &sprite->frames[frame_index];
+    if (frame->texture == NULL) {
+        return;
+    }
+
+    const SDL_Rect dest = {x, y, (int)((float)frame->width * scale), (int)((float)frame->height * scale)};
+    SDL_RenderCopy(sdl_renderer, frame->texture, NULL, &dest);
+}
+
+void Sprite_DrawStretched(const Sprite *sprite, const int frame_index, const int x, const int y, const int width,
+                          const int height) {
+    const SpriteFrame *frame = &sprite->frames[frame_index];
+    if (frame->texture == NULL || width <= 0 || height <= 0) {
+        return;
+    }
+
+    const SDL_Rect dest = {x, y, width, height};
+    SDL_RenderCopy(sdl_renderer, frame->texture, NULL, &dest);
+}
+
 void Sprite_SetBlendMode(const Sprite *sprite, const SDL_BlendMode blend_mode) {
     for (uint32_t frame_idx = 0; frame_idx < sprite->frame_count; frame_idx++) {
-        SDL_SetTextureBlendMode(sprite->frames[frame_idx].texture, blend_mode);
+        if (sprite->frames[frame_idx].texture != NULL) {
+            SDL_SetTextureBlendMode(sprite->frames[frame_idx].texture, blend_mode);
+        }
     }
 }
 

@@ -13,6 +13,7 @@
 #include "../drawing/TextBox.h"
 #include "../managers/AudioManager.h"
 #include "CatalogClasses.h"
+#include "CatalogSprites.h"
 #include "SceneMainMenu.h"
 #include <ctype.h>
 #include <stdarg.h>
@@ -41,6 +42,7 @@ typedef enum CatalogCategory {
     CATALOG_CATEGORY_WEAPONS,
     CATALOG_CATEGORY_ARMOR,
     CATALOG_CATEGORY_CLASSES,
+    CATALOG_CATEGORY_SPRITES,
     CATALOG_CATEGORY_COUNT
 } CatalogCategory;
 
@@ -71,6 +73,7 @@ typedef struct SceneCatalog {
     ListBox        *list_box;
     TextBox        *search_box;
     CatalogClasses *classes;
+    CatalogSprites *sprites;
     CatalogItemList categories[CATALOG_CATEGORY_COUNT]; // items for the weapon/armor tabs
     CatalogCategory current_category;
     int            *visible; // list row -> item/class index, after the search filter
@@ -372,15 +375,16 @@ void *Catalog_Create(void) {
     Label_SetText(result->empty_label, "No picture");
     Label_SetAlignment(result->empty_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
 
-    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor", "Classes"};
+    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor", "Classes", "Sprites"};
     for (int i = 0; i < CATALOG_CATEGORY_COUNT; i++) {
         result->category_buttons[i] = Button_Create(BUTTON_TYPE_MEDIUM, category_names[i]);
         Button_SetPosition(result->category_buttons[i], CATALOG_LIST_X + (i * 136), 68);
-        if (i != CATALOG_CATEGORY_CLASSES) {
+        if (i == CATALOG_CATEGORY_WEAPONS || i == CATALOG_CATEGORY_ARMOR) {
             Catalog__LoadCategory(&result->categories[i], (CatalogCategory)i);
         }
     }
     result->classes = CatalogClasses_Create();
+    result->sprites = CatalogSprites_Create();
 
     result->back_button = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     Button_SetPosition(result->back_button, CATALOG_LIST_X, 540);
@@ -401,12 +405,18 @@ static int Catalog__SourceCount(const SceneCatalog *catalog) {
     if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
         return CatalogClasses_GetCount(catalog->classes);
     }
+    if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        return CatalogSprites_GetCount(catalog->sprites);
+    }
     return catalog->categories[catalog->current_category].count;
 }
 
 static const char *Catalog__SourceName(const SceneCatalog *catalog, const int index) {
     if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
         return CatalogClasses_GetName(catalog->classes, index);
+    }
+    if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        return CatalogSprites_GetName(catalog->sprites, index);
     }
     return catalog->categories[catalog->current_category].items[index].name;
 }
@@ -489,6 +499,10 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
 
     if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
         CatalogClasses_Select(catalog->classes, index);
+        return;
+    }
+    if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        CatalogSprites_Select(catalog->sprites, index);
         return;
     }
 
@@ -587,6 +601,8 @@ void Catalog_Render(void *scene_ref) {
 
     if (catalog->current_category == CATALOG_CATEGORY_CLASSES) {
         CatalogClasses_DrawDetail(catalog->classes, &panel);
+    } else if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        CatalogSprites_DrawDetail(catalog->sprites, &panel);
     } else {
         Catalog__DrawItemDetail(catalog, &panel);
     }
@@ -626,6 +642,9 @@ void Catalog_Update(void *scene_ref, const uint64_t delta) {
     if (catalog->current_category == CATALOG_CATEGORY_CLASSES && CatalogClasses_UpdateDetail(catalog->classes)) {
         CatalogClasses_OpenSkillTree(catalog->classes);
     }
+    if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        CatalogSprites_UpdateDetail(catalog->sprites);
+    }
 }
 
 void Catalog_Free(void **scene_ref) {
@@ -643,6 +662,7 @@ void Catalog_Free(void **scene_ref) {
     }
 
     CatalogClasses_Destroy(&catalog->classes);
+    CatalogSprites_Destroy(&catalog->sprites);
     TextBox_Destroy(&catalog->search_box);
     free(catalog->visible);
     Button_Destroy(&catalog->back_button);

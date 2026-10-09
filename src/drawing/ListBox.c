@@ -12,7 +12,8 @@
 
 struct ListBox {
     const char *font_path;
-    Label     **labels;
+    char      **items;  // copies of the item texts
+    Label     **labels; // one label per visible row, re-used while scrolling
     int         item_count;
     int         x;
     int         y;
@@ -28,11 +29,11 @@ struct ListBox {
 
 static void ListBox__ClearItems(ListBox *list_box) {
     for (int i = 0; i < list_box->item_count; i++) {
-        Label_Destroy(&list_box->labels[i]);
+        free(list_box->items[i]);
     }
 
-    free(list_box->labels);
-    list_box->labels     = NULL;
+    free(list_box->items);
+    list_box->items      = NULL;
     list_box->item_count = 0;
 }
 
@@ -74,6 +75,14 @@ ListBox *ListBox_Create(const char *font_path, const int x, const int y, const i
     list_box->selected_index = -1;
     list_box->hovered_index  = -1;
 
+    // Only the visible rows get a label (each label holds a font), so long lists stay cheap.
+    list_box->labels = calloc(visible_rows, sizeof(Label *));
+    FAIL_IF_NULL(list_box->labels);
+    for (int i = 0; i < visible_rows; i++) {
+        list_box->labels[i] = Label_Create(font_path, PALETTE_STATIC);
+        Label_SetAlignment(list_box->labels[i], LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+    }
+
     return list_box;
 }
 
@@ -83,6 +92,10 @@ void ListBox_Destroy(ListBox **list_box) {
     }
 
     ListBox__ClearItems(*list_box);
+    for (int i = 0; i < (*list_box)->visible_rows; i++) {
+        Label_Destroy(&(*list_box)->labels[i]);
+    }
+    free((*list_box)->labels);
     free(*list_box);
     *list_box = NULL;
 }
@@ -90,13 +103,12 @@ void ListBox_Destroy(ListBox **list_box) {
 void ListBox_SetItems(ListBox *list_box, const char *const *items, const int item_count) {
     ListBox__ClearItems(list_box);
 
-    list_box->labels = calloc(item_count > 0 ? item_count : 1, sizeof(Label *));
-    FAIL_IF_NULL(list_box->labels);
+    list_box->items = calloc(item_count > 0 ? item_count : 1, sizeof(char *));
+    FAIL_IF_NULL(list_box->items);
 
     for (int i = 0; i < item_count; i++) {
-        list_box->labels[i] = Label_Create(list_box->font_path, PALETTE_STATIC);
-        Label_SetText(list_box->labels[i], items[i]);
-        Label_SetAlignment(list_box->labels[i], LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+        list_box->items[i] = strdup(items[i] != NULL ? items[i] : "");
+        FAIL_IF_NULL(list_box->items[i]);
     }
 
     list_box->item_count     = item_count;
@@ -171,6 +183,10 @@ void ListBox_Draw(const ListBox *list_box) {
     const SDL_Rect background = {list_box->x, list_box->y, list_box->width, height};
     SDL_RenderFillRect(sdl_renderer, &background);
 
+    // Long entries (e.g. file paths) must not spill out of the list
+    const SDL_Rect clip = {list_box->x, list_box->y, list_box->width - LIST_BOX_SCROLLBAR_WIDTH - 2, height};
+    SDL_RenderSetClipRect(sdl_renderer, &clip);
+
     for (int row = 0; row < list_box->visible_rows; row++) {
         const int index = list_box->scroll_offset + row;
         if (index >= list_box->item_count) {
@@ -189,7 +205,8 @@ void ListBox_Draw(const ListBox *list_box) {
             SDL_RenderFillRect(sdl_renderer, &row_rect);
         }
 
-        Label *label = list_box->labels[index];
+        Label *label = list_box->labels[row];
+        Label_SetText(label, list_box->items[index]);
         if (index == list_box->selected_index) {
             Label_SetColor(label, 0xFF, 0xE8, 0xA0, 0xFF);
         } else {
@@ -197,6 +214,8 @@ void ListBox_Draw(const ListBox *list_box) {
         }
         Label_Draw(label, list_box->x + LIST_BOX_TEXT_PADDING_X, row_y + (list_box->row_height / 2));
     }
+
+    SDL_RenderSetClipRect(sdl_renderer, NULL);
 
     // Scrollbar
     if (list_box->item_count > list_box->visible_rows) {

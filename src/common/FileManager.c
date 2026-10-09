@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct FileEntry {
     uint64_t    hash;
@@ -17,6 +18,9 @@ typedef struct FileManager {
     uint32_t          file_count;
     struct MPQ      **mpqs;
     uint32_t          mpq_count;
+    char             *list_buffer; // concatenated (listfile) contents, built on first use
+    const char      **list_files;
+    int               list_count;
 } FileManager;
 
 FileManager *file_manager = NULL;
@@ -66,6 +70,8 @@ void FileManager_DestroySingleton(void) {
     assert(file_manager != NULL);
 
     free(file_manager->files);
+    free(file_manager->list_files);
+    free(file_manager->list_buffer);
 
     for (uint32_t mpq_idx = 0; mpq_idx < file_manager->mpq_count; mpq_idx++) {
         MPQ_Destroy(file_manager->mpqs[mpq_idx]);
@@ -150,4 +156,105 @@ MpqStream *FileManager_OpenFile(const char *file_path) {
     MpqStream *MpqStream = MpqStream_Create(file_entry->MPQ, path_fixed);
     free(path_fixed);
     return MpqStream;
+}
+
+static int FileManager__ComparePaths(const void *a, const void *b) {
+    const char *x = *(const char *const *)a;
+    const char *y = *(const char *const *)b;
+
+    while (*x != '\0' && tolower((unsigned char)*x) == tolower((unsigned char)*y)) {
+        x++;
+        y++;
+    }
+
+    return tolower((unsigned char)*x) - tolower((unsigned char)*y);
+}
+
+static void FileManager__BuildFileList(void) {
+    size_t total    = 0;
+    char **contents = calloc(file_manager->mpq_count > 0 ? file_manager->mpq_count : 1, sizeof(char *));
+    FAIL_IF_NULL(contents);
+
+    for (uint32_t i = 0; i < file_manager->mpq_count; i++) {
+        if (!MPQ_FileExists(file_manager->mpqs[i], "(listfile)")) {
+            continue;
+        }
+
+        MpqStream     *stream = MpqStream_Create(file_manager->mpqs[i], "(listfile)");
+        const uint32_t size   = MpqStream_GetSize(stream);
+        contents[i]           = malloc(size + 1);
+        FAIL_IF_NULL(contents[i]);
+        MpqStream_Read(stream, contents[i], 0, size);
+        contents[i][size] = '\0';
+        MpqStream_Destroy(&stream);
+        total += size + 1;
+    }
+
+    file_manager->list_buffer = malloc(total + 1);
+    FAIL_IF_NULL(file_manager->list_buffer);
+    file_manager->list_buffer[0] = '\0';
+
+    size_t used = 0;
+    for (uint32_t i = 0; i < file_manager->mpq_count; i++) {
+        if (contents[i] != NULL) {
+            const size_t len = strlen(contents[i]);
+            memcpy(file_manager->list_buffer + used, contents[i], len);
+            used                              += len;
+            file_manager->list_buffer[used++]  = '\n';
+            free(contents[i]);
+        }
+    }
+    file_manager->list_buffer[used] = '\0';
+    free(contents);
+
+    // Split into lines (in place)
+    int capacity             = 1024;
+    file_manager->list_files = malloc(sizeof(char *) * capacity);
+    file_manager->list_count = 0;
+    FAIL_IF_NULL(file_manager->list_files);
+
+    for (char *line = file_manager->list_buffer; line != NULL && *line != '\0';) {
+        char *next = strpbrk(line, "\r\n");
+        if (next != NULL) {
+            *next++ = '\0';
+            while (*next == '\r' || *next == '\n') {
+                next++;
+            }
+        }
+
+        if (*line != '\0') {
+            if (file_manager->list_count == capacity) {
+                capacity                 *= 2;
+                file_manager->list_files  = realloc(file_manager->list_files, sizeof(char *) * capacity);
+                FAIL_IF_NULL(file_manager->list_files);
+            }
+            file_manager->list_files[file_manager->list_count++] = line;
+        }
+
+        line = next;
+    }
+
+    // Sort and drop duplicates (the same file can be listed by several MPQs, in different letter case)
+    qsort(file_manager->list_files, file_manager->list_count, sizeof(char *), FileManager__ComparePaths);
+    int unique = 0;
+    for (int i = 0; i < file_manager->list_count; i++) {
+        if (unique == 0 ||
+            FileManager__ComparePaths(&file_manager->list_files[unique - 1], &file_manager->list_files[i]) != 0) {
+            file_manager->list_files[unique++] = file_manager->list_files[i];
+        }
+    }
+    file_manager->list_count = unique;
+
+    LOG_INFO("File list: %d files known from the MPQ list files", file_manager->list_count);
+}
+
+int FileManager_GetFileList(const char *const **files) {
+    assert(file_manager != NULL);
+
+    if (file_manager->list_files == NULL) {
+        FileManager__BuildFileList();
+    }
+
+    *files = file_manager->list_files;
+    return file_manager->list_count;
 }
