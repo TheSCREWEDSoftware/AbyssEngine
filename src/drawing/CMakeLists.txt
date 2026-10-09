@@ -4,6 +4,7 @@ target_sources(${PROJECT_NAME}
         ListBox.c ListBox.h
         TextBox.c TextBox.h
         Cursor.c Cursor.h
+        Figure.c Figure.h
         Label.c Label.h
         Sprite.c Sprite.h
 )

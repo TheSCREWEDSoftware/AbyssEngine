@@ -17,6 +17,23 @@ struct DataTable {
     int           row_count;
 };
 
+// Spreadsheet exports wrap cells containing commas in double quotes ("lit,med,hvy"); store the plain text.
+static void DataTable__Unquote(char *cell) {
+    const size_t len = strlen(cell);
+    if (len < 2 || cell[0] != '"' || cell[len - 1] != '"') {
+        return;
+    }
+
+    char *out = cell;
+    for (const char *in = cell + 1; in < cell + len - 1; in++) {
+        if (in[0] == '"' && in[1] == '"') { // "" is an escaped quote
+            in++;
+        }
+        *out++ = *in;
+    }
+    *out = '\0';
+}
+
 static void DataTable__SplitRow(char *line, DataTableRow *row) {
     int capacity    = 16;
     row->cells      = malloc(sizeof(char *) * capacity);
@@ -33,10 +50,13 @@ static void DataTable__SplitRow(char *line, DataTableRow *row) {
         row->cells[row->cell_count++] = cell;
 
         char *tab = strchr(cell, '\t');
+        if (tab != NULL) {
+            *tab = '\0';
+        }
+        DataTable__Unquote(cell);
         if (tab == NULL) {
             break;
         }
-        *tab = '\0';
         cell = tab + 1;
     }
 }

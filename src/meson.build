@@ -40,6 +40,7 @@ sources = [
 
     'drawing/Button.c',
     'drawing/Cursor.c',
+    'drawing/Figure.c',
     'drawing/Label.c',
     'drawing/ListBox.c',
     'drawing/TextBox.c',
@@ -58,6 +59,8 @@ sources = [
 
     'types/DC6.c',
     'types/DC6Frame.c',
+    'types/COF.c',
+    'types/DCC.c',
     'types/Font.c',
     'types/MPQ.c',
     'types/MPQBlock.c',
