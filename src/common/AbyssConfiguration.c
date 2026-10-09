@@ -35,9 +35,9 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
 struct AbyssConfiguration abyss_configuration;
 bool                      added_mpq = false;
 
-static const char *default_mpqs[] = {"d2exp.MPQ",   "d2xmusic.MPQ", "d2xtalk.MPQ", "d2xvideo.MPQ",
-                                     "d2data.MPQ",  "d2char.MPQ",   "d2music.MPQ", "d2sfx.MPQ",
-                                     "d2video.MPQ", "d2speech.MPQ", NULL};
+static const char *default_mpqs[] = {"Patch_D2.mpq", "d2exp.MPQ",   "d2xmusic.MPQ", "d2xtalk.MPQ",
+                                     "d2xvideo.MPQ", "d2data.MPQ",  "d2char.MPQ",   "d2music.MPQ",
+                                     "d2sfx.MPQ",    "d2video.MPQ", "d2speech.MPQ", NULL};
 
 #define MAX_LINE_LEN       4096
 #define IS_STR_EQUAL(X, Y) (strcmp(X, Y) == 0)

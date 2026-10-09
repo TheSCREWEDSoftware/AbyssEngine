@@ -41,6 +41,8 @@
 extern "C" {
 #endif
 
+extern const unsigned int explode_work_buffer_size; // size of the work_buf passed to explode()
+
 unsigned int explode(unsigned int (*read_buf)(char *buf, unsigned int *size, void *param),
                      void (*write_buf)(char *buf, unsigned int *size, void *param), char *work_buf, void *param);
 

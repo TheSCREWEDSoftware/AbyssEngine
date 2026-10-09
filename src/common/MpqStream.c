@@ -78,11 +78,43 @@ void explode_write(char *buf, unsigned int *size, void *param) { // NOLINT(*-non
 
     if (*size > pk_info->to_write) {
         LOG_ERROR("Attempted to write past end of stream for PkWare Explode decompression.");
+        *size = pk_info->to_write;
     }
 
     memcpy((char *)pk_info->buff_out + pk_info->out_pos, buf, *size);
     pk_info->out_pos  += *size;
     pk_info->to_write -= *size;
+}
+
+// PKWARE DCL "explode". Used by the compression-type byte 0x08 and by the older FILE_FLAG_IMPLODE format
+// (e.g. Patch_D2.mpq), which has no compression-type byte.
+static void *MpqStream__Explode(void *buffer, const uint32_t to_read, const uint32_t expected_length) {
+    void *out_buffer = malloc(expected_length + 1);
+    FAIL_IF_NULL(out_buffer);
+    memset(out_buffer, 0, expected_length + 1);
+
+    struct pk_info pk_info;
+    memset(&pk_info, 0, sizeof(struct pk_info));
+    pk_info.buff_out = out_buffer;
+    pk_info.buff_in  = buffer;
+    pk_info.to_read  = to_read;
+    pk_info.to_write = expected_length;
+
+    char *work_buff = calloc(1, explode_work_buffer_size);
+    FAIL_IF_NULL(work_buff);
+
+    const unsigned int pk_result = explode(explode_read, explode_write, work_buff, &pk_info);
+    free(work_buff);
+
+    if (pk_result != CMP_NO_ERROR) {
+        LOG_FATAL("Failed to decompress using PkWare Explode: %u.", pk_result);
+    }
+
+    if (pk_info.out_pos != expected_length) {
+        LOG_FATAL("Decompression failed. Expected %u bytes but got %u instead!", expected_length, pk_info.out_pos);
+    }
+
+    return out_buffer;
 }
 
 MpqStream *MpqStream_Create(struct MPQ *mpq, const char *file_name) {
@@ -296,7 +328,10 @@ void *MpqStream__LoadBlock(MpqStream *mpq_stream, uint32_t block_index, uint32_t
     }
 
     if ((mpq_stream->block->flags & FILE_FLAG_IMPLODE) && (to_read != expected_length)) {
-        LOG_FATAL("TODO: PK decompress");
+        void *result = MpqStream__Explode(data, to_read, expected_length);
+        free(data);
+        MPQ_ReleaseFileHandle(mpq_stream->mpq);
+        return result;
     }
 
     MPQ_ReleaseFileHandle(mpq_stream->mpq);
@@ -336,32 +371,7 @@ void *MpqStream__DecompressMulti(void *buffer, uint32_t to_read, uint32_t expect
         return out_buffer;
     }
     case COMPRESSION_TYPE_PKLIB_IMPLODE: {
-        void *out_buffer = malloc(expected_length + 1);
-        FAIL_IF_NULL(out_buffer);
-
-        struct pk_info pk_info;
-        memset(&pk_info, 0, sizeof(struct pk_info));
-        pk_info.buff_out = out_buffer;
-        pk_info.buff_in  = (char *)buffer + 1;
-        pk_info.to_read  = to_read - 1;
-        pk_info.to_write = expected_length;
-
-        char *work_buff = malloc(15000);
-        FAIL_IF_NULL(work_buff);
-
-        memset(work_buff, 0, 15000);
-        memset(out_buffer, 0, expected_length + 1);
-        const int pk_result = explode(explode_read, explode_write, work_buff, &pk_info);
-
-        if (pk_result != CMP_NO_ERROR) {
-            LOG_FATAL("Failed to decompress using PkWare Explode: %d.", pk_result);
-        }
-
-        if (pk_info.out_pos != expected_length) {
-            LOG_FATAL("Decompression failed. Expected %d bytes but got %d instead!", expected_length, pk_info.out_pos);
-        }
-
-        free(work_buff);
+        void *out_buffer = MpqStream__Explode((char *)buffer + 1, to_read - 1, expected_length);
         free(buffer);
         return out_buffer;
     }

@@ -4,6 +4,7 @@
 #include "Logging.h"
 #include <assert.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct FileEntry {
@@ -79,6 +80,13 @@ void FileManager_DestroySingleton(void) {
 void FileManager_AddMpq(const char *mpq_path) {
     assert(file_manager != NULL);
     assert(mpq_path != NULL);
+
+    FILE *probe = fopen(mpq_path, "rb");
+    if (probe == NULL) {
+        LOG_WARN("Skipping MPQ '%s': file not found.", mpq_path);
+        return;
+    }
+    fclose(probe);
 
     file_manager->mpqs = realloc(file_manager->mpqs, sizeof(struct MPQ *) * ++file_manager->mpq_count);
     file_manager->mpqs[file_manager->mpq_count - 1] = MPQ_Load(mpq_path);

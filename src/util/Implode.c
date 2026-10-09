@@ -35,6 +35,9 @@ typedef struct {
     unsigned short LenBase[0x10];    // 3114 - Buffer for
 } TDcmpStruct;
 
+// The struct is larger than EXP_BUFFER_SIZE on 64-bit builds, so callers must use this size for the work buffer.
+const unsigned int explode_work_buffer_size = sizeof(TDcmpStruct);
+
 //-----------------------------------------------------------------------------
 // Tables
 
