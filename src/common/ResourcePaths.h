@@ -11,6 +11,10 @@
 #define D2LOGO_FIRE_LEFT   "/data/global/ui/FrontEnd/D2logoFireLeft.DC6"
 #define D2LOGO_FIRE_RIGHT  "/data/global/ui/FrontEnd/D2logoFireRight.DC6"
 
+// -- Data tables
+#define EXCEL_WEAPONS "/data/global/excel/weapons.txt"
+#define EXCEL_ARMOR   "/data/global/excel/armor.txt"
+
 // -- Buttons
 #define BUTTON_WIDE_BLANK   "/data/global/ui/FrontEnd/WideButtonBlank.dc6"
 #define BUTTON_MEDIUM_BLANK "/data/global/ui/FrontEnd/MediumButtonBlank.dc6"

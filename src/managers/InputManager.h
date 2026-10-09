@@ -14,5 +14,6 @@ bool InputManager_IsTextInputActive(void);
 void InputManager_GetMousePosition(int *mouse_x, int *mouse_y);
 void InputManager_GetMouseButtons(bool *left, bool *middle, bool *right);
 void InputManager_ResetMouseButtons(void);
+int  InputManager_ConsumeMouseWheel(void); // wheel steps since the last call (positive = up)
 
 #endif // ABYSS_INPUT_MANAGER_H

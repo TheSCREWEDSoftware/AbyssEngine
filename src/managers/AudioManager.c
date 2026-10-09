@@ -2,6 +2,8 @@
 #include "../common/AbyssConfiguration.h"
 #include "../common/Logging.h"
 #include "../managers/VideoManager.h"
+#include <stdio.h>
+#include <string.h>
 
 typedef struct AudioManager {
     bool                audio_available;
@@ -128,7 +130,17 @@ void AudioManager_DestroySingleton(void) {
 
 void AudioManager_Update(void) {}
 
+static char current_music_path[4096];
+
 void AudioManager_PlayMusic(const char *path, const bool loop) {
+    // Keep the current track playing when a scene asks for the music that is already on (e.g. returning to a menu).
+    if (audio_manager->background_music != NULL && strcmp(current_music_path, path) == 0) {
+        AudioStream_SetLoop(audio_manager->background_music, loop);
+        return;
+    }
+
+    snprintf(current_music_path, sizeof(current_music_path), "%s", path);
+
     if (audio_manager->background_music != NULL) {
         AudioStream_Destroy(&audio_manager->background_music);
     }

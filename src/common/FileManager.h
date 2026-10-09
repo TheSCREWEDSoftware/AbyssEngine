@@ -3,10 +3,12 @@
 
 #include "../types/MPQ.h"
 #include "MpqStream.h"
+#include <stdbool.h>
 
 void       FileManager_CreateSingleton(void);
 void       FileManager_DestroySingleton(void);
 void       FileManager_AddMpq(const char *mpq_path);
+bool       FileManager_FileExists(const char *file_path);
 MpqStream *FileManager_OpenFile(const char *file_path);
 
 #endif // ABYSS_FILEMAN_H

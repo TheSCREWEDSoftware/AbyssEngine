@@ -4,6 +4,7 @@
 #include "../drawing/Button.h"
 #include "../drawing/Cursor.h"
 #include "../managers/AudioManager.h"
+#include "SceneCatalog.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,12 +19,14 @@ typedef struct SceneMainMenu {
     Label  *build_label;
     Button *single_player_button;
     Button *multiplayer_button;
+    Button *catalog_button;
     Button *credits_button;
     Button *cinematics_button;
     Button *exit_button;
 } SceneMainMenu;
 
 static void MainMenu__OnExitClicked(void *user_data);
+static void MainMenu__OnCatalogClicked(void *user_data);
 
 DEFINE_SCENE_CALLBACKS(MainMenu);
 
@@ -64,6 +67,10 @@ void *MainMenu_Create(void) {
     result->multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Multiplayer");
     Button_SetPosition(result->multiplayer_button, 264, 330);
 
+    result->catalog_button = Button_Create(BUTTON_TYPE_WIDE, "Catalog");
+    Button_SetPosition(result->catalog_button, 264, 380);
+    Button_SetClickHandler(result->catalog_button, MainMenu__OnCatalogClicked, NULL);
+
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
     Button_SetPosition(result->credits_button, 264, 505);
 
@@ -102,6 +109,7 @@ void MainMenu_Render(void *scene_ref) {
 
     Button_Draw(mainmenu->single_player_button);
     Button_Draw(mainmenu->multiplayer_button);
+    Button_Draw(mainmenu->catalog_button);
     Button_Draw(mainmenu->credits_button);
     Button_Draw(mainmenu->cinematics_button);
     Button_Draw(mainmenu->exit_button);
@@ -113,9 +121,15 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
 
     Button_Update(mainmenu->single_player_button);
     Button_Update(mainmenu->multiplayer_button);
+    Button_Update(mainmenu->catalog_button);
     Button_Update(mainmenu->credits_button);
     Button_Update(mainmenu->cinematics_button);
     Button_Update(mainmenu->exit_button);
+}
+
+static void MainMenu__OnCatalogClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(Catalog));
 }
 
 static void MainMenu__OnExitClicked(void *user_data) {
@@ -129,6 +143,7 @@ void MainMenu_Free(void **scene_ref) {
 
     Button_Destroy(&mainmenu->single_player_button);
     Button_Destroy(&mainmenu->multiplayer_button);
+    Button_Destroy(&mainmenu->catalog_button);
     Button_Destroy(&mainmenu->credits_button);
     Button_Destroy(&mainmenu->cinematics_button);
     Button_Destroy(&mainmenu->exit_button);

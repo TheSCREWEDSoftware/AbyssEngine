@@ -34,6 +34,8 @@ void    Button_SetPosition(Button *button, int x, int y);
 void    Button_GetSize(const Button *button, int *width, int *height);
 void    Button_SetEnabled(Button *button, bool enabled);
 void    Button_SetVisible(Button *button, bool visible);
+void    Button_SetToggled(Button *button, bool toggled);
+bool    Button_IsToggled(const Button *button);
 void    Button_SetClickHandler(Button *button, ButtonClickHandler handler, void *user_data);
 
 // Processes mouse input. Returns true (and calls the click handler) when the button was clicked this frame.

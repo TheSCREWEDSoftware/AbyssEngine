@@ -12,6 +12,7 @@ typedef struct InputManager {
     bool    key_pressed[SDL_NUM_SCANCODES];
     char    text_input[MAX_TEXT_INPUT_LENGTH + 1];
     uint8_t mouse_buttons;
+    int     mouse_wheel_y;
 } InputManager;
 
 InputManager *input_manager;
@@ -42,6 +43,10 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
         input_manager->mouse_buttons &= ~SDL_BUTTON(sdl_event->button.button);
+        return true;
+    case SDL_MOUSEWHEEL:
+        input_manager->mouse_wheel_y +=
+            (sdl_event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -sdl_event->wheel.y : sdl_event->wheel.y;
         return true;
     case SDL_KEYDOWN:
         if (sdl_event->key.keysym.sym == SDLK_RETURN &&
@@ -107,3 +112,9 @@ void InputManager_GetMouseButtons(bool *left, bool *middle, bool *right) {
 }
 
 void InputManager_ResetMouseButtons(void) { input_manager->mouse_buttons = 0; }
+
+int InputManager_ConsumeMouseWheel(void) {
+    const int result             = input_manager->mouse_wheel_y;
+    input_manager->mouse_wheel_y = 0;
+    return result;
+}

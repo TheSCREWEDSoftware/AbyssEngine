@@ -2,6 +2,7 @@
 #include "common/FileManager.h"
 #include "common/Globals.h"
 #include "common/Logging.h"
+#include "data/StringTable.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "managers/AudioManager.h"
@@ -50,11 +51,11 @@ int main(int argc, char **argv) {
     // Otherwise fall back to the per-user settings folder
     if (config_path[0] == '\0') {
 #ifdef _WIN32
-    snprintf(config_path, 4096, "%s\\abyss\\abyss.ini", getenv("APPDATA"));
+        snprintf(config_path, 4096, "%s\\abyss\\abyss.ini", getenv("APPDATA"));
 #elif __APPLE__
-    snprintf(config_path, 4096, "%s/Library/Application Support/abyss/abyss.ini", getenv("HOME"));
+        snprintf(config_path, 4096, "%s/Library/Application Support/abyss/abyss.ini", getenv("HOME"));
 #else
-    snprintf(config_path, 4096, "%s/.config/abyss/abyss.ini", getenv("HOME"));
+        snprintf(config_path, 4096, "%s/.config/abyss/abyss.ini", getenv("HOME"));
 #endif
     }
     LOG_INFO("Using configuration file '%s'", config_path);
@@ -62,6 +63,9 @@ int main(int argc, char **argv) {
 
     LOG_DEBUG("Initializing file manager...");
     FileManager_CreateSingleton();
+
+    LOG_DEBUG("Loading game strings...");
+    StringTable_InitializeSingleton("eng");
 
     LOG_DEBUG("Creating window...");
     sdl_window = SDL_CreateWindow("Abyss Engine", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -152,6 +156,7 @@ int main(int argc, char **argv) {
     Cursor_Destroy();
     Palette_Finalize();
     AbyssConfiguration_DestroySingleton();
+    StringTable_DestroySingleton();
     FileManager_DestroySingleton();
 
     SDL_DestroyRenderer(sdl_renderer);

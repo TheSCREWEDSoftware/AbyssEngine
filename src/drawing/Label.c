@@ -59,27 +59,23 @@ void Label_InitializeCaches(void) { LOG_DEBUG("Initializing Label caches..."); }
 void Label_FinalizeCaches(void) { LOG_DEBUG("Finalizing Label caches..."); }
 
 void Label_SetText(Label *label, const char *text) {
-    if (label->texture != NULL) {
-        SDL_DestroyTexture(label->texture);
-    }
-
     if (label->text != NULL) {
-        if (strcmp(label->text, text) == 0) {
+        if (text != NULL && strcmp(label->text, text) == 0) {
             return;
         }
 
         free(label->text);
+        label->text = NULL;
+    }
+
+    if (label->texture != NULL) {
+        SDL_DestroyTexture(label->texture);
+        label->texture = NULL;
     }
 
     if (text == NULL || text[0] == '\0') {
         label->width  = 0;
         label->height = 0;
-
-        if (label->texture != NULL) {
-            SDL_DestroyTexture(label->texture);
-            label->texture = NULL;
-        }
-
         return;
     }
 
@@ -92,7 +88,7 @@ void Label_SetText(Label *label, const char *text) {
         uint8_t  frame_width;
         uint32_t frame_height;
 
-        Font_GetGlyphMetrics(label->Font, *ch, &frame_index, &frame_width, NULL);
+        Font_GetGlyphMetrics(label->Font, (unsigned char)*ch, &frame_index, &frame_width, NULL);
         DC6_GetFrameSize(label->DC6, frame_index, NULL, &frame_height);
 
         label->width  += frame_width;
@@ -118,7 +114,7 @@ void Label_SetText(Label *label, const char *text) {
         uint8_t  glyph_width;
         uint32_t frame_height;
 
-        Font_GetGlyphMetrics(label->Font, *ch, &frame_index, &glyph_width, NULL);
+        Font_GetGlyphMetrics(label->Font, (unsigned char)*ch, &frame_index, &glyph_width, NULL);
         DC6_GetFrameSize(label->DC6, frame_index, &frame_width, &frame_height);
 
         const uint8_t *frame_pixel_data = DC6_GetFramePixelData(label->DC6, frame_index);
@@ -159,6 +155,16 @@ void Label_Draw(const Label *Label, const int x, const int y) {
 
     const SDL_Rect dest = {x + Label->offset_x, y + Label->offset_y, Label->width, Label->height};
     SDL_RenderCopy(sdl_renderer, Label->texture, NULL, &dest);
+}
+
+void Label_GetSize(const Label *label, int *width, int *height) {
+    if (width != NULL) {
+        *width = label->width;
+    }
+
+    if (height != NULL) {
+        *height = label->height;
+    }
 }
 
 void Label_SetColor(const Label *label, const uint8_t r, const uint8_t g, const uint8_t b, const uint8_t a) {

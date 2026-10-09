@@ -35,9 +35,13 @@ sources = [
     'common/MpqStream.c',
     'common/RingBuffer.c',
 
+    'data/DataTable.c',
+    'data/StringTable.c',
+
     'drawing/Button.c',
     'drawing/Cursor.c',
     'drawing/Label.c',
+    'drawing/ListBox.c',
     'drawing/Sprite.c',
 
     'managers/AudioManager.c',
@@ -45,6 +49,7 @@ sources = [
     'managers/VideoManager.c',
 
     'scenes/Scene.c',
+    'scenes/SceneCatalog.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
 

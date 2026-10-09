@@ -84,6 +84,24 @@ void FileManager_AddMpq(const char *mpq_path) {
     file_manager->mpqs[file_manager->mpq_count - 1] = MPQ_Load(mpq_path);
 }
 
+bool FileManager_FileExists(const char *file_path) {
+    assert(file_manager != NULL);
+    assert(file_path != NULL);
+
+    char *path_fixed = fix_path(file_path);
+    bool  result     = false;
+
+    for (uint32_t mpq_idx = 0; mpq_idx < file_manager->mpq_count; mpq_idx++) {
+        if (MPQ_FileExists(file_manager->mpqs[mpq_idx], path_fixed)) {
+            result = true;
+            break;
+        }
+    }
+
+    free(path_fixed);
+    return result;
+}
+
 MpqStream *FileManager_OpenFile(const char *file_path) {
     assert(file_manager != NULL);
     assert(file_path != NULL);
@@ -111,6 +129,9 @@ MpqStream *FileManager_OpenFile(const char *file_path) {
 
             file_entry->hash = file_hash;
             file_entry->MPQ  = file_manager->mpqs[mpq_idx];
+
+            // MPQs are listed in priority order (d2exp before d2data, like the original game): first match wins.
+            break;
         }
 
         if (file_entry == NULL) {

@@ -90,6 +90,8 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
         }
 
         SDL_UpdateTexture(spr_frame->texture, NULL, pixels, (int)spr_frame->width * 4);
+        // Palette index 0 has zero alpha: blend by default so it shows as transparent.
+        SDL_SetTextureBlendMode(spr_frame->texture, SDL_BLENDMODE_BLEND);
         free(pixels);
     }
 

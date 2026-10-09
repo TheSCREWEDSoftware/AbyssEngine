@@ -89,6 +89,7 @@ struct Button {
     int                 height;
     bool                enabled;
     bool                visible;
+    bool                toggled; // drawn pressed in, e.g. the active tab of a group
     bool                hovered;
     bool                armed;           // left mouse button went down while over this button
     bool                prev_mouse_left; // left mouse button state on the previous update
@@ -175,6 +176,10 @@ void Button_SetVisible(Button *button, const bool visible) {
     }
 }
 
+void Button_SetToggled(Button *button, const bool toggled) { button->toggled = toggled; }
+
+bool Button_IsToggled(const Button *button) { return button->toggled; }
+
 void Button_SetClickHandler(Button *button, const ButtonClickHandler handler, void *user_data) {
     button->on_click  = handler;
     button->user_data = user_data;
@@ -229,7 +234,7 @@ void Button_Draw(const Button *button) {
 
     const ButtonLayout *layout     = button->layout;
     const int           segments   = layout->segments_x * layout->segments_y;
-    const bool          is_pressed = button->armed && button->hovered;
+    const bool          is_pressed = (button->armed && button->hovered) || button->toggled;
 
     int frame = layout->base_frame;
     if (is_pressed && layout->allow_frame_change) {

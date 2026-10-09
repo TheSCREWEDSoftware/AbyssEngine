@@ -1,5 +1,6 @@
 add_subdirectory(audio)
 add_subdirectory(common)
+add_subdirectory(data)
 add_subdirectory(drawing)
 add_subdirectory(managers)
 add_subdirectory(scenes)
