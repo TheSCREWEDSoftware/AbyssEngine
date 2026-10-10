@@ -35,8 +35,8 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Credits, Cinematics menus | ❌ | Buttons shown, disabled. |
 | Drawing the game's areas | 🧪 | Fixed areas (towns, Tristram, Monastery Gate, cloisters, every dungeon room) draw correctly in the Map Editor / Free Roam. |
 | Randomly built areas (Blood Moor, Cold Plains, dungeons' random layouts) | ❌ | The game assembles these from many small pieces (LvlMaze/LvlSub); not implemented. |
-| Walking | 🧪 | Free Roam / Testing Grounds. Collision with walls from the tiles. |
-| **Pathfinding** | ❌ | The player and monsters walk in a straight line to where they're going and stop (or slide along) at walls; nobody paths around obstacles. |
+| Walking | 🧪 | Free Roam / Testing Grounds. Collision with walls from the tiles; paths around obstacles. |
+| Pathfinding | 🧪 | A* on the sub-tile grid (8 directions, no cutting corners), smoothed into straight legs. The player walks around walls and objects to where you click (or to the closest reachable spot); chasing monsters go straight at you when nothing's in the way and around walls otherwise. Units don't avoid each other yet. |
 | NPCs in towns | 🧪 | Stand in their places; they don't walk around or talk. |
 | Combat | 🧪 | Debug toggle only: melee, life and damage from the game tables (normal difficulty), get-hit/death animations. No skills, levels, experience, blocking, missiles or AI beyond "walk at the player". |
 | Player stats, leveling, experience | ❌ | Life comes from the class's starting value. |

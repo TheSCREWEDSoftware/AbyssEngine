@@ -6,5 +6,6 @@ target_sources(${PROJECT_NAME}
         MapSession.c MapSession.h
         MapUnits.c MapUnits.h
         MonsterStats.c MonsterStats.h
+        Pathfinding.c Pathfinding.h
         Places.c Places.h
 )

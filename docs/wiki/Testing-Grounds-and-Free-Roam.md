@@ -11,7 +11,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 
 | | |
 |---|---|
-| **Left click** | Walk there (hold to keep following the mouse). With combat on, clicking a monster or NPC walks up and attacks it. |
+| **Left click** | Walk there, around walls and objects (hold to keep following the mouse). If the spot can't be reached you walk to the closest point you can. With combat on, clicking a monster or NPC walks up and attacks it. |
 | **Right click** | Drop the monster selected in the **Monsters** list |
 | **Shift + right click** | Remove the unit under the mouse |
 | **R** / Walk button | Walk or run |
@@ -42,7 +42,7 @@ Grounds) removes everything you dropped.
 A debugging switch for fighting between you and the NPCs/monsters:
 
 - **Off**: nobody fights; walk around freely.
-- **On**: NPCs and monsters within about 10 sub-tiles come at you and attack. Click one to attack it; its name and a
+- **On**: NPCs and monsters within about 10 sub-tiles come at you (around walls if needed) and attack. Click one to attack it; its name and a
   life bar show over it.
   - Monster life and damage: the game's own tables (`monstats.txt` percentages of the `MonLvl.txt` base values,
     normal difficulty). A Zombie has 7-12 life and hits for 1-3.
@@ -52,7 +52,7 @@ A debugging switch for fighting between you and the NPCs/monsters:
 
 ## Known limits
 
-- **No pathfinding**: you and the monsters walk in a straight line, sliding along walls, and stop when stuck.
+- Units don't avoid bumping into each other (they can stand in the same spot).
 - NPCs don't walk around or talk.
 - Combat is melee only, no skills, levels or experience.
 - Objects (chests, waypoints, doors) aren't there yet.

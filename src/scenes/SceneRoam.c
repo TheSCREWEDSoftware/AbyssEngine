@@ -15,6 +15,7 @@
 #include "../map/MapSession.h"
 #include "../map/MapUnits.h"
 #include "../map/MonsterStats.h"
+#include "../map/Pathfinding.h"
 #include "../map/Places.h"
 #include "CatalogCharacters.h"
 #include "SceneFreeRoam.h"
@@ -52,6 +53,9 @@
 #define RESPAWN_GRACE     3000 // after coming back, monsters leave you alone for a moment
 #define PLAYER_DAMAGE_MIN 6
 #define PLAYER_DAMAGE_MAX 14
+#define REPATH_PLAYER_MS  250 // while the mouse is held / the target moves
+#define REPATH_MONSTER_MS 500
+#define REPATH_DISTANCE   1.0f // re-plan when the goal moved this far
 #define HOVER_RANGE       2.5f
 
 #define DEFAULT_MAP_SIZE    32
@@ -104,6 +108,10 @@ typedef struct Unit {
     bool        dropped;  // added in the Testing Grounds (Clear removes these)
     bool        provoked; // hit by the player: fights back even far away
     uint64_t    next_attack;
+    MapPath     path;        // the way around walls to where it's going
+    float       path_goal_x; // where the path was planned to
+    float       path_goal_y;
+    uint64_t    next_repath;
     DrawContext draw;
 } Unit;
 
@@ -343,6 +351,47 @@ static bool Roam__Step(const Map *map, Unit *unit, const float tx, const float t
         return false;
     }
     return true;
+}
+
+// Plans a path to (tx, ty) when there is none yet, the goal moved, or it's time to look again
+static void Roam__PlanPath(const Map *map, Unit *unit, const float tx, const float ty, const uint64_t now,
+                           const uint64_t interval) {
+    const bool moved_goal = Roam__Distance(tx, ty, unit->path_goal_x, unit->path_goal_y) > REPATH_DISTANCE;
+    if (unit->path.next < unit->path.count && !moved_goal && now < unit->next_repath) {
+        return;
+    }
+    if (!moved_goal && unit->path.next >= unit->path.count && now < unit->next_repath) {
+        return; // tried recently and got nowhere
+    }
+    unit->path_goal_x = tx;
+    unit->path_goal_y = ty;
+    unit->next_repath = now + interval;
+    Map_FindPath(map, unit->x, unit->y, tx, ty, &unit->path);
+}
+
+// Walks along the planned path. Returns false when it has arrived or is stuck.
+static bool Roam__FollowPath(const Map *map, Unit *unit, const float speed, const float seconds) {
+    while (unit->path.next < unit->path.count) {
+        const float px = unit->path.x[unit->path.next];
+        const float py = unit->path.y[unit->path.next];
+        if (Roam__Distance(unit->x, unit->y, px, py) < ARRIVE_DISTANCE) {
+            unit->path.next++;
+            continue;
+        }
+        Roam__TurnTowards(&unit->turn, unit->x, unit->y, px, py);
+        if (Roam__Step(map, unit, px, py, speed, seconds)) {
+            return true;
+        }
+        unit->path.count = 0; // blocked
+        return false;
+    }
+    return false;
+}
+
+static void Roam__ClearPath(Unit *unit) {
+    unit->path.count  = 0;
+    unit->path.next   = 0;
+    unit->next_repath = 0;
 }
 
 static void Roam__Damage(Unit *unit, const int amount, const uint64_t now) {
@@ -737,9 +786,10 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         if (!combat_enabled || !Roam__IsAlive(target)) {
             roam->attack_target = -1;
         } else {
-            Roam__TurnTowards(&player->turn, player->x, player->y, target->x, target->y);
             if (Roam__Distance(player->x, player->y, target->x, target->y) <= ATTACK_RANGE) {
+                Roam__TurnTowards(&player->turn, player->x, player->y, target->x, target->y);
                 roam->moving = false;
+                Roam__ClearPath(player);
                 Roam__SetState(player, UNIT_ATTACK, now);
                 return;
             }
@@ -750,9 +800,12 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     }
 
     if (roam->moving) {
-        Roam__TurnTowards(&player->turn, player->x, player->y, player->target_x, player->target_y);
-        roam->moving = Roam__Step(roam->map, player, player->target_x, player->target_y,
-                                  roam->running ? RUN_SPEED : WALK_SPEED, seconds);
+        // Around walls, not through them
+        Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
+        roam->moving = Roam__FollowPath(roam->map, player, roam->running ? RUN_SPEED : WALK_SPEED, seconds);
+        if (!roam->moving) {
+            Roam__ClearPath(player);
+        }
     }
     Roam__SetState(player, roam->moving ? UNIT_WALK : UNIT_IDLE, now);
 }
@@ -786,8 +839,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             Roam__SetState(unit, UNIT_IDLE, now);
             continue;
         }
-        Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
         if (distance <= ATTACK_RANGE) {
+            Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
+            Roam__ClearPath(unit);
             if (now >= unit->next_attack) {
                 unit->next_attack = now + ATTACK_COOLDOWN;
                 Roam__SetState(unit, UNIT_ATTACK, now);
@@ -795,7 +849,18 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                 Roam__SetState(unit, UNIT_IDLE, now);
             }
         } else {
-            const bool moved = Roam__Step(roam->map, unit, player->x, player->y, unit->speed, seconds);
+            // Chase: straight at the player when nothing's in the way, otherwise around the walls. Re-planning is
+            // spread over time (each monster at its own moment) so a crowd doesn't all search in the same frame.
+            bool moved;
+            if (Map_HasClearLine(roam->map, unit->x, unit->y, player->x, player->y)) {
+                Roam__ClearPath(unit);
+                Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
+                moved = Roam__Step(roam->map, unit, player->x, player->y, unit->speed, seconds);
+            } else {
+                Roam__PlanPath(roam->map, unit, player->x, player->y, now,
+                               REPATH_MONSTER_MS + (uint64_t)((i % 8) * 37));
+                moved = Roam__FollowPath(roam->map, unit, unit->speed, seconds);
+            }
             Roam__SetState(unit, moved ? UNIT_WALK : UNIT_IDLE, now);
         }
     }
@@ -879,6 +944,9 @@ static void Roam__Update(SceneRoam *roam) {
             roam->player.target_x = sub_x;
             roam->player.target_y = sub_y;
             roam->moving          = true;
+            if (!roam->prev_left) {
+                Roam__ClearPath(&roam->player); // a new click: plan from scratch
+            }
         }
     }
     // Right: drop the selected monster; Shift+Right removes the nearest one
