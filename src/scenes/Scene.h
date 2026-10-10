@@ -8,6 +8,7 @@ typedef struct Scene {
     void (*render)(void *scene_ref);
     void (*update)(void *scene_ref, uint64_t delta);
     void (*free)(void **scene_ref);
+    const char *name; // "FreeRoam": shown (as "Free Roam") on the loading screen
 } Scene;
 
 void Scene_InitializeManager(void);
@@ -17,7 +18,7 @@ void Scene_UpdateCurrentScene(uint64_t delta);
 void Scene_Set(Scene *scene);
 
 #define DESCRIBE_SCENE_CALLBACKS(C) extern Scene C
-#define DEFINE_SCENE_CALLBACKS(C)   Scene C = {C##_Create, C##_Render, C##_Update, C##_Free}
+#define DEFINE_SCENE_CALLBACKS(C)   Scene C = {C##_Create, C##_Render, C##_Update, C##_Free, #C}
 #define SCENE_REF(C)                &C
 
 #endif // ABYSS_SCENE_H
