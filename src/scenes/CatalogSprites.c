@@ -6,6 +6,7 @@
 #include "../drawing/Button.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
+#include "../drawing/TabBar.h"
 #include "CatalogTheme.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -50,11 +51,27 @@ static const char *sprite_palettes[] = {
 
 #define SPRITE_PALETTE_COUNT (int)(sizeof(sprite_palettes) / sizeof(sprite_palettes[0]))
 
+typedef enum SpriteCategory {
+    SPRITE_CATEGORY_ITEMS,
+    SPRITE_CATEGORY_SKILLS,
+    SPRITE_CATEGORY_MENUS,
+    SPRITE_CATEGORY_UI,
+    SPRITE_CATEGORY_FONTS,
+    SPRITE_CATEGORY_OTHER,
+    SPRITE_CATEGORY_COUNT
+} SpriteCategory;
+
+static const char *sprite_category_names[SPRITE_CATEGORY_COUNT] = {"Items", "Skills", "Menus", "UI", "Fonts", "Other"};
+
 struct CatalogSprites {
     const char **paths; // full MPQ paths (point into the file manager's list)
     char       **names; // shortened names shown in the list
+    int         *categories;
     int          count;
-    int          selected;
+    int         *visible; // sprites of the current category
+    int          visible_count;
+    TabBar      *category_bar;
+    int          selected; // index into paths/names
     Sprite      *sprite;
     int          palette;
     int          direction;
@@ -111,6 +128,40 @@ static bool Sprites__Contains(const char *text, const char *needle) {
     return false;
 }
 
+// Sort a DC6 path into one of the category tabs by its folder.
+static SpriteCategory Sprites__Category(const char *path) {
+    if (Sprites__Contains(path, "\\items\\")) {
+        return SPRITE_CATEGORY_ITEMS;
+    }
+    if (Sprites__Contains(path, "\\ui\\spells\\") || Sprites__Contains(path, "\\ui\\hireables\\")) {
+        return SPRITE_CATEGORY_SKILLS;
+    }
+    if (Sprites__Contains(path, "\\font\\")) {
+        return SPRITE_CATEGORY_FONTS;
+    }
+    static const char *menu_folders[] = {"\\frontend\\",    "\\charselect\\", "\\bigmenu\\", "\\ui\\menu\\",
+                                         "\\betascreens\\", "\\loading",      "\\logo\\",    "trademark"};
+    for (size_t i = 0; i < sizeof(menu_folders) / sizeof(menu_folders[0]); i++) {
+        if (Sprites__Contains(path, menu_folders[i])) {
+            return SPRITE_CATEGORY_MENUS;
+        }
+    }
+    if (Sprites__Contains(path, "\\ui\\")) {
+        return SPRITE_CATEGORY_UI; // panels, cursors, automap, emblems, localized captions
+    }
+    return SPRITE_CATEGORY_OTHER;
+}
+
+static void Sprites__BuildVisible(CatalogSprites *sprites) {
+    const int category     = TabBar_GetSelected(sprites->category_bar);
+    sprites->visible_count = 0;
+    for (int i = 0; i < sprites->count; i++) {
+        if (sprites->categories[i] == category) {
+            sprites->visible[sprites->visible_count++] = i;
+        }
+    }
+}
+
 // DC6 files don't store colours; guess the palette the game uses for this folder.
 static int Sprites__GuessPalette(const char *path) {
     static const struct {
@@ -153,28 +204,43 @@ CatalogSprites *CatalogSprites_Create(void) {
     const char *const *files      = NULL;
     const int          file_count = FileManager_GetFileList(&files);
 
-    sprites->paths = calloc(file_count > 0 ? file_count : 1, sizeof(char *));
-    sprites->names = calloc(file_count > 0 ? file_count : 1, sizeof(char *));
+    sprites->paths      = calloc(file_count > 0 ? file_count : 1, sizeof(char *));
+    sprites->names      = calloc(file_count > 0 ? file_count : 1, sizeof(char *));
+    sprites->categories = calloc(file_count > 0 ? file_count : 1, sizeof(int));
+    sprites->visible    = calloc(file_count > 0 ? file_count : 1, sizeof(int));
     FAIL_IF_NULL(sprites->paths);
     FAIL_IF_NULL(sprites->names);
+    FAIL_IF_NULL(sprites->categories);
+    FAIL_IF_NULL(sprites->visible);
 
     for (int i = 0; i < file_count; i++) {
         if (!Sprites__EndsWith(files[i], ".dc6")) {
             continue;
         }
 
-        // "data\global\ui\FrontEnd\x.dc6" -> "global\ui\FrontEnd\x.dc6"
         const char *name = files[i];
         if (Sprites__StartsWith(name, "data\\")) {
             name += 5;
         }
+        // The category tab already says where it lives: "global\ui\panel\x.dc6" -> "panel\x.dc6"
+        static const char *folder_prefixes[] = {"global\\items\\", "global\\ui\\", "global\\", "local\\"};
+        for (size_t p = 0; p < sizeof(folder_prefixes) / sizeof(folder_prefixes[0]); p++) {
+            if (Sprites__StartsWith(name, folder_prefixes[p])) {
+                name += strlen(folder_prefixes[p]);
+                break;
+            }
+        }
 
-        sprites->paths[sprites->count] = files[i];
-        sprites->names[sprites->count] = strdup(name);
+        sprites->paths[sprites->count]      = files[i];
+        sprites->categories[sprites->count] = (int)Sprites__Category(files[i]);
+        sprites->names[sprites->count]      = strdup(name);
         FAIL_IF_NULL(sprites->names[sprites->count]);
         sprites->count++;
     }
     LOG_INFO("Catalog: %d DC6 sprites", sprites->count);
+
+    sprites->category_bar = TabBar_Create(sprite_category_names, SPRITE_CATEGORY_COUNT, SPRITE_CATEGORY_ITEMS);
+    Sprites__BuildVisible(sprites);
 
     sprites->name_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     Label_SetAlignment(sprites->name_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
@@ -209,6 +275,9 @@ void CatalogSprites_Destroy(CatalogSprites **sprites_ref) {
     }
     free(sprites->names);
     free(sprites->paths);
+    free(sprites->categories);
+    free(sprites->visible);
+    TabBar_Destroy(&sprites->category_bar);
 
     Label_Destroy(&sprites->name_label);
     for (int i = 0; i < SPRITES_INFO_LINES; i++) {
@@ -224,9 +293,23 @@ void CatalogSprites_Destroy(CatalogSprites **sprites_ref) {
     *sprites_ref = NULL;
 }
 
-int CatalogSprites_GetCount(const CatalogSprites *sprites) { return sprites->count; }
+int CatalogSprites_GetCount(const CatalogSprites *sprites) { return sprites->visible_count; }
 
-const char *CatalogSprites_GetName(const CatalogSprites *sprites, const int index) { return sprites->names[index]; }
+const char *CatalogSprites_GetName(const CatalogSprites *sprites, const int index) {
+    return sprites->names[sprites->visible[index]];
+}
+
+bool CatalogSprites_UpdateCategories(CatalogSprites *sprites, const int x, const int y, const int width) {
+    if (!TabBar_Update(sprites->category_bar, x, y, width)) {
+        return false;
+    }
+    Sprites__BuildVisible(sprites);
+    return true;
+}
+
+void CatalogSprites_DrawCategories(const CatalogSprites *sprites, const int x, const int y, const int width) {
+    TabBar_Draw(sprites->category_bar, x, y, width);
+}
 
 static int Sprites__FramesPerDirection(const CatalogSprites *sprites) {
     if (sprites->tile_columns > 0) {
@@ -338,7 +421,8 @@ static void Sprites__Load(CatalogSprites *sprites) {
     Sprites__DetectTiles(sprites);
 }
 
-void CatalogSprites_Select(CatalogSprites *sprites, const int index) {
+void CatalogSprites_Select(CatalogSprites *sprites, const int list_index) {
+    const int index = list_index >= 0 && list_index < sprites->visible_count ? sprites->visible[list_index] : -1;
     if (index == sprites->selected) {
         return;
     }

@@ -32,7 +32,7 @@
 #define CATALOG_LIST_Y      140
 #define CATALOG_LIST_WIDTH  300
 #define CATALOG_LIST_ROWS   20
-#define CATALOG_FILTER_H    24 // category bar above the list (Characters tab)
+#define CATALOG_FILTER_H    24 // category bar above the list (Sprites and Bestiary tabs)
 #define CATALOG_LIST_ROW_H  18
 #define CATALOG_DETAIL_X    360
 #define CATALOG_DETAIL_Y    112
@@ -51,16 +51,43 @@ typedef enum CatalogCategory {
     CATALOG_CATEGORY_COUNT
 } CatalogCategory;
 
+#define CATALOG_MAX_TYPES 48
+
+typedef enum ItemTier { ITEM_TIER_UNKNOWN, ITEM_TIER_NORMAL, ITEM_TIER_EXCEPTIONAL, ITEM_TIER_ELITE } ItemTier;
+
+typedef enum ItemSort {
+    ITEM_SORT_DEFAULT,
+    ITEM_SORT_NAME,
+    ITEM_SORT_LEVEL,
+    ITEM_SORT_REQUIRED_LEVEL,
+    ITEM_SORT_POWER, // damage (weapons) or defense (armor)
+    ITEM_SORT_STRENGTH,
+    ITEM_SORT_COUNT
+} ItemSort;
+
 typedef struct CatalogItem {
-    char name[CATALOG_TEXT_LEN];
-    char icon_path[CATALOG_TEXT_LEN];
-    char stat_lines[CATALOG_MAX_STAT_LINES][CATALOG_TEXT_LEN];
-    int  stat_line_count;
+    char     name[CATALOG_TEXT_LEN];
+    char     type_name[32];
+    ItemTier tier;
+    int      quality_level;
+    int      required_level;
+    int      required_strength;
+    int      power;
+    char     icon_path[CATALOG_TEXT_LEN];
+    char     stat_lines[CATALOG_MAX_STAT_LINES][CATALOG_TEXT_LEN];
+    int      stat_line_count;
 } CatalogItem;
 
 typedef struct CatalogItemList {
     CatalogItem *items;
     int          count;
+    // Filters (Type / Tier / Sort buttons)
+    char types[CATALOG_MAX_TYPES][32]; // distinct type names, sorted
+    int  type_count;
+    int  type_filter; // 0 = all, otherwise types[type_filter - 1]
+    int  tier_filter; // 0 = all, otherwise ItemTier
+    int  sort;        // ItemSort
+    bool has_tiers;
 } CatalogItemList;
 
 typedef struct SceneCatalog {
@@ -71,6 +98,11 @@ typedef struct SceneCatalog {
     Label             *stat_labels[CATALOG_MAX_STAT_LINES]; // "One-Hand Damage:" (right aligned, gold)
     Label             *stat_values[CATALOG_MAX_STAT_LINES]; // "8 to 14" (left aligned, white)
     Button            *backdrop_button;
+    Button            *bottom_button; // "Bottom" / "Top" (swapped when the list is at its end)
+    Button            *top_button;
+    Button            *type_button;
+    Button            *tier_button;
+    Button            *sort_button;
     Label             *empty_label;
     Sprite            *icon_sprite;
     int                icon_width;
@@ -197,6 +229,10 @@ typedef struct CatalogColumns {
     int inv_file;
     int inv_width;
     int inv_height;
+    int type;
+    int norm_code;
+    int uber_code;
+    int ultra_code;
 } CatalogColumns;
 
 static CatalogColumns Catalog__FindColumns(const DataTable *table) {
@@ -230,6 +266,10 @@ static CatalogColumns Catalog__FindColumns(const DataTable *table) {
         .inv_file          = DataTable_GetColumnIndex(table, "invfile"),
         .inv_width         = DataTable_GetColumnIndex(table, "invwidth"),
         .inv_height        = DataTable_GetColumnIndex(table, "invheight"),
+        .type              = DataTable_GetColumnIndex(table, "type"),
+        .norm_code         = DataTable_GetColumnIndex(table, "normcode"),
+        .uber_code         = DataTable_GetColumnIndex(table, "ubercode"),
+        .ultra_code        = DataTable_GetColumnIndex(table, "ultracode"),
     };
     return c;
 }
@@ -283,12 +323,65 @@ static void Catalog__AddCommonStats(const DataTable *t, const CatalogColumns *c,
 #undef CELL_INT
 }
 
+static int Catalog__CompareStrings(const void *a, const void *b) { return strcmp((const char *)a, (const char *)b); }
+
+static void Catalog__ResolveType(const DataTable *types, const int code_col, const int name_col, const char *code,
+                                 char *out, const size_t out_len) {
+    static const struct {
+        const char *game;
+        const char *shown;
+    } aliases[] = {
+        {"Hand to Hand",   "Claw"            },
+        {"Hand to Hand 2", "Claw"            },
+        {"Knife",          "Dagger"          },
+        {"Throwing Knife", "Throwing Knife"  },
+        {"Missile Potion", "Throwing Potion" },
+        {"Auric Shields",  "Paladin Shield"  },
+        {"Voodoo Heads",   "Necromancer Head"},
+        {"Primal Helm",    "Barbarian Helm"  },
+        {"Pelt",           "Druid Pelt"      },
+        {"Armor",          "Body Armor"      }
+    };
+
+    const char *name = code;
+    for (int r = 0; r < DataTable_GetRowCount(types); r++) {
+        if (strcmp(DataTable_GetString(types, r, code_col), code) == 0) {
+            name = DataTable_GetString(types, r, name_col);
+            break;
+        }
+    }
+    for (size_t a = 0; a < sizeof(aliases) / sizeof(aliases[0]); a++) {
+        if (strcmp(name, aliases[a].game) == 0) {
+            name = aliases[a].shown;
+            break;
+        }
+    }
+    Catalog__Sanitize(out, out_len, name);
+}
+
+static void Catalog__AddType(CatalogItemList *list, const char *type_name) {
+    for (int i = 0; i < list->type_count; i++) {
+        if (strcmp(list->types[i], type_name) == 0) {
+            return;
+        }
+    }
+    if (list->type_count < CATALOG_MAX_TYPES) {
+        snprintf(list->types[list->type_count++], sizeof(list->types[0]), "%s", type_name);
+    }
+}
+
 static void Catalog__LoadCategory(CatalogItemList *list, const CatalogCategory category) {
     const char *path = category == CATALOG_CATEGORY_WEAPONS ? EXCEL_WEAPONS : EXCEL_ARMOR;
     DataTable  *t    = DataTable_Load(path);
     const int   rows = DataTable_GetRowCount(t);
 
     const CatalogColumns c = Catalog__FindColumns(t);
+
+    // Item type names (itemtypes.txt), with friendlier names for a few
+    DataTable *types  = DataTable_Load(EXCEL_ITEMTYPES);
+    const int  t_name = DataTable_GetColumnIndex(types, "ItemType");
+    const int  t_code = DataTable_GetColumnIndex(types, "Code");
+    list->has_tiers   = c.norm_code >= 0 && c.uber_code >= 0 && c.ultra_code >= 0;
 
     list->items = calloc(rows > 0 ? rows : 1, sizeof(CatalogItem));
     list->count = 0;
@@ -305,6 +398,30 @@ static void Catalog__LoadCategory(CatalogItemList *list, const CatalogCategory c
 
         CatalogItem *item = &list->items[list->count++];
         Catalog__ResolveName(t, &c, row, item);
+        Catalog__ResolveType(types, t_code, t_name, DataTable_GetString(t, row, c.type), item->type_name,
+                             sizeof(item->type_name));
+        Catalog__AddType(list, item->type_name);
+
+        const char *code = DataTable_GetString(t, row, c.code);
+        if (list->has_tiers) {
+            if (strcmp(code, DataTable_GetString(t, row, c.ultra_code)) == 0) {
+                item->tier = ITEM_TIER_ELITE;
+            } else if (strcmp(code, DataTable_GetString(t, row, c.uber_code)) == 0) {
+                item->tier = ITEM_TIER_EXCEPTIONAL;
+            } else {
+                item->tier = ITEM_TIER_NORMAL;
+            }
+        }
+        item->quality_level     = DataTable_GetInt(t, row, c.level);
+        item->required_level    = c.level_req >= 0 ? DataTable_GetInt(t, row, c.level_req) : 0;
+        item->required_strength = DataTable_GetInt(t, row, c.req_str);
+        if (category == CATALOG_CATEGORY_WEAPONS) {
+            const int one_hand = DataTable_GetInt(t, row, c.max_damage);
+            const int two_hand = DataTable_GetInt(t, row, c.two_hand_max);
+            item->power        = two_hand > one_hand ? two_hand : one_hand;
+        } else {
+            item->power = DataTable_GetInt(t, row, c.max_ac);
+        }
         snprintf(item->icon_path, sizeof(item->icon_path), "/data/global/items/%s.dc6",
                  DataTable_GetString(t, row, c.inv_file));
 
@@ -343,7 +460,9 @@ static void Catalog__LoadCategory(CatalogItemList *list, const CatalogCategory c
 #undef HAS
 #undef CELL_INT
 
+    DataTable_Destroy(&types);
     DataTable_Destroy(&t);
+    qsort(list->types, (size_t)list->type_count, sizeof(list->types[0]), Catalog__CompareStrings);
     LOG_INFO("Catalog: %d items in '%s'", list->count, path);
 }
 
@@ -397,6 +516,18 @@ void *Catalog_Create(void) {
 
     result->backdrop_button = Button_Create(BUTTON_TYPE_MEDIUM, "Backdrop");
     Button_SetPosition(result->backdrop_button, 660, 16);
+
+    result->bottom_button = Button_Create(BUTTON_TYPE_MEDIUM, "Bottom");
+    result->top_button    = Button_Create(BUTTON_TYPE_MEDIUM, "Top");
+    Button_SetPosition(result->bottom_button, CATALOG_LIST_X + 136, 540);
+    Button_SetPosition(result->top_button, CATALOG_LIST_X + 136, 540);
+
+    result->type_button = Button_Create(BUTTON_TYPE_MEDIUM, "All Types");
+    result->tier_button = Button_Create(BUTTON_TYPE_MEDIUM, "All Tiers");
+    result->sort_button = Button_Create(BUTTON_TYPE_MEDIUM, "Unsorted");
+    Button_SetPosition(result->type_button, CATALOG_DETAIL_X, 540);
+    Button_SetPosition(result->tier_button, CATALOG_DETAIL_X + 136, 540);
+    Button_SetPosition(result->sort_button, CATALOG_DETAIL_X + 272, 540);
 
     result->back_button = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     Button_SetPosition(result->back_button, CATALOG_LIST_X, 540);
@@ -460,6 +591,89 @@ static bool Catalog__Matches(const char *text, const char *query) {
     return false;
 }
 
+// Tabs with a category bar above the list
+static bool Catalog__HasCategoryBar(const CatalogCategory category) {
+    return category == CATALOG_CATEGORY_CHARACTERS || category == CATALOG_CATEGORY_SPRITES;
+}
+
+static bool Catalog__IsItemCategory(const SceneCatalog *catalog) {
+    return catalog->current_category == CATALOG_CATEGORY_WEAPONS || catalog->current_category == CATALOG_CATEGORY_ARMOR;
+}
+
+static const CatalogItemList *catalog_sort_items = NULL; // qsort has no context argument
+
+static int Catalog__SortKey(const CatalogItem *item, const int sort) {
+    switch (sort) {
+    case ITEM_SORT_LEVEL:
+        return item->quality_level;
+    case ITEM_SORT_REQUIRED_LEVEL:
+        return item->required_level;
+    case ITEM_SORT_POWER:
+        return item->power;
+    case ITEM_SORT_STRENGTH:
+        return item->required_strength;
+    default:
+        return 0;
+    }
+}
+
+static int Catalog__CompareItems(const void *a, const void *b) {
+    const int          ia = *(const int *)a;
+    const int          ib = *(const int *)b;
+    const CatalogItem *x  = &catalog_sort_items->items[ia];
+    const CatalogItem *y  = &catalog_sort_items->items[ib];
+
+    int result;
+    if (catalog_sort_items->sort == ITEM_SORT_NAME) {
+        result = strcmp(x->name, y->name);
+    } else {
+        result = Catalog__SortKey(x, catalog_sort_items->sort) - Catalog__SortKey(y, catalog_sort_items->sort);
+    }
+    return result != 0 ? result : ia - ib; // keep the game's order for ties
+}
+
+// Class-specific type names are too long for a medium button ("Necromancer Head" -> "Necro Head").
+static void Catalog__ShortTypeName(const char *type_name, char *out, const size_t out_size) {
+    static const char *abbreviations[][2] = {
+        {"Amazon ",      "Ama "  },
+        {"Barbarian ",   "Barb " },
+        {"Necromancer ", "Necro "},
+        {"Paladin ",     "Pala " },
+        {"Sorceress ",   "Sorc " },
+        {"Assassin ",    "Assn " },
+        {"Throwing ",    "Throw "},
+    };
+
+    snprintf(out, out_size, "%s", type_name);
+    for (size_t i = 0; i < sizeof(abbreviations) / sizeof(abbreviations[0]); i++) {
+        const size_t long_len = strlen(abbreviations[i][0]);
+        if (strncmp(type_name, abbreviations[i][0], long_len) == 0) {
+            snprintf(out, out_size, "%s%s", abbreviations[i][1], type_name + long_len);
+            return;
+        }
+    }
+}
+
+static void Catalog__UpdateFilterButtons(SceneCatalog *catalog) {
+    if (!Catalog__IsItemCategory(catalog)) {
+        return;
+    }
+
+    const CatalogItemList *items        = &catalog->categories[catalog->current_category];
+    static const char     *tier_names[] = {"All Tiers", "Normal", "Exceptional", "Elite"};
+    const char            *power_name   = catalog->current_category == CATALOG_CATEGORY_WEAPONS ? "Damage" : "Defense";
+    const char *sort_names[ITEM_SORT_COUNT] = {"Unsorted", "Name", "Level", "Req Lvl", power_name, "Strength"};
+
+    char type_text[32] = "All Types";
+    if (items->type_filter > 0) {
+        Catalog__ShortTypeName(items->types[items->type_filter - 1], type_text, sizeof(type_text));
+    }
+    Button_SetText(catalog->type_button, type_text);
+    Button_SetText(catalog->tier_button, tier_names[items->tier_filter]);
+    Button_SetText(catalog->sort_button, sort_names[items->sort]);
+    Button_SetEnabled(catalog->tier_button, items->has_tiers);
+}
+
 static void Catalog__RefreshList(SceneCatalog *catalog) {
     const int   source_count = Catalog__SourceCount(catalog);
     const char *query        = TextBox_GetText(catalog->search_box);
@@ -472,20 +686,44 @@ static void Catalog__RefreshList(SceneCatalog *catalog) {
     const char **names = calloc(source_count > 0 ? source_count : 1, sizeof(char *));
     FAIL_IF_NULL(names);
 
+    CatalogItemList *items = Catalog__IsItemCategory(catalog) ? &catalog->categories[catalog->current_category] : NULL;
+
     for (int i = 0; i < source_count; i++) {
         const char *name = Catalog__SourceName(catalog, i);
-        if (Catalog__Matches(name, query)) {
-            names[catalog->visible_count]            = name;
-            catalog->visible[catalog->visible_count] = i;
-            catalog->visible_count++;
+        bool        keep = Catalog__Matches(name, query);
+
+        if (items != NULL) {
+            const CatalogItem *item = &items->items[i];
+            keep = keep || Catalog__Matches(item->type_name, query); // "axe" also finds Throwing Axes
+            if (items->type_filter > 0 && strcmp(item->type_name, items->types[items->type_filter - 1]) != 0) {
+                keep = false;
+            }
+            if (items->tier_filter > 0 && (int)item->tier != items->tier_filter) {
+                keep = false;
+            }
+        }
+
+        if (keep) {
+            catalog->visible[catalog->visible_count++] = i;
         }
     }
+
+    if (items != NULL && items->sort != ITEM_SORT_DEFAULT) {
+        catalog_sort_items = items;
+        qsort(catalog->visible, (size_t)catalog->visible_count, sizeof(int), Catalog__CompareItems);
+        catalog_sort_items = NULL;
+    }
+    for (int i = 0; i < catalog->visible_count; i++) {
+        names[i] = Catalog__SourceName(catalog, catalog->visible[i]);
+    }
+    Catalog__UpdateFilterButtons(catalog);
 
     ListBox_SetItems(catalog->list_box, names, catalog->visible_count);
     free(names);
 
-    char count_text[48];
-    if (query[0] != '\0') {
+    char       count_text[48];
+    const bool filtered = items != NULL && (items->type_filter > 0 || items->tier_filter > 0);
+    if (query[0] != '\0' || filtered) {
         snprintf(count_text, sizeof(count_text), "%d of %d", catalog->visible_count, source_count);
     } else {
         snprintf(count_text, sizeof(count_text), "%d entries", source_count);
@@ -507,7 +745,10 @@ static void Catalog__SelectCategory(SceneCatalog *catalog, const CatalogCategory
 
     TextBox_Clear(catalog->search_box); // a search in one tab rarely makes sense in another
     ListBox_SetPosition(catalog->list_box, CATALOG_LIST_X,
-                        category == CATALOG_CATEGORY_CHARACTERS ? CATALOG_LIST_Y + CATALOG_FILTER_H : CATALOG_LIST_Y);
+                        Catalog__HasCategoryBar(category) ? CATALOG_LIST_Y + CATALOG_FILTER_H : CATALOG_LIST_Y);
+    // The category bar takes one row's worth of space so the list still ends above the bottom buttons
+    ListBox_SetVisibleRows(catalog->list_box,
+                           Catalog__HasCategoryBar(category) ? CATALOG_LIST_ROWS - 1 : CATALOG_LIST_ROWS);
     Catalog__RefreshList(catalog);
 }
 
@@ -628,6 +869,17 @@ void Catalog_Render(void *scene_ref) {
     Button_Draw(catalog->back_button);
     Button_Draw(catalog->backdrop_button);
 
+    if (!CatalogClasses_IsSkillTreeOpen(catalog->classes)) {
+        if (ListBox_IsScrollable(catalog->list_box)) {
+            Button_Draw(ListBox_IsAtEnd(catalog->list_box) ? catalog->top_button : catalog->bottom_button);
+        }
+        if (Catalog__IsItemCategory(catalog)) {
+            Button_Draw(catalog->type_button);
+            Button_Draw(catalog->tier_button);
+            Button_Draw(catalog->sort_button);
+        }
+    }
+
     const CatalogColor list_color = CatalogTheme_Panel();
     ListBox_SetBackground(catalog->list_box, list_color.r, list_color.g, list_color.b, list_color.a);
 
@@ -637,13 +889,16 @@ void Catalog_Render(void *scene_ref) {
     }
 
     TextBox_Draw(catalog->search_box);
-    const bool has_filter = catalog->current_category == CATALOG_CATEGORY_CHARACTERS;
-    if (has_filter) {
+    const bool has_filter = Catalog__HasCategoryBar(catalog->current_category);
+    if (catalog->current_category == CATALOG_CATEGORY_CHARACTERS) {
         CatalogCharacters_DrawCategories(catalog->characters, CATALOG_LIST_X, CATALOG_LIST_Y, CATALOG_LIST_WIDTH);
+    } else if (catalog->current_category == CATALOG_CATEGORY_SPRITES) {
+        CatalogSprites_DrawCategories(catalog->sprites, CATALOG_LIST_X, CATALOG_LIST_Y, CATALOG_LIST_WIDTH);
     }
     ListBox_Draw(catalog->list_box);
     Label_Draw(catalog->count_label, CATALOG_LIST_X + CATALOG_LIST_WIDTH,
-               CATALOG_LIST_Y + (has_filter ? CATALOG_FILTER_H : 0) + (CATALOG_LIST_ROWS * CATALOG_LIST_ROW_H) + 12);
+               CATALOG_LIST_Y + (has_filter ? CATALOG_FILTER_H - CATALOG_LIST_ROW_H : 0) +
+                   (CATALOG_LIST_ROWS * CATALOG_LIST_ROW_H) + 12);
 
     // Detail panel
     const SDL_Rect panel = {CATALOG_DETAIL_X, CATALOG_DETAIL_Y, CATALOG_DETAIL_W, CATALOG_DETAIL_H};
@@ -694,8 +949,43 @@ void Catalog_Update(void *scene_ref, const uint64_t delta) {
         Catalog__RefreshList(catalog);
     }
 
+    // Bottom / Top
+    Button *end_button = ListBox_IsAtEnd(catalog->list_box) ? catalog->top_button : catalog->bottom_button;
+    if (ListBox_IsScrollable(catalog->list_box) && Button_Update(end_button)) {
+        if (end_button == catalog->top_button) {
+            ListBox_ScrollToStart(catalog->list_box);
+        } else {
+            ListBox_ScrollToEnd(catalog->list_box);
+        }
+    }
+
+    // Weapon / armor filters
+    if (Catalog__IsItemCategory(catalog)) {
+        CatalogItemList *items   = &catalog->categories[catalog->current_category];
+        bool             changed = false;
+        if (Button_Update(catalog->type_button)) {
+            items->type_filter = (items->type_filter + 1) % (items->type_count + 1);
+            changed            = true;
+        }
+        if (Button_Update(catalog->tier_button)) {
+            items->tier_filter = (items->tier_filter + 1) % 4;
+            changed            = true;
+        }
+        if (Button_Update(catalog->sort_button)) {
+            items->sort = (items->sort + 1) % ITEM_SORT_COUNT;
+            changed     = true;
+        }
+        if (changed) {
+            Catalog__RefreshList(catalog);
+        }
+    }
+
     if (catalog->current_category == CATALOG_CATEGORY_CHARACTERS &&
         CatalogCharacters_UpdateCategories(catalog->characters, CATALOG_LIST_X, CATALOG_LIST_Y, CATALOG_LIST_WIDTH)) {
+        Catalog__RefreshList(catalog);
+    }
+    if (catalog->current_category == CATALOG_CATEGORY_SPRITES &&
+        CatalogSprites_UpdateCategories(catalog->sprites, CATALOG_LIST_X, CATALOG_LIST_Y, CATALOG_LIST_WIDTH)) {
         Catalog__RefreshList(catalog);
     }
 
@@ -737,6 +1027,11 @@ void Catalog_Free(void **scene_ref) {
     free(catalog->visible);
     Button_Destroy(&catalog->back_button);
     Button_Destroy(&catalog->backdrop_button);
+    Button_Destroy(&catalog->bottom_button);
+    Button_Destroy(&catalog->top_button);
+    Button_Destroy(&catalog->type_button);
+    Button_Destroy(&catalog->tier_button);
+    Button_Destroy(&catalog->sort_button);
     ListBox_Destroy(&catalog->list_box);
     Label_Destroy(&catalog->title_label);
     Label_Destroy(&catalog->count_label);

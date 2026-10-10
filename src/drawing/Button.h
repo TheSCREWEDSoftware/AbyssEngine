@@ -30,6 +30,7 @@ typedef void (*ButtonClickHandler)(void *user_data);
 
 Button *Button_Create(ButtonType button_type, const char *text);
 void    Button_Destroy(Button **button);
+void    Button_SetText(Button *button, const char *text);
 void    Button_SetPosition(Button *button, int x, int y);
 void    Button_GetSize(const Button *button, int *width, int *height);
 void    Button_SetEnabled(Button *button, bool enabled);

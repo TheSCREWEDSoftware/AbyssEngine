@@ -8,6 +8,7 @@
 #include "../drawing/Button.h"
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
+#include "../drawing/TabBar.h"
 #include "../managers/InputManager.h"
 #include "CatalogTheme.h"
 #include <ctype.h>
@@ -21,7 +22,6 @@
 #define CHARACTERS_TEXT_LEN      96
 #define CHARACTERS_MAX_SCALE     2.0f
 #define CHARACTERS_PALETTE       PALETTE_ACT_1
-#define CHARACTERS_CATEGORY_H    20
 #define CHARACTERS_DEFAULT_SPEED 2 // index into character_speeds: 0.75x
 
 // Playback speed only changes how often frames advance, not the screen refresh rate.
@@ -142,7 +142,7 @@ struct CatalogCharacters {
 
     Label  *name_label;
     Label  *info_labels[1 + CHARACTERS_STAT_LINES];
-    Label  *category_labels[CHARACTER_CATEGORY_COUNT];
+    TabBar *category_bar;
     Label  *empty_label;
     Button *turn_left;
     Button *turn_right;
@@ -151,7 +151,6 @@ struct CatalogCharacters {
     Button *prev_mode;
     Button *next_mode;
     Button *speed;
-    bool    prev_mouse_left;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -509,12 +508,8 @@ CatalogCharacters *CatalogCharacters_Create(void) {
         characters->info_labels[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
         Label_SetAlignment(characters->info_labels[i], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     }
-    for (int c = 0; c < CHARACTER_CATEGORY_COUNT; c++) {
-        characters->category_labels[c] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        Label_SetText(characters->category_labels[c], category_names[c]);
-        Label_SetAlignment(characters->category_labels[c], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
-    }
-    characters->empty_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    characters->category_bar = TabBar_Create(category_names, CHARACTER_CATEGORY_COUNT, characters->category);
+    characters->empty_label  = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     Label_SetText(characters->empty_label, "No graphics for this animation");
     Label_SetAlignment(characters->empty_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
 
@@ -543,9 +538,7 @@ void CatalogCharacters_Destroy(CatalogCharacters **characters_ref) {
     for (int i = 0; i < 1 + CHARACTERS_STAT_LINES; i++) {
         Label_Destroy(&characters->info_labels[i]);
     }
-    for (int c = 0; c < CHARACTER_CATEGORY_COUNT; c++) {
-        Label_Destroy(&characters->category_labels[c]);
-    }
+    TabBar_Destroy(&characters->category_bar);
     Label_Destroy(&characters->empty_label);
     Button_Destroy(&characters->turn_left);
     Button_Destroy(&characters->turn_right);
@@ -568,72 +561,17 @@ const char *CatalogCharacters_GetName(const CatalogCharacters *characters, const
 // ---------------------------------------------------------------------------------------------------------------------
 // Category bar
 
-// Tabs share the bar width in proportion to their text, so longer names get more room.
-static SDL_Rect Characters__CategoryRect(const CatalogCharacters *characters, const int x, const int y, const int width,
-                                         const int category) {
-    int text_w[CHARACTER_CATEGORY_COUNT];
-    int total = 0;
-    for (int c = 0; c < CHARACTER_CATEGORY_COUNT; c++) {
-        Label_GetSize(characters->category_labels[c], &text_w[c], NULL);
-        total += text_w[c];
-    }
-
-    const int padding = (width - total) / CHARACTER_CATEGORY_COUNT;
-    int       left    = x;
-    for (int c = 0; c < category; c++) {
-        left += text_w[c] + padding;
-    }
-
-    const int      right = (category == CHARACTER_CATEGORY_COUNT - 1) ? x + width : left + text_w[category] + padding;
-    const SDL_Rect rect  = {left, y, right - left, CHARACTERS_CATEGORY_H};
-    return rect;
-}
-
 bool CatalogCharacters_UpdateCategories(CatalogCharacters *characters, const int x, const int y, const int width) {
-    int  mouse_x;
-    int  mouse_y;
-    bool mouse_left;
-    InputManager_GetMousePosition(&mouse_x, &mouse_y);
-    InputManager_GetMouseButtons(&mouse_left, NULL, NULL);
-
-    const bool clicked          = !mouse_left && characters->prev_mouse_left;
-    characters->prev_mouse_left = mouse_left;
-    if (!clicked) {
+    if (!TabBar_Update(characters->category_bar, x, y, width)) {
         return false;
     }
-
-    for (int c = 0; c < CHARACTER_CATEGORY_COUNT; c++) {
-        const SDL_Rect rect = Characters__CategoryRect(characters, x, y, width, c);
-        if (mouse_x >= rect.x && mouse_x < rect.x + rect.w && mouse_y >= rect.y && mouse_y < rect.y + rect.h &&
-            c != characters->category) {
-            characters->category = c;
-            Characters__BuildVisible(characters);
-            return true;
-        }
-    }
-    return false;
+    characters->category = TabBar_GetSelected(characters->category_bar);
+    Characters__BuildVisible(characters);
+    return true;
 }
 
 void CatalogCharacters_DrawCategories(const CatalogCharacters *characters, const int x, const int y, const int width) {
-    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    for (int c = 0; c < CHARACTER_CATEGORY_COUNT; c++) {
-        const SDL_Rect rect     = Characters__CategoryRect(characters, x, y, width, c);
-        const bool     selected = c == characters->category;
-
-        SDL_SetRenderDrawColor(sdl_renderer, selected ? 120 : 0, selected ? 95 : 0, selected ? 40 : 0,
-                               selected ? 220 : 170);
-        SDL_RenderFillRect(sdl_renderer, &rect);
-        SDL_SetRenderDrawColor(sdl_renderer, 100, 85, 55, 255);
-        SDL_RenderDrawRect(sdl_renderer, &rect);
-
-        Label *label = characters->category_labels[c];
-        if (selected) {
-            Label_SetColor(label, 0xFF, 0xE8, 0xA0, 0xFF);
-        } else {
-            Label_SetColor(label, 0xC7, 0xB3, 0x77, 0xFF);
-        }
-        Label_Draw(label, rect.x + (rect.w / 2), rect.y + (rect.h / 2));
-    }
+    TabBar_Draw(characters->category_bar, x, y, width);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

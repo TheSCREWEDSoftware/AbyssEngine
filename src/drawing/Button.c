@@ -29,7 +29,7 @@ typedef struct ButtonLayout {
 #define BUTTON_COLOR_LIGHT_GREY_A75  0x808080C3
 #define BUTTON_PRESSED_TEXT_OFFSET_X (-2)
 #define BUTTON_PRESSED_TEXT_OFFSET_Y 2
-#define BUTTON_TEXT_MARGIN           24 // room for the button's end caps
+#define BUTTON_TEXT_MARGIN           34 // room for the button's end caps
 
 // Frame layout of the *ButtonBlank.dc6 files: all segments of the normal state, followed by all segments of the
 // pressed state.
@@ -121,6 +121,11 @@ Button *Button_Create(const ButtonType button_type, const char *text) {
         button->height += h;
     }
 
+    Button_SetText(button, text);
+    return button;
+}
+
+void Button_SetText(Button *button, const char *text) {
     // The button fonts only contain upper case glyphs.
     char *upper_text = strdup(text != NULL ? text : "");
     FAIL_IF_NULL(upper_text);
@@ -128,21 +133,27 @@ Button *Button_Create(const ButtonType button_type, const char *text) {
         *ch = (char)toupper((unsigned char)*ch);
     }
 
+    if (button->label != NULL) {
+        Label_Destroy(&button->label);
+    }
     button->label = Label_Create(button->layout->font_path, PALETTE_UNITS);
     Label_SetText(button->label, upper_text);
 
-    // Text too wide for the button: fall back to the smaller Exocet font
-    int text_w = 0;
-    Label_GetSize(button->label, &text_w, NULL);
-    if (text_w > button->width - BUTTON_TEXT_MARGIN && strcmp(button->layout->font_path, FONTS_FONTEXOCET8) != 0) {
+    // Text too wide for the button: fall back to smaller fonts
+    static const char *fallback_fonts[] = {FONTS_FONTREDICULOUS, FONTS_FONTEXOCET8};
+    for (size_t i = 0; i < sizeof(fallback_fonts) / sizeof(fallback_fonts[0]); i++) {
+        int text_w = 0;
+        Label_GetSize(button->label, &text_w, NULL);
+        if (text_w <= button->width - BUTTON_TEXT_MARGIN) {
+            break;
+        }
         Label_Destroy(&button->label);
-        button->label = Label_Create(FONTS_FONTEXOCET8, PALETTE_UNITS);
+        button->label = Label_Create(fallback_fonts[i], PALETTE_UNITS);
         Label_SetText(button->label, upper_text);
     }
+
     Label_SetAlignment(button->label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     free(upper_text);
-
-    return button;
 }
 
 void Button_Destroy(Button **button) {

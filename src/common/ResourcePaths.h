@@ -19,6 +19,7 @@
 #define EXCEL_SKILLDESC "/data/global/excel/skilldesc.txt"
 #define EXCEL_MONSTATS  "/data/global/excel/monstats.txt"
 #define EXCEL_MONSTATS2 "/data/global/excel/monstats2.txt"
+#define EXCEL_ITEMTYPES "/data/global/excel/itemtypes.txt"
 #define EXCEL_OBJECTS   "/data/global/excel/objects.txt"
 
 // -- Buttons

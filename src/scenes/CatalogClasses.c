@@ -6,6 +6,7 @@
 #include "../data/DataTable.h"
 #include "../data/StringTable.h"
 #include "../drawing/Button.h"
+#include "../drawing/Figure.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
 #include "../managers/InputManager.h"
@@ -45,30 +46,36 @@
 #define TREE_INFO_LINE_H    18
 #define DETAIL_FIGURE_X     80
 #define DETAIL_FIGURE_Y     235
-#define DETAIL_STATS_COLUMN 330 // labels end / values start here
+#define DETAIL_STATS_COLUMN 360 // labels end / values start here
 #define DETAIL_FIGURE_BOX_W 150
 #define DETAIL_FIGURE_BOX_H 300
 #define DETAIL_STAT_LINE_H  19
+#define DETAIL_FIGURE_SCALE 3 // max integer zoom of the in-town figure
+#define DETAIL_FIGURE_SPEED 0.75f
 
 // Per-class graphics. Classes are matched by their charstats.txt name.
 typedef struct ClassVisual {
     const char *name;
-    const char *code;        // skills.txt "charclass"
-    const char *icon_prefix; // /data/global/ui/spells/<prefix>skillicon.dc6
-    char        tree_letter; // /data/global/ui/spells/skltree_<letter>_back.dc6
-    const char *figure_path; // character select idle animation
+    const char *code;         // skills.txt "charclass"
+    const char *icon_prefix;  // /data/global/ui/spells/<prefix>skillicon.dc6
+    char        tree_letter;  // /data/global/ui/spells/skltree_<letter>_back.dc6
+    const char *figure_token; // data/global/chars/<token>: lit in-town figure
+    const char *figure_path;  // character select idle animation (fallback; dark, lit by the campfire)
     // Skill tab caption for pages 1..3, one StrSklTree<n> string per line (as shown on the in-game tabs).
     int tab_lines[SKILL_PAGES][SKILL_TAB_LABEL_LINES];
 } ClassVisual;
 
 static const ClassVisual class_visuals[] = {
-    {"Amazon",      "ama", "am", 'a', "/data/global/ui/FrontEnd/amazon/amnu1.dc6",      {{10, 11}, {8, 9}, {6, 7}}   },
-    {"Sorceress",   "sor", "so", 's', "/data/global/ui/FrontEnd/sorceress/sonu1.dc6",   {{25, 5}, {24, 5}, {23, 5}}  },
-    {"Necromancer", "nec", "ne", 'n', "/data/global/ui/FrontEnd/necromancer/nenu1.dc6", {{19}, {17, 18, 5}, {16, 5}} },
-    {"Paladin",     "pal", "pa", 'p', "/data/global/ui/FrontEnd/paladin/panu1.dc6",     {{15, 4}, {14, 13}, {12, 13}}},
-    {"Barbarian",   "bar", "ba", 'b', "/data/global/ui/FrontEnd/barbarian/banu1.dc6",   {{15, 4}, {21, 22}, {20}}    },
-    {"Druid",       "dru", "dr", 'd', "/data/global/ui/FrontEnd/druid/dznu1.dc6",       {{26}, {27, 28}, {29}}       },
-    {"Assassin",    "ass", "as", 'i', "/data/global/ui/FrontEnd/assassin/asnu1.dc6",    {{30}, {31, 32}, {33, 34}}   },
+    {"Amazon",      "ama", "am", 'a', "am", "/data/global/ui/FrontEnd/amazon/amnu1.dc6",    {{10, 11}, {8, 9}, {6, 7}}   },
+    {"Sorceress",   "sor", "so", 's', "so", "/data/global/ui/FrontEnd/sorceress/sonu1.dc6", {{25, 5}, {24, 5}, {23, 5}}  },
+    {"Necromancer",
+     "nec",                "ne",
+     'n',                             "ne",
+     "/data/global/ui/FrontEnd/necromancer/nenu1.dc6",                                      {{19}, {17, 18, 5}, {16, 5}} },
+    {"Paladin",     "pal", "pa", 'p', "pa", "/data/global/ui/FrontEnd/paladin/panu1.dc6",   {{15, 4}, {14, 13}, {12, 13}}},
+    {"Barbarian",   "bar", "ba", 'b', "ba", "/data/global/ui/FrontEnd/barbarian/banu1.dc6", {{15, 4}, {21, 22}, {20}}    },
+    {"Druid",       "dru", "dr", 'd', "dz", "/data/global/ui/FrontEnd/druid/dznu1.dc6",     {{26}, {27, 28}, {29}}       },
+    {"Assassin",    "ass", "as", 'i', "ai", "/data/global/ui/FrontEnd/assassin/asnu1.dc6",  {{30}, {31, 32}, {33, 34}}   },
 };
 
 #define CLASS_VISUAL_COUNT (int)(sizeof(class_visuals) / sizeof(class_visuals[0]))
@@ -105,11 +112,14 @@ struct CatalogClasses {
     int       selected_class;
 
     // Detail panel
-    Sprite *figure_sprite;
-    Label  *stat_labels[CLASS_STAT_LINES]; // "Strength:" (right aligned)
-    Label  *stat_values[CLASS_STAT_LINES]; // "10"
-    Label  *class_title_label;
-    Button *skill_tree_button;
+    Sprite  *figure_sprite;
+    Figure  *figure;
+    int      figure_frame;
+    uint64_t figure_tick;
+    Label   *stat_labels[CLASS_STAT_LINES]; // "Strength:" (right aligned)
+    Label   *stat_values[CLASS_STAT_LINES]; // "10"
+    Label   *class_title_label;
+    Button  *skill_tree_button;
 
     // Skill tree view
     bool    tree_open;
@@ -466,6 +476,7 @@ void CatalogClasses_Destroy(CatalogClasses **classes_ref) {
     }
     CatalogClasses *classes = *classes_ref;
 
+    Figure_Destroy(&classes->figure);
     Classes__FreeSprite(&classes->figure_sprite);
     Classes__FreeSprite(&classes->tree_sprite);
     Classes__FreeSprite(&classes->icon_sprite);
@@ -506,6 +517,7 @@ void CatalogClasses_Select(CatalogClasses *classes, const int index) {
 
     classes->selected_class = index;
     Classes__FreeSprite(&classes->figure_sprite);
+    Figure_Destroy(&classes->figure);
 
     if (index < 0 || index >= classes->class_count) {
         return;
@@ -532,7 +544,20 @@ void CatalogClasses_Select(CatalogClasses *classes, const int index) {
         Label_SetColor(classes->stat_values[i], 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
-    if (FileManager_FileExists(info->visual->figure_path)) {
+    // The character select figures stand in the dark by the campfire; show the lit in-town figure instead.
+    FigureSpec spec = {.base = "chars"};
+    snprintf(spec.token, sizeof(spec.token), "%s", info->visual->figure_token);
+    snprintf(spec.weapon_class, sizeof(spec.weapon_class), "hth");
+    for (int c = 0; c < COF_COMPONENT_COUNT; c++) {
+        if (c != COF_COMPONENT_RH && c != COF_COMPONENT_LH && c != COF_COMPONENT_SH) {
+            snprintf(spec.armor[c], sizeof(spec.armor[c]), "lit");
+        }
+    }
+    classes->figure       = Figure_Create(&spec, "tn", PALETTE_ACT_1);
+    classes->figure_frame = 0;
+    classes->figure_tick  = SDL_GetTicks64();
+
+    if (classes->figure == NULL && FileManager_FileExists(info->visual->figure_path)) {
         classes->figure_sprite = Sprite_Create(info->visual->figure_path, PALETTE_FECHAR);
         Sprite_SetPlayLength(classes->figure_sprite, 2.0);
     }
@@ -543,7 +568,41 @@ bool CatalogClasses_UpdateDetail(CatalogClasses *classes) {
         return false;
     }
 
+    if (classes->figure != NULL) {
+        const uint64_t now      = SDL_GetTicks64();
+        const int      frame_ms = (int)((float)Figure_GetFrameMilliseconds(classes->figure) / DETAIL_FIGURE_SPEED);
+        const int      frames   = Figure_GetFramesPerDirection(classes->figure);
+        while (frame_ms > 0 && frames > 0 && now - classes->figure_tick >= (uint64_t)frame_ms) {
+            classes->figure_tick  += (uint64_t)frame_ms;
+            classes->figure_frame  = (classes->figure_frame + 1) % frames;
+        }
+    }
+
     return Button_Update(classes->skill_tree_button);
+}
+
+static void Classes__DrawFigure(const CatalogClasses *classes, const SDL_Rect *box) {
+    int xmin;
+    int ymin;
+    int xmax;
+    int ymax;
+    Figure_GetBounds(classes->figure, &xmin, &ymin, &xmax, &ymax);
+    const int width  = xmax - xmin > 0 ? xmax - xmin : 1;
+    const int height = ymax - ymin > 0 ? ymax - ymin : 1;
+
+    int scale = DETAIL_FIGURE_SCALE;
+    while (scale > 1 && (width * scale > box->w - 16 || height * scale > box->h - 16)) {
+        scale--;
+    }
+
+    // Centre the bounding box; the figure is drawn relative to its feet
+    const int anchor_x = box->x + (box->w / 2) - ((xmin + (width / 2)) * scale);
+    const int anchor_y = box->y + ((box->h - (height * scale)) / 2) - (ymin * scale);
+
+    // Facing the viewer: direction 4 is south for both 8 and 16 direction figures
+    SDL_RenderSetClipRect(sdl_renderer, box);
+    Figure_Draw(classes->figure, 4, classes->figure_frame, anchor_x, anchor_y, (float)scale);
+    SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
 
 void CatalogClasses_DrawDetail(const CatalogClasses *classes, const SDL_Rect *panel) {
@@ -555,7 +614,9 @@ void CatalogClasses_DrawDetail(const CatalogClasses *classes, const SDL_Rect *pa
 
     const SDL_Rect figure_box = {panel->x + 10, panel->y + 44, DETAIL_FIGURE_BOX_W, DETAIL_FIGURE_BOX_H};
     CatalogTheme_FillPreview(&figure_box);
-    if (classes->figure_sprite != NULL) {
+    if (classes->figure != NULL) {
+        Classes__DrawFigure(classes, &figure_box);
+    } else if (classes->figure_sprite != NULL) {
         Sprite_DrawAnimated(classes->figure_sprite, panel->x + DETAIL_FIGURE_X, panel->y + DETAIL_FIGURE_Y);
     }
 

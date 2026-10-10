@@ -8,7 +8,9 @@
 #include <string.h>
 
 #define LIST_BOX_TEXT_PADDING_X  6
-#define LIST_BOX_SCROLLBAR_WIDTH 6
+#define LIST_BOX_SCROLLBAR_WIDTH 10
+#define LIST_BOX_SCROLLBAR_HIT   14 // a little wider than drawn, easier to grab
+#define LIST_BOX_MIN_THUMB       16
 
 struct ListBox {
     const char *font_path;
@@ -19,12 +21,15 @@ struct ListBox {
     int         y;
     int         width;
     int         visible_rows;
+    int         max_rows; // labels allocated at creation
     int         row_height;
     int         scroll_offset;
     int         selected_index;
     int         hovered_index;
     bool        armed;
     bool        prev_mouse_left;
+    bool        dragging_thumb;
+    int         drag_offset; // mouse y minus thumb top while dragging
     SDL_Color   background;
 };
 
@@ -72,6 +77,7 @@ ListBox *ListBox_Create(const char *font_path, const int x, const int y, const i
     list_box->y              = y;
     list_box->width          = width;
     list_box->visible_rows   = visible_rows;
+    list_box->max_rows       = visible_rows;
     list_box->row_height     = row_height;
     list_box->selected_index = -1;
     list_box->hovered_index  = -1;
@@ -94,7 +100,7 @@ void ListBox_Destroy(ListBox **list_box) {
     }
 
     ListBox__ClearItems(*list_box);
-    for (int i = 0; i < (*list_box)->visible_rows; i++) {
+    for (int i = 0; i < (*list_box)->max_rows; i++) {
         Label_Destroy(&(*list_box)->labels[i]);
     }
     free((*list_box)->labels);
@@ -128,6 +134,15 @@ void ListBox_SetPosition(ListBox *list_box, const int x, const int y) {
     list_box->y = y;
 }
 
+void ListBox_SetVisibleRows(ListBox *list_box, const int rows) {
+    list_box->visible_rows = rows < 1 ? 1 : (rows > list_box->max_rows ? list_box->max_rows : rows);
+    const int max_offset =
+        list_box->item_count > list_box->visible_rows ? list_box->item_count - list_box->visible_rows : 0;
+    if (list_box->scroll_offset > max_offset) {
+        list_box->scroll_offset = max_offset;
+    }
+}
+
 int ListBox_GetSelectedIndex(const ListBox *list_box) { return list_box->selected_index; }
 
 void ListBox_SetSelectedIndex(ListBox *list_box, const int index) {
@@ -138,6 +153,32 @@ void ListBox_SetSelectedIndex(ListBox *list_box, const int index) {
     list_box->selected_index = index;
     ListBox__EnsureVisible(list_box, index);
 }
+
+static int ListBox__MaxOffset(const ListBox *list_box) {
+    return list_box->item_count > list_box->visible_rows ? list_box->item_count - list_box->visible_rows : 0;
+}
+
+static void ListBox__ThumbGeometry(const ListBox *list_box, int *thumb_y, int *thumb_h) {
+    const int height     = list_box->visible_rows * list_box->row_height;
+    const int max_offset = ListBox__MaxOffset(list_box);
+    int       h          = list_box->item_count > 0 ? (height * list_box->visible_rows) / list_box->item_count : height;
+    if (h < LIST_BOX_MIN_THUMB) {
+        h = LIST_BOX_MIN_THUMB;
+    }
+    if (h > height) {
+        h = height;
+    }
+    *thumb_h = h;
+    *thumb_y = list_box->y + (max_offset > 0 ? ((height - h) * list_box->scroll_offset) / max_offset : 0);
+}
+
+bool ListBox_IsScrollable(const ListBox *list_box) { return ListBox__MaxOffset(list_box) > 0; }
+
+bool ListBox_IsAtEnd(const ListBox *list_box) { return list_box->scroll_offset >= ListBox__MaxOffset(list_box); }
+
+void ListBox_ScrollToStart(ListBox *list_box) { list_box->scroll_offset = 0; }
+
+void ListBox_ScrollToEnd(ListBox *list_box) { list_box->scroll_offset = ListBox__MaxOffset(list_box); }
 
 bool ListBox_Update(ListBox *list_box) {
     int  mouse_x;
@@ -161,8 +202,34 @@ bool ListBox_Update(ListBox *list_box) {
         ListBox__ClampScroll(list_box);
     }
 
+    // Scrollbar: click the track to jump there, drag the thumb to scroll
+    const int  track_x     = list_box->x + list_box->width - LIST_BOX_SCROLLBAR_HIT;
+    const bool on_scroller = ListBox_IsScrollable(list_box) && hovered && mouse_x >= track_x;
+    int        thumb_y;
+    int        thumb_h;
+    ListBox__ThumbGeometry(list_box, &thumb_y, &thumb_h);
+
+    if (mouse_left && !was_mouse_left && on_scroller) {
+        list_box->dragging_thumb = true;
+        list_box->drag_offset = (mouse_y >= thumb_y && mouse_y < thumb_y + thumb_h) ? mouse_y - thumb_y : thumb_h / 2;
+    }
+    if (!mouse_left) {
+        list_box->dragging_thumb = false;
+    }
+    if (list_box->dragging_thumb) {
+        const int travel = height - thumb_h;
+        if (travel > 0) {
+            const int top           = mouse_y - list_box->drag_offset - list_box->y;
+            list_box->scroll_offset = (top * ListBox__MaxOffset(list_box) + (travel / 2)) / travel;
+            ListBox__ClampScroll(list_box);
+        }
+        list_box->hovered_index = -1;
+        list_box->armed         = false;
+        return false;
+    }
+
     list_box->hovered_index = -1;
-    if (hovered) {
+    if (hovered && !on_scroller) {
         const int index = list_box->scroll_offset + ((mouse_y - list_box->y) / list_box->row_height);
         if (index < list_box->item_count) {
             list_box->hovered_index = index;
@@ -230,20 +297,21 @@ void ListBox_Draw(const ListBox *list_box) {
     SDL_RenderSetClipRect(sdl_renderer, NULL);
 
     // Scrollbar
-    if (list_box->item_count > list_box->visible_rows) {
+    if (ListBox_IsScrollable(list_box)) {
         const int track_x = list_box->x + list_box->width - LIST_BOX_SCROLLBAR_WIDTH;
-        int       thumb_h = (height * list_box->visible_rows) / list_box->item_count;
-        if (thumb_h < 12) {
-            thumb_h = 12;
-        }
-        const int max_offset = list_box->item_count - list_box->visible_rows;
-        const int thumb_y    = list_box->y + ((height - thumb_h) * list_box->scroll_offset) / max_offset;
+        int       thumb_y;
+        int       thumb_h;
+        ListBox__ThumbGeometry(list_box, &thumb_y, &thumb_h);
 
         const SDL_Rect track = {track_x, list_box->y, LIST_BOX_SCROLLBAR_WIDTH, height};
-        const SDL_Rect thumb = {track_x, thumb_y, LIST_BOX_SCROLLBAR_WIDTH, thumb_h};
+        const SDL_Rect thumb = {track_x + 1, thumb_y, LIST_BOX_SCROLLBAR_WIDTH - 2, thumb_h};
         SDL_SetRenderDrawColor(sdl_renderer, 40, 35, 30, 220);
         SDL_RenderFillRect(sdl_renderer, &track);
-        SDL_SetRenderDrawColor(sdl_renderer, 150, 125, 70, 255);
+        if (list_box->dragging_thumb) {
+            SDL_SetRenderDrawColor(sdl_renderer, 220, 190, 110, 255);
+        } else {
+            SDL_SetRenderDrawColor(sdl_renderer, 150, 125, 70, 255);
+        }
         SDL_RenderFillRect(sdl_renderer, &thumb);
     }
 }

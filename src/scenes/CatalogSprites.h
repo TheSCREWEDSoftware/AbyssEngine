@@ -13,6 +13,11 @@ void            CatalogSprites_Destroy(CatalogSprites **sprites);
 int             CatalogSprites_GetCount(const CatalogSprites *sprites);
 const char     *CatalogSprites_GetName(const CatalogSprites *sprites, int index);
 
+// Category bar (Items / Skills / Menus / UI / Fonts / Other). Update returns true when the category changed.
+bool CatalogSprites_UpdateCategories(CatalogSprites *sprites, int x, int y, int width);
+void CatalogSprites_DrawCategories(const CatalogSprites *sprites, int x, int y, int width);
+
+// index is a position in the current category's list
 void CatalogSprites_Select(CatalogSprites *sprites, int index);
 void CatalogSprites_UpdateDetail(CatalogSprites *sprites);
 void CatalogSprites_DrawDetail(CatalogSprites *sprites, const SDL_Rect *panel);
