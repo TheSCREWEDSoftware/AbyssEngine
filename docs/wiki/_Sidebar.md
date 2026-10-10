@@ -14,6 +14,10 @@
 - [Feature Status](Feature-Status.md)
 - [Troubleshooting](Troubleshooting.md)
 
+**Playing**
+
+- [Single Player](Single-Player.md)
+
 **Developer tools**
 
 - [Catalog](Catalog.md)

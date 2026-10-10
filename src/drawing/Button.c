@@ -75,6 +75,16 @@ static const ButtonLayout button_layouts[] = {
      .label_color        = BUTTON_COLOR_GREY,
      .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
      .allow_frame_change = true},
+    {.button_type        = BUTTON_TYPE_TALL,
+     .resource_name      = BUTTON_TALL_BLANK,
+     .palette_name       = PALETTE_UNITS,
+     .font_path          = FONTS_FONTEXOCET10,
+     .segments_x         = 1,
+     .segments_y         = 1,
+     .text_offset        = 1,
+     .label_color        = BUTTON_COLOR_GREY,
+     .disabled_color     = BUTTON_COLOR_LIGHT_GREY_A75,
+     .allow_frame_change = true},
 };
 
 #define BUTTON_LAYOUT_COUNT (sizeof(button_layouts) / sizeof(button_layouts[0]))

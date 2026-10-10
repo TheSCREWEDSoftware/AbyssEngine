@@ -106,6 +106,9 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
 }
 
 void Sprite_Destroy(Sprite **sprite) {
+    if (sprite == NULL || *sprite == NULL) {
+        return;
+    }
     for (uint32_t i = 0; i < (*sprite)->frame_count; i++) {
         if ((*sprite)->frames[i].texture != NULL) {
             SDL_DestroyTexture((*sprite)->frames[i].texture);

@@ -5,7 +5,8 @@ the game's original data files (the MPQs from your own copy of the game) and dra
 portable engine.
 
 > **Status:** early. The engine boots to the main menu and has a set of developer tools (Catalog, Map Editor, Testing
-> Grounds, Free Roam). The actual game (Single Player, Multiplayer) is not playable yet.
+> Grounds, Free Roam). Single Player is a first playable version: create a character, fight, gain levels, save; no
+> items, skills or quests yet. Multiplayer isn't there.
 > See **[Feature Status](Feature-Status.md)** for exactly what works and what doesn't.
 
 ## Installation guide
@@ -25,6 +26,10 @@ Follow these in order. Each page ends with a link to the next one.
 - [CMake and Meson Options](CMake-Options.md): the `DEBUG` options (Skip Intro, Show Catalog, Show Map Editor), version text
 - [Feature Status](Feature-Status.md): what works, what's debug-only, and what's not done yet
 - [Troubleshooting](Troubleshooting.md): known problems and fixes
+
+## Playing
+
+- [Single Player](Single-Player.md): characters, creation, levels and stats, controls
 
 ## Developer tools
 

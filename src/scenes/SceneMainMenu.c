@@ -8,6 +8,7 @@
 #include "../managers/InputManager.h"
 #include "../map/MapSession.h"
 #include "SceneCatalog.h"
+#include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
 #include "SceneMapEditor.h"
 #include "SceneTestingGrounds.h"
@@ -39,6 +40,7 @@ typedef struct SceneMainMenu {
 } SceneMainMenu;
 
 static void MainMenu__OnExitClicked(void *user_data);
+static void MainMenu__OnSinglePlayerClicked(void *user_data);
 static void MainMenu__OnCatalogClicked(void *user_data);
 static void MainMenu__OnMapEditorClicked(void *user_data);
 static void MainMenu__OnEditorClicked(void *user_data);
@@ -83,6 +85,7 @@ void *MainMenu_Create(void) {
     // Button positions match the original 800x600 main menu.
     result->single_player_button = Button_Create(BUTTON_TYPE_WIDE, "Single Player");
     Button_SetPosition(result->single_player_button, 264, 290);
+    Button_SetClickHandler(result->single_player_button, MainMenu__OnSinglePlayerClicked, NULL);
 
     result->multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Multiplayer");
     Button_SetPosition(result->multiplayer_button, 264, 330);
@@ -125,7 +128,6 @@ void *MainMenu_Create(void) {
     Button_SetClickHandler(result->exit_button, MainMenu__OnExitClicked, NULL);
 
     // Not implemented yet: shown, but greyed out.
-    Button_SetEnabled(result->single_player_button, false);
     Button_SetEnabled(result->multiplayer_button, false);
     Button_SetEnabled(result->credits_button, false);
     Button_SetEnabled(result->cinematics_button, false);
@@ -184,6 +186,11 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
     Button_Update(mainmenu->credits_button);
     Button_Update(mainmenu->cinematics_button);
     Button_Update(mainmenu->exit_button);
+}
+
+static void MainMenu__OnSinglePlayerClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(CharacterSelect));
 }
 
 static void MainMenu__OnCatalogClicked(void *user_data) {

@@ -39,6 +39,9 @@ Label *Label_Create(const char *font_path, const char *palette_name) {
 }
 
 void Label_Destroy(Label **label) {
+    if (label == NULL || *label == NULL) {
+        return;
+    }
     if ((*label)->texture != NULL) {
         SDL_DestroyTexture((*label)->texture);
     }

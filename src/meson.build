@@ -52,6 +52,8 @@ sources = [
     'data/DataTable.c',
     'data/StringTable.c',
 
+    'game/Character.c',
+
     'drawing/Button.c',
     'drawing/Cursor.c',
     'drawing/Figure.c',
@@ -72,6 +74,8 @@ sources = [
     'scenes/CatalogTheme.c',
     'scenes/Scene.c',
     'scenes/SceneCatalog.c',
+    'scenes/SceneCharacterCreate.c',
+    'scenes/SceneCharacterSelect.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
     'scenes/SceneMapEditor.c',

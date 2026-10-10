@@ -30,8 +30,8 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 |---------|--------|-------|
 | Intro videos | ✅ | |
 | Main menu | ✅ | |
-| Single Player | ❌ | Button shown, disabled. |
-| Character creation / selection | ❌ | |
+| Single Player | 🧪 | First playable version ([Single Player](Single-Player.md)): starts in the act's town, travel by waypoint, real combat with hit chances, experience and levels, saving. No items, skills, quests, potions, hirelings or difficulty levels yet. |
+| Character creation / selection | ✅ | The game's screens: the heroes round the campfire (hover, step forward, voice lines), name rules, Expansion / Hardcore; the character list with each character standing in their slot, delete with confirmation. Our own save format (`save/<name>.abc`), not `.d2s`. |
 | Multiplayer / Battle.net | ❌ | Won't be compatible with the original game's servers or saves. |
 | Credits, Cinematics menus | ❌ | Buttons shown, disabled. |
 | Drawing the game's areas | 🧪 | Fixed areas (towns, Tristram, Monastery Gate, cloisters, every dungeon room) draw correctly in the Map Editor / Free Roam. |
@@ -39,8 +39,8 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Walking | 🧪 | Free Roam / Testing Grounds. Collision with walls from the tiles; paths around obstacles. |
 | Pathfinding | 🧪 | A* on the sub-tile grid (8 directions, no cutting corners), smoothed into straight legs. The player walks around walls and objects to where you click (or to the closest reachable spot); chasing monsters go straight at you when nothing's in the way and around walls otherwise. Units don't avoid each other yet. |
 | NPCs in towns | 🧪 | In their places, and they stroll around them (pause a few seconds, walk to a nearby spot along a path, repeat); guards keep their post. They don't talk or trade yet. |
-| Combat | 🧪 | Debug toggle only: units without an attack animation (most town NPCs) never attack; melee, life and damage from the game tables (normal difficulty), get-hit/death animations. No skills, levels, experience, blocking, missiles or AI beyond "walk at the player". |
-| Player stats, leveling, experience | ❌ | Life comes from the class's starting value. |
+| Combat | 🧪 | Single Player: always on, town folk never fight; the game's chance to hit (attack rating and level against defense and level) both ways; your damage from your starting weapon and Strength. Free Roam / Testing Grounds: debug toggle, units without an attack animation never attack. Melee only: no skills, blocking, missiles or AI beyond "walk at the player". |
+| Player stats, leveling, experience | 🧪 | Single Player: Strength, Dexterity, Vitality, Energy from `charstats.txt`; life, mana and stamina per point and per level; experience per kill (`monstats.txt`/`MonLvl.txt`) and per level (`experience.txt`); 5 stat points and a skill point per level, spent on the character screen (the game's panel); mana regeneration, stamina for running. No items, so no bonuses from gear; skill points can't be spent yet. |
 | Skills | ❌ | Skill trees can be browsed in the [Catalog](Catalog.md). |
 | Items: inventory, equipment, drops, stash | ❌ | Item data and pictures can be browsed in the Catalog. |
 | Objects (chests, shrines, waypoints, doors, torches) | 🧪 | Placed from the areas' presets; torches and fires burn. In Free Roam / Testing Grounds click one to walk over and open it (chests open, doors open and stop blocking, shrines and waypoints activate) with its sound; objects block walking where the game says they do. Not yet: what they do (loot, shrine effects, waypoint travel, locked doors, traps). |

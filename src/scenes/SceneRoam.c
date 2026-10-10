@@ -9,6 +9,8 @@
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
 #include "../drawing/LoadingScreen.h"
+#include "../drawing/Sprite.h"
+#include "../game/Character.h"
 #include "../managers/InputManager.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
@@ -20,7 +22,9 @@
 #include "../map/Pathfinding.h"
 #include "../map/Places.h"
 #include "CatalogCharacters.h"
+#include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
+#include "SceneGame.h"
 #include "SceneMainMenu.h"
 #include "SceneMapEditor.h"
 #include "SceneTestingGrounds.h"
@@ -126,6 +130,10 @@ typedef struct Unit {
     int         max_hp;
     int         damage_min;
     int         damage_max;
+    int         level;         // monsters: from monstats; the player: the character's
+    int         defense;       // armor class
+    int         attack_rating; // to-hit
+    int         experience;    // given for killing it
     float       speed;
     bool        npc;
     bool        dropped;  // added in the Testing Grounds (Clear removes these)
@@ -152,8 +160,20 @@ typedef struct Unit {
 
 typedef enum RoamPanel { PANEL_NONE, PANEL_MONSTERS, PANEL_PLACES } RoamPanel;
 
+#define TOWN_COUNT 5
+static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue Encampment ... Harrogath
+
+#define WAYPOINT_RANGE    8.0f // Single Player: how close to a waypoint the Waypoint button works
+#define MESSAGE_MS        4000 // level up and other messages
+#define EXIT_CONFIRM_MS   2500 // Esc twice to save and exit
+#define HARDCORE_DEATH_MS 5000 // time to read the bad news
+#define CHAR_PANEL        "/data/global/ui/PANEL/invchar6.dc6"
+#define CHAR_PANEL_W      320
+#define CHAR_PANEL_H      432
+
 typedef struct SceneRoam {
-    bool         free_roam;
+    bool         free_roam; // Free Roam, or the game (both travel between the game's areas)
+    bool         game;      // Single Player: the character from Character_Current(), real combat and levels
     Map         *map;
     bool         borrowed; // the editor's map (play-test): not ours to free
     MapRenderer *renderer;
@@ -189,8 +209,10 @@ typedef struct SceneRoam {
     Button   *places_button; // Free Roam
     Button   *clear_button;  // Testing Grounds
     Button   *combat_button;
-    Button   *preview_button; // in the Monsters panel
-    bool      preview;        // show what right click would place, under the mouse
+    Button   *character_button; // Single Player
+    Button   *town_button;      // Single Player
+    Button   *preview_button;   // in the Monsters panel
+    bool      preview;          // show what right click would place, under the mouse
     bool      hover_valid;
     float     hover_x; // sub-tile under the mouse
     float     hover_y;
@@ -206,10 +228,35 @@ typedef struct SceneRoam {
     Label    *target_label;
     bool      prev_left;
     bool      prev_right;
+
+    // Single Player
+    Character *character;
+    float      mana; // kept as fractions while regenerating
+    float      stamina;
+    bool       exhausted; // ran out of stamina: walking until it's back up a bit
+    bool       in_town;
+    bool       char_panel; // the character screen
+    Sprite    *char_panel_sprite;
+    Label     *panel_label;       // small text on the character screen
+    Label     *panel_value_label; // its numbers
+    Label     *message_label;     // "Level up!", ...
+    char       message[96];
+    uint64_t   message_until;
+    uint64_t   exit_armed_until; // Esc pressed once
+    uint64_t   leave_at;         // hardcore death: back to the character list at this time
 } SceneRoam;
+
+static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);
 
 DEFINE_SCENE_CALLBACKS(TestingGrounds);
 DEFINE_SCENE_CALLBACKS(FreeRoam);
+DEFINE_SCENE_CALLBACKS(Game);
+
+// Fighting is on: always in the game, by the debug switch elsewhere
+static bool Roam__Combat(const SceneRoam *roam) { return roam->game || combat_enabled; }
+
+// In the game, town folk never fight and can't be attacked
+static bool Roam__IsPeaceful(const SceneRoam *roam, const struct Unit *unit) { return roam->game && unit->npc; }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Units
@@ -237,12 +284,18 @@ static bool Roam__IsAlive(const Unit *unit) { return unit->state != UNIT_DYING &
 // Monsters and NPCs can fight; objects can't
 static bool Roam__IsCombatant(const Unit *unit) { return unit->max_hp > 0; }
 
+// Running (and not out of stamina)
+static bool Roam__IsRunning(const SceneRoam *roam) { return roam->running && !roam->exhausted; }
+
+// The player's town animations (relaxed) when nobody's fighting: in the game that's in town
+static bool Roam__PlayerAtEase(const SceneRoam *roam) { return roam->game ? roam->in_town : !combat_enabled; }
+
 static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
     const bool player = Roam__IsPlayer(roam, unit);
     switch (unit->state) {
     case UNIT_WALK:
         if (player) {
-            return roam->running ? "rn" : (combat_enabled ? "wl" : "tw");
+            return Roam__IsRunning(roam) ? "rn" : (Roam__PlayerAtEase(roam) ? "tw" : "wl");
         }
         return "wl";
     case UNIT_ATTACK:
@@ -262,7 +315,7 @@ static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
         return unit->object_mode;
     }
     if (player) {
-        return combat_enabled ? "nu" : "tn";
+        return Roam__PlayerAtEase(roam) ? "tn" : "nu";
     }
     return unit->idle_mode;
 }
@@ -360,12 +413,16 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
 
     MonsterStats stats;
     if (strcmp(base, "monsters") == 0 && MonsterStats_Get(id, &stats)) {
-        unit->max_hp     = Roam__Roll(stats.hp_min, stats.hp_max > stats.hp_min ? stats.hp_max : stats.hp_min);
-        unit->max_hp     = unit->max_hp > 0 ? unit->max_hp : 20;
-        unit->damage_min = stats.damage_min > 0 ? stats.damage_min : 1;
-        unit->damage_max = stats.damage_max > unit->damage_min ? stats.damage_max : unit->damage_min + 2;
-        unit->speed      = (float)(stats.velocity > 0 ? stats.velocity : 3);
-        unit->npc        = stats.npc;
+        unit->max_hp        = Roam__Roll(stats.hp_min, stats.hp_max > stats.hp_min ? stats.hp_max : stats.hp_min);
+        unit->max_hp        = unit->max_hp > 0 ? unit->max_hp : 20;
+        unit->damage_min    = stats.damage_min > 0 ? stats.damage_min : 1;
+        unit->damage_max    = stats.damage_max > unit->damage_min ? stats.damage_max : unit->damage_min + 2;
+        unit->speed         = (float)(stats.velocity > 0 ? stats.velocity : 3);
+        unit->npc           = stats.npc;
+        unit->level         = stats.level > 0 ? stats.level : 1;
+        unit->defense       = stats.defense;
+        unit->attack_rating = stats.attack_rating > 0 ? stats.attack_rating : 10;
+        unit->experience    = stats.experience;
     } else if (strcmp(base, "chars") == 0) {
         unit->max_hp     = 50;
         unit->damage_min = 2;
@@ -526,7 +583,7 @@ static void Roam__Footstep(const SceneRoam *roam) {
         surface = "istone";
     }
     char name[48];
-    snprintf(name, sizeof(name), "light_%s_%s_1", roam->running ? "run" : "walk", surface);
+    snprintf(name, sizeof(name), "light_%s_%s_1", Roam__IsRunning(roam) ? "run" : "walk", surface);
     Sounds_Play(name, SOUND_KIND_SFX);
 }
 
@@ -636,6 +693,21 @@ static void Roam__FinishOperate(SceneRoam *roam, Unit *unit, const uint64_t now)
 }
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (roam->game && unit->object.operate_fn == 23) {
+        // A waypoint: lights up the first time, and opens the list of places every time
+        if (strcmp(unit->object_mode, "on") != 0 && unit->state != UNIT_OPERATE) {
+            Roam__ObjectSound(unit);
+            if (unit->object.has_mode[1] && MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op") != NULL) {
+                Roam__SetState(unit, UNIT_OPERATE, now);
+            } else {
+                Roam__FinishOperate(roam, unit, now);
+            }
+        }
+        if (roam->panel != PANEL_PLACES) {
+            Roam__TogglePanel(roam, PANEL_PLACES);
+        }
+        return;
+    }
     unit->used = true;
     Roam__ObjectSound(unit);
     if (unit->object.has_mode[1] && unit->object.frame_count[1] > 0 &&
@@ -668,6 +740,42 @@ static int Roam__PlayerLife(const int player_class) {
     return life > 0 ? life : 50;
 }
 
+// The character's numbers onto the player (after levelling up or spending points); life stays as it is
+static void Roam__ApplyCharacter(SceneRoam *roam) {
+    if (!roam->game) {
+        return;
+    }
+    Character *character  = roam->character;
+    Unit      *player     = &roam->player;
+    player->max_hp        = Character_MaxLife(character);
+    player->hp            = player->hp > player->max_hp ? player->max_hp : player->hp;
+    player->level         = character->level;
+    player->defense       = Character_Defense(character);
+    player->attack_rating = Character_AttackRating(character);
+    Character_Damage(character, &player->damage_min, &player->damage_max);
+    const float max_mana    = (float)Character_MaxMana(character);
+    const float max_stamina = (float)Character_MaxStamina(character);
+    roam->mana              = roam->mana > max_mana ? max_mana : roam->mana;
+    roam->stamina           = roam->stamina > max_stamina ? max_stamina : roam->stamina;
+}
+
+// What the character has now goes back into it (before saving)
+static void Roam__StoreCharacter(SceneRoam *roam) {
+    if (!roam->game) {
+        return;
+    }
+    roam->character->life    = roam->player.hp;
+    roam->character->mana    = (int)roam->mana;
+    roam->character->stamina = (int)roam->stamina;
+    Character_Save(roam->character);
+}
+
+static void Roam__ShowMessage(SceneRoam *roam, const char *text) {
+    snprintf(roam->message, sizeof(roam->message), "%s", text);
+    Label_SetText(roam->message_label, text);
+    roam->message_until = SDL_GetTicks64() + MESSAGE_MS;
+}
+
 static void Roam__ResetPlayer(SceneRoam *roam) {
     Unit *player = &roam->player;
     memset(player, 0, sizeof(Unit));
@@ -683,9 +791,15 @@ static void Roam__ResetPlayer(SceneRoam *roam) {
     player->damage_max  = PLAYER_DAMAGE_MAX;
     player->state       = UNIT_IDLE;
     player->frame_time  = SDL_GetTicks64();
+    player->level       = 1;
     roam->moving        = false;
     roam->attack_target = -1;
     roam->use_target    = -1;
+    if (roam->game) {
+        player->hp = roam->character->life > 0 ? roam->character->life : Character_MaxLife(roam->character);
+        snprintf(player->name, sizeof(player->name), "%s", roam->character->name);
+        Roam__ApplyCharacter(roam);
+    }
 }
 
 // The player opens the object being walked to once close enough. Returns true when that's done (or there's nothing
@@ -805,15 +919,21 @@ Map *TestingGrounds_CreateDefaultMap(void) {
 // UI
 
 static void Roam__UpdateButtons(SceneRoam *roam) {
-    Button_SetText(roam->class_button, player_classes[roam->player_class][0]);
     Button_SetText(roam->run_button, roam->running ? "Run" : "Walk");
+    Button_SetText(roam->preview_button, roam->preview ? "Preview On" : "Preview Off");
+    Button_SetToggled(roam->preview_button, roam->preview);
+    if (roam->game) {
+        Button_SetText(roam->places_button, roam->panel == PANEL_PLACES ? "Close" : "Waypoint");
+        Button_SetToggled(roam->character_button, roam->char_panel);
+        Button_SetEnabled(roam->town_button, !roam->in_town);
+        return;
+    }
+    Button_SetText(roam->class_button, player_classes[roam->player_class][0]);
     Button_SetText(roam->monsters_button, roam->panel == PANEL_MONSTERS ? "Hide List" : "Monsters");
     if (roam->places_button != NULL) {
         Button_SetText(roam->places_button, roam->panel == PANEL_PLACES ? "Hide List" : "Places");
     }
     Button_SetText(roam->combat_button, combat_enabled ? "Combat On" : "Combat Off");
-    Button_SetText(roam->preview_button, roam->preview ? "Preview On" : "Preview Off");
-    Button_SetToggled(roam->preview_button, roam->preview);
     Button_SetToggled(roam->combat_button, combat_enabled);
 }
 
@@ -830,7 +950,7 @@ static void Roam__RefreshList(SceneRoam *roam) {
     Roam__FreeList(roam);
     int list_y = CATEGORIES_Y;
     if (roam->panel == PANEL_PLACES) {
-        Label_SetText(roam->title_label, "Places");
+        Label_SetText(roam->title_label, roam->game ? "Waypoint" : "Places");
         roam->list_count = Places_GetCount();
         roam->list_names = calloc(roam->list_count > 0 ? (size_t)roam->list_count : 1, sizeof(char *));
         FAIL_IF_NULL(roam->list_names);
@@ -874,6 +994,9 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     if (place == NULL) {
         return;
     }
+    if (roam->game && roam->map != NULL && Roam__IsAlive(&roam->player)) {
+        Roam__StoreCharacter(roam); // life as you leave
+    }
     char text[96];
     snprintf(text, sizeof(text), place->generated ? "Building %s..." : "Loading %s...", place->name);
     LoadingScreen_Begin(text);
@@ -889,19 +1012,64 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     roam->borrowed = false;
     roam->place    = place_index;
     MapRenderer_ClearCache(roam->renderer);
+    roam->in_town = false;
+    for (int t = 0; t < TOWN_COUNT; t++) {
+        roam->in_town = roam->in_town || town_level_ids[t] == place->level_id;
+    }
     Roam__Populate(roam);
+    if (roam->game) {
+        roam->character->act = place->act;
+        roam->exhausted      = false;
+        roam->panel          = PANEL_NONE;
+        if (roam->in_town) {
+            // In town you're looked after: life and mana back to full
+            roam->player.hp = roam->player.max_hp;
+            roam->mana      = (float)Character_MaxMana(roam->character);
+        }
+        Roam__StoreCharacter(roam);
+    }
     LoadingScreen_End();
+}
+
+static int Roam__FindPlace(const int level_id) {
+    for (int i = 0; i < Places_GetCount(); i++) {
+        if (Places_Get(i)->level_id == level_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Single Player: back to the act's town (dying, the Town button)
+static void Roam__GoToTown(SceneRoam *roam, const int act) {
+    const int place = Roam__FindPlace(town_level_ids[act >= 0 && act < TOWN_COUNT ? act : 0]);
+    if (place >= 0) {
+        Roam__Teleport(roam, place);
+    }
+}
+
+// Single Player: whether a waypoint is near enough to use the Waypoint button
+static bool Roam__NearWaypoint(const SceneRoam *roam) {
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        if (unit->is_object && unit->object.operate_fn == 23 &&
+            Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) <= WAYPOINT_RANGE) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Lifetime
 
-static void *Roam__Create(const bool free_roam) {
+static void *Roam__Create(const bool free_roam, const bool game) {
     Cursor_SetVisible(true);
 
     SceneRoam *roam = calloc(1, sizeof(SceneRoam));
     FAIL_IF_NULL(roam);
-    roam->free_roam     = free_roam;
+    roam->free_roam     = free_roam || game;
+    roam->game          = game;
     roam->renderer      = MapRenderer_Create();
     roam->units_cache   = MapUnits_Create();
     roam->camera.zoom   = 1.0f;
@@ -922,13 +1090,22 @@ static void *Roam__Create(const bool free_roam) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Label_SetText(roam->help_label, free_roam ? "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                                "P preview  L light  B blocked  N new layout  Esc back"
-                                              : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                                "P preview  L light  B blocked  Esc back");
+    Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   W waypoint (near one)   "
+                                           "T town   L light   Esc save and exit"
+                                    : free_roam
+                                        ? "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
+                                          "P preview  L light  B blocked  N new layout  Esc back"
+                                        : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
+                                          "P preview  L light  B blocked  Esc back");
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
+    if (game) {
+        names[0] = "Exit Game";
+        names[1] = "Character";
+        names[3] = "Waypoint";
+        names[4] = "Town";
+    }
     for (int i = 0; i < 6; i++) {
         roam->buttons[i] = Button_Create(BUTTON_TYPE_MEDIUM, names[i]);
         Button_SetPosition(roam->buttons[i], 8 + (i * BUTTON_STEP), BOTTOM_Y);
@@ -937,7 +1114,27 @@ static void *Roam__Create(const bool free_roam) {
     roam->class_button  = roam->buttons[1];
     roam->run_button    = roam->buttons[2];
     roam->combat_button = roam->buttons[5];
-    if (free_roam) {
+    if (game) {
+        roam->class_button     = NULL;
+        roam->combat_button    = NULL;
+        roam->character_button = roam->buttons[1];
+        roam->places_button    = roam->buttons[3];
+        roam->town_button      = roam->buttons[4];
+        Button_SetVisible(roam->buttons[5], false);
+
+        roam->character    = Character_Current();
+        roam->player_class = (int)roam->character->class_id;
+        roam->running      = true;
+        roam->mana = (float)(roam->character->mana > 0 ? roam->character->mana : Character_MaxMana(roam->character));
+        roam->stamina =
+            (float)(roam->character->stamina > 0 ? roam->character->stamina : Character_MaxStamina(roam->character));
+        roam->char_panel_sprite = Sprite_Create(CHAR_PANEL, PALETTE_UNITS);
+        roam->panel_label       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+        roam->panel_value_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+        roam->message_label     = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+        Label_SetAlignment(roam->message_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        Label_SetColor(roam->message_label, 0xFF, 0xE8, 0x60, 0xFF);
+    } else if (free_roam) {
         roam->places_button   = roam->buttons[3];
         roam->monsters_button = roam->buttons[4];
     } else {
@@ -952,7 +1149,9 @@ static void *Roam__Create(const bool free_roam) {
     roam->list = ListBox_Create(FONTS_FONT8, PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W, LIST_ROWS, LIST_ROW_H);
     ListBox_SetBackground(roam->list, 0, 0, 0, 160);
 
-    if (free_roam) {
+    if (game) {
+        Roam__GoToTown(roam, roam->character->act); // where the character was last
+    } else if (free_roam) {
         // Start in the Rogue Encampment
         int start = 0;
         for (int i = 0; i < Places_GetCount(); i++) {
@@ -980,9 +1179,11 @@ static void *Roam__Create(const bool free_roam) {
     return roam;
 }
 
-void *TestingGrounds_Create(void) { return Roam__Create(false); }
+void *TestingGrounds_Create(void) { return Roam__Create(false, false); }
 
-void *FreeRoam_Create(void) { return Roam__Create(true); }
+void *FreeRoam_Create(void) { return Roam__Create(true, false); }
+
+void *Game_Create(void) { return Roam__Create(false, true); }
 
 static void Roam__Free(void **scene_ref) {
     SceneRoam *roam = *(SceneRoam **)scene_ref;
@@ -1004,6 +1205,10 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->help_label);
     Label_Destroy(&roam->life_label);
     Label_Destroy(&roam->target_label);
+    Sprite_Destroy(&roam->char_panel_sprite);
+    Label_Destroy(&roam->panel_label);
+    Label_Destroy(&roam->panel_value_label);
+    Label_Destroy(&roam->message_label);
     free(roam);
     *scene_ref = NULL;
 }
@@ -1012,21 +1217,89 @@ void TestingGrounds_Free(void **scene_ref) { Roam__Free(scene_ref); }
 
 void FreeRoam_Free(void **scene_ref) { Roam__Free(scene_ref); }
 
+void Game_Free(void **scene_ref) { Roam__Free(scene_ref); }
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Update
+
+// Single Player: experience for a kill, and what comes with a new level
+static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
+    if (!roam->game || victim->experience <= 0) {
+        return;
+    }
+    const int levels = Character_AddExperience(roam->character, (uint32_t)victim->experience);
+    if (levels > 0) {
+        roam->player.hp = Character_MaxLife(roam->character); // a new level fills you up
+        roam->mana      = (float)Character_MaxMana(roam->character);
+        roam->stamina   = (float)Character_MaxStamina(roam->character);
+        Roam__ApplyCharacter(roam);
+        Sounds_Play("cursor_level_up", SOUND_KIND_UI);
+        char text[96];
+        snprintf(text, sizeof(text), "Level Up! You are now level %d  (C: spend your stat points)",
+                 roam->character->level);
+        Roam__ShowMessage(roam, text);
+        Roam__StoreCharacter(roam);
+    }
+}
+
+// The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
+// experience
+static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
+    const Unit *player = &roam->player;
+    if (roam->game && Roam__Roll(1, 100) >
+                          Character_HitChance(player->attack_rating, player->level, target->defense, target->level)) {
+        return; // missed
+    }
+    const bool was_alive = Roam__IsAlive(target);
+    Roam__Damage(roam, target, Roam__Roll(player->damage_min, player->damage_max), now);
+    if (was_alive && !Roam__IsAlive(target)) {
+        Roam__GainExperience(roam, target);
+    }
+}
 
 static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit *player = &roam->player;
 
     if (player->state == UNIT_DEAD) {
+        if (roam->game && roam->character->dead) {
+            return; // hardcore: no coming back
+        }
         if (now >= roam->respawn_at) {
-            Roam__ResetPlayer(roam); // back at the start with full life
+            if (roam->game) {
+                // Like the game: you wake up in town with full life
+                roam->character->life = Character_MaxLife(roam->character);
+                Roam__ResetPlayer(roam);
+                Roam__GoToTown(roam, roam->character->act);
+            } else {
+                Roam__ResetPlayer(roam); // back at the start with full life
+            }
             roam->safe_until = now + RESPAWN_GRACE;
             for (int i = 0; i < roam->unit_count; i++) {
                 roam->units[i].provoked = false;
             }
         }
         return;
+    }
+
+    // Single Player: mana comes back over time; running uses stamina, resting brings it back
+    if (roam->game && Roam__IsAlive(player)) {
+        const float max_mana    = (float)Character_MaxMana(roam->character);
+        const float max_stamina = (float)Character_MaxStamina(roam->character);
+        const int   regen       = Character_ManaRegenSeconds(roam->character);
+        roam->mana              = fminf(max_mana, roam->mana + (max_mana * seconds / (float)(regen > 0 ? regen : 120)));
+        if (Roam__IsRunning(roam) && roam->moving) {
+            // charstats RunDrain is per frame (25 a second), in 256ths
+            roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;
+            if (roam->stamina <= 0.0f) {
+                roam->stamina   = 0.0f;
+                roam->exhausted = true;
+            }
+        } else {
+            roam->stamina = fminf(max_stamina, roam->stamina + (max_stamina * seconds / 25.0f));
+        }
+        if (roam->exhausted && roam->stamina >= max_stamina * 0.1f) {
+            roam->exhausted = false;
+        }
     }
     if (Roam__Animate(roam, player, now)) {
         if (player->state == UNIT_ATTACK) {
@@ -1035,7 +1308,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 Unit *target = &roam->units[roam->attack_target];
                 if (Roam__Distance(player->x, player->y, target->x, target->y) <= ATTACK_RANGE + 0.5f) {
                     target->provoked = true;
-                    Roam__Damage(roam, target, Roam__Roll(player->damage_min, player->damage_max), now);
+                    Roam__PlayerStrikes(roam, target, now);
                 }
             }
             Roam__SetState(player, UNIT_IDLE, now);
@@ -1043,6 +1316,12 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             Roam__SetState(player, UNIT_DEAD, now);
             roam->respawn_at    = now + RESPAWN_DELAY;
             roam->attack_target = -1;
+            if (roam->game && roam->character->hardcore) {
+                roam->character->dead = true;
+                roam->leave_at        = now + HARDCORE_DEATH_MS;
+                Roam__StoreCharacter(roam);
+                Roam__ShowMessage(roam, "You have died. Hardcore characters don't come back.");
+            }
             return;
         } else {
             Roam__SetState(player, UNIT_IDLE, now);
@@ -1062,7 +1341,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     // Attacking: walk up to the target, then swing
     if (roam->attack_target >= 0) {
         Unit *target = &roam->units[roam->attack_target];
-        if (!combat_enabled || !Roam__IsAlive(target)) {
+        if (!Roam__Combat(roam) || !Roam__IsAlive(target)) {
             roam->attack_target = -1;
         } else {
             if (Roam__Distance(player->x, player->y, target->x, target->y) <= ATTACK_RANGE) {
@@ -1082,7 +1361,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     if (roam->moving) {
         // Around walls, not through them
         Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
-        roam->moving = Roam__FollowPath(roam->map, player, roam->running ? RUN_SPEED : WALK_SPEED, seconds);
+        roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
         if (!roam->moving) {
             Roam__ClearPath(player);
             if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
@@ -1163,8 +1442,10 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
     for (int i = 0; i < roam->unit_count; i++) {
         Unit *unit = &roam->units[i];
         if (Roam__Animate(roam, unit, now)) {
-            if (unit->state == UNIT_ATTACK && player_alive && combat_enabled &&
-                Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f) {
+            if (unit->state == UNIT_ATTACK && player_alive && Roam__Combat(roam) &&
+                Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
+                (!roam->game || Roam__Roll(1, 100) <= Character_HitChance(unit->attack_rating, unit->level,
+                                                                          player->defense, player->level))) {
                 Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
             }
             if (unit->state == UNIT_OPERATE) {
@@ -1177,7 +1458,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
 
-        if (!combat_enabled || !player_alive) {
+        if (!Roam__Combat(roam) || !player_alive || Roam__IsPeaceful(roam, unit)) {
             unit->provoked = false;
             Roam__Wander(roam, unit, seconds, now);
             continue;
@@ -1243,6 +1524,181 @@ static int Roam__UnitAt(const SceneRoam *roam, const float sub_x, const float su
     return nearest;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Single Player: character screen (the game's own panel art) and keys
+
+static const int stat_rows[STAT_COUNT] = {92, 154, 240, 302}; // strength, dexterity, vitality, energy (panel y)
+
+static bool Roam__StatPlusAt(const int stat, const int x, const int y) {
+    return x >= 112 && x <= 134 && y >= stat_rows[stat] - 10 && y <= stat_rows[stat] + 10;
+}
+
+static void Roam__PanelText(SceneRoam *roam, Label *label, const char *text, const int x, const int y, const uint8_t r,
+                            const uint8_t g, const uint8_t b) {
+    Label_SetText(label, text);
+    Label_SetColor(label, r, g, b, 0xFF);
+    Label_SetAlignment(label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    Label_Draw(label, x, y);
+    (void)roam;
+}
+
+static void Roam__DrawCharacterPanel(SceneRoam *roam) {
+    const Character *character = roam->character;
+    Sprite_DrawMulti(roam->char_panel_sprite, 0, 0, 0, 2, 2);
+    Label *small = roam->panel_label;
+    Label *value = roam->panel_value_label;
+    char   text[64];
+
+    Roam__PanelText(roam, value, character->name, 96, 17, 0xC7, 0xB3, 0x77);
+    Roam__PanelText(roam, value, Character_ClassName(character->class_id), 252, 17, 0xC7, 0xB3, 0x77);
+    Roam__PanelText(roam, small, "Level", 32, 39, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d", character->level);
+    Roam__PanelText(roam, value, text, 32, 57, 0xFF, 0xFF, 0xFF);
+    Roam__PanelText(roam, small, "Experience", 122, 39, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%lu", (unsigned long)character->experience);
+    Roam__PanelText(roam, value, text, 122, 57, 0xFF, 0xFF, 0xFF);
+    Roam__PanelText(roam, small, "Next Level", 252, 39, 0xC7, 0xB3, 0x77);
+    if (character->level < CHARACTER_MAX_LEVEL) {
+        snprintf(text, sizeof(text), "%lu", (unsigned long)Character_ExperienceFor(character->level + 1));
+    } else {
+        snprintf(text, sizeof(text), "-");
+    }
+    Roam__PanelText(roam, value, text, 252, 57, 0xFF, 0xFF, 0xFF);
+
+    for (int stat = 0; stat < STAT_COUNT; stat++) {
+        Roam__PanelText(roam, small, Character_StatName((CharacterStat)stat), 44, stat_rows[stat], 0xC7, 0xB3, 0x77);
+        snprintf(text, sizeof(text), "%d", character->stats[stat]);
+        Roam__PanelText(roam, value, text, 97, stat_rows[stat], 0xFF, 0xFF, 0xFF);
+        if (character->stat_points > 0) {
+            // Where the game shows its "+" button
+            const SDL_Rect box = {116, stat_rows[stat] - 8, 16, 16};
+            SDL_SetRenderDrawColor(sdl_renderer, 60, 50, 20, 255);
+            SDL_RenderFillRect(sdl_renderer, &box);
+            SDL_SetRenderDrawColor(sdl_renderer, 0xC7, 0xB3, 0x77, 255);
+            SDL_RenderDrawRect(sdl_renderer, &box);
+            SDL_RenderDrawLine(sdl_renderer, box.x + 4, box.y + 8, box.x + 11, box.y + 8);
+            SDL_RenderDrawLine(sdl_renderer, box.x + 8, box.y + 4, box.x + 8, box.y + 11);
+        }
+    }
+
+    int damage_min;
+    int damage_max;
+    Character_Damage(character, &damage_min, &damage_max);
+    Roam__PanelText(roam, small, "Damage", 210, 92, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d-%d", damage_min, damage_max);
+    Roam__PanelText(roam, value, text, 286, 92, 0xFF, 0xFF, 0xFF);
+    Roam__PanelText(roam, small, Character_WeaponName(character), 210, 115, 0xA0, 0xA0, 0xA0);
+    Roam__PanelText(roam, small, "Attack Rating", 215, 154, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d", Character_AttackRating(character));
+    Roam__PanelText(roam, value, text, 291, 154, 0xFF, 0xFF, 0xFF);
+    Roam__PanelText(roam, small, "Defense", 215, 177, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d", Character_Defense(character));
+    Roam__PanelText(roam, value, text, 291, 177, 0xFF, 0xFF, 0xFF);
+    Roam__PanelText(roam, small, "Skill Points", 215, 201, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d", character->skill_points);
+    Roam__PanelText(roam, value, text, 291, 201, 0xFF, 0xFF, 0xFF);
+
+    const struct {
+        const char *name;
+        int         y;
+        int         current;
+        int         maximum;
+    } pools[3] = {
+        {"Stamina", 240, (int)roam->stamina, Character_MaxStamina(character)},
+        {"Life",    263, roam->player.hp,    Character_MaxLife(character)   },
+        {"Mana",    302, (int)roam->mana,    Character_MaxMana(character)   },
+    };
+    for (int p = 0; p < 3; p++) {
+        Roam__PanelText(roam, small, pools[p].name, 195, pools[p].y, 0xC7, 0xB3, 0x77);
+        snprintf(text, sizeof(text), "%d", pools[p].current);
+        Roam__PanelText(roam, value, text, 250, pools[p].y, 0xFF, 0xFF, 0xFF);
+        snprintf(text, sizeof(text), "%d", pools[p].maximum);
+        Roam__PanelText(roam, value, text, 291, pools[p].y, 0xFF, 0xFF, 0xFF);
+    }
+
+    static const char *resists[4] = {"Fire Resist", "Cold Resist", "Lightning Res.", "Poison Resist"};
+    for (int r = 0; r < 4; r++) {
+        Roam__PanelText(roam, small, resists[r], 222, 341 + (r * 24), 0xC7, 0xB3, 0x77);
+        Roam__PanelText(roam, value, "0%", 291, 341 + (r * 24), 0xFF, 0xFF, 0xFF);
+    }
+
+    Roam__PanelText(roam, small, "Stat Points", 66, 396, 0xC7, 0xB3, 0x77);
+    Roam__PanelText(roam, small, "Remaining", 66, 410, 0xC7, 0xB3, 0x77);
+    snprintf(text, sizeof(text), "%d", character->stat_points);
+    Roam__PanelText(roam, value, text, 145, 404, character->stat_points > 0 ? 0x40 : 0xFF, 0xFF,
+                    character->stat_points > 0 ? 0x40 : 0xFF);
+}
+
+// Single Player keys, buttons and panels. Returns true when the scene is being left.
+static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mouse_x, const int mouse_y,
+                             const bool clicked) {
+    if (roam->leave_at != 0 && now >= roam->leave_at) {
+        Scene_Set(SCENE_REF(CharacterSelect)); // hardcore death
+        return true;
+    }
+
+    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_C) || InputManager_ConsumeKeyPress(SDL_SCANCODE_A) ||
+        Button_Update(roam->character_button)) {
+        roam->char_panel = !roam->char_panel;
+        Roam__UpdateButtons(roam);
+    }
+    if (roam->char_panel && clicked) {
+        for (int stat = 0; stat < STAT_COUNT; stat++) {
+            if (!Roam__StatPlusAt(stat, mouse_x, mouse_y)) {
+                continue;
+            }
+            // Vitality and energy raise life, mana and stamina by what they add, now
+            roam->character->life    = roam->player.hp;
+            roam->character->mana    = (int)roam->mana;
+            roam->character->stamina = (int)roam->stamina;
+            if (Character_SpendStatPoint(roam->character, (CharacterStat)stat)) {
+                roam->player.hp = roam->character->life;
+                roam->mana      = (float)roam->character->mana;
+                roam->stamina   = (float)roam->character->stamina;
+                Roam__ApplyCharacter(roam);
+                Sounds_Play("cursor_point_drop", SOUND_KIND_UI);
+            }
+        }
+    }
+
+    const bool can_waypoint = roam->in_town || Roam__NearWaypoint(roam);
+    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_W) || Button_Update(roam->places_button)) {
+        if (roam->panel == PANEL_PLACES || can_waypoint) {
+            Roam__TogglePanel(roam, PANEL_PLACES);
+        } else {
+            Roam__ShowMessage(roam, "Stand near a waypoint (or go back to town) to travel.");
+        }
+    }
+    if ((InputManager_ConsumeKeyPress(SDL_SCANCODE_T) || Button_Update(roam->town_button)) && !roam->in_town &&
+        Roam__IsAlive(&roam->player)) {
+        Roam__GoToTown(roam, roam->character->act);
+        Roam__UpdateButtons(roam);
+    }
+
+    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        if (roam->panel != PANEL_NONE || roam->char_panel) {
+            roam->panel      = PANEL_NONE;
+            roam->char_panel = false;
+            Roam__UpdateButtons(roam);
+        } else if (now < roam->exit_armed_until) {
+            Roam__StoreCharacter(roam);
+            Scene_Set(SCENE_REF(CharacterSelect));
+            return true;
+        } else {
+            roam->exit_armed_until = now + EXIT_CONFIRM_MS;
+            Roam__ShowMessage(roam, "Press Esc again to save and exit.");
+        }
+    }
+    if (Button_Update(roam->back_button)) {
+        if (!roam->character->dead) {
+            Roam__StoreCharacter(roam);
+        }
+        Scene_Set(SCENE_REF(CharacterSelect));
+        return true;
+    }
+    return false;
+}
+
 static void Roam__Update(SceneRoam *roam) {
     const uint64_t now     = SDL_GetTicks64();
     const float    seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
@@ -1255,8 +1711,13 @@ static void Roam__Update(SceneRoam *roam) {
     bool right;
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
     InputManager_GetMouseButtons(&left, NULL, &right);
-    const bool over_panel = roam->panel != PANEL_NONE && mouse_x >= PANEL_X;
-    const bool over_view  = mouse_y < VIEW_H && !over_panel;
+    const bool over_panel = (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
+                            (roam->game && roam->char_panel && mouse_x < CHAR_PANEL_W && mouse_y < CHAR_PANEL_H);
+    const bool over_view = mouse_y < VIEW_H && !over_panel;
+
+    if (roam->game && Roam__UpdateGame(roam, now, mouse_x, mouse_y, left && !roam->prev_left)) {
+        return;
+    }
 
     if (over_view) {
         const int wheel = InputManager_ConsumeMouseWheel();
@@ -1269,7 +1730,7 @@ static void Roam__Update(SceneRoam *roam) {
         roam->running = !roam->running;
         Roam__UpdateButtons(roam);
     }
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
+    if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
         combat_enabled = !combat_enabled;
         Roam__UpdateButtons(roam);
     }
@@ -1279,11 +1740,11 @@ static void Roam__Update(SceneRoam *roam) {
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_L)) {
         light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
     }
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
+    if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
         roam->preview = !roam->preview;
         Roam__UpdateButtons(roam);
     }
-    if (roam->free_roam && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
+    if (roam->free_roam && !roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
         const Place *place = Places_Get(roam->place);
         if (place != NULL && place->generated) {
             Roam__Teleport(roam, roam->place); // the same area, built afresh
@@ -1308,8 +1769,9 @@ static void Roam__Update(SceneRoam *roam) {
             roam->use_target    = roam->hovered; // walk over and open it
             roam->attack_target = -1;
             Roam__ClearPath(&roam->player);
-        } else if (!roam->prev_left && combat_enabled && roam->hovered >= 0 &&
-                   Roam__IsCombatant(&roam->units[roam->hovered])) {
+        } else if (!roam->prev_left && Roam__Combat(roam) && roam->hovered >= 0 &&
+                   Roam__IsCombatant(&roam->units[roam->hovered]) &&
+                   !Roam__IsPeaceful(roam, &roam->units[roam->hovered])) {
             roam->attack_target = roam->hovered;
             roam->use_target    = -1;
         } else if (roam->use_target >= 0 && roam->prev_left) {
@@ -1326,7 +1788,7 @@ static void Roam__Update(SceneRoam *roam) {
         }
     }
     // Right: drop the selected monster; Shift+Right removes the nearest one
-    if (over_view && right && !roam->prev_right) {
+    if (over_view && right && !roam->prev_right && !roam->game) {
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
         if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) {
             if (roam->hovered >= 0) {
@@ -1373,7 +1835,7 @@ static void Roam__Update(SceneRoam *roam) {
         }
     }
 
-    if (Button_Update(roam->class_button)) {
+    if (roam->class_button != NULL && Button_Update(roam->class_button)) {
         roam->player_class = (roam->player_class + 1) % PLAYER_CLASS_COUNT;
         const float x      = roam->player.x;
         const float y      = roam->player.y;
@@ -1386,10 +1848,10 @@ static void Roam__Update(SceneRoam *roam) {
         roam->running = !roam->running;
         Roam__UpdateButtons(roam);
     }
-    if (Button_Update(roam->monsters_button)) {
+    if (roam->monsters_button != NULL && Button_Update(roam->monsters_button)) {
         Roam__TogglePanel(roam, PANEL_MONSTERS);
     }
-    if (roam->places_button != NULL && Button_Update(roam->places_button)) {
+    if (!roam->game && roam->places_button != NULL && Button_Update(roam->places_button)) {
         Roam__TogglePanel(roam, PANEL_PLACES);
     }
     if (roam->clear_button != NULL && Button_Update(roam->clear_button)) {
@@ -1404,17 +1866,22 @@ static void Roam__Update(SceneRoam *roam) {
         roam->use_target    = -1;
         Roam__UpdateBlocking(roam);
     }
-    if (Button_Update(roam->combat_button)) {
+    if (roam->combat_button != NULL && Button_Update(roam->combat_button)) {
         combat_enabled = !combat_enabled;
         Roam__UpdateButtons(roam);
     }
-    if (Button_Update(roam->back_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+    if (!roam->game && (Button_Update(roam->back_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
         // Play-testing goes back to the editor (which takes its map back), otherwise to the main menu
         Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
     }
 }
 
 void TestingGrounds_Update(void *scene_ref, const uint64_t delta) {
+    (void)delta;
+    Roam__Update(scene_ref);
+}
+
+void Game_Update(void *scene_ref, const uint64_t delta) {
     (void)delta;
     Roam__Update(scene_ref);
 }
@@ -1533,6 +2000,63 @@ static void Roam__DrawPreview(SceneRoam *roam, const SDL_Rect *view) {
     Label_Draw(roam->target_label, sx, sy + hh + 18);
 }
 
+// Single Player: mana and stamina next to life, the experience bar, messages
+static void Roam__DrawGameHud(SceneRoam *roam) {
+    const Character *character   = roam->character;
+    const int        max_mana    = Character_MaxMana(character);
+    const int        max_stamina = Character_MaxStamina(character);
+    char             text[64];
+
+    const SDL_Rect mana      = {VIEW_W - 128, VIEW_H - 34, 120, 10};
+    const SDL_Rect mana_fill = {VIEW_W - 128, VIEW_H - 34,
+                                max_mana > 0 ? (int)(120.0f * roam->mana / (float)max_mana) : 0, 10};
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 40, 220);
+    SDL_RenderFillRect(sdl_renderer, &mana);
+    SDL_SetRenderDrawColor(sdl_renderer, 30, 60, 220, 255);
+    SDL_RenderFillRect(sdl_renderer, &mana_fill);
+    snprintf(text, sizeof(text), "Mana %d / %d", (int)roam->mana, max_mana);
+    Label_SetText(roam->life_label, text);
+    int width = 0;
+    Label_GetSize(roam->life_label, &width, NULL);
+    Label_Draw(roam->life_label, VIEW_W - 134 - width, VIEW_H - 37);
+
+    // Stamina: a thin bar under life, yellow (red when you've run yourself out)
+    const SDL_Rect stamina      = {8, VIEW_H - 22, 120, 4};
+    const SDL_Rect stamina_fill = {8, VIEW_H - 22,
+                                   max_stamina > 0 ? (int)(120.0f * roam->stamina / (float)max_stamina) : 0, 4};
+    SDL_SetRenderDrawColor(sdl_renderer, 30, 30, 0, 220);
+    SDL_RenderFillRect(sdl_renderer, &stamina);
+    if (roam->exhausted) {
+        SDL_SetRenderDrawColor(sdl_renderer, 200, 60, 20, 255);
+    } else {
+        SDL_SetRenderDrawColor(sdl_renderer, 210, 190, 40, 255);
+    }
+    SDL_RenderFillRect(sdl_renderer, &stamina_fill);
+
+    // Experience through this level, across the bottom of the view
+    const uint32_t low     = Character_ExperienceFor(character->level);
+    const uint32_t high    = Character_ExperienceFor(character->level + 1);
+    const float    done    = (character->level >= CHARACTER_MAX_LEVEL || high <= low)
+                                 ? 1.0f
+                                 : (float)(character->experience - low) / (float)(high - low);
+    const SDL_Rect xp      = {0, VIEW_H - 16, VIEW_W, 2};
+    const SDL_Rect xp_fill = {0, VIEW_H - 16, (int)((float)VIEW_W * fminf(fmaxf(done, 0.0f), 1.0f)), 2};
+    SDL_SetRenderDrawColor(sdl_renderer, 40, 34, 10, 255);
+    SDL_RenderFillRect(sdl_renderer, &xp);
+    SDL_SetRenderDrawColor(sdl_renderer, 230, 200, 80, 255);
+    SDL_RenderFillRect(sdl_renderer, &xp_fill);
+
+    if (character->stat_points > 0 && !roam->char_panel && (SDL_GetTicks64() / 600) % 2 == 0) {
+        Label_SetText(roam->life_label, "New stats! (C)");
+        Label_SetColor(roam->life_label, 0xFF, 0xE8, 0x60, 0xFF);
+        Label_Draw(roam->life_label, 340, VIEW_H - 37);
+        Label_SetColor(roam->life_label, 0xFF, 0xFF, 0xFF, 0xFF);
+    }
+    if (SDL_GetTicks64() < roam->message_until) {
+        Label_Draw(roam->message_label, VIEW_W / 2, 110);
+    }
+}
+
 static void Roam__Render(SceneRoam *roam) {
     const SDL_Rect view = {0, 0, VIEW_W, VIEW_H};
 
@@ -1582,7 +2106,8 @@ static void Roam__Render(SceneRoam *roam) {
         Roam__DrawUnitInfo(roam, &view, &roam->units[roam->attack_target], true);
     }
     if (roam->hovered >= 0) {
-        Roam__DrawUnitInfo(roam, &view, &roam->units[roam->hovered], combat_enabled);
+        Roam__DrawUnitInfo(roam, &view, &roam->units[roam->hovered],
+                           Roam__Combat(roam) && !Roam__IsPeaceful(roam, &roam->units[roam->hovered]));
     }
 
     // Status bar
@@ -1596,9 +2121,15 @@ static void Roam__Render(SceneRoam *roam) {
         alive += Roam__IsAlive(&roam->units[i]) ? 1 : 0;
     }
     char status[200];
-    snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s",
-             roam->map->name, roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
-             roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name);
+    if (roam->game) {
+        snprintf(status, sizeof(status), "%s   %s, level %d %s%s   light: %s", roam->map->name, roam->character->name,
+                 roam->character->level, Character_ClassName(roam->character->class_id),
+                 roam->character->hardcore ? " (hardcore)" : "", light_levels[light_level].name);
+    } else {
+        snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s",
+                 roam->map->name, roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
+                 roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name);
+    }
     Label_SetText(roam->status_label, status);
     Label_Draw(roam->status_label, 4, 2);
     const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};
@@ -1614,14 +2145,22 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_SetRenderDrawColor(sdl_renderer, 200, 20, 20, 255);
     SDL_RenderFillRect(sdl_renderer, &fill);
     char life_text[64];
-    if (player->state == UNIT_DEAD) {
-        snprintf(life_text, sizeof(life_text), "You died - back in %d...",
-                 (int)((roam->respawn_at - SDL_GetTicks64() + 999) / 1000));
+    if (player->state == UNIT_DEAD && roam->game && roam->character->dead) {
+        snprintf(life_text, sizeof(life_text), "You died");
+    } else if (player->state == UNIT_DEAD) {
+        const uint64_t now = SDL_GetTicks64();
+        snprintf(life_text, sizeof(life_text),
+                 roam->game ? "You died - back in town in %d..." : "You died - back in %d...",
+                 (int)((roam->respawn_at > now ? roam->respawn_at - now + 999 : 0) / 1000));
     } else {
         snprintf(life_text, sizeof(life_text), "Life %d / %d", player->hp, player->max_hp);
     }
     Label_SetText(roam->life_label, life_text);
     Label_Draw(roam->life_label, 134, VIEW_H - 37);
+
+    if (roam->game) {
+        Roam__DrawGameHud(roam);
+    }
 
     if (roam->panel != PANEL_NONE) {
         const SDL_Rect panel = {PANEL_X, 14, 800 - PANEL_X, VIEW_H - 28};
@@ -1639,6 +2178,10 @@ static void Roam__Render(SceneRoam *roam) {
         }
     }
 
+    if (roam->game && roam->char_panel) {
+        Roam__DrawCharacterPanel(roam);
+    }
+
     const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};
     SDL_SetRenderDrawColor(sdl_renderer, 22, 20, 18, 255);
     SDL_RenderFillRect(sdl_renderer, &bottom);
@@ -1650,3 +2193,5 @@ static void Roam__Render(SceneRoam *roam) {
 void TestingGrounds_Render(void *scene_ref) { Roam__Render(scene_ref); }
 
 void FreeRoam_Render(void *scene_ref) { Roam__Render(scene_ref); }
+
+void Game_Render(void *scene_ref) { Roam__Render(scene_ref); }

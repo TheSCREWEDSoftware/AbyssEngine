@@ -24,6 +24,7 @@ typedef enum ButtonType {
     BUTTON_TYPE_MEDIUM, // 128x35
     BUTTON_TYPE_SHORT,  // 135x25, main menu credits/cinematics
     BUTTON_TYPE_CANCEL, // 96x32
+    BUTTON_TYPE_TALL,   // 168x60, character select screen
 } ButtonType;
 
 typedef void (*ButtonClickHandler)(void *user_data);

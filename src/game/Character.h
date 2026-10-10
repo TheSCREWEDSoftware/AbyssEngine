@@ -1,0 +1,90 @@
+#ifndef ABYSS_CHARACTER_H
+#define ABYSS_CHARACTER_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+// A Single Player character: class, level, experience and stats, saved in our own text format (one file per
+// character in the "save" folder next to abyss.ini). Not compatible with the original game's .d2s saves.
+//
+// Numbers follow the game's tables (normal difficulty): starting stats, life, mana and stamina per point and per level
+// from charstats.txt, the experience needed for each level from experience.txt.
+
+#define CHARACTER_NAME_MAX  16 // 15 letters
+#define CHARACTER_MAX_LEVEL 99
+
+typedef enum CharacterClass {
+    CHARACTER_AMAZON,
+    CHARACTER_SORCERESS,
+    CHARACTER_NECROMANCER,
+    CHARACTER_PALADIN,
+    CHARACTER_BARBARIAN,
+    CHARACTER_DRUID,
+    CHARACTER_ASSASSIN,
+    CHARACTER_CLASS_COUNT
+} CharacterClass;
+
+typedef enum CharacterStat { STAT_STRENGTH, STAT_DEXTERITY, STAT_VITALITY, STAT_ENERGY, STAT_COUNT } CharacterStat;
+
+typedef struct Character {
+    char           name[CHARACTER_NAME_MAX];
+    CharacterClass class_id;
+    bool           expansion;
+    bool           hardcore;
+    bool           dead; // hardcore characters stay dead
+    int            level;
+    uint32_t       experience;
+    int            stats[STAT_COUNT]; // strength, dexterity, vitality, energy
+    int            stat_points;       // to spend
+    int            skill_points;
+    int            life; // current
+    int            mana;
+    int            stamina;
+    int            act;         // 0..4: the town the game starts in
+    uint64_t       last_played; // seconds since 1970
+} Character;
+
+const char *Character_ClassName(CharacterClass class_id);  // "Amazon"
+const char *Character_ClassToken(CharacterClass class_id); // "am" (graphics)
+bool        Character_ClassIsExpansion(CharacterClass class_id);
+const char *Character_StatName(CharacterStat stat);
+
+// A new level 1 character with the class's starting stats
+void Character_Create(Character *character, const char *name, CharacterClass class_id, bool expansion, bool hardcore);
+
+// Derived numbers
+int         Character_MaxLife(const Character *character);
+int         Character_MaxMana(const Character *character);
+int         Character_MaxStamina(const Character *character);
+int         Character_Defense(const Character *character);
+int         Character_AttackRating(const Character *character);
+void        Character_Damage(const Character *character, int *minimum, int *maximum); // with the starting weapon
+const char *Character_WeaponName(const Character *character);
+int         Character_ManaRegenSeconds(const Character *character); // time to refill mana from empty
+int         Character_RunDrain(const Character *character);         // stamina used running (charstats RunDrain)
+uint32_t    Character_ExperienceFor(int level);                     // experience a character needs to be this level
+// Adds experience; levels up as many times as it covers (stat and skill points, life/mana/stamina refilled).
+// Returns the number of levels gained.
+int  Character_AddExperience(Character *character, uint32_t experience);
+bool Character_SpendStatPoint(Character *character, CharacterStat stat);
+
+// The game's hit chance (5..95%): attacker's attack rating and level against the defender's defense and level
+int Character_HitChance(int attack_rating, int attacker_level, int defense, int defender_level);
+
+// Names: 2..15 letters, at most one '-' or '_' and not at either end. On failure, why (for the player).
+bool Character_IsValidName(const char *name, const char **reason);
+
+// Saved characters
+bool Character_Save(Character *character); // also stamps last_played
+bool Character_Exists(const char *name);
+bool Character_Delete(const char *name);
+// All saved characters, most recently played first. Free the array with free().
+int Character_ListSaved(Character **characters);
+
+// The character being played (copied in when the game starts)
+Character *Character_Current(void);
+void       Character_SetCurrent(const Character *character);
+
+void Character_Release(void); // frees the cached tables
+
+#endif // ABYSS_CHARACTER_H

@@ -27,6 +27,7 @@
 #define BUTTON_MEDIUM_BLANK "/data/global/ui/FrontEnd/MediumButtonBlank.dc6"
 #define BUTTON_CANCEL_BLANK "/data/global/ui/FrontEnd/CancelButtonBlank.dc6"
 #define BUTTON_SHORT_BLANK  "/data/global/ui/CharSelect/ShortButtonBlank.dc6"
+#define BUTTON_TALL_BLANK   "/data/global/ui/CharSelect/TallButtonBlank.dc6"
 
 // --- Credits ---
 

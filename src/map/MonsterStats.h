@@ -12,8 +12,11 @@ typedef struct MonsterStats {
     int  hp_max;
     int  damage_min; // first attack
     int  damage_max;
-    int  velocity; // walk speed
-    bool npc;      // town NPCs: never fight unless combat is forced on
+    int  defense;       // armor class
+    int  attack_rating; // first attack's to-hit
+    int  experience;    // given for killing it
+    int  velocity;      // walk speed
+    bool npc;           // town NPCs: never fight unless combat is forced on
 } MonsterStats;
 
 bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if unknown
