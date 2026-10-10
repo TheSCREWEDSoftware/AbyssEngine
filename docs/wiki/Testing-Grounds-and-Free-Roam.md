@@ -44,7 +44,10 @@ Grounds) removes everything you dropped.
 A debugging switch for fighting between you and the NPCs/monsters:
 
 - **Off**: nobody fights; walk around freely.
-- **On**: NPCs and monsters within about 10 sub-tiles come at you (around walls if needed) and attack. Click one to attack it; its name and a
+- **On**: NPCs and monsters within about 10 sub-tiles come at you (around walls if needed) and attack, but only those
+  that have an attack animation (in town that's the rogue scouts; Gheed, Akara, Charsi and the other traders keep
+  strolling). A unit only does what it has an animation for: without a get-hit animation it doesn't flinch, and
+  without death or corpse graphics it simply disappears when killed. You can still attack anyone. Click one to attack it; its name and a
   life bar show over it.
   - Monster life and damage: the game's own tables (`monstats.txt` percentages of the `MonLvl.txt` base values,
     normal difficulty). A Zombie has 7-12 life and hits for 1-3.

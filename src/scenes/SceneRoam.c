@@ -136,6 +136,8 @@ typedef struct Unit {
     bool        wandering;   // on a stroll (not fighting)
     uint64_t    next_wander; // when to set off again
     int         can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
+    int         can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
+    bool        vanished;    // died without death or corpse graphics: no longer drawn
     DrawContext draw;
 } Unit;
 
@@ -311,16 +313,17 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     snprintf(unit->base, sizeof(unit->base), "%s", base);
     snprintf(unit->id, sizeof(unit->id), "%s", id);
     snprintf(unit->name, sizeof(unit->name), "%s", info.name);
-    unit->idle_mode = info.idle_mode;
-    unit->x         = x;
-    unit->y         = y;
-    unit->target_x  = x;
-    unit->target_y  = y;
-    unit->turn      = rand() % 16;
-    unit->home_x    = x;
-    unit->home_y    = y;
-    unit->can_walk  = -1;
-    unit->state     = UNIT_IDLE;
+    unit->idle_mode  = info.idle_mode;
+    unit->x          = x;
+    unit->y          = y;
+    unit->target_x   = x;
+    unit->target_y   = y;
+    unit->turn       = rand() % 16;
+    unit->home_x     = x;
+    unit->home_y     = y;
+    unit->can_walk   = -1;
+    unit->can_attack = -1;
+    unit->state      = UNIT_IDLE;
 
     MonsterStats stats;
     if (strcmp(base, "monsters") == 0 && MonsterStats_Get(id, &stats)) {
@@ -421,15 +424,35 @@ static void Roam__ClearPath(Unit *unit) {
     unit->next_repath = 0;
 }
 
-static void Roam__Damage(Unit *unit, const int amount, const uint64_t now) {
+// Whether the unit has graphics for an animation. A unit only does what it can be shown doing: no attack animation,
+// no attacking (Gheed, Akara, ...); no get-hit animation, no flinching; no death animation, it drops straight dead.
+static bool Roam__HasMode(SceneRoam *roam, const Unit *unit, const char *mode) {
+    if (Roam__IsPlayer(roam, unit)) {
+        return true; // players have every animation
+    }
+    // The Bestiary's list: the animations monstats2 says it has, that also have graphics (some, like Gheed's
+    // attack, have files but aren't used by the game)
+    return CatalogCharacters_HasMode(MapSession_GetBestiary(), unit->base, unit->id, mode);
+}
+
+static bool Roam__CanAttack(SceneRoam *roam, Unit *unit) {
+    if (unit->can_attack < 0) {
+        unit->can_attack = Roam__HasMode(roam, unit, "a1") ? 1 : 0;
+    }
+    return unit->can_attack == 1;
+}
+
+static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
     }
     unit->hp -= amount;
     if (unit->hp <= 0) {
-        unit->hp = 0;
-        Roam__SetState(unit, UNIT_DYING, now);
-    } else if (unit->state == UNIT_IDLE || unit->state == UNIT_WALK) {
+        unit->hp         = 0;
+        const bool dying = Roam__HasMode(roam, unit, "dt");
+        unit->vanished   = !dying && !Roam__HasMode(roam, unit, "dd");
+        Roam__SetState(unit, dying ? UNIT_DYING : UNIT_DEAD, now);
+    } else if ((unit->state == UNIT_IDLE || unit->state == UNIT_WALK) && Roam__HasMode(roam, unit, "gh")) {
         Roam__SetState(unit, UNIT_HIT, now);
     }
 }
@@ -790,7 +813,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 Unit *target = &roam->units[roam->attack_target];
                 if (Roam__Distance(player->x, player->y, target->x, target->y) <= ATTACK_RANGE + 0.5f) {
                     target->provoked = true;
-                    Roam__Damage(target, Roam__Roll(player->damage_min, player->damage_max), now);
+                    Roam__Damage(roam, target, Roam__Roll(player->damage_min, player->damage_max), now);
                 }
             }
             Roam__SetState(player, UNIT_IDLE, now);
@@ -842,7 +865,7 @@ static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const
     if (unit->can_walk < 0) {
         // Guards keep their post; everyone else with a walk animation strolls
         const bool guard  = strstr(unit->id, "guard") != NULL;
-        unit->can_walk    = !guard && MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "wl") != NULL ? 1 : 0;
+        unit->can_walk    = !guard && Roam__HasMode(roam, unit, "wl") ? 1 : 0;
         unit->next_wander = now + (uint64_t)Roam__Roll(500, WANDER_PAUSE_MAX_MS); // don't all set off at once
     }
     if (unit->can_walk == 0) {
@@ -896,7 +919,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
         if (Roam__Animate(roam, unit, now)) {
             if (unit->state == UNIT_ATTACK && player_alive && combat_enabled &&
                 Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f) {
-                Roam__Damage(player, Roam__Roll(unit->damage_min, unit->damage_max), now);
+                Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
             }
             Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
         }
@@ -910,7 +933,13 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
 
-        // Combat: everyone nearby (NPCs included) comes for the player
+        // Only units that can attack (have an attack animation) fight back; the rest carry on strolling
+        if (!Roam__CanAttack(roam, unit)) {
+            Roam__Wander(roam, unit, seconds, now);
+            continue;
+        }
+
+        // Combat: everyone nearby that can fight (NPCs included) comes for the player
         const float distance = Roam__Distance(unit->x, unit->y, player->x, player->y);
         if (distance > AGGRO_RANGE && !unit->provoked) {
             Roam__Wander(roam, unit, seconds, now);
@@ -1133,6 +1162,9 @@ static void Roam__DrawFigure(void *context, const int screen_x, const int screen
 }
 
 static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable) {
+    if (unit->state == UNIT_DEAD && unit->vanished) {
+        return false; // no corpse graphics: it's gone
+    }
     Figure *figure = Roam__Figure(roam, unit);
     if (figure == NULL) {
         return false;

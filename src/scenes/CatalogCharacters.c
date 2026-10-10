@@ -595,6 +595,23 @@ bool CatalogCharacters_Find(const CatalogCharacters *characters, const char *bas
     return false;
 }
 
+bool CatalogCharacters_HasMode(const CatalogCharacters *characters, const char *base, const char *id,
+                               const char *mode) {
+    for (int e = 0; e < characters->entry_count; e++) {
+        const CharacterEntry *entry = &characters->entries[e];
+        if (strcmp(entry->spec.base, base) != 0 || strcmp(entry->id, id) != 0) {
+            continue;
+        }
+        for (int m = 0; m < entry->mode_count; m++) {
+            if (strcmp(entry->modes[m]->code, mode) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
 const char *CatalogCharacters_GetName(const CatalogCharacters *characters, const int index) {
     return characters->entries[characters->visible[index]].name;
 }

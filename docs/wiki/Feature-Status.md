@@ -38,7 +38,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Walking | 🧪 | Free Roam / Testing Grounds. Collision with walls from the tiles; paths around obstacles. |
 | Pathfinding | 🧪 | A* on the sub-tile grid (8 directions, no cutting corners), smoothed into straight legs. The player walks around walls and objects to where you click (or to the closest reachable spot); chasing monsters go straight at you when nothing's in the way and around walls otherwise. Units don't avoid each other yet. |
 | NPCs in towns | 🧪 | In their places, and they stroll around them (pause a few seconds, walk to a nearby spot along a path, repeat); guards keep their post. They don't talk or trade yet. |
-| Combat | 🧪 | Debug toggle only: melee, life and damage from the game tables (normal difficulty), get-hit/death animations. No skills, levels, experience, blocking, missiles or AI beyond "walk at the player". |
+| Combat | 🧪 | Debug toggle only: units without an attack animation (most town NPCs) never attack; melee, life and damage from the game tables (normal difficulty), get-hit/death animations. No skills, levels, experience, blocking, missiles or AI beyond "walk at the player". |
 | Player stats, leveling, experience | ❌ | Life comes from the class's starting value. |
 | Skills | ❌ | Skill trees can be browsed in the [Catalog](Catalog.md). |
 | Items: inventory, equipment, drops, stash | ❌ | Item data and pictures can be browsed in the Catalog. |

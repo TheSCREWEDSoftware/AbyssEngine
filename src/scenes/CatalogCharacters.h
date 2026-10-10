@@ -31,6 +31,8 @@ typedef struct CatalogCharacterInfo {
 } CatalogCharacterInfo;
 
 bool CatalogCharacters_GetInfo(const CatalogCharacters *characters, int index, CatalogCharacterInfo *info);
+// Whether the character really has an animation: listed for it in monstats2 (monsters) and with graphics.
+bool CatalogCharacters_HasMode(const CatalogCharacters *characters, const char *base, const char *id, const char *mode);
 bool CatalogCharacters_Find(const CatalogCharacters *characters, const char *base, const char *id,
                             CatalogCharacterInfo *info);
 
