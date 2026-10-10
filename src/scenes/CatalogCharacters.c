@@ -819,3 +819,7 @@ void CatalogCharacters_DrawDetail(CatalogCharacters *characters, const SDL_Rect 
     Button_Draw(characters->next_mode);
     Button_Draw(characters->speed);
 }
+
+int CatalogCharacters_GetCategoriesHeight(const CatalogCharacters *characters, const int width) {
+    return TabBar_GetHeight(characters->category_bar, width);
+}

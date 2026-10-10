@@ -27,6 +27,7 @@
 #define PANEL_X         580
 #define PANEL_INNER_X   588
 #define PANEL_INNER_W   204
+#define CATEGORIES_Y    36
 #define LIST_ROWS       20
 #define LIST_ROW_H      18
 #define MAX_DRAWABLES   1024
@@ -196,6 +197,9 @@ static void Grounds__RefreshList(SceneTestingGrounds *grounds) {
     }
     ListBox_SetItems(grounds->list, (const char *const *)grounds->list_names, grounds->list_count);
     grounds->selected = 0;
+    // Under the category bar, which may take two rows
+    ListBox_SetPosition(grounds->list, PANEL_INNER_X,
+                        CATEGORIES_Y + CatalogCharacters_GetCategoriesHeight(bestiary, PANEL_INNER_W) + 4);
 }
 
 // Start on the walkable sub-tile closest to the middle of the map
@@ -454,7 +458,7 @@ void TestingGrounds_Update(void *scene_ref, const uint64_t delta) {
 
     // Panel
     if (grounds->panel_open) {
-        if (CatalogCharacters_UpdateCategories(MapSession_GetBestiary(), PANEL_INNER_X, 36, PANEL_INNER_W)) {
+        if (CatalogCharacters_UpdateCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W)) {
             Grounds__RefreshList(grounds);
         }
         if (ListBox_Update(grounds->list)) {
@@ -569,7 +573,7 @@ void TestingGrounds_Render(void *scene_ref) {
         SDL_SetRenderDrawColor(sdl_renderer, 100, 85, 55, 255);
         SDL_RenderDrawRect(sdl_renderer, &panel);
         Label_Draw(grounds->title_label, PANEL_X + ((800 - PANEL_X) / 2), 26);
-        CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, 36, PANEL_INNER_W);
+        CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W);
         ListBox_Draw(grounds->list);
     }
 

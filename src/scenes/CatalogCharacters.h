@@ -19,6 +19,7 @@ const char *CatalogCharacters_GetName(const CatalogCharacters *characters, int i
 // Category bar. Update returns true when the category changed (the list must be refreshed).
 bool CatalogCharacters_UpdateCategories(CatalogCharacters *characters, int x, int y, int width);
 void CatalogCharacters_DrawCategories(const CatalogCharacters *characters, int x, int y, int width);
+int  CatalogCharacters_GetCategoriesHeight(const CatalogCharacters *characters, int width); // one or two rows
 
 // For placing characters elsewhere (the map editor): how to build the figure and which animations to use.
 typedef struct CatalogCharacterInfo {

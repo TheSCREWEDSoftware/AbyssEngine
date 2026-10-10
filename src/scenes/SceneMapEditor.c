@@ -31,10 +31,11 @@
 #define PANEL_INNER_X 588
 #define PANEL_INNER_W 204
 #define TOOLS_Y       34
-#define CATEGORIES_Y  58
-#define PREVIEW_Y     60
-#define PREVIEW_H     100
-#define LIST_Y        168
+#define PREVIEW_H     92
+// Below the tool tabs, which can take one or two rows (set when the editor is created)
+#define PREVIEW_Y     (editor->preview_y)
+#define CATEGORIES_Y  (editor->preview_y + PREVIEW_H + 6) // Units: Bestiary categories under the preview
+#define LIST_Y        (editor->preview_y + PREVIEW_H + 8)
 #define LIST_ROWS     15
 #define LIST_ROW_H    18
 #define BOTTOM_Y      562
@@ -74,6 +75,7 @@ typedef struct SceneMapEditor {
     // Tool panel
     EditorTool tool;
     TabBar    *tool_bar;
+    int        preview_y;
     ListBox   *list;
     char     **list_names;
     int        list_count;
@@ -194,6 +196,14 @@ static const char *Editor__OrientationName(const int orientation) {
     }
 }
 
+// The list sits under the category bar (one or two rows) on the Units tab
+static int Editor__ListY(const SceneMapEditor *editor) {
+    if (editor->tool != TOOL_UNITS) {
+        return LIST_Y;
+    }
+    return CATEGORIES_Y + CatalogCharacters_GetCategoriesHeight(MapSession_GetBestiary(), PANEL_INNER_W) + 4;
+}
+
 static void Editor__FreeListNames(SceneMapEditor *editor) {
     for (int i = 0; i < editor->list_count; i++) {
         free(editor->list_names[i]);
@@ -238,7 +248,7 @@ static void Editor__RefreshList(SceneMapEditor *editor) {
     }
     ListBox_SetSelectedIndex(editor->list, editor->selected[editor->tool]);
     // The category bar takes room above the list for units
-    ListBox_SetPosition(editor->list, PANEL_INNER_X, editor->tool == TOOL_UNITS ? LIST_Y + 24 : LIST_Y);
+    ListBox_SetPosition(editor->list, PANEL_INNER_X, Editor__ListY(editor));
 }
 
 static const MapTileChoice *Editor__SelectedChoice(const SceneMapEditor *editor) {
@@ -308,8 +318,9 @@ void *MapEditor_Create(void) {
     Label_SetAlignment(editor->title_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_SetColor(editor->title_label, 0xC7, 0xB3, 0x77, 0xFF);
 
-    editor->tool_bar = TabBar_Create(tool_names, TOOL_COUNT, TOOL_FLOOR);
-    editor->list     = ListBox_Create(FONTS_FONT8, PANEL_INNER_X, LIST_Y, PANEL_INNER_W, LIST_ROWS, LIST_ROW_H);
+    editor->tool_bar  = TabBar_Create(tool_names, TOOL_COUNT, TOOL_FLOOR);
+    editor->preview_y = TOOLS_Y + TabBar_GetHeight(editor->tool_bar, PANEL_INNER_W) + 4;
+    editor->list      = ListBox_Create(FONTS_FONT8, PANEL_INNER_X, LIST_Y, PANEL_INNER_W, LIST_ROWS, LIST_ROW_H);
     ListBox_SetBackground(editor->list, 0, 0, 0, 160);
 
     editor->preview_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
@@ -912,8 +923,8 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
         editor->tool = (EditorTool)TabBar_GetSelected(editor->tool_bar);
         Editor__RefreshList(editor);
     }
-    if (editor->tool == TOOL_UNITS && CatalogCharacters_UpdateCategories(MapSession_GetBestiary(), PANEL_INNER_X,
-                                                                         CATEGORIES_Y + 108, PANEL_INNER_W)) {
+    if (editor->tool == TOOL_UNITS &&
+        CatalogCharacters_UpdateCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W)) {
         editor->selected[TOOL_UNITS] = 0;
         Editor__RefreshList(editor);
     }
@@ -984,7 +995,7 @@ static void Editor__DrawPanel(SceneMapEditor *editor) {
                 SDL_RenderSetClipRect(sdl_renderer, NULL);
             }
         }
-        CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y + 108, PANEL_INNER_W);
+        CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W);
     } else {
         const MapTileChoice *choice = Editor__SelectedChoice(editor);
         if (choice != NULL) {
@@ -996,7 +1007,7 @@ static void Editor__DrawPanel(SceneMapEditor *editor) {
     ListBox_Draw(editor->list);
 
     // Info lines
-    const int info_y = (editor->tool == TOOL_UNITS ? LIST_Y + 24 : LIST_Y) + (LIST_ROWS * LIST_ROW_H) + 6;
+    const int info_y = Editor__ListY(editor) + (LIST_ROWS * LIST_ROW_H) + 6;
     char      text[128];
     snprintf(text, sizeof(text), "%s  %dx%d  act %d", editor->dirty ? "* unsaved" : "", editor->map->width,
              editor->map->height, editor->map->act + 1);

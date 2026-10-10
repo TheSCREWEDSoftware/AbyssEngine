@@ -16,6 +16,7 @@ const char     *CatalogSprites_GetName(const CatalogSprites *sprites, int index)
 // Category bar (Items / Skills / Menus / UI / Fonts / Other). Update returns true when the category changed.
 bool CatalogSprites_UpdateCategories(CatalogSprites *sprites, int x, int y, int width);
 void CatalogSprites_DrawCategories(const CatalogSprites *sprites, int x, int y, int width);
+int  CatalogSprites_GetCategoriesHeight(const CatalogSprites *sprites, int width); // one or two rows
 
 // index is a position in the current category's list
 void CatalogSprites_Select(CatalogSprites *sprites, int index);

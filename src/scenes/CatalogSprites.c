@@ -611,3 +611,7 @@ void CatalogSprites_DrawDetail(CatalogSprites *sprites, const SDL_Rect *panel) {
     Button_Draw(sprites->buttons[SPRITE_BUTTON_PALETTE]);
     Button_Draw(sprites->buttons[SPRITE_BUTTON_SPEED]);
 }
+
+int CatalogSprites_GetCategoriesHeight(const CatalogSprites *sprites, const int width) {
+    return TabBar_GetHeight(sprites->category_bar, width);
+}

@@ -3,7 +3,8 @@
 
 #include <stdbool.h>
 
-// A row of text tabs (one selected) that share a fixed width in proportion to their text.
+// A row of text tabs (one selected) that share a fixed width in proportion to their text. Names that don't fit in
+// one row wrap onto a second (or third) row.
 typedef struct TabBar TabBar;
 
 #define TAB_BAR_HEIGHT 20
@@ -11,6 +12,7 @@ typedef struct TabBar TabBar;
 TabBar *TabBar_Create(const char *const *names, int count, int selected);
 void    TabBar_Destroy(TabBar **tab_bar);
 int     TabBar_GetSelected(const TabBar *tab_bar);
+int     TabBar_GetHeight(const TabBar *tab_bar, int width); // TAB_BAR_HEIGHT per row
 // Returns true when a click selected a different tab.
 bool TabBar_Update(TabBar *tab_bar, int x, int y, int width);
 void TabBar_Draw(const TabBar *tab_bar, int x, int y, int width);

@@ -12,7 +12,6 @@
 
 struct TabBar {
     Label **labels;
-    Label **small_labels; // used when the names don't fit the bar's width
     int     count;
     int     selected;
     bool    prev_mouse_left;
@@ -23,10 +22,8 @@ TabBar *TabBar_Create(const char *const *names, const int count, const int selec
     FAIL_IF_NULL(tab_bar);
     memset(tab_bar, 0, sizeof(TabBar));
 
-    tab_bar->labels       = calloc((size_t)count, sizeof(Label *));
-    tab_bar->small_labels = calloc((size_t)count, sizeof(Label *));
+    tab_bar->labels = calloc((size_t)count, sizeof(Label *));
     FAIL_IF_NULL(tab_bar->labels);
-    FAIL_IF_NULL(tab_bar->small_labels);
     tab_bar->count    = count;
     tab_bar->selected = selected;
 
@@ -34,9 +31,6 @@ TabBar *TabBar_Create(const char *const *names, const int count, const int selec
         tab_bar->labels[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
         Label_SetText(tab_bar->labels[i], names[i]);
         Label_SetAlignment(tab_bar->labels[i], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
-        tab_bar->small_labels[i] = Label_Create(FONTS_FONT8, PALETTE_STATIC);
-        Label_SetText(tab_bar->small_labels[i], names[i]);
-        Label_SetAlignment(tab_bar->small_labels[i], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     }
 
     return tab_bar;
@@ -49,49 +43,69 @@ void TabBar_Destroy(TabBar **tab_bar) {
 
     for (int i = 0; i < (*tab_bar)->count; i++) {
         Label_Destroy(&(*tab_bar)->labels[i]);
-        Label_Destroy(&(*tab_bar)->small_labels[i]);
     }
     free((*tab_bar)->labels);
-    free((*tab_bar)->small_labels);
     free(*tab_bar);
     *tab_bar = NULL;
 }
 
 int TabBar_GetSelected(const TabBar *tab_bar) { return tab_bar->selected; }
 
-// The labels to use for a bar this wide: the normal font, or the small one when the names don't fit
-static Label *const *TabBar__Labels(const TabBar *tab_bar, const int width) {
-    int total = 0;
-    for (int i = 0; i < tab_bar->count; i++) {
-        int text_w = 0;
-        Label_GetSize(tab_bar->labels[i], &text_w, NULL);
-        total += text_w;
-    }
-    return total + (tab_bar->count * TAB_BAR_PADDING) > width ? tab_bar->small_labels : tab_bar->labels;
+static int TabBar__TextWidth(const TabBar *tab_bar, const int tab) {
+    int width = 0;
+    Label_GetSize(tab_bar->labels[tab], &width, NULL);
+    return width;
 }
 
-// Tabs share the bar width in proportion to their text, so longer names get more room.
+// Tabs [first, first + count) of one row: do they fit side by side?
+static bool TabBar__RowFits(const TabBar *tab_bar, const int first, const int count, const int width) {
+    int total = 0;
+    for (int i = first; i < first + count; i++) {
+        total += TabBar__TextWidth(tab_bar, i) + TAB_BAR_PADDING;
+    }
+    return total <= width;
+}
+
+// When the names don't fit in one row they wrap onto more rows, split as evenly as possible.
+static int TabBar__RowCount(const TabBar *tab_bar, const int width) {
+    for (int rows = 1; rows < tab_bar->count; rows++) {
+        const int per_row = (tab_bar->count + rows - 1) / rows;
+        bool      fits    = true;
+        for (int first = 0; first < tab_bar->count && fits; first += per_row) {
+            const int count = first + per_row <= tab_bar->count ? per_row : tab_bar->count - first;
+            fits            = TabBar__RowFits(tab_bar, first, count, width);
+        }
+        if (fits) {
+            return rows;
+        }
+    }
+    return tab_bar->count > 0 ? tab_bar->count : 1;
+}
+
+int TabBar_GetHeight(const TabBar *tab_bar, const int width) {
+    return TabBar__RowCount(tab_bar, width) * TAB_BAR_HEIGHT;
+}
+
+// Within a row, tabs share the width in proportion to their text, so longer names get more room.
 static SDL_Rect TabBar__Rect(const TabBar *tab_bar, const int x, const int y, const int width, const int tab) {
-    Label *const *labels = TabBar__Labels(tab_bar, width);
-    int           total  = 0;
-    int           left   = x;
-    for (int i = 0; i < tab_bar->count; i++) {
-        int text_w = 0;
-        Label_GetSize(labels[i], &text_w, NULL);
-        total += text_w;
+    const int rows    = TabBar__RowCount(tab_bar, width);
+    const int per_row = (tab_bar->count + rows - 1) / rows;
+    const int row     = tab / per_row;
+    const int first   = row * per_row;
+    const int count   = first + per_row <= tab_bar->count ? per_row : tab_bar->count - first;
+
+    int total = 0;
+    for (int i = first; i < first + count; i++) {
+        total += TabBar__TextWidth(tab_bar, i);
+    }
+    const int padding = (width - total) / count;
+    int       left    = x;
+    for (int i = first; i < tab; i++) {
+        left += TabBar__TextWidth(tab_bar, i) + padding;
     }
 
-    const int padding = (width - total) / tab_bar->count;
-    for (int i = 0; i < tab; i++) {
-        int text_w = 0;
-        Label_GetSize(labels[i], &text_w, NULL);
-        left += text_w + padding;
-    }
-
-    int text_w = 0;
-    Label_GetSize(labels[tab], &text_w, NULL);
-    const int      right = (tab == tab_bar->count - 1) ? x + width : left + text_w + padding;
-    const SDL_Rect rect  = {left, y, right - left, TAB_BAR_HEIGHT};
+    const int      right = (tab == first + count - 1) ? x + width : left + TabBar__TextWidth(tab_bar, tab) + padding;
+    const SDL_Rect rect  = {left, y + (row * TAB_BAR_HEIGHT), right - left, TAB_BAR_HEIGHT};
     return rect;
 }
 
@@ -131,7 +145,7 @@ void TabBar_Draw(const TabBar *tab_bar, const int x, const int y, const int widt
         SDL_SetRenderDrawColor(sdl_renderer, 100, 85, 55, 255);
         SDL_RenderDrawRect(sdl_renderer, &rect);
 
-        Label *label = TabBar__Labels(tab_bar, width)[i];
+        Label *label = tab_bar->labels[i];
         if (selected) {
             Label_SetColor(label, 0xFF, 0xE8, 0xA0, 0xFF);
         } else {
