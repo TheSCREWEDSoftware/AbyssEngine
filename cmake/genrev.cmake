@@ -32,7 +32,7 @@ if (NOT WITHOUT_GIT)
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET)
     execute_process(
-            COMMAND "${GIT_EXECUTABLE}" show -s --format=%cd --date=format:%Y-%m-%d
+            COMMAND "${GIT_EXECUTABLE}" show -s --format=%ci
             WORKING_DIRECTORY "${SOURCEDIR}"
             OUTPUT_VARIABLE rev_date
             OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -53,10 +53,17 @@ if (NOT rev_hash)
     # No git (source zip, git not installed): still build, just without a commit to show
     set(rev_hash "unknown")
     set(rev_branch "local build")
-    string(TIMESTAMP rev_date "%Y-%m-%d" UTC)
+    string(TIMESTAMP rev_date "%Y-%m-%d %H:%M:%S +0000" UTC)
 endif ()
 if (NOT rev_branch OR rev_branch STREQUAL "HEAD")
     set(rev_branch "detached")
+endif ()
+
+# How the libraries are linked: vcpkg "-static" triplets link everything into the exe
+if (VCPKG_TARGET_TRIPLET MATCHES "static")
+    set(rev_linkage "Static")
+else ()
+    set(rev_linkage "Dynamic")
 endif ()
 
 configure_file("${SOURCEDIR}/src/common/revision.h.in" "${BUILDDIR}/revision.h.tmp" @ONLY)

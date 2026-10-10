@@ -5,5 +5,6 @@
 #define ABYSS_REVISION_HASH   "@rev_hash@"
 #define ABYSS_REVISION_DATE   "@rev_date@"
 #define ABYSS_REVISION_BRANCH "@rev_branch@"
+#define ABYSS_REVISION_LINKAGE "@rev_linkage@"
 
 #endif // ABYSS_REVISION_H

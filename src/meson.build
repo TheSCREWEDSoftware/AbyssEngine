@@ -87,6 +87,7 @@ if get_option('debug_show_catalog')
     build_opts += ['-DABYSS_DEBUG_SHOW_CATALOG']
 endif
 
+build_opts += ['-DABYSS_BUILD_TYPE="' + get_option('buildtype') + '"']
 add_global_arguments(build_opts, language: 'c')
 
 # Git commit shown on the main menu (read when the build is configured; see cmake/genrev.cmake for CMake)
@@ -95,10 +96,11 @@ rev = configuration_data()
 rev.set('rev_hash', 'unknown')
 rev.set('rev_branch', 'local build')
 rev.set('rev_date', 'unknown')
+rev.set('rev_linkage', get_option('default_library') == 'static' ? 'Static' : 'Dynamic')
 if git.found()
     git_hash = run_command(git, 'describe', '--always', '--dirty=+', '--abbrev=12', '--match', 'NO_TAGS_PLEASE', check: false)
     if git_hash.returncode() == 0
-        git_date = run_command(git, 'show', '-s', '--format=%cd', '--date=format:%Y-%m-%d', check: false)
+        git_date = run_command(git, 'show', '-s', '--format=%ci', check: false)
         git_branch = run_command(git, 'rev-parse', '--abbrev-ref', 'HEAD', check: false)
         rev.set('rev_hash', git_hash.stdout().strip())
         rev.set('rev_date', git_date.stdout().strip())

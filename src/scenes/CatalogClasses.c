@@ -140,16 +140,22 @@ struct CatalogClasses {
 // Text helpers
 
 // Bounded string copy / append (always NUL terminated).
-static void Classes__Copy(char *dst, const size_t dst_len, const char *src) {
-    dst[0] = '\0';
-    strncat(dst, src, dst_len - 1);
-}
-
 static void Classes__Append(char *dst, const size_t dst_len, const char *src) {
     const size_t used = strlen(dst);
-    if (used + 1 < dst_len) {
-        strncat(dst, src, dst_len - used - 1);
+    if (used + 1 >= dst_len) {
+        return;
     }
+    size_t count = strlen(src);
+    if (count > dst_len - used - 1) {
+        count = dst_len - used - 1;
+    }
+    memcpy(dst + used, src, count);
+    dst[used + count] = '\0';
+}
+
+static void Classes__Copy(char *dst, const size_t dst_len, const char *src) {
+    dst[0] = '\0';
+    Classes__Append(dst, dst_len, src);
 }
 
 static void Classes__Sanitize(char *out, const size_t out_len, const char *in) {

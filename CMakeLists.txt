@@ -35,12 +35,14 @@ include(genrev)
 add_custom_target(revision_h ALL
         COMMAND "${CMAKE_COMMAND}" -DBUILDDIR=${CMAKE_BINARY_DIR} -DSOURCEDIR=${CMAKE_SOURCE_DIR}
         "-DABYSS_VERSION_TEXT=${ABYSS_VERSION_TEXT}" "-DWITHOUT_GIT=${WITHOUT_GIT}" "-DGIT_EXECUTABLE=${GIT_EXECUTABLE}"
+        "-DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
         -P "${CMAKE_SOURCE_DIR}/cmake/genrev.cmake"
         BYPRODUCTS "${CMAKE_BINARY_DIR}/revision.h"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Checking git revision")
 add_dependencies(${PROJECT_NAME} revision_h)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR})
+target_compile_definitions(${PROJECT_NAME} PRIVATE "ABYSS_BUILD_TYPE=\"$<IF:$<CONFIG:>,Unknown,$<CONFIG>>\"")
 
 if (DEBUG_SKIP_INTRO)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ABYSS_DEBUG_SKIP_INTRO)

@@ -113,9 +113,11 @@ static bool FileManager__FindFile(const char *path, char *resolved, const size_t
     struct dirent *entry;
     while (!found && (entry = readdir(dir)) != NULL) {
         if (strcasecmp(entry->d_name, name) == 0) {
-            snprintf(resolved, resolved_len, "%s/%s", folder, entry->d_name);
-            LOG_INFO("Using '%s' for '%s'", resolved, path);
-            found = true;
+            const int written = snprintf(resolved, resolved_len, "%s/%.255s", folder, entry->d_name);
+            found             = written > 0 && (size_t)written < resolved_len;
+            if (found) {
+                LOG_INFO("Using '%s' for '%s'", resolved, path);
+            }
         }
     }
     closedir(dir);
