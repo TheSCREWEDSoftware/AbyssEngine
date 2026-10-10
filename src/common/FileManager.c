@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <dirent.h>
+#include <strings.h>
+#endif
 
 typedef struct FileEntry {
     uint64_t    hash;
@@ -83,19 +87,56 @@ void FileManager_DestroySingleton(void) {
     file_manager = NULL;
 }
 
+// Finds a file on disk. Windows and macOS (by default) ignore letter case, Linux does not: there the MPQs can be
+// "d2data.mpq" while abyss.ini says "d2data.MPQ", so the file name is matched case-insensitively in its folder.
+static bool FileManager__FindFile(const char *path, char *resolved, const size_t resolved_len) {
+    snprintf(resolved, resolved_len, "%s", path);
+
+    FILE *probe = fopen(path, "rb");
+    if (probe != NULL) {
+        fclose(probe);
+        return true;
+    }
+
+#ifndef _WIN32
+    const char *slash = strrchr(path, '/');
+    char        folder[4096];
+    snprintf(folder, sizeof(folder), "%.*s", slash != NULL ? (int)(slash - path) : 1, slash != NULL ? path : ".");
+    const char *name = slash != NULL ? slash + 1 : path;
+
+    DIR *dir = opendir(folder[0] != '\0' ? folder : "/");
+    if (dir == NULL) {
+        return false;
+    }
+
+    bool           found = false;
+    struct dirent *entry;
+    while (!found && (entry = readdir(dir)) != NULL) {
+        if (strcasecmp(entry->d_name, name) == 0) {
+            snprintf(resolved, resolved_len, "%s/%s", folder, entry->d_name);
+            LOG_INFO("Using '%s' for '%s'", resolved, path);
+            found = true;
+        }
+    }
+    closedir(dir);
+    return found;
+#else
+    return false;
+#endif
+}
+
 void FileManager_AddMpq(const char *mpq_path) {
     assert(file_manager != NULL);
     assert(mpq_path != NULL);
 
-    FILE *probe = fopen(mpq_path, "rb");
-    if (probe == NULL) {
+    char resolved[4096];
+    if (!FileManager__FindFile(mpq_path, resolved, sizeof(resolved))) {
         LOG_WARN("Skipping MPQ '%s': file not found.", mpq_path);
         return;
     }
-    fclose(probe);
 
     file_manager->mpqs = realloc(file_manager->mpqs, sizeof(struct MPQ *) * ++file_manager->mpq_count);
-    file_manager->mpqs[file_manager->mpq_count - 1] = MPQ_Load(mpq_path);
+    file_manager->mpqs[file_manager->mpq_count - 1] = MPQ_Load(resolved);
 }
 
 bool FileManager_FileExists(const char *file_path) {
