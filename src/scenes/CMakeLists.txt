@@ -4,6 +4,7 @@ target_sources(${PROJECT_NAME}
         CatalogCharacters.c CatalogCharacters.h
         CatalogClasses.c CatalogClasses.h
         CatalogSprites.c CatalogSprites.h
+        CatalogTheme.c CatalogTheme.h
         SceneCatalog.c SceneCatalog.h
         SceneMainMenu.c SceneMainMenu.h
         SceneIntroVideos.c SceneIntroVideos.h

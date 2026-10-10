@@ -9,6 +9,7 @@
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
 #include "../managers/InputManager.h"
+#include "CatalogTheme.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -25,27 +26,29 @@
 #define SKILL_TAB_LABEL_LINES 3
 
 // Skill panel layout, relative to the panel's top-left corner (320x432 panel from skltree_?_back.dc6).
-#define TREE_PANEL_X       440
-#define TREE_PANEL_Y       110
-#define TREE_ICON_X        15
-#define TREE_ICON_Y        8
-#define TREE_ICON_STEP_X   69
-#define TREE_ICON_STEP_Y   68
-#define TREE_TAB_X         230
-#define TREE_TAB_W         90
-#define TREE_TAB_FIRST_Y   111
-#define TREE_TAB_H         105
-#define TREE_TAB_STEP_Y    107
-#define TREE_INFO_X        40
-#define TREE_INFO_Y        110
-#define TREE_INFO_W        380
-#define TREE_INFO_H        416
-#define TREE_INFO_TEXT_W   360
-#define TREE_INFO_LINE_H   18
-#define DETAIL_FIGURE_X    80
-#define DETAIL_FIGURE_Y    235
-#define DETAIL_STATS_X     135
-#define DETAIL_STAT_LINE_H 19
+#define TREE_PANEL_X        440
+#define TREE_PANEL_Y        110
+#define TREE_ICON_X         15
+#define TREE_ICON_Y         8
+#define TREE_ICON_STEP_X    69
+#define TREE_ICON_STEP_Y    68
+#define TREE_TAB_X          230
+#define TREE_TAB_W          90
+#define TREE_TAB_FIRST_Y    111
+#define TREE_TAB_H          105
+#define TREE_TAB_STEP_Y     107
+#define TREE_INFO_X         40
+#define TREE_INFO_Y         110
+#define TREE_INFO_W         380
+#define TREE_INFO_H         416
+#define TREE_INFO_TEXT_W    360
+#define TREE_INFO_LINE_H    18
+#define DETAIL_FIGURE_X     80
+#define DETAIL_FIGURE_Y     235
+#define DETAIL_STATS_COLUMN 330 // labels end / values start here
+#define DETAIL_FIGURE_BOX_W 150
+#define DETAIL_FIGURE_BOX_H 300
+#define DETAIL_STAT_LINE_H  19
 
 // Per-class graphics. Classes are matched by their charstats.txt name.
 typedef struct ClassVisual {
@@ -103,7 +106,8 @@ struct CatalogClasses {
 
     // Detail panel
     Sprite *figure_sprite;
-    Label  *stat_labels[CLASS_STAT_LINES];
+    Label  *stat_labels[CLASS_STAT_LINES]; // "Strength:" (right aligned)
+    Label  *stat_values[CLASS_STAT_LINES]; // "10"
     Label  *class_title_label;
     Button *skill_tree_button;
 
@@ -426,7 +430,9 @@ CatalogClasses *CatalogClasses_Create(void) {
 
     for (int i = 0; i < CLASS_STAT_LINES; i++) {
         classes->stat_labels[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        Label_SetAlignment(classes->stat_labels[i], LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+        Label_SetAlignment(classes->stat_labels[i], LABEL_ALIGN_END, LABEL_ALIGN_CENTER);
+        classes->stat_values[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+        Label_SetAlignment(classes->stat_values[i], LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
     }
 
     classes->skill_tree_button = Button_Create(BUTTON_TYPE_WIDE, "Skill Trees");
@@ -466,6 +472,7 @@ void CatalogClasses_Destroy(CatalogClasses **classes_ref) {
 
     for (int i = 0; i < CLASS_STAT_LINES; i++) {
         Label_Destroy(&classes->stat_labels[i]);
+        Label_Destroy(&classes->stat_values[i]);
     }
     for (int page = 0; page < SKILL_PAGES; page++) {
         for (int line = 0; line < SKILL_TAB_LABEL_LINES; line++) {
@@ -510,8 +517,19 @@ void CatalogClasses_Select(CatalogClasses *classes, const int index) {
     Label_SetColor(classes->class_title_label, 0xC7, 0xB3, 0x77, 0xFF);
 
     for (int i = 0; i < CLASS_STAT_LINES; i++) {
-        Label_SetText(classes->stat_labels[i], i < info->stat_line_count ? info->stat_lines[i] : "");
-        Label_SetColor(classes->stat_labels[i], 0xFF, 0xFF, 0xFF, 0xFF);
+        const char *line  = i < info->stat_line_count ? info->stat_lines[i] : "";
+        const char *colon = strchr(line, ':');
+        char        label[CLASS_TEXT_LEN];
+        if (colon != NULL) {
+            snprintf(label, sizeof(label), "%.*s", (int)(colon - line + 1), line);
+            Label_SetText(classes->stat_labels[i], label);
+            Label_SetText(classes->stat_values[i], colon[1] == ' ' ? colon + 2 : colon + 1);
+        } else {
+            Label_SetText(classes->stat_labels[i], line);
+            Label_SetText(classes->stat_values[i], "");
+        }
+        Label_SetColor(classes->stat_labels[i], 0xD8, 0xC0, 0x80, 0xFF);
+        Label_SetColor(classes->stat_values[i], 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
     if (FileManager_FileExists(info->visual->figure_path)) {
@@ -535,13 +553,16 @@ void CatalogClasses_DrawDetail(const CatalogClasses *classes, const SDL_Rect *pa
 
     Label_Draw(classes->class_title_label, panel->x + (panel->w / 2), panel->y + 22);
 
+    const SDL_Rect figure_box = {panel->x + 10, panel->y + 44, DETAIL_FIGURE_BOX_W, DETAIL_FIGURE_BOX_H};
+    CatalogTheme_FillPreview(&figure_box);
     if (classes->figure_sprite != NULL) {
         Sprite_DrawAnimated(classes->figure_sprite, panel->x + DETAIL_FIGURE_X, panel->y + DETAIL_FIGURE_Y);
     }
 
     int y = panel->y + 60;
     for (int i = 0; i < CLASS_STAT_LINES; i++) {
-        Label_Draw(classes->stat_labels[i], panel->x + DETAIL_STATS_X, y);
+        Label_Draw(classes->stat_labels[i], panel->x + DETAIL_STATS_COLUMN - 3, y);
+        Label_Draw(classes->stat_values[i], panel->x + DETAIL_STATS_COLUMN + 3, y);
         y += DETAIL_STAT_LINE_H;
     }
 
@@ -775,11 +796,7 @@ void CatalogClasses_DrawSkillTree(CatalogClasses *classes) {
 
     // Left: skill information
     const SDL_Rect info_rect = {TREE_INFO_X, TREE_INFO_Y, TREE_INFO_W, TREE_INFO_H};
-    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
-    SDL_RenderFillRect(sdl_renderer, &info_rect);
-    SDL_SetRenderDrawColor(sdl_renderer, 120, 95, 40, 255);
-    SDL_RenderDrawRect(sdl_renderer, &info_rect);
+    CatalogTheme_FillPanel(&info_rect);
 
     const int center_x = TREE_INFO_X + (TREE_INFO_W / 2);
     if (classes->selected_skill >= 0) {

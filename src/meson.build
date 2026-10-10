@@ -53,6 +53,7 @@ sources = [
     'scenes/CatalogCharacters.c',
     'scenes/CatalogClasses.c',
     'scenes/CatalogSprites.c',
+    'scenes/CatalogTheme.c',
     'scenes/Scene.c',
     'scenes/SceneCatalog.c',
     'scenes/SceneIntroVideos.c',

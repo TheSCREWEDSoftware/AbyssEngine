@@ -68,10 +68,22 @@ int main(int argc, char **argv) {
     StringTable_InitializeSingleton("eng");
 
     LOG_DEBUG("Creating window...");
-    sdl_window = SDL_CreateWindow("Abyss Engine", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                  (int)((float)800 * AbyssConfiguration_GetInitialScale()),
-                                  (int)((float)600 * AbyssConfiguration_GetInitialScale()),
-                                  SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    // The game is drawn at 800x600 and scaled to the window, keeping its 4:3 shape (black bars on wide screens).
+    int      window_width;
+    int      window_height;
+    uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    AbyssConfiguration_GetWindowSize(&window_width, &window_height);
+
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && (window_width >= usable.w || window_height >= usable.h)) {
+        // As big as (or bigger than) the screen: open maximized instead of off-screen
+        window_width   = window_width < usable.w ? window_width : usable.w;
+        window_height  = window_height < usable.h ? window_height : usable.h;
+        window_flags  |= SDL_WINDOW_MAXIMIZED;
+    }
+
+    sdl_window = SDL_CreateWindow("Abyss Engine", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, window_width,
+                                  window_height, window_flags);
 
     if (sdl_window == NULL) {
         LOG_FATAL(SDL_GetError());

@@ -9,18 +9,25 @@
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
 #include "../managers/InputManager.h"
+#include "CatalogTheme.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define CHARACTERS_MAX_MODES  20
-#define CHARACTERS_STAT_LINES 3
-#define CHARACTERS_TEXT_LEN   96
-#define CHARACTERS_MAX_SCALE  2.0f
-#define CHARACTERS_PALETTE    PALETTE_ACT_1
-#define CHARACTERS_CATEGORY_H 20
+#define CHARACTERS_MAX_MODES     20
+#define CHARACTERS_STAT_LINES    3
+#define CHARACTERS_TEXT_LEN      96
+#define CHARACTERS_MAX_SCALE     2.0f
+#define CHARACTERS_PALETTE       PALETTE_ACT_1
+#define CHARACTERS_CATEGORY_H    20
+#define CHARACTERS_DEFAULT_SPEED 2 // index into character_speeds: 0.75x
+
+// Playback speed only changes how often frames advance, not the screen refresh rate.
+static const float character_speeds[] = {0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+#define CHARACTER_SPEED_COUNT (int)(sizeof(character_speeds) / sizeof(character_speeds[0]))
+static int characters_speed = CHARACTERS_DEFAULT_SPEED; // kept while browsing
 
 // Detail panel layout, relative to the panel
 #define CHAR_NAME_Y     16
@@ -143,6 +150,7 @@ struct CatalogCharacters {
     Button *pause;
     Button *prev_mode;
     Button *next_mode;
+    Button *speed;
     bool    prev_mouse_left;
 };
 
@@ -516,6 +524,7 @@ CatalogCharacters *CatalogCharacters_Create(void) {
     characters->pause      = Button_Create(BUTTON_TYPE_MEDIUM, "Pause");
     characters->prev_mode  = Button_Create(BUTTON_TYPE_MEDIUM, "Prev Anim");
     characters->next_mode  = Button_Create(BUTTON_TYPE_MEDIUM, "Next Anim");
+    characters->speed      = Button_Create(BUTTON_TYPE_MEDIUM, "Speed");
 
     return characters;
 }
@@ -544,6 +553,7 @@ void CatalogCharacters_Destroy(CatalogCharacters **characters_ref) {
     Button_Destroy(&characters->pause);
     Button_Destroy(&characters->prev_mode);
     Button_Destroy(&characters->next_mode);
+    Button_Destroy(&characters->speed);
 
     free(characters);
     *characters_ref = NULL;
@@ -652,9 +662,10 @@ static void Characters__UpdateInfo(CatalogCharacters *characters) {
     char                  line[128];
 
     if (characters->figure != NULL) {
-        snprintf(line, sizeof(line), "%s - frame %d of %d - facing %d of %d", entry->modes[characters->mode]->name,
-                 characters->frame + 1, Figure_GetFramesPerDirection(characters->figure), characters->turn + 1,
-                 Figure_GetDirectionCount(characters->figure));
+        snprintf(line, sizeof(line), "%s - frame %d/%d - facing %d/%d - speed %gx",
+                 entry->modes[characters->mode]->name, characters->frame + 1,
+                 Figure_GetFramesPerDirection(characters->figure), characters->turn + 1,
+                 Figure_GetDirectionCount(characters->figure), (double)character_speeds[characters_speed]);
     } else {
         snprintf(line, sizeof(line), "%s", entry->modes[characters->mode]->name);
     }
@@ -663,7 +674,7 @@ static void Characters__UpdateInfo(CatalogCharacters *characters) {
 
     for (int i = 0; i < CHARACTERS_STAT_LINES; i++) {
         Label_SetText(characters->info_labels[1 + i], entry->stats[i]);
-        Label_SetColor(characters->info_labels[1 + i], 0xB0, 0xB0, 0xB0, 0xFF);
+        Label_SetColor(characters->info_labels[1 + i], 0xD8, 0xD8, 0xD8, 0xFF);
     }
 }
 
@@ -736,11 +747,17 @@ void CatalogCharacters_UpdateDetail(CatalogCharacters *characters) {
         return;
     }
 
+    if (Button_Update(characters->speed)) {
+        characters_speed = (characters_speed + 1) % CHARACTER_SPEED_COUNT;
+        Characters__UpdateInfo(characters);
+    }
+
     if (characters->playing && characters->figure != NULL) {
-        const uint64_t now      = SDL_GetTicks64();
-        const int      frame_ms = Figure_GetFrameMilliseconds(characters->figure);
-        const int      frames   = Figure_GetFramesPerDirection(characters->figure);
-        bool           changed  = false;
+        const uint64_t now = SDL_GetTicks64();
+        const int      frame_ms =
+            (int)((float)Figure_GetFrameMilliseconds(characters->figure) / character_speeds[characters_speed]);
+        const int frames  = Figure_GetFramesPerDirection(characters->figure);
+        bool      changed = false;
         while (frame_ms > 0 && now - characters->last_tick >= (uint64_t)frame_ms) {
             characters->last_tick += (uint64_t)frame_ms;
             characters->frame      = (characters->frame + 1) % frames;
@@ -761,9 +778,7 @@ void CatalogCharacters_DrawDetail(CatalogCharacters *characters, const SDL_Rect 
     Label_Draw(characters->name_label, center_x, panel->y + CHAR_NAME_Y);
 
     const SDL_Rect preview = {panel->x + 10, panel->y + CHAR_PREVIEW_Y, panel->w - 20, CHAR_PREVIEW_H};
-    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(sdl_renderer, 32, 30, 34, 255);
-    SDL_RenderFillRect(sdl_renderer, &preview);
+    CatalogTheme_FillPreview(&preview);
 
     if (characters->figure == NULL) {
         Label_SetColor(characters->empty_label, 0x90, 0x90, 0x90, 0xFF);
@@ -806,8 +821,9 @@ void CatalogCharacters_DrawDetail(CatalogCharacters *characters, const SDL_Rect 
     Button_SetPosition(characters->turn_left, left, panel->y + CHAR_BUTTONS_Y);
     Button_SetPosition(play_button, left + 132, panel->y + CHAR_BUTTONS_Y);
     Button_SetPosition(characters->turn_right, left + 264, panel->y + CHAR_BUTTONS_Y);
-    Button_SetPosition(characters->prev_mode, left + 66, panel->y + CHAR_BUTTONS_Y2);
-    Button_SetPosition(characters->next_mode, left + 198, panel->y + CHAR_BUTTONS_Y2);
+    Button_SetPosition(characters->prev_mode, left, panel->y + CHAR_BUTTONS_Y2);
+    Button_SetPosition(characters->next_mode, left + 132, panel->y + CHAR_BUTTONS_Y2);
+    Button_SetPosition(characters->speed, left + 264, panel->y + CHAR_BUTTONS_Y2);
 
     const CharacterEntry *entry   = &characters->entries[characters->selected];
     const bool            turning = characters->figure != NULL && Figure_GetDirectionCount(characters->figure) > 1;
@@ -822,4 +838,5 @@ void CatalogCharacters_DrawDetail(CatalogCharacters *characters, const SDL_Rect 
     Button_Draw(characters->turn_right);
     Button_Draw(characters->prev_mode);
     Button_Draw(characters->next_mode);
+    Button_Draw(characters->speed);
 }

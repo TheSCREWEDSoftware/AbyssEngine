@@ -20,6 +20,8 @@ typedef struct AbyssConfiguration {
         char *scale_quality;
         float initial_scale;
         bool  fullscreen;
+        int   window_width; // 0 = use initial_scale
+        int   window_height;
     } graphics;
     struct {
         float master_volume;
@@ -176,6 +178,36 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
                 LOG_FATAL("Invalid value '%s' for key '%s' in the configuration file!", value, key);
             }
             LOG_DEBUG("Setting initial scale to '%f'", abyss_configuration.graphics.initial_scale);
+        } else if (IS_STR_EQUAL(key, "resolution")) {
+            // Window size: a preset (720p, 1080p, 1440p/2k, 2160p/4k) or WIDTHxHEIGHT
+            static const struct {
+                const char *name;
+                int         width;
+                int         height;
+            } presets[] = {
+                {"720p",  1280, 720 },
+                {"1080p", 1920, 1080},
+                {"1440p", 2560, 1440},
+                {"2k",    2560, 1440},
+                {"2160p", 3840, 2160},
+                {"4k",    3840, 2160}
+            };
+            int width = 0, height = 0;
+            for (size_t i = 0; i < sizeof(presets) / sizeof(presets[0]); i++) {
+                if (IS_STR_EQUAL(value, presets[i].name)) {
+                    width  = presets[i].width;
+                    height = presets[i].height;
+                }
+            }
+            if (width == 0 && sscanf(value, "%dx%d", &width, &height) != 2) {
+                width = 0;
+            }
+            if (width < 320 || height < 240) {
+                LOG_FATAL("Invalid value '%s' for key '%s' in the configuration file!", value, key);
+            }
+            abyss_configuration.graphics.window_width  = width;
+            abyss_configuration.graphics.window_height = height;
+            LOG_DEBUG("Setting resolution to %dx%d", width, height);
         } else if (IS_STR_EQUAL(key, "fullscreen")) {
             if (IS_STR_EQUAL(value, "true")) {
                 abyss_configuration.graphics.fullscreen = true;
@@ -334,6 +366,16 @@ size_t AbyssConfiguration_GetMpqCount(void) { return abyss_configuration.num_mpq
 const char *AbyssConfiguration_GetMpqFileName(size_t index) { return abyss_configuration.mpqs[index]; }
 
 float AbyssConfiguration_GetInitialScale(void) { return abyss_configuration.graphics.initial_scale; }
+
+void AbyssConfiguration_GetWindowSize(int *width, int *height) {
+    if (abyss_configuration.graphics.window_width > 0) {
+        *width  = abyss_configuration.graphics.window_width;
+        *height = abyss_configuration.graphics.window_height;
+    } else {
+        *width  = (int)(800.0f * abyss_configuration.graphics.initial_scale);
+        *height = (int)(600.0f * abyss_configuration.graphics.initial_scale);
+    }
+}
 
 const char *AbyssConfiguration_GetScaleQuality(void) { return abyss_configuration.graphics.scale_quality; }
 

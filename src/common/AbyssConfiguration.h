@@ -12,6 +12,7 @@ const char *AbyssConfiguration_GetLocale(void);
 size_t      AbyssConfiguration_GetMpqCount(void);
 const char *AbyssConfiguration_GetMpqFileName(size_t index);
 float       AbyssConfiguration_GetInitialScale(void);
+void        AbyssConfiguration_GetWindowSize(int *width, int *height); // Resolution, or 800x600 * InitialScale
 const char *AbyssConfiguration_GetScaleQuality(void);
 bool        AbyssConfiguration_GetFullScreen(void);
 void        AbyssConfiguration_SetFullScreen(bool fullscreen);

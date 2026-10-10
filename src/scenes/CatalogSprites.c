@@ -6,14 +6,21 @@
 #include "../drawing/Button.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
+#include "CatalogTheme.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define SPRITES_FRAME_TICKS 40 // 25 frames per second, the game's animation rate
-#define SPRITES_MAX_SCALE   3.0f
-#define SPRITES_INFO_LINES  3
+#define SPRITES_FRAME_TICKS   40 // 25 frames per second, the game's animation rate
+#define SPRITES_DEFAULT_SPEED 1  // index into animation_speeds: 0.5x
+
+// Playback speed only changes how often frames advance, not the screen refresh rate.
+static const float animation_speeds[] = {0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+#define ANIMATION_SPEED_COUNT (int)(sizeof(animation_speeds) / sizeof(animation_speeds[0]))
+static int sprites_speed = SPRITES_DEFAULT_SPEED; // kept while browsing
+#define SPRITES_MAX_SCALE  3.0f
+#define SPRITES_INFO_LINES 3
 
 // Preview area and controls, relative to the detail panel
 #define SPRITES_NAME_Y      16
@@ -31,6 +38,7 @@ typedef enum SpriteButton {
     SPRITE_BUTTON_NEXT,
     SPRITE_BUTTON_DIRECTION,
     SPRITE_BUTTON_PALETTE,
+    SPRITE_BUTTON_SPEED,
     SPRITE_BUTTON_COUNT
 } SpriteButton;
 
@@ -178,7 +186,7 @@ CatalogSprites *CatalogSprites_Create(void) {
     Label_SetText(sprites->empty_label, "(empty frame)");
     Label_SetAlignment(sprites->empty_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
 
-    static const char *button_names[SPRITE_BUTTON_COUNT] = {"Prev", "Play", "Next", "Direction", "Palette"};
+    static const char *button_names[SPRITE_BUTTON_COUNT] = {"Prev", "Play", "Next", "Direction", "Palette", "Speed"};
     for (int i = 0; i < SPRITE_BUTTON_COUNT; i++) {
         sprites->buttons[i] = Button_Create(BUTTON_TYPE_MEDIUM, button_names[i]);
     }
@@ -262,7 +270,8 @@ static void Sprites__UpdateInfo(CatalogSprites *sprites) {
         Label_SetText(sprites->info_labels[1], line);
     }
 
-    snprintf(line, sizeof(line), "Palette: %s", sprite_palettes[sprites->palette]);
+    snprintf(line, sizeof(line), "Palette: %s   Speed: %gx", sprite_palettes[sprites->palette],
+             (double)animation_speeds[sprites_speed]);
     Label_SetText(sprites->info_labels[2], line);
 
     for (int i = 0; i < SPRITES_INFO_LINES; i++) {
@@ -403,10 +412,16 @@ void CatalogSprites_UpdateDetail(CatalogSprites *sprites) {
         }
     }
 
+    if (Button_Update(sprites->buttons[SPRITE_BUTTON_SPEED])) {
+        sprites_speed = (sprites_speed + 1) % ANIMATION_SPEED_COUNT;
+        Sprites__UpdateInfo(sprites);
+    }
+
     if (sprites->playing) {
-        const uint64_t now = SDL_GetTicks64();
-        while (now - sprites->last_tick >= SPRITES_FRAME_TICKS) {
-            sprites->last_tick += SPRITES_FRAME_TICKS;
+        const uint64_t now        = SDL_GetTicks64();
+        const uint64_t frame_time = (uint64_t)((float)SPRITES_FRAME_TICKS / animation_speeds[sprites_speed]);
+        while (now - sprites->last_tick >= frame_time) {
+            sprites->last_tick += frame_time;
             Sprites__Step(sprites, 1);
         }
     }
@@ -419,17 +434,7 @@ void CatalogSprites_DrawDetail(CatalogSprites *sprites, const SDL_Rect *panel) {
     // Checkerboard behind the image so transparent and dark pixels are visible
     const SDL_Rect preview = {panel->x + SPRITES_PREVIEW_PAD, panel->y + SPRITES_PREVIEW_Y,
                               panel->w - (2 * SPRITES_PREVIEW_PAD), SPRITES_PREVIEW_H};
-    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_NONE);
-    for (int y = 0; y < preview.h; y += 16) {
-        for (int x = 0; x < preview.w; x += 16) {
-            const bool     dark = ((x / 16) + (y / 16)) % 2 == 0;
-            const SDL_Rect cell = {preview.x + x, preview.y + y, (x + 16 <= preview.w) ? 16 : preview.w - x,
-                                   (y + 16 <= preview.h) ? 16 : preview.h - y};
-            SDL_SetRenderDrawColor(sdl_renderer, dark ? 40 : 56, dark ? 40 : 56, dark ? 44 : 60, 255);
-            SDL_RenderFillRect(sdl_renderer, &cell);
-        }
-    }
-    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    CatalogTheme_FillChecker(&preview);
 
     if (sprites->sprite == NULL) {
         return;
@@ -504,18 +509,21 @@ void CatalogSprites_DrawDetail(CatalogSprites *sprites, const SDL_Rect *panel) {
     Button_SetPosition(sprites->buttons[SPRITE_BUTTON_PREV], left, panel->y + SPRITES_BUTTONS_Y);
     Button_SetPosition(play_button, left + 132, panel->y + SPRITES_BUTTONS_Y);
     Button_SetPosition(sprites->buttons[SPRITE_BUTTON_NEXT], left + 264, panel->y + SPRITES_BUTTONS_Y);
-    Button_SetPosition(sprites->buttons[SPRITE_BUTTON_DIRECTION], left + 66, panel->y + SPRITES_BUTTONS_Y2);
-    Button_SetPosition(sprites->buttons[SPRITE_BUTTON_PALETTE], left + 198, panel->y + SPRITES_BUTTONS_Y2);
+    Button_SetPosition(sprites->buttons[SPRITE_BUTTON_DIRECTION], left, panel->y + SPRITES_BUTTONS_Y2);
+    Button_SetPosition(sprites->buttons[SPRITE_BUTTON_PALETTE], left + 132, panel->y + SPRITES_BUTTONS_Y2);
+    Button_SetPosition(sprites->buttons[SPRITE_BUTTON_SPEED], left + 264, panel->y + SPRITES_BUTTONS_Y2);
 
     Button_SetEnabled(sprites->buttons[SPRITE_BUTTON_DIRECTION], Sprite_GetDirectionCount(sprites->sprite) > 1);
     const bool animated = Sprites__FramesPerDirection(sprites) > 1;
     Button_SetEnabled(sprites->buttons[SPRITE_BUTTON_PREV], animated);
     Button_SetEnabled(sprites->buttons[SPRITE_BUTTON_NEXT], animated);
     Button_SetEnabled(play_button, animated);
+    Button_SetEnabled(sprites->buttons[SPRITE_BUTTON_SPEED], animated);
 
     Button_Draw(sprites->buttons[SPRITE_BUTTON_PREV]);
     Button_Draw(play_button);
     Button_Draw(sprites->buttons[SPRITE_BUTTON_NEXT]);
     Button_Draw(sprites->buttons[SPRITE_BUTTON_DIRECTION]);
     Button_Draw(sprites->buttons[SPRITE_BUTTON_PALETTE]);
+    Button_Draw(sprites->buttons[SPRITE_BUTTON_SPEED]);
 }

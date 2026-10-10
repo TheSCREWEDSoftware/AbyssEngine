@@ -15,6 +15,7 @@
 #include "CatalogCharacters.h"
 #include "CatalogClasses.h"
 #include "CatalogSprites.h"
+#include "CatalogTheme.h"
 #include "SceneMainMenu.h"
 #include <ctype.h>
 #include <stdarg.h>
@@ -37,8 +38,9 @@
 #define CATALOG_DETAIL_Y    112
 #define CATALOG_DETAIL_W    400
 #define CATALOG_DETAIL_H    414
-#define CATALOG_ICON_BOX_H  130
+#define CATALOG_ICON_BOX_H  118
 #define CATALOG_STAT_LINE_H 20
+#define CATALOG_STAT_GAP    6 // between the label and value columns
 
 typedef enum CatalogCategory {
     CATALOG_CATEGORY_WEAPONS,
@@ -66,7 +68,9 @@ typedef struct SceneCatalog {
     Label             *title_label;
     Label             *count_label;
     Label             *name_label;
-    Label             *stat_labels[CATALOG_MAX_STAT_LINES];
+    Label             *stat_labels[CATALOG_MAX_STAT_LINES]; // "One-Hand Damage:" (right aligned, gold)
+    Label             *stat_values[CATALOG_MAX_STAT_LINES]; // "8 to 14" (left aligned, white)
+    Button            *backdrop_button;
     Label             *empty_label;
     Sprite            *icon_sprite;
     int                icon_width;
@@ -372,7 +376,7 @@ void *Catalog_Create(void) {
 
     for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
         result->stat_labels[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        Label_SetAlignment(result->stat_labels[i], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        result->stat_values[i] = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     }
 
     result->empty_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
@@ -390,6 +394,9 @@ void *Catalog_Create(void) {
     result->classes    = CatalogClasses_Create();
     result->sprites    = CatalogSprites_Create();
     result->characters = CatalogCharacters_Create();
+
+    result->backdrop_button = Button_Create(BUTTON_TYPE_MEDIUM, "Backdrop");
+    Button_SetPosition(result->backdrop_button, 660, 16);
 
     result->back_button = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     Button_SetPosition(result->back_button, CATALOG_LIST_X, 540);
@@ -532,6 +539,7 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
         Label_SetText(catalog->name_label, "");
         for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
             Label_SetText(catalog->stat_labels[i], "");
+            Label_SetText(catalog->stat_values[i], "");
         }
         return;
     }
@@ -541,9 +549,24 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
     Label_SetText(catalog->name_label, item->name);
     Label_SetColor(catalog->name_label, 0xC7, 0xB3, 0x77, 0xFF);
 
+    // "Label: value" lines become two columns; lines without a colon are centred
     for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
-        Label_SetText(catalog->stat_labels[i], i < item->stat_line_count ? item->stat_lines[i] : "");
-        Label_SetColor(catalog->stat_labels[i], 0xFF, 0xFF, 0xFF, 0xFF);
+        const char *line  = i < item->stat_line_count ? item->stat_lines[i] : "";
+        const char *colon = strchr(line, ':');
+        if (colon != NULL && colon[1] == ' ') {
+            char label[CATALOG_TEXT_LEN];
+            snprintf(label, sizeof(label), "%.*s", (int)(colon - line + 1), line);
+            Label_SetText(catalog->stat_labels[i], label);
+            Label_SetText(catalog->stat_values[i], colon + 2);
+            Label_SetAlignment(catalog->stat_labels[i], LABEL_ALIGN_END, LABEL_ALIGN_CENTER);
+        } else {
+            Label_SetText(catalog->stat_labels[i], line);
+            Label_SetText(catalog->stat_values[i], "");
+            Label_SetAlignment(catalog->stat_labels[i], LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        }
+        Label_SetAlignment(catalog->stat_values[i], LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+        Label_SetColor(catalog->stat_labels[i], 0xD8, 0xC0, 0x80, 0xFF);
+        Label_SetColor(catalog->stat_values[i], 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
     if (FileManager_FileExists(item->icon_path)) {
@@ -555,8 +578,10 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
 }
 
 static void Catalog__DrawItemDetail(const SceneCatalog *catalog, const SDL_Rect *panel) {
-    const int center_x = panel->x + (panel->w / 2);
-    const int icon_box = panel->y + 8;
+    const int      center_x = panel->x + (panel->w / 2);
+    const int      icon_box = panel->y + 8;
+    const SDL_Rect box      = {panel->x + 10, icon_box, panel->w - 20, CATALOG_ICON_BOX_H};
+    CatalogTheme_FillPreview(&box);
 
     if (catalog->icon_sprite != NULL) {
         Sprite_DrawMulti(catalog->icon_sprite, 0, center_x - (catalog->icon_width / 2),
@@ -571,7 +596,14 @@ static void Catalog__DrawItemDetail(const SceneCatalog *catalog, const SDL_Rect 
     y += 32;
 
     for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
-        Label_Draw(catalog->stat_labels[i], center_x, y);
+        int value_w = 0;
+        Label_GetSize(catalog->stat_values[i], &value_w, NULL);
+        if (value_w > 0) {
+            Label_Draw(catalog->stat_labels[i], center_x - (CATALOG_STAT_GAP / 2), y);
+            Label_Draw(catalog->stat_values[i], center_x + (CATALOG_STAT_GAP / 2), y);
+        } else {
+            Label_Draw(catalog->stat_labels[i], center_x, y);
+        }
         y += CATALOG_STAT_LINE_H;
     }
 }
@@ -594,6 +626,10 @@ void Catalog_Render(void *scene_ref) {
         Button_Draw(catalog->category_buttons[i]);
     }
     Button_Draw(catalog->back_button);
+    Button_Draw(catalog->backdrop_button);
+
+    const CatalogColor list_color = CatalogTheme_Panel();
+    ListBox_SetBackground(catalog->list_box, list_color.r, list_color.g, list_color.b, list_color.a);
 
     if (CatalogClasses_IsSkillTreeOpen(catalog->classes)) {
         CatalogClasses_DrawSkillTree(catalog->classes);
@@ -611,10 +647,7 @@ void Catalog_Render(void *scene_ref) {
 
     // Detail panel
     const SDL_Rect panel = {CATALOG_DETAIL_X, CATALOG_DETAIL_Y, CATALOG_DETAIL_W, CATALOG_DETAIL_H};
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
-    SDL_RenderFillRect(sdl_renderer, &panel);
-    SDL_SetRenderDrawColor(sdl_renderer, 120, 95, 40, 255);
-    SDL_RenderDrawRect(sdl_renderer, &panel);
+    CatalogTheme_FillPanel(&panel);
 
     if (catalog->shown_item < 0) {
         return;
@@ -642,6 +675,10 @@ void Catalog_Update(void *scene_ref, const uint64_t delta) {
                 Catalog__SelectCategory(catalog, (CatalogCategory)i);
             }
         }
+    }
+
+    if (Button_Update(catalog->backdrop_button)) {
+        CatalogTheme_Next();
     }
 
     if (Button_Update(catalog->back_button)) {
@@ -687,6 +724,7 @@ void Catalog_Free(void **scene_ref) {
     }
     for (int i = 0; i < CATALOG_MAX_STAT_LINES; i++) {
         Label_Destroy(&catalog->stat_labels[i]);
+        Label_Destroy(&catalog->stat_values[i]);
     }
     if (catalog->icon_sprite != NULL) {
         Sprite_Destroy(&catalog->icon_sprite);
@@ -698,6 +736,7 @@ void Catalog_Free(void **scene_ref) {
     TextBox_Destroy(&catalog->search_box);
     free(catalog->visible);
     Button_Destroy(&catalog->back_button);
+    Button_Destroy(&catalog->backdrop_button);
     ListBox_Destroy(&catalog->list_box);
     Label_Destroy(&catalog->title_label);
     Label_Destroy(&catalog->count_label);

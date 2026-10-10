@@ -25,6 +25,7 @@ struct ListBox {
     int         hovered_index;
     bool        armed;
     bool        prev_mouse_left;
+    SDL_Color   background;
 };
 
 static void ListBox__ClearItems(ListBox *list_box) {
@@ -74,6 +75,7 @@ ListBox *ListBox_Create(const char *font_path, const int x, const int y, const i
     list_box->row_height     = row_height;
     list_box->selected_index = -1;
     list_box->hovered_index  = -1;
+    list_box->background     = (SDL_Color){0, 0, 0, 170};
 
     // Only the visible rows get a label (each label holds a font), so long lists stay cheap.
     list_box->labels = calloc(visible_rows, sizeof(Label *));
@@ -115,6 +117,10 @@ void ListBox_SetItems(ListBox *list_box, const char *const *items, const int ite
     list_box->scroll_offset  = 0;
     list_box->selected_index = item_count > 0 ? 0 : -1;
     list_box->hovered_index  = -1;
+}
+
+void ListBox_SetBackground(ListBox *list_box, const uint8_t r, const uint8_t g, const uint8_t b, const uint8_t a) {
+    list_box->background = (SDL_Color){r, g, b, a};
 }
 
 void ListBox_SetPosition(ListBox *list_box, const int x, const int y) {
@@ -184,7 +190,8 @@ void ListBox_Draw(const ListBox *list_box) {
     const int height = list_box->visible_rows * list_box->row_height;
 
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
+    SDL_SetRenderDrawColor(sdl_renderer, list_box->background.r, list_box->background.g, list_box->background.b,
+                           list_box->background.a);
     const SDL_Rect background = {list_box->x, list_box->y, list_box->width, height};
     SDL_RenderFillRect(sdl_renderer, &background);
 
