@@ -29,7 +29,8 @@
 #define DT1_SUBTILE_BLOCK_JUMP   0x04
 #define DT1_SUBTILE_BLOCK_PLAYER 0x08
 
-typedef struct DT1Tile {
+typedef struct DT1Tile DT1Tile;
+struct DT1Tile {
     int32_t  direction;
     int16_t  roof_height;
     uint16_t material;
@@ -49,7 +50,12 @@ typedef struct DT1Tile {
     int      image_width;
     int      image_height;
     uint8_t *image;
-} DT1Tile;
+
+    // Animated floors (lava, some water): all frames of the tile's animation in order, filled in by the map that
+    // uses the tile set. 0/NULL for still tiles.
+    int                    anim_frame_count;
+    const struct DT1Tile **anim_frames;
+};
 
 typedef struct DT1 DT1;
 

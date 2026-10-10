@@ -45,8 +45,9 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Objects (chests, shrines, waypoints, doors) | ❌ | |
 | Quests | ❌ | |
 | Saving / loading characters | ❌ | |
-| Lighting, weather | ❌ | Areas are drawn at full brightness. |
-| Animated floor tiles (water, lava) | ❌ | Drawn still. |
+| Lighting | 🧪 | Free Roam / Testing Grounds: **L** cycles day / dusk / night (a soft pool of light around the player, darkness elsewhere). Not yet the game's own per-area light levels, light from torches or the palette-based shading. |
+| Weather (rain, snow) | ❌ | |
+| Animated floor tiles | ✅ | Lava and other animated floors play (detected from the tile sets: frames stored as numbered variants). The game's water is mostly still tiles anyway. |
 
 ## Developer tools
 

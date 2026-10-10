@@ -59,8 +59,48 @@ static MapLayerKind Map__KindOf(const int orientation) {
     return MAP_LAYER_WALL;
 }
 
+// Animated floors (lava, ...) are stored as several tiles with the same (style, sequence) whose "rarity" values are
+// the frame numbers 0, 1, 2, ... (random variants use weights instead, and never this exact pattern).
+static void Map__FindAnimations(Map *map) {
+    map->anim_frames = calloc(map->tile_index_count > 0 ? (size_t)map->tile_index_count : 1, sizeof(DT1Tile *));
+    FAIL_IF_NULL(map->anim_frames);
+    int used = 0;
+    for (int first = 0; first < map->tile_index_count;) {
+        const MapTileIndex *group = &map->tile_index[first];
+        int                 count = 1;
+        while (first + count < map->tile_index_count && group[count].orientation == group->orientation &&
+               group[count].style == group->style && group[count].sequence == group->sequence) {
+            count++;
+        }
+
+        bool animated = group->orientation == DT1_ORIENTATION_FLOOR && count >= 2;
+        for (int frame = 0; frame < count && animated; frame++) {
+            int found = 0;
+            for (int i = 0; i < count; i++) {
+                found += group[i].rarity == frame ? 1 : 0;
+            }
+            animated = found == 1;
+        }
+        if (animated) {
+            const DT1Tile **frames = &map->anim_frames[used];
+            for (int i = 0; i < count; i++) {
+                frames[group[i].rarity] = group[i].tile;
+            }
+            for (int i = 0; i < count; i++) {
+                DT1Tile *tile          = (DT1Tile *)group[i].tile; // the map owns its tile sets
+                tile->anim_frame_count = count;
+                tile->anim_frames      = frames;
+            }
+            used += count;
+        }
+        first += count;
+    }
+}
+
 static void Map__BuildTileIndex(Map *map) {
     free(map->tile_index);
+    free(map->anim_frames);
+    map->anim_frames = NULL;
     for (int k = 0; k < 3; k++) {
         free(map->choices[k]);
         map->choices[k]       = NULL;
@@ -95,6 +135,7 @@ static void Map__BuildTileIndex(Map *map) {
         }
     }
     qsort(map->tile_index, (size_t)map->tile_index_count, sizeof(MapTileIndex), Map__CompareIndex);
+    Map__FindAnimations(map);
 
     // One choice per distinct (orientation, style, sequence)
     for (int k = 0; k < 3; k++) {
@@ -151,6 +192,9 @@ static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const
     }
     if (count == 0) {
         return NULL;
+    }
+    if (map->tile_index[first].tile->anim_frame_count > 1) {
+        return map->tile_index[first].tile->anim_frames[0]; // animated: the renderer steps through the frames
     }
     if (total == 0) {
         return map->tile_index[first].tile;
@@ -341,6 +385,7 @@ void Map_Destroy(Map **map_ref) {
     free(map->shadow_tiles);
     free(map->entities);
     free(map->tile_index);
+    free(map->anim_frames);
     for (int k = 0; k < 3; k++) {
         free(map->choices[k]);
     }

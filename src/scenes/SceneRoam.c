@@ -77,6 +77,19 @@ static const char *player_classes[][3] = {
 
 static bool combat_enabled = false; // kept between visits
 
+// Lighting: L cycles through these (a pool of light around the player, darkness everywhere else)
+static const struct {
+    const char *name;
+    uint8_t     darkness;
+    float       radius; // sub-tiles
+} light_levels[] = {
+    {"day",   0,   0    },
+    {"dusk",  120, 16.0f},
+    {"night", 215, 11.0f},
+};
+#define LIGHT_LEVEL_COUNT (int)(sizeof(light_levels) / sizeof(light_levels[0]))
+static int light_level = 0; // kept between visits
+
 typedef enum UnitState { UNIT_IDLE, UNIT_WALK, UNIT_ATTACK, UNIT_HIT, UNIT_DYING, UNIT_DEAD } UnitState;
 
 typedef struct DrawContext {
@@ -655,7 +668,7 @@ static void *Roam__Create(const bool free_roam) {
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
     Label_SetText(roam->help_label, "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  P preview  "
-                                    "B blocked  Wheel zoom  Esc back");
+                                    "L light  B blocked  Esc back");
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -918,6 +931,9 @@ static void Roam__Update(SceneRoam *roam) {
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_B)) {
         roam->draw_flags ^= MAP_DRAW_BLOCKED;
     }
+    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_L)) {
+        light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
+    }
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
         roam->preview = !roam->preview;
         Roam__UpdateButtons(roam);
@@ -1162,6 +1178,13 @@ static void Roam__Render(SceneRoam *roam) {
         count++;
     }
     MapRenderer_Draw(roam->renderer, roam->map, &roam->camera, &view, drawables, count, roam->draw_flags);
+    if (light_levels[light_level].darkness > 0) {
+        float light_x;
+        float light_y;
+        MapView_SubtileToWorld(roam->player.x, roam->player.y, &light_x, &light_y);
+        MapRenderer_DrawLight(roam->renderer, &roam->camera, &view, light_x, light_y - 30.0f,
+                              light_levels[light_level].radius, light_levels[light_level].darkness);
+    }
 
     // Walk target marker
     if (roam->moving && roam->attack_target < 0) {
@@ -1201,9 +1224,9 @@ static void Roam__Render(SceneRoam *roam) {
         alive += Roam__IsAlive(&roam->units[i]) ? 1 : 0;
     }
     char status[200];
-    snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s", roam->map->name,
-             roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0], roam->unit_count, npcs, alive,
-             combat_enabled ? "ON" : "off");
+    snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s",
+             roam->map->name, roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
+             roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name);
     Label_SetText(roam->status_label, status);
     Label_Draw(roam->status_label, 4, 2);
     const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};

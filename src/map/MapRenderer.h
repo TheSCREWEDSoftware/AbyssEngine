@@ -41,6 +41,10 @@ void         MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCa
                               const MapDrawable *drawables, int drawable_count, unsigned flags);
 // A single tile, e.g. a palette preview, scaled to fit the box.
 void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT1Tile *tile, const SDL_Rect *box);
+// Darkens the view except for a soft pool of light around (world_x, world_y). darkness: 0 (none) to 255 (black);
+// radius in sub-tiles.
+void MapRenderer_DrawLight(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view, float world_x,
+                           float world_y, float radius, uint8_t darkness);
 // Outline of a tile's floor diamond.
 void MapRenderer_DrawTileOutline(const MapCamera *camera, const SDL_Rect *view, int tx, int ty, SDL_Color color);
 

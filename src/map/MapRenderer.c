@@ -6,18 +6,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TILE_HALF_WIDTH  80 // world pixels
-#define TILE_HALF_HEIGHT 40
-#define SUBTILE_HALF_W   16
-#define SUBTILE_HALF_H   8
-#define WALL_BASE_Y      80 // walls stand on the bottom corner of their floor diamond
+#define TILE_HALF_WIDTH   80 // world pixels
+#define TILE_HALF_HEIGHT  40
+#define SUBTILE_HALF_W    16
+#define SUBTILE_HALF_H    8
+#define WALL_BASE_Y       80  // walls stand on the bottom corner of their floor diamond
+#define ANIMATED_FLOOR_MS 100 // per frame of lava and other animated floors
 
 typedef struct TextureEntry {
     const DT1Tile *tile;
     SDL_Texture   *texture;
 } TextureEntry;
 
+#define LIGHT_TEXTURE_W 256
+#define LIGHT_TEXTURE_H 128 // an isometric ellipse, like the ground
+
 struct MapRenderer {
+    SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
+    uint8_t        light_darkness;
     TextureEntry  *entries; // open addressing, keyed by tile pointer
     int            capacity;
     int            count;
@@ -81,6 +87,9 @@ void MapRenderer_ClearCache(MapRenderer *renderer) {
 void MapRenderer_Destroy(MapRenderer **renderer) {
     if (renderer == NULL || *renderer == NULL) {
         return;
+    }
+    if ((*renderer)->light != NULL) {
+        SDL_DestroyTexture((*renderer)->light);
     }
     MapRenderer_ClearCache(*renderer);
     free(*renderer);
@@ -199,6 +208,9 @@ static void MapRenderer__DrawTile(MapRenderer *renderer, const Map *map, const M
                                   const DT1Tile *tile, const int tx, const int ty) {
     if (tile == NULL) {
         return;
+    }
+    if (tile->anim_frame_count > 1) {
+        tile = tile->anim_frames[(SDL_GetTicks64() / ANIMATED_FLOOR_MS) % (uint64_t)tile->anim_frame_count];
     }
     float wx;
     float wy;
@@ -463,4 +475,62 @@ void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT
         SDL_RenderFillRect(sdl_renderer, &dest);
     }
     SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
+}
+
+void MapRenderer_DrawLight(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view, const float world_x,
+                           const float world_y, const float radius, const uint8_t darkness) {
+    if (darkness == 0) {
+        return;
+    }
+    if (renderer->light == NULL || renderer->light_darkness != darkness) {
+        if (renderer->light != NULL) {
+            SDL_DestroyTexture(renderer->light);
+        }
+        uint32_t *pixels = malloc(sizeof(uint32_t) * LIGHT_TEXTURE_W * LIGHT_TEXTURE_H);
+        FAIL_IF_NULL(pixels);
+        for (int y = 0; y < LIGHT_TEXTURE_H; y++) {
+            for (int x = 0; x < LIGHT_TEXTURE_W; x++) {
+                const float dx = ((float)x + 0.5f - (LIGHT_TEXTURE_W / 2.0f)) / (LIGHT_TEXTURE_W / 2.0f);
+                const float dy = ((float)y + 0.5f - (LIGHT_TEXTURE_H / 2.0f)) / (LIGHT_TEXTURE_H / 2.0f);
+                float       d  = sqrtf((dx * dx) + (dy * dy)); // 0 in the middle, 1 at the edge
+                d              = d > 1.0f ? 1.0f : d;
+                const float t  = d * d * (3.0f - (2.0f * d));                        // smooth fall-off
+                pixels[(y * LIGHT_TEXTURE_W) + x] = (uint32_t)(t * (float)darkness); // RGBA8888: black, alpha
+            }
+        }
+        renderer->light = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC,
+                                            LIGHT_TEXTURE_W, LIGHT_TEXTURE_H);
+        if (renderer->light != NULL) {
+            SDL_UpdateTexture(renderer->light, NULL, pixels, LIGHT_TEXTURE_W * 4);
+            SDL_SetTextureBlendMode(renderer->light, SDL_BLENDMODE_BLEND);
+        }
+        renderer->light_darkness = darkness;
+        free(pixels);
+    }
+
+    int cx;
+    int cy;
+    MapView_WorldToScreen(camera, view, world_x, world_y, &cx, &cy);
+    const int      half_w = (int)(radius * SUBTILE_HALF_W * 2.0f * camera->zoom);
+    const int      half_h = half_w / 2;
+    const SDL_Rect pool   = {cx - half_w, cy - half_h, half_w * 2, half_h * 2};
+
+    SDL_RenderSetClipRect(sdl_renderer, view);
+    if (renderer->light != NULL) {
+        SDL_RenderCopy(sdl_renderer, renderer->light, NULL, &pool);
+    }
+    // Everything outside the pool is fully dark
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, darkness);
+    const SDL_Rect above    = {view->x, view->y, view->w, pool.y - view->y};
+    const SDL_Rect below    = {view->x, pool.y + pool.h, view->w, (view->y + view->h) - (pool.y + pool.h)};
+    const SDL_Rect left     = {view->x, pool.y, pool.x - view->x, pool.h};
+    const SDL_Rect right    = {pool.x + pool.w, pool.y, (view->x + view->w) - (pool.x + pool.w), pool.h};
+    const SDL_Rect sides[4] = {above, below, left, right};
+    for (int i = 0; i < 4; i++) {
+        if (sides[i].w > 0 && sides[i].h > 0) {
+            SDL_RenderFillRect(sdl_renderer, &sides[i]);
+        }
+    }
+    SDL_RenderSetClipRect(sdl_renderer, NULL);
 }

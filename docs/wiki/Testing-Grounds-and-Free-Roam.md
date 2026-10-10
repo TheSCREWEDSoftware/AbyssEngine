@@ -17,6 +17,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **R** / Walk button | Walk or run |
 | **C** / Combat button | Combat on or off |
 | **P** / Preview button | Placement preview on or off |
+| **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Show the sub-tiles you can't walk on |
 | Mouse wheel | Zoom |
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |

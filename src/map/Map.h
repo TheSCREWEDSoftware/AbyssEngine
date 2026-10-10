@@ -66,6 +66,7 @@ typedef struct Map {
     // All tiles of all DT1s, sorted by (orientation, style, sequence) for lookups
     int                  tile_index_count;
     struct MapTileIndex *tile_index;
+    const DT1Tile      **anim_frames;      // storage for the animated floors' frame lists
     int                  choice_counts[3]; // per MapLayerKind
     MapTileChoice       *choices[3];
 } Map;
