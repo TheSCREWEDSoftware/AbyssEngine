@@ -8,6 +8,6 @@ target_sources(${PROJECT_NAME}
         SceneCatalog.c SceneCatalog.h
         SceneMainMenu.c SceneMainMenu.h
         SceneMapEditor.c SceneMapEditor.h
-        SceneTestingGrounds.c SceneTestingGrounds.h
+        SceneRoam.c SceneTestingGrounds.h SceneFreeRoam.h
         SceneIntroVideos.c SceneIntroVideos.h
 )

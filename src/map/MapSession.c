@@ -1,4 +1,6 @@
 #include "MapSession.h"
+#include "MonsterStats.h"
+#include "Places.h"
 #include <stddef.h>
 
 static CatalogCharacters *session_bestiary = NULL;
@@ -35,4 +37,6 @@ void MapSession_Release(void) {
     Map_Destroy(&session_map);
     session_playtest = false;
     CatalogCharacters_Destroy(&session_bestiary);
+    MonsterStats_Release();
+    Places_Release();
 }

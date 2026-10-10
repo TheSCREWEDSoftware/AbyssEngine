@@ -5,4 +5,6 @@ target_sources(${PROJECT_NAME}
         MapRenderer.c MapRenderer.h
         MapSession.c MapSession.h
         MapUnits.c MapUnits.h
+        MonsterStats.c MonsterStats.h
+        Places.c Places.h
 )

@@ -4,7 +4,8 @@
 #include "Scene.h"
 
 // Testing Grounds (debug): walk a character around a map (the default arena, your own "testing_grounds" map, or
-// the map being edited) and drop monsters into it to see them animated in the world.
+// the map being edited), drop monsters into it and, with combat on, fight them. Implemented in SceneRoam.c together
+// with Free Roam.
 DESCRIBE_SCENE_CALLBACKS(TestingGrounds);
 
 void *TestingGrounds_Create(void);

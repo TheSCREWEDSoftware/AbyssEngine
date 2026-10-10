@@ -2,6 +2,7 @@
 #include "../common/AbyssConfiguration.h"
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
+#include "MonsterStats.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -285,7 +286,17 @@ Map *Map_LoadDS1(const char *ds1_path) {
     }
     memcpy(map->shadows, ds1->shadows, cells * sizeof(DS1Cell));
 
-    // The DS1's own monsters/objects refer to per-act preset tables we don't read yet; they are left out.
+    // Its NPCs, bosses and monsters (objects use another preset table that isn't read yet)
+    for (int o = 0; o < ds1->object_count; o++) {
+        const DS1Object *object = &ds1->objects[o];
+        if (object->type != 1) {
+            continue;
+        }
+        const char *monster = MonsterStats_PresetMonster(map->act, object->id);
+        if (monster != NULL && monster[0] != '\0') {
+            Map_AddEntity(map, "monsters", monster, monster, (float)object->x + 0.5f, (float)object->y + 0.5f);
+        }
+    }
     DS1_Destroy(&ds1);
 
     Map__BuildTileIndex(map);

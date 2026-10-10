@@ -8,6 +8,7 @@
 #include "../managers/InputManager.h"
 #include "../map/MapSession.h"
 #include "SceneCatalog.h"
+#include "SceneFreeRoam.h"
 #include "SceneMapEditor.h"
 #include "SceneTestingGrounds.h"
 #include <stdlib.h>
@@ -30,6 +31,7 @@ typedef struct SceneMainMenu {
     bool    map_menu_open;
     Button *editor_button;
     Button *testing_grounds_button;
+    Button *free_roam_button;
     Button *map_back_button;
     Button *credits_button;
     Button *cinematics_button;
@@ -41,6 +43,7 @@ static void MainMenu__OnCatalogClicked(void *user_data);
 static void MainMenu__OnMapEditorClicked(void *user_data);
 static void MainMenu__OnEditorClicked(void *user_data);
 static void MainMenu__OnTestingGroundsClicked(void *user_data);
+static void MainMenu__OnFreeRoamClicked(void *user_data);
 static void MainMenu__OnMapBackClicked(void *user_data);
 
 DEFINE_SCENE_CALLBACKS(MainMenu);
@@ -104,8 +107,11 @@ void *MainMenu_Create(void) {
     result->testing_grounds_button = Button_Create(BUTTON_TYPE_WIDE, "Testing Grounds");
     Button_SetPosition(result->testing_grounds_button, 264, 330);
     Button_SetClickHandler(result->testing_grounds_button, MainMenu__OnTestingGroundsClicked, NULL);
+    result->free_roam_button = Button_Create(BUTTON_TYPE_WIDE, "Free Roam");
+    Button_SetPosition(result->free_roam_button, 264, 370);
+    Button_SetClickHandler(result->free_roam_button, MainMenu__OnFreeRoamClicked, NULL);
     result->map_back_button = Button_Create(BUTTON_TYPE_WIDE, "Back");
-    Button_SetPosition(result->map_back_button, 264, 380);
+    Button_SetPosition(result->map_back_button, 264, 420);
     Button_SetClickHandler(result->map_back_button, MainMenu__OnMapBackClicked, result);
 
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
@@ -147,6 +153,7 @@ void MainMenu_Render(void *scene_ref) {
     if (mainmenu->map_menu_open) {
         Button_Draw(mainmenu->editor_button);
         Button_Draw(mainmenu->testing_grounds_button);
+        Button_Draw(mainmenu->free_roam_button);
         Button_Draw(mainmenu->map_back_button);
     } else {
         Button_Draw(mainmenu->single_player_button);
@@ -166,6 +173,7 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
     if (mainmenu->map_menu_open) {
         Button_Update(mainmenu->editor_button);
         Button_Update(mainmenu->testing_grounds_button);
+        Button_Update(mainmenu->free_roam_button);
         Button_Update(mainmenu->map_back_button);
     } else {
         Button_Update(mainmenu->single_player_button);
@@ -205,6 +213,11 @@ static void MainMenu__OnTestingGroundsClicked(void *user_data) {
     Scene_Set(SCENE_REF(TestingGrounds));
 }
 
+static void MainMenu__OnFreeRoamClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(FreeRoam));
+}
+
 static void MainMenu__OnExitClicked(void *user_data) {
     (void)(user_data);
     LOG_INFO("Exit requested from the main menu.");
@@ -220,6 +233,7 @@ void MainMenu_Free(void **scene_ref) {
     Button_Destroy(&mainmenu->map_editor_button);
     Button_Destroy(&mainmenu->editor_button);
     Button_Destroy(&mainmenu->testing_grounds_button);
+    Button_Destroy(&mainmenu->free_roam_button);
     Button_Destroy(&mainmenu->map_back_button);
     Button_Destroy(&mainmenu->credits_button);
     Button_Destroy(&mainmenu->cinematics_button);

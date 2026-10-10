@@ -40,6 +40,8 @@ sources = [
     'map/MapRenderer.c',
     'map/MapSession.c',
     'map/MapUnits.c',
+    'map/MonsterStats.c',
+    'map/Places.c',
     'map/LevelTypes.c',
 
     'data/DataTable.c',
@@ -67,7 +69,7 @@ sources = [
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
     'scenes/SceneMapEditor.c',
-    'scenes/SceneTestingGrounds.c',
+    'scenes/SceneRoam.c',
 
     'types/DC6.c',
     'types/DC6Frame.c',
