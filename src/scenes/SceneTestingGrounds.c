@@ -27,7 +27,7 @@
 #define PANEL_X         580
 #define PANEL_INNER_X   588
 #define PANEL_INNER_W   204
-#define CATEGORIES_Y    36
+#define CATEGORIES_Y    48
 #define LIST_ROWS       20
 #define LIST_ROW_H      18
 #define MAX_DRAWABLES   1024
@@ -250,8 +250,8 @@ void *TestingGrounds_Create(void) {
     grounds->target_x = grounds->player_x;
     grounds->target_y = grounds->player_y;
 
-    grounds->title_label = Label_Create(FONTS_FONTEXOCET10, PALETTE_STATIC);
-    Label_SetText(grounds->title_label, "MONSTERS");
+    grounds->title_label = Label_Create(FONTS_FONT24, PALETTE_STATIC);
+    Label_SetText(grounds->title_label, "Monsters");
     Label_SetAlignment(grounds->title_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_SetColor(grounds->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     grounds->status_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
@@ -572,7 +572,7 @@ void TestingGrounds_Render(void *scene_ref) {
         SDL_RenderFillRect(sdl_renderer, &panel);
         SDL_SetRenderDrawColor(sdl_renderer, 100, 85, 55, 255);
         SDL_RenderDrawRect(sdl_renderer, &panel);
-        Label_Draw(grounds->title_label, PANEL_X + ((800 - PANEL_X) / 2), 26);
+        Label_Draw(grounds->title_label, PANEL_X + ((800 - PANEL_X) / 2), 30);
         CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W);
         ListBox_Draw(grounds->list);
     }

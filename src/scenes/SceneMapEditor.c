@@ -313,8 +313,8 @@ void *MapEditor_Create(void) {
     editor->new_size    = MAP_SIZE_DEFAULT;
     editor->new_type    = LevelTypes_Find("Act 1 - Town") >= 0 ? LevelTypes_Find("Act 1 - Town") : 0;
 
-    editor->title_label = Label_Create(FONTS_FONTEXOCET10, PALETTE_STATIC);
-    Label_SetText(editor->title_label, "MAP EDITOR");
+    editor->title_label = Label_Create(FONTS_FONT24, PALETTE_STATIC);
+    Label_SetText(editor->title_label, "Map Editor");
     Label_SetAlignment(editor->title_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_SetColor(editor->title_label, 0xC7, 0xB3, 0x77, 0xFF);
 
@@ -356,7 +356,7 @@ void *MapEditor_Create(void) {
     Label_SetColor(editor->message_label, 0xFF, 0xE8, 0xA0, 0xFF);
 
     // Dialog widgets (shared by Open / New / Save)
-    editor->dialog_title = Label_Create(FONTS_FONTEXOCET10, PALETTE_STATIC);
+    editor->dialog_title = Label_Create(FONTS_FONT24, PALETTE_STATIC);
     Label_SetAlignment(editor->dialog_title, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_SetColor(editor->dialog_title, 0xC7, 0xB3, 0x77, 0xFF);
     for (int i = 0; i < 3; i++) {
@@ -520,7 +520,7 @@ static void Editor__OpenDialog(SceneMapEditor *editor, const EditorDialog dialog
     }
     switch (dialog) {
     case DIALOG_OPEN:
-        Label_SetText(editor->dialog_title, "OPEN MAP");
+        Label_SetText(editor->dialog_title, "Open Map");
         Button_SetText(editor->dialog_ok, "Open");
         Map_FreeNames(editor->saved_names, editor->saved_count);
         editor->saved_count = Map_ListSavedMaps(&editor->saved_names);
@@ -529,7 +529,7 @@ static void Editor__OpenDialog(SceneMapEditor *editor, const EditorDialog dialog
         Editor__RefreshOpenList(editor);
         break;
     case DIALOG_NEW:
-        Label_SetText(editor->dialog_title, "NEW MAP");
+        Label_SetText(editor->dialog_title, "New Map");
         Button_SetText(editor->dialog_ok, "Create");
         Button_SetText(editor->dialog_extra, "Arena");
         Label_SetText(editor->dialog_labels[0], "Tile set:");
@@ -538,7 +538,7 @@ static void Editor__OpenDialog(SceneMapEditor *editor, const EditorDialog dialog
         Editor__UpdateNewButtons(editor);
         break;
     case DIALOG_SAVE: {
-        Label_SetText(editor->dialog_title, "SAVE MAP");
+        Label_SetText(editor->dialog_title, "Save Map");
         Button_SetText(editor->dialog_ok, "Save");
         Button_SetText(editor->dialog_extra, "As Testing");
         Label_SetText(editor->dialog_labels[0], "Name:");
