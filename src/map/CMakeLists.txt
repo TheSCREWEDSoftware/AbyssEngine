@@ -1,5 +1,6 @@
 target_sources(${PROJECT_NAME}
         PRIVATE
+        LevelBuilder.c LevelBuilder.h
         LevelTypes.c LevelTypes.h
         Map.c Map.h
         MapRenderer.c MapRenderer.h

@@ -708,10 +708,10 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     return true;
 }
 
-// Start on the walkable sub-tile closest to the middle of the map
+// Start on the walkable sub-tile closest to the area's entrance (generated areas), or else the middle of the map
 static void Roam__FindSpawn(SceneRoam *roam) {
-    const int cx  = (roam->map->width * MAP_SUBTILES) / 2;
-    const int cy  = (roam->map->height * MAP_SUBTILES) / 2;
+    const int cx  = roam->map->has_start ? (int)roam->map->start_x : (roam->map->width * MAP_SUBTILES) / 2;
+    const int cy  = roam->map->has_start ? (int)roam->map->start_y : (roam->map->height * MAP_SUBTILES) / 2;
     roam->spawn_x = (float)cx + 0.5f;
     roam->spawn_y = (float)cy + 0.5f;
     for (int radius = 0; radius < MAP_MAX_SIZE * MAP_SUBTILES; radius++) {
@@ -875,14 +875,13 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         return;
     }
     char text[96];
-    snprintf(text, sizeof(text), "Loading %s...", place->name);
+    snprintf(text, sizeof(text), place->generated ? "Building %s..." : "Loading %s...", place->name);
     LoadingScreen_Begin(text);
-    Map *map = Map_LoadDS1(place->files[0]);
+    Map *map = Places_LoadMap(place);
     if (map == NULL) {
         LoadingScreen_End();
         return;
     }
-    snprintf(map->name, sizeof(map->name), "%s", place->name);
     if (!roam->borrowed) {
         Map_Destroy(&roam->map);
     }
@@ -923,8 +922,10 @@ static void *Roam__Create(const bool free_roam) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Label_SetText(roam->help_label, "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  P preview  "
-                                    "L light  B blocked  Esc back");
+    Label_SetText(roam->help_label, free_roam ? "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
+                                                "P preview  L light  B blocked  N new layout  Esc back"
+                                              : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
+                                                "P preview  L light  B blocked  Esc back");
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -1281,6 +1282,13 @@ static void Roam__Update(SceneRoam *roam) {
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
         roam->preview = !roam->preview;
         Roam__UpdateButtons(roam);
+    }
+    if (roam->free_roam && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
+        const Place *place = Places_Get(roam->place);
+        if (place != NULL && place->generated) {
+            Roam__Teleport(roam, roam->place); // the same area, built afresh
+            return;
+        }
     }
 
     float world_x;

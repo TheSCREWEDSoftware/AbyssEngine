@@ -35,7 +35,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Multiplayer / Battle.net | ❌ | Won't be compatible with the original game's servers or saves. |
 | Credits, Cinematics menus | ❌ | Buttons shown, disabled. |
 | Drawing the game's areas | 🧪 | Fixed areas (towns, Tristram, Monastery Gate, cloisters, every dungeon room) draw correctly in the Map Editor / Free Roam. |
-| Randomly built areas (Blood Moor, Cold Plains, dungeons' random layouts) | ❌ | The game assembles these from many small pieces (LvlMaze/LvlSub); not implemented. |
+| Randomly built areas | 🧪 | In Free Roam, rebuilt on every visit (**N** for another layout). **Wilderness** (Act 1 Blood Moor to Tamoe Highland, Burial Grounds, Moo Moo Farm; the Act 2 desert; the Act 4 steppes, plains and city; the Act 5 Highlands, Plateau and Tundra): a ring of border pieces with the odd dent, the area's landmarks (cave entrances, Cairn Stones, Inifuss tree, Forgotten Tower, tombs, ...), random filler pieces (camps, cottages, fences, oases, mesas, ...), waypoint and shrines, and small decorations scattered over the ground (`LvlSub.txt`). **Dungeons** (caves, crypts, Tower Cellar, Barracks, Jail, Catacombs, sewers, tombs, Maggot Lair, Ancient Tunnels, Act 3 dungeons and Durance of Hate, River of Flame, ice caves, Worldstone Keep) and the **Act 3 jungle**: rooms joined in a random tree, each room the preset with exactly the exits it needs, entry and exit rooms at either end. **Bloody Foothills**: the siege strips in order. Monsters spread over the area from its list in `Levels.txt`. Not yet: Kurast (Lower Kurast, Bazaar, Upper Kurast), Kurast Causeway, Travincal, Arcane Sanctuary, Chaos Sanctum, Spider Cave/Cavern; connections between areas (walking from one into the next); the game's exact rules (it keeps parts of them in its program), so layouts are in the game's style rather than identical to what it would build. |
 | Walking | 🧪 | Free Roam / Testing Grounds. Collision with walls from the tiles; paths around obstacles. |
 | Pathfinding | 🧪 | A* on the sub-tile grid (8 directions, no cutting corners), smoothed into straight legs. The player walks around walls and objects to where you click (or to the closest reachable spot); chasing monsters go straight at you when nothing's in the way and around walls otherwise. Units don't avoid each other yet. |
 | NPCs in towns | 🧪 | In their places, and they stroll around them (pause a few seconds, walk to a nearby spot along a path, repeat); guards keep their post. They don't talk or trade yet. |
@@ -60,7 +60,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Catalog: bestiary | ✅ | Players, NPCs, monsters, bosses, objects, every animation and direction. |
 | [Map Editor](Map-Editor.md) | ✅ | Open game areas, paint tiles, place units, save/load `.abm`. No undo yet. Can't save back to DS1. |
 | [Testing Grounds](Testing-Grounds-and-Free-Roam.md) | ✅ | Default arena or your own map; drop monsters; combat toggle; placement preview. |
-| [Free Roam](Testing-Grounds-and-Free-Roam.md) | ✅ | Towns and fixed outdoor areas with their NPCs; teleport list; combat toggle. |
+| [Free Roam](Testing-Grounds-and-Free-Roam.md) | ✅ | Towns, fixed areas and randomly built wilderness and dungeons; teleport list; combat toggle. |
 | Loading screen | ✅ | Progress bar; the picture plays with the progress. |
 
 ## Platforms

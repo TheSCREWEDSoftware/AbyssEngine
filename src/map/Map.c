@@ -162,9 +162,13 @@ static void Map__BuildTileIndex(Map *map) {
     }
 }
 
+static bool Map__InMask(const uint64_t mask, const int dt1_index) {
+    return mask == 0 || (dt1_index < 64 && (mask & (1ull << dt1_index)) != 0);
+}
+
 // Picks a tile for a cell; variants are chosen by their rarity, stable per cell.
-static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const int style, const int sequence,
-                                    const int tx, const int ty) {
+static const DT1Tile *Map__FindTileIn(const Map *map, const int orientation, const int style, const int sequence,
+                                      const int tx, const int ty, const uint64_t mask) {
     int low  = 0;
     int high = map->tile_index_count;
     while (low < high) {
@@ -188,17 +192,21 @@ static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const
         if (e->orientation != orientation || e->style != style || e->sequence != sequence) {
             break;
         }
-        total += e->rarity > 0 ? e->rarity : 0;
+        total += (e->rarity > 0 && Map__InMask(mask, e->dt1_index)) ? e->rarity : 0;
         count++;
     }
-    if (count == 0) {
+    int usable = -1; // first entry from an allowed tile set
+    for (int i = 0; i < count && usable < 0; i++) {
+        usable = Map__InMask(mask, map->tile_index[first + i].dt1_index) ? first + i : -1;
+    }
+    if (usable < 0) {
         return NULL;
     }
-    if (map->tile_index[first].tile->anim_frame_count > 1) {
-        return map->tile_index[first].tile->anim_frames[0]; // animated: the renderer steps through the frames
+    if (map->tile_index[usable].tile->anim_frame_count > 1) {
+        return map->tile_index[usable].tile->anim_frames[0]; // animated: the renderer steps through the frames
     }
     if (total == 0) {
-        return map->tile_index[first].tile;
+        return map->tile_index[usable].tile;
     }
 
     uint32_t hash  = ((uint32_t)tx * 73856093u) ^ ((uint32_t)ty * 19349663u) ^ ((uint32_t)orientation * 83492791u);
@@ -208,7 +216,7 @@ static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const
     int pick       = (int)(hash % (uint32_t)total);
     for (int i = 0; i < count; i++) {
         const MapTileIndex *e = &map->tile_index[first + i];
-        if (e->rarity <= 0) {
+        if (e->rarity <= 0 || !Map__InMask(mask, e->dt1_index)) {
             continue;
         }
         if (pick < e->rarity) {
@@ -216,7 +224,15 @@ static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const
         }
         pick -= e->rarity;
     }
-    return map->tile_index[first].tile;
+    return map->tile_index[usable].tile;
+}
+
+// Looks in the cell's own tile sets first, then in all of them
+static const DT1Tile *Map__FindTile(const Map *map, const int orientation, const int style, const int sequence,
+                                    const int tx, const int ty) {
+    const uint64_t mask = map->dt1_masks != NULL ? map->dt1_masks[(ty * map->width) + tx] : 0;
+    const DT1Tile *tile = Map__FindTileIn(map, orientation, style, sequence, tx, ty, mask);
+    return (tile == NULL && mask != 0) ? Map__FindTileIn(map, orientation, style, sequence, tx, ty, 0) : tile;
 }
 
 static void Map__ResolveCell(Map *map, const int tx, const int ty) {
@@ -287,19 +303,57 @@ static Map *Map__Allocate(const int width, const int height, const int wall_laye
     return map;
 }
 
-static void Map__AddDt1(Map *map, const char *path) {
-    if (map->dt1_count >= MAP_MAX_DT1) {
-        return;
-    }
-    for (int d = 0; d < map->dt1_count; d++) {
-        if (strcmp(map->dt1_paths[d], path) == 0) {
-            return;
+static bool Map__SamePath(const char *a, const char *b) {
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        const char x = *a == '/' ? '\\' : (char)tolower((unsigned char)*a);
+        const char y = *b == '/' ? '\\' : (char)tolower((unsigned char)*b);
+        if (x != y) {
+            return false;
         }
+    }
+    return *a == *b;
+}
+
+// Index of the tile set in map->dt1s (loaded on first use), -1 when the map has no room for more
+static int Map__AddDt1(Map *map, const char *path) {
+    for (int d = 0; d < map->dt1_count; d++) {
+        if (Map__SamePath(map->dt1_paths[d], path)) {
+            return d;
+        }
+    }
+    if (map->dt1_count >= MAP_MAX_DT1) {
+        return -1;
     }
     map->dt1_paths[map->dt1_count] = strdup(path);
     FAIL_IF_NULL(map->dt1_paths[map->dt1_count]);
     map->dt1s[map->dt1_count] = DT1_Load(path);
-    map->dt1_count++;
+    return map->dt1_count++;
+}
+
+// A preset's NPCs, bosses and monsters (type 1) and objects (type 2: chests, doors, shrines, waypoints, torches, ...),
+// moved by (tx, ty) tiles
+static void Map__AddPresetEntities(Map *map, const DS1 *ds1, const int tx, const int ty, const unsigned flags) {
+    if ((flags & MAP_STAMP_NO_ENTITIES) != 0) {
+        return;
+    }
+    for (int o = 0; o < ds1->object_count; o++) {
+        const DS1Object *object = &ds1->objects[o];
+        const float      x      = (float)(object->x + (tx * MAP_SUBTILES)) + 0.5f;
+        const float      y      = (float)(object->y + (ty * MAP_SUBTILES)) + 0.5f;
+        if (object->type == 1 && (flags & MAP_STAMP_NO_MONSTERS) == 0) {
+            const char *monster = MonsterStats_PresetMonster(map->act, object->id);
+            if (monster != NULL && monster[0] != '\0') {
+                Map_AddEntity(map, "monsters", monster, monster, x, y);
+            }
+        } else if (object->type == 2) {
+            ObjectInfo info;
+            if (Objects_Get(Objects_PresetRow(map->act, object->id), &info) && info.token[0] != '\0') {
+                MapEntity *entity  = Map_AddEntity(map, "objects", info.token, info.name, x, y);
+                entity->object_row = info.row;
+                snprintf(entity->mode, sizeof(entity->mode), "%s", info.idle_mode);
+            }
+        }
+    }
 }
 
 Map *Map_LoadDS1(const char *ds1_path) {
@@ -331,25 +385,7 @@ Map *Map_LoadDS1(const char *ds1_path) {
     }
     memcpy(map->shadows, ds1->shadows, cells * sizeof(DS1Cell));
 
-    // Its NPCs, bosses and monsters (type 1) and objects (type 2: chests, doors, shrines, waypoints, torches, ...)
-    for (int o = 0; o < ds1->object_count; o++) {
-        const DS1Object *object = &ds1->objects[o];
-        const float      x      = (float)object->x + 0.5f;
-        const float      y      = (float)object->y + 0.5f;
-        if (object->type == 1) {
-            const char *monster = MonsterStats_PresetMonster(map->act, object->id);
-            if (monster != NULL && monster[0] != '\0') {
-                Map_AddEntity(map, "monsters", monster, monster, x, y);
-            }
-        } else if (object->type == 2) {
-            ObjectInfo info;
-            if (Objects_Get(Objects_PresetRow(map->act, object->id), &info) && info.token[0] != '\0') {
-                MapEntity *entity  = Map_AddEntity(map, "objects", info.token, info.name, x, y);
-                entity->object_row = info.row;
-                snprintf(entity->mode, sizeof(entity->mode), "%s", info.idle_mode);
-            }
-        }
-    }
+    Map__AddPresetEntities(map, ds1, 0, 0, 0);
     DS1_Destroy(&ds1);
 
     Map__BuildTileIndex(map);
@@ -370,6 +406,72 @@ Map *Map_CreateBlank(const int width, const int height, const int act, const cha
     Map__BuildTileIndex(map);
     Map__ResolveAll(map);
     return map;
+}
+
+Map *Map_CreateEmpty(const int width, const int height, const int act) {
+    const int w    = width < 1 ? 1 : (width > MAP_MAX_SIZE ? MAP_MAX_SIZE : width);
+    const int h    = height < 1 ? 1 : (height > MAP_MAX_SIZE ? MAP_MAX_SIZE : height);
+    Map      *map  = Map__Allocate(w, h, MAP_WALL_LAYERS, MAP_FLOOR_LAYERS);
+    map->act       = act < 0 ? 0 : (act > 4 ? 4 : act);
+    map->dt1_masks = calloc((size_t)w * (size_t)h, sizeof(uint64_t));
+    FAIL_IF_NULL(map->dt1_masks);
+    snprintf(map->name, sizeof(map->name), "Untitled");
+    return map;
+}
+
+void Map_StampDS1(Map *map, const DS1 *ds1, const int tx, const int ty, const unsigned flags) {
+    uint64_t mask = 0;
+    for (int f = 0; f < ds1->file_count; f++) {
+        const int index  = Map__AddDt1(map, ds1->files[f]);
+        mask            |= (index >= 0 && index < 64) ? (1ull << index) : 0;
+    }
+
+    const bool filled_only = (flags & MAP_STAMP_FILLED_ONLY) != 0;
+    for (int y = 0; y < ds1->height; y++) {
+        for (int x = 0; x < ds1->width; x++) {
+            const int mx = tx + x;
+            const int my = ty + y;
+            if (mx < 0 || my < 0 || mx >= map->width || my >= map->height) {
+                continue;
+            }
+            const int source = (y * ds1->width) + x;
+            const int target = (my * map->width) + mx;
+            bool      used   = false;
+            for (int f = 0; f < MAP_FLOOR_LAYERS; f++) {
+                const DS1Cell *cell = f < ds1->floor_layer_count ? &ds1->floors[f][source] : NULL;
+                if (cell != NULL && cell->prop1 != 0) {
+                    map->floors[f][target] = *cell;
+                    used                   = true;
+                } else if (!filled_only) {
+                    memset(&map->floors[f][target], 0, sizeof(DS1Cell));
+                }
+            }
+            for (int w = 0; w < MAP_WALL_LAYERS; w++) {
+                const DS1Cell *cell = w < ds1->wall_layer_count ? &ds1->walls[w][source] : NULL;
+                if (cell != NULL && cell->prop1 != 0) {
+                    map->walls[w][target] = *cell;
+                    used                  = true;
+                } else if (!filled_only) {
+                    memset(&map->walls[w][target], 0, sizeof(DS1Cell));
+                }
+            }
+            if (ds1->shadows[source].prop1 != 0) {
+                map->shadows[target] = ds1->shadows[source];
+            } else if (!filled_only) {
+                memset(&map->shadows[target], 0, sizeof(DS1Cell));
+            }
+            if (map->dt1_masks != NULL && (used || !filled_only)) {
+                // Decorations add their tile sets to what the cell already uses
+                map->dt1_masks[target] = filled_only ? (map->dt1_masks[target] | mask) : mask;
+            }
+        }
+    }
+    Map__AddPresetEntities(map, ds1, tx, ty, flags);
+}
+
+void Map_Finish(Map *map) {
+    Map__BuildTileIndex(map);
+    Map__ResolveAll(map);
 }
 
 void Map_Destroy(Map **map_ref) {
@@ -394,6 +496,7 @@ void Map_Destroy(Map **map_ref) {
     free(map->shadow_tiles);
     free(map->entities);
     free(map->blocked);
+    free(map->dt1_masks);
     free(map->tile_index);
     free(map->anim_frames);
     for (int k = 0; k < 3; k++) {

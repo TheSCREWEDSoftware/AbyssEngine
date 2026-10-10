@@ -2,6 +2,8 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
+#include "LevelBuilder.h"
+#include "Map.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +27,10 @@ static bool Places__Excluded(const int level_id) {
         }
     }
     return false;
+}
+
+static int Places__CompareLevel(const void *a, const void *b) {
+    return ((const Place *)a)->level_id - ((const Place *)b)->level_id;
 }
 
 static void Places__Load(void) {
@@ -94,6 +100,47 @@ static void Places__Load(void) {
         place_count++;
     }
 
+    // The randomly built areas
+    const int level_rows = DataTable_GetRowCount(levels);
+    Place    *grown      = realloc(places, sizeof(Place) * (size_t)(place_count + level_rows + 1));
+    FAIL_IF_NULL(grown);
+    places = grown;
+    for (int l = 0; l < level_rows; l++) {
+        const int level_id = DataTable_GetInt(levels, l, c_id);
+        if (level_id <= 0 || !DataTable_HasValue(levels, l, c_id) || !LevelBuilder_CanBuild(level_id)) {
+            continue;
+        }
+        Place *place = &places[place_count++];
+        memset(place, 0, sizeof(Place));
+        place->level_id  = level_id;
+        place->generated = true;
+        place->act       = DataTable_GetInt(levels, l, c_act);
+        snprintf(place->name, sizeof(place->name), "%s", DataTable_GetString(levels, l, c_name));
+    }
+    qsort(places, (size_t)place_count, sizeof(Place), Places__CompareLevel);
+
+    // Areas sharing a name within an act (the seven Tal Rasha's Tombs) get a number
+    int *numbers = calloc((size_t)place_count + 1, sizeof(int));
+    FAIL_IF_NULL(numbers);
+    for (int i = 0; i < place_count; i++) {
+        int before = 0;
+        int total  = 0;
+        for (int j = 0; j < place_count; j++) {
+            if (places[j].act == places[i].act && strcmp(places[j].name, places[i].name) == 0) {
+                before += j < i ? 1 : 0;
+                total++;
+            }
+        }
+        numbers[i] = total > 1 ? before + 1 : 0;
+    }
+    for (int i = 0; i < place_count; i++) {
+        if (numbers[i] > 0) {
+            const size_t len = strnlen(places[i].name, sizeof(places[i].name) - 5);
+            snprintf(places[i].name + len, sizeof(places[i].name) - len, " %d", numbers[i]);
+        }
+    }
+    free(numbers);
+
     DataTable_Destroy(&preset);
     DataTable_Destroy(&levels);
 }
@@ -103,6 +150,17 @@ int Places_GetCount(void) {
         Places__Load();
     }
     return place_count;
+}
+
+Map *Places_LoadMap(const Place *place) {
+    if (place == NULL) {
+        return NULL;
+    }
+    Map *map = place->generated ? LevelBuilder_Build(place->level_id, 0) : Map_LoadDS1(place->files[0]);
+    if (map != NULL) {
+        snprintf(map->name, sizeof(map->name), "%s", place->name);
+    }
+    return map;
 }
 
 const Place *Places_Get(const int index) { return (index >= 0 && index < Places_GetCount()) ? &places[index] : NULL; }

@@ -46,6 +46,7 @@ sources = [
     'map/Pathfinding.c',
     'map/Objects.c',
     'map/Places.c',
+    'map/LevelBuilder.c',
     'map/LevelTypes.c',
 
     'data/DataTable.c',

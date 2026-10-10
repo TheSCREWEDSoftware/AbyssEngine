@@ -1,5 +1,6 @@
 #include "MapSession.h"
 #include "../drawing/LoadingScreen.h"
+#include "LevelBuilder.h"
 #include "MonsterStats.h"
 #include "Objects.h"
 #include "Places.h"
@@ -44,4 +45,5 @@ void MapSession_Release(void) {
     MonsterStats_Release();
     Objects_Release();
     Places_Release();
+    LevelBuilder_Release();
 }

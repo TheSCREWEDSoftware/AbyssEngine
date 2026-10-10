@@ -4,7 +4,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 
 | | Testing Grounds | Free Roam |
 |---|---|---|
-| **Map** | Your `testing_grounds` map, or the built-in arena (grass with a dirt square and four training monsters), or the map from the editor's **Play** button | Starts in the **Rogue Encampment**; teleport between the game's fixed outdoor areas |
+| **Map** | Your `testing_grounds` map, or the built-in arena (grass with a dirt square and four training monsters), or the map from the editor's **Play** button | Starts in the **Rogue Encampment**; teleport to the towns, fixed areas, wilderness and dungeons |
 | **Bottom buttons** | Back · Class · Walk · Monsters · Clear · Combat | Back · Class · Walk · Places · Monsters · Combat |
 
 ## Controls
@@ -19,18 +19,26 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **P** / Preview button | Placement preview on or off |
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Show the sub-tiles you can't walk on |
+| **N** | Free Roam, in a randomly built area: build it again with a new layout |
 | Mouse wheel | Zoom |
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
 
 ## Places (Free Roam)
 
-Act 1: Rogue Encampment, Monastery Gate, Outer Cloister, Inner Cloister, Tristram ·
-Act 2: Lut Gholein · Act 3: Kurast Docktown · Act 4: The Pandemonium Fortress · Act 5: Harrogath
+The list follows the game's order of areas, act by act.
 
-They come with the NPCs the game places in them (Akara, Kashya, Charsi, Gheed, Warriv; Atma, Drognan, Fara; ...), who
-stroll around their spot like in the game (guards stay put). Monsters that aren't fighting wander a little too.
-Dungeons and the randomly generated wilderness (Blood Moor, ...) are not in the list (see [Feature Status](Feature-Status.md)).
+- **Fixed areas**: the five towns, Monastery Gate, Outer and Inner Cloister, Tristram. They come with the NPCs the game
+  places in them (Akara, Kashya, Charsi, Gheed, Warriv; Atma, Drognan, Fara; ...), who stroll around their spot like in
+  the game (guards stay put).
+- **Randomly built areas**: the wilderness (Blood Moor, Cold Plains, ..., the desert, the Outer Steppes, the Highlands,
+  ...), the dungeons (Den of Evil, caves, Crypt, Jail, Catacombs, sewers, tombs, ..., Worldstone Keep), the Act 3 jungle
+  and the Bloody Foothills. They're put together from the game's pieces every time you go there ("Building ..."), with
+  monsters from the area's list; press **N** for another layout. You start at the entrance room of a dungeon, and on
+  open ground near the middle of the wilderness.
+
+Monsters that aren't fighting wander a little. Kurast, Travincal, the Arcane Sanctuary and the Chaos Sanctum aren't in
+the list yet, and you can't walk from one area into the next (see [Feature Status](Feature-Status.md)).
 
 ## Monsters list and placement preview
 
@@ -69,4 +77,4 @@ travelling by waypoint) isn't in yet. In the Testing Grounds objects can be drop
 - Units don't avoid bumping into each other (they can stand in the same spot).
 - NPCs don't talk or trade yet.
 - Combat is melee only, no skills, levels or experience.
-- Objects (chests, waypoints, doors) aren't there yet.
+- Areas aren't joined up: use the Places list (waypoints and cave entrances don't take you anywhere yet).

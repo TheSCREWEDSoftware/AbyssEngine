@@ -67,6 +67,14 @@ typedef struct Map {
 
     uint8_t *blocked; // per sub-tile: blocked by something standing there (objects), NULL = nothing
 
+    // Built from several presets (Map_StampDS1): each cell only uses the tile sets of the preset it came from, so
+    // presets with clashing tile numbers don't mix. One bit per dt1s[] entry; 0 or NULL = any.
+    uint64_t *dt1_masks;
+
+    bool  has_start; // where the player enters (generated areas); otherwise the middle
+    float start_x;   // sub-tiles
+    float start_y;
+
     // All tiles of all DT1s, sorted by (orientation, style, sequence) for lookups
     int                  tile_index_count;
     struct MapTileIndex *tile_index;
@@ -80,6 +88,16 @@ Map *Map_LoadDS1(const char *ds1_path);
 Map *Map_CreateBlank(int width, int height, int act, const char *const *dt1_paths, int dt1_count);
 Map *Map_LoadFile(const char *file_path); // .abm
 bool Map_SaveFile(const Map *map, const char *file_path);
+
+// Building a map out of presets (the game's randomly built areas): create it empty, stamp DS1 presets onto it,
+// then finish it once to look up all the tiles.
+#define MAP_STAMP_FILLED_ONLY 0x01 // only copy cells that have a tile (decorations over existing ground)
+#define MAP_STAMP_NO_ENTITIES 0x02 // leave out the preset's monsters and objects
+#define MAP_STAMP_NO_MONSTERS 0x04 // leave out its monsters (keep objects)
+
+Map *Map_CreateEmpty(int width, int height, int act);
+void Map_StampDS1(Map *map, const DS1 *ds1, int tx, int ty, unsigned flags);
+void Map_Finish(Map *map);
 void Map_Destroy(Map **map);
 
 // Tiles
