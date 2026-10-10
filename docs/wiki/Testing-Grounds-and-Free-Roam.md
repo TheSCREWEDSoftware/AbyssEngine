@@ -28,7 +28,8 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 Act 1: Rogue Encampment, Monastery Gate, Outer Cloister, Inner Cloister, Tristram ·
 Act 2: Lut Gholein · Act 3: Kurast Docktown · Act 4: The Pandemonium Fortress · Act 5: Harrogath
 
-They come with the NPCs the game places in them (Akara, Kashya, Charsi, Gheed, Warriv; Atma, Drognan, Fara; ...).
+They come with the NPCs the game places in them (Akara, Kashya, Charsi, Gheed, Warriv; Atma, Drognan, Fara; ...), who
+stroll around their spot like in the game (guards stay put). Monsters that aren't fighting wander a little too.
 Dungeons and the randomly generated wilderness (Blood Moor, ...) are not in the list (see [Feature Status](Feature-Status.md)).
 
 ## Monsters list and placement preview
@@ -54,6 +55,6 @@ A debugging switch for fighting between you and the NPCs/monsters:
 ## Known limits
 
 - Units don't avoid bumping into each other (they can stand in the same spot).
-- NPCs don't walk around or talk.
+- NPCs don't talk or trade yet.
 - Combat is melee only, no skills, levels or experience.
 - Objects (chests, waypoints, doors) aren't there yet.

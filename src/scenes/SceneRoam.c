@@ -53,10 +53,16 @@
 #define RESPAWN_GRACE     3000 // after coming back, monsters leave you alone for a moment
 #define PLAYER_DAMAGE_MIN 6
 #define PLAYER_DAMAGE_MAX 14
-#define REPATH_PLAYER_MS  250 // while the mouse is held / the target moves
-#define REPATH_MONSTER_MS 500
-#define REPATH_DISTANCE   1.0f // re-plan when the goal moved this far
-#define HOVER_RANGE       2.5f
+// Wandering (NPCs in town, idle monsters): pause, then stroll to a random spot near home
+#define WANDER_NPC_RADIUS     4.0f // sub-tiles from home
+#define WANDER_MONSTER_RADIUS 3.0f
+#define WANDER_PAUSE_MIN_MS   2500
+#define WANDER_PAUSE_MAX_MS   7000
+#define WANDER_SPEED_MAX      3.0f // strolling, not rushing
+#define REPATH_PLAYER_MS      250  // while the mouse is held / the target moves
+#define REPATH_MONSTER_MS     500
+#define REPATH_DISTANCE       1.0f // re-plan when the goal moved this far
+#define HOVER_RANGE           2.5f
 
 #define DEFAULT_MAP_SIZE    32
 #define DEFAULT_LEVEL_TYPE  "Act 1 - Town"
@@ -125,6 +131,11 @@ typedef struct Unit {
     float       path_goal_x; // where the path was planned to
     float       path_goal_y;
     uint64_t    next_repath;
+    float       home_x; // where the map placed it: wandering stays around here
+    float       home_y;
+    bool        wandering;   // on a stroll (not fighting)
+    uint64_t    next_wander; // when to set off again
+    int         can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
     DrawContext draw;
 } Unit;
 
@@ -306,6 +317,9 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     unit->target_x  = x;
     unit->target_y  = y;
     unit->turn      = rand() % 16;
+    unit->home_x    = x;
+    unit->home_y    = y;
+    unit->can_walk  = -1;
     unit->state     = UNIT_IDLE;
 
     MonsterStats stats;
@@ -823,6 +837,56 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     Roam__SetState(player, roam->moving ? UNIT_WALK : UNIT_IDLE, now);
 }
 
+// Strolling around home while nobody's fighting: wait a few seconds, walk to a random reachable spot nearby, repeat
+static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const uint64_t now) {
+    if (unit->can_walk < 0) {
+        // Guards keep their post; everyone else with a walk animation strolls
+        const bool guard  = strstr(unit->id, "guard") != NULL;
+        unit->can_walk    = !guard && MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "wl") != NULL ? 1 : 0;
+        unit->next_wander = now + (uint64_t)Roam__Roll(500, WANDER_PAUSE_MAX_MS); // don't all set off at once
+    }
+    if (unit->can_walk == 0) {
+        Roam__SetState(unit, UNIT_IDLE, now);
+        return;
+    }
+
+    if (unit->wandering) {
+        const float speed = unit->speed < WANDER_SPEED_MAX ? unit->speed : WANDER_SPEED_MAX;
+        if (Roam__FollowPath(roam->map, unit, speed, seconds)) {
+            Roam__SetState(unit, UNIT_WALK, now);
+            return;
+        }
+        unit->wandering   = false; // arrived (or bumped into something): rest a while
+        unit->next_wander = now + (uint64_t)Roam__Roll(WANDER_PAUSE_MIN_MS, WANDER_PAUSE_MAX_MS);
+        Roam__ClearPath(unit);
+    }
+    Roam__SetState(unit, UNIT_IDLE, now);
+
+    if (now < unit->next_wander) {
+        return;
+    }
+    // Somewhere walkable near home (a few tries), then plan the way there
+    const float radius = unit->npc ? WANDER_NPC_RADIUS : WANDER_MONSTER_RADIUS;
+    for (int attempt = 0; attempt < 6; attempt++) {
+        const float angle    = (float)(rand() % 628) / 100.0f;
+        const float distance = radius * (float)(30 + (rand() % 71)) / 100.0f;
+        const float tx       = floorf(unit->home_x + (cosf(angle) * distance)) + 0.5f;
+        const float ty       = floorf(unit->home_y + (sinf(angle) * distance)) + 0.5f;
+        if (!Map_IsWalkable(roam->map, (int)floorf(tx), (int)floorf(ty)) ||
+            Roam__Distance(tx, ty, unit->x, unit->y) < 1.0f) {
+            continue;
+        }
+        Roam__ClearPath(unit);
+        if (Map_FindPath(roam->map, unit->x, unit->y, tx, ty, &unit->path)) {
+            unit->path_goal_x = tx;
+            unit->path_goal_y = ty;
+            unit->wandering   = true;
+            return;
+        }
+    }
+    unit->next_wander = now + WANDER_PAUSE_MIN_MS; // nowhere to go right now
+}
+
 static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit      *player       = &roam->player;
     const bool player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
@@ -842,16 +906,17 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
 
         if (!combat_enabled || !player_alive) {
             unit->provoked = false;
-            Roam__SetState(unit, UNIT_IDLE, now);
+            Roam__Wander(roam, unit, seconds, now);
             continue;
         }
 
         // Combat: everyone nearby (NPCs included) comes for the player
         const float distance = Roam__Distance(unit->x, unit->y, player->x, player->y);
         if (distance > AGGRO_RANGE && !unit->provoked) {
-            Roam__SetState(unit, UNIT_IDLE, now);
+            Roam__Wander(roam, unit, seconds, now);
             continue;
         }
+        unit->wandering = false;
         if (distance <= ATTACK_RANGE) {
             Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
             Roam__ClearPath(unit);
