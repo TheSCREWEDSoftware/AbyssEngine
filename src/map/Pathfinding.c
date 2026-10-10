@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PATH_MARGIN         48    // sub-tiles searched beyond the box around start and goal
-#define PATH_MAX_EXPANSIONS 60000 // give up (and go to the closest point found) after this many
+#define PATH_MARGIN         48     // sub-tiles searched beyond the box around start and goal
+#define PATH_MAX_EXPANSIONS 160000 // give up (and go to the closest point found) after this many
 #define PATH_LINE_STEP      0.25f
 #define SQRT2               1.41421356f
 

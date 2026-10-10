@@ -19,7 +19,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **P** / Preview button | Placement preview on or off |
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Show the sub-tiles you can't walk on |
-| **N** | Free Roam, in a randomly built area: build it again with a new layout |
+| **N** | Free Roam: a new random world (the area you're in is built again from the new seed) |
 | Mouse wheel | Zoom |
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
@@ -38,7 +38,34 @@ The list follows the game's order of areas, act by act.
   open ground near the middle of the wilderness.
 
 Monsters that aren't fighting wander a little. Kurast, Travincal, the Arcane Sanctuary and the Chaos Sanctum aren't in
-the list yet, and you can't walk from one area into the next (see [Feature Status](Feature-Status.md)).
+the list yet (see [Feature Status](Feature-Status.md)).
+
+## World seed
+
+Every randomly built area comes from one **world seed**: the same seed always builds the same world (the same Blood
+Moor, the same Den of Evil, the encampment with the same exit). It's shown in the status bar and at the bottom of the
+**Places** panel:
+
+- **Random** (or **N**): a new random seed.
+- Type a number in the box and click **Use** (or Enter): that world. A seed you typed is kept the next time you open
+  Free Roam; otherwise every visit starts with a random one.
+
+Changing the seed builds the area you're in again from it.
+
+## Walking between areas
+
+Areas are joined up like in the game, so you can walk from one into the next:
+
+- **On foot**: walk out of the Rogue Encampment into the Blood Moor, then on to the Cold Plains, Stony Field, Dark
+  Wood, Black Marsh and Tamoe Highland (and the Burial Grounds off the Cold Plains). Act 2: Lut Gholein to the Rocky
+  Waste, Dry Hills, Far Oasis, Lost City and Valley of Snakes. Act 4: the Pandemonium Fortress to the Outer Steppes,
+  Plains of Despair and City of the Damned. Act 5: Harrogath to the Bloody Foothills, Rigid Highlands and Arreat
+  Plateau. Each area has a gap in its border on the side that leads on (the world seed picks the side); you arrive just
+  inside the gap that leads back.
+- **Entrances**: click a cave mouth, the Den of Evil, a tomb door, the Forgotten Tower, stairs up or down, the sewers
+  and the harem in Lut Gholein, ... to go in (walking across one doesn't take you in). Dungeons lead down level by level
+  (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
+- An exit that leads somewhere not built yet says "That way isn't open yet".
 
 ## Monsters list and placement preview
 
@@ -77,4 +104,5 @@ travelling by waypoint) isn't in yet. In the Testing Grounds objects can be drop
 - Units don't avoid bumping into each other (they can stand in the same spot).
 - NPCs don't talk or trade yet.
 - Combat is melee only, no skills, levels or experience.
-- Areas aren't joined up: use the Places list (waypoints and cave entrances don't take you anywhere yet).
+- Waypoints don't take you anywhere in Free Roam (use the Places list); some links aren't there yet (Act 3, the
+  Monastery, Tristram's portal, the Arcane Sanctuary).

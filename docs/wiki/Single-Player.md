@@ -37,6 +37,7 @@ Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 S
 | **R** / Run button | Run or walk (running uses stamina) |
 | **W** / Waypoint button | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
 | **T** / Town button | Back to the act's town |
+| Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |
 | **Esc** | Close the open panel; with none open, press twice to save and exit |
 | Exit Game button | Save and go back to the character list |
@@ -62,4 +63,5 @@ Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 S
 ## Not yet
 
 Items (inventory, equipment, drops, gold), skills and the skill tree, potions and the belt, quests, NPC dialogue and
-trading, hirelings, the real control panel (life/mana globes), difficulty levels, walking from one area into the next.
+trading, hirelings, the real control panel (life/mana globes), difficulty levels. Each game has its own random world
+seed: the areas keep their layout while you play.

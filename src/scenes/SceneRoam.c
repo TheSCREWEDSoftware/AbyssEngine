@@ -10,6 +10,7 @@
 #include "../drawing/ListBox.h"
 #include "../drawing/LoadingScreen.h"
 #include "../drawing/Sprite.h"
+#include "../drawing/TextBox.h"
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
 #include "../map/LevelTypes.h"
@@ -21,6 +22,7 @@
 #include "../map/Objects.h"
 #include "../map/Pathfinding.h"
 #include "../map/Places.h"
+#include "../map/World.h"
 #include "CatalogCharacters.h"
 #include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
@@ -47,6 +49,9 @@
 #define PREVIEW_BUTTON_Y 500 // Monsters panel: placement preview toggle
 #define LIST_ROWS        20
 #define LIST_ROW_H       18
+#define SEED_LABEL_Y     418 // Free Roam: the world seed, under the Places list
+#define SEED_BOX_Y       432
+#define SEED_BUTTONS_Y   460
 #define MAX_UNITS        512
 #define WALK_SPEED       5.0f // sub-tiles per second
 #define RUN_SPEED        9.0f
@@ -89,7 +94,8 @@ static const char *player_classes[][3] = {
 };
 #define PLAYER_CLASS_COUNT (int)(sizeof(player_classes) / sizeof(player_classes[0]))
 
-static bool combat_enabled = false; // kept between visits
+static bool     combat_enabled = false; // kept between visits
+static uint32_t fixed_seed     = 0;     // Free Roam: the world seed typed in (kept between visits), 0 = random
 
 // Lighting: L cycles through these (a pool of light around the player, darkness everywhere else)
 static const struct {
@@ -228,6 +234,12 @@ typedef struct SceneRoam {
     Label    *target_label;
     bool      prev_left;
     bool      prev_right;
+
+    TextBox *seed_box; // Free Roam: world seed (in the Places panel)
+    Button  *seed_use_button;
+    Button  *seed_random_button;
+    Label   *seed_label;
+    bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
     Character *character;
@@ -1008,9 +1020,10 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     if (!roam->borrowed) {
         Map_Destroy(&roam->map);
     }
-    roam->map      = map;
-    roam->borrowed = false;
-    roam->place    = place_index;
+    roam->map         = map;
+    roam->borrowed    = false;
+    roam->place       = place_index;
+    roam->exits_armed = false;
     MapRenderer_ClearCache(roam->renderer);
     roam->in_town = false;
     for (int t = 0; t < TOWN_COUNT; t++) {
@@ -1046,6 +1059,59 @@ static void Roam__GoToTown(SceneRoam *roam, const int act) {
     if (place >= 0) {
         Roam__Teleport(roam, place);
     }
+}
+
+// Free Roam: a new world seed (0 = random); the area you're in is built again from it
+static void Roam__NewWorld(SceneRoam *roam, const uint32_t seed) {
+    fixed_seed = seed;
+    World_SetSeed(seed);
+    Roam__Teleport(roam, roam->place);
+    char text[64];
+    snprintf(text, sizeof(text), "World seed %u", World_GetSeed());
+    Roam__ShowMessage(roam, text);
+}
+
+// A walkable sub-tile near (x, y) that isn't on any exit
+static void Roam__ArrivalSpot(const Map *map, const float x, const float y, float *out_x, float *out_y) {
+    const int cx = (int)x;
+    const int cy = (int)y;
+    *out_x       = x;
+    *out_y       = y;
+    for (int radius = 0; radius < 60; radius++) {
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                if ((abs(dx) != radius && abs(dy) != radius) || !Map_IsWalkable(map, cx + dx, cy + dy) ||
+                    Map_ExitAt(map, (float)(cx + dx) + 0.5f, (float)(cy + dy) + 0.5f) != NULL) {
+                    continue;
+                }
+                *out_x = (float)(cx + dx) + 0.5f;
+                *out_y = (float)(cy + dy) + 0.5f;
+                return;
+            }
+        }
+    }
+}
+
+// Through an exit into the next area, coming in at its way back
+static void Roam__Travel(SceneRoam *roam, const int target_level) {
+    const Place *here       = Places_Get(roam->place);
+    const int    from_level = here != NULL ? here->level_id : 0;
+    const int    place      = Roam__FindPlace(target_level);
+    if (place < 0) {
+        Roam__ShowMessage(roam, "That way isn't open yet.");
+        roam->exits_armed = false;
+        return;
+    }
+    Roam__Teleport(roam, place);
+    const MapExit *back = Map_ExitTo(roam->map, from_level);
+    if (back != NULL) {
+        Roam__ArrivalSpot(roam->map, back->arrive_x, back->arrive_y, &roam->spawn_x, &roam->spawn_y);
+        roam->player.x        = roam->spawn_x;
+        roam->player.y        = roam->spawn_y;
+        roam->player.target_x = roam->spawn_x;
+        roam->player.target_y = roam->spawn_y;
+    }
+    roam->exits_armed = false;
 }
 
 // Single Player: whether a waypoint is near enough to use the Waypoint button
@@ -1094,7 +1160,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
                                            "T town   L light   Esc save and exit"
                                     : free_roam
                                         ? "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                          "P preview  L light  B blocked  N new layout  Esc back"
+                                          "P preview  L light  B blocked  N new world  Esc back"
                                         : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
                                           "P preview  L light  B blocked  Esc back");
 
@@ -1131,9 +1197,6 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->char_panel_sprite = Sprite_Create(CHAR_PANEL, PALETTE_UNITS);
         roam->panel_label       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
         roam->panel_value_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        roam->message_label     = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        Label_SetAlignment(roam->message_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
-        Label_SetColor(roam->message_label, 0xFF, 0xE8, 0x60, 0xFF);
     } else if (free_roam) {
         roam->places_button   = roam->buttons[3];
         roam->monsters_button = roam->buttons[4];
@@ -1142,6 +1205,10 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->clear_button    = roam->buttons[4];
     }
 
+    roam->message_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    Label_SetAlignment(roam->message_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    Label_SetColor(roam->message_label, 0xFF, 0xE8, 0x60, 0xFF);
+
     roam->preview        = true;
     roam->preview_button = Button_Create(BUTTON_TYPE_MEDIUM, "Preview On");
     Button_SetPosition(roam->preview_button, PANEL_INNER_X + 38, PREVIEW_BUTTON_Y);
@@ -1149,6 +1216,17 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     roam->list = ListBox_Create(FONTS_FONT8, PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W, LIST_ROWS, LIST_ROW_H);
     ListBox_SetBackground(roam->list, 0, 0, 0, 160);
 
+    if (game || free_roam) {
+        World_SetSeed(game ? 0 : fixed_seed); // a new world for every game; Free Roam keeps a seed you typed in
+    }
+    if (free_roam && !game) {
+        roam->seed_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+        roam->seed_box   = TextBox_Create(FONTS_FONT8, PANEL_INNER_X, SEED_BOX_Y, PANEL_INNER_W, 20, "type a seed");
+        roam->seed_use_button    = Button_Create(BUTTON_TYPE_CANCEL, "Use");
+        roam->seed_random_button = Button_Create(BUTTON_TYPE_CANCEL, "Random");
+        Button_SetPosition(roam->seed_use_button, PANEL_INNER_X, SEED_BUTTONS_Y);
+        Button_SetPosition(roam->seed_random_button, PANEL_INNER_X + PANEL_INNER_W - 96, SEED_BUTTONS_Y);
+    }
     if (game) {
         Roam__GoToTown(roam, roam->character->act); // where the character was last
     } else if (free_roam) {
@@ -1206,6 +1284,10 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->life_label);
     Label_Destroy(&roam->target_label);
     Sprite_Destroy(&roam->char_panel_sprite);
+    TextBox_Destroy(&roam->seed_box);
+    Button_Destroy(&roam->seed_use_button);
+    Button_Destroy(&roam->seed_random_button);
+    Label_Destroy(&roam->seed_label);
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -1744,12 +1826,10 @@ static void Roam__Update(SceneRoam *roam) {
         roam->preview = !roam->preview;
         Roam__UpdateButtons(roam);
     }
-    if (roam->free_roam && !roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
-        const Place *place = Places_Get(roam->place);
-        if (place != NULL && place->generated) {
-            Roam__Teleport(roam, roam->place); // the same area, built afresh
-            return;
-        }
+    const bool typing = roam->seed_box != NULL && InputManager_IsTextInputActive();
+    if (roam->free_roam && !roam->game && !typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
+        Roam__NewWorld(roam, 0); // the same area in a new random world
+        return;
     }
 
     float world_x;
@@ -1815,6 +1895,24 @@ static void Roam__Update(SceneRoam *roam) {
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
 
+    // Walking off the edge into the next area, or onto an entrance
+    if (roam->free_roam && Roam__IsAlive(&roam->player)) {
+        const MapExit *exit = Map_ExitAt(roam->map, roam->player.x, roam->player.y);
+        // Entrances only take you in when you were heading for them, not when you walk across one
+        const bool meant = exit != NULL && (!exit->entrance || (roam->player.target_x >= (float)exit->x0 - 3.0f &&
+                                                                roam->player.target_x <= (float)exit->x1 + 3.0f &&
+                                                                roam->player.target_y >= (float)exit->y0 - 3.0f &&
+                                                                roam->player.target_y <= (float)exit->y1 + 3.0f));
+        if (exit == NULL) {
+            roam->exits_armed = true;
+        } else if (roam->exits_armed && meant) {
+            roam->moving = false;
+            Roam__ClearPath(&roam->player);
+            Roam__Travel(roam, exit->target_level);
+            return;
+        }
+    }
+
     // Camera follows the player (keeping the body, not the feet, in the middle)
     MapView_SubtileToWorld(roam->player.x, roam->player.y, &roam->camera.x, &roam->camera.y);
     roam->camera.y -= 40.0f;
@@ -1827,6 +1925,25 @@ static void Roam__Update(SceneRoam *roam) {
     if (roam->panel == PANEL_MONSTERS && Button_Update(roam->preview_button)) {
         roam->preview = !roam->preview;
         Roam__UpdateButtons(roam);
+    }
+    if (roam->panel == PANEL_PLACES && roam->seed_box != NULL) {
+        TextBox_Update(roam->seed_box);
+        const bool enter = InputManager_IsTextInputActive() && InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
+        if (Button_Update(roam->seed_use_button) || enter) {
+            const unsigned long typed = strtoul(TextBox_GetText(roam->seed_box), NULL, 10);
+            TextBox_Blur(roam->seed_box);
+            if (typed > 0 && typed <= 0xFFFFFFFFul) {
+                Roam__NewWorld(roam, (uint32_t)typed);
+                return;
+            }
+            Roam__ShowMessage(roam, "A seed is a whole number, 1 or more.");
+        }
+        if (Button_Update(roam->seed_random_button)) {
+            TextBox_Blur(roam->seed_box);
+            TextBox_Clear(roam->seed_box);
+            Roam__NewWorld(roam, 0);
+            return;
+        }
     }
     if (roam->panel != PANEL_NONE && ListBox_Update(roam->list)) {
         roam->selected = ListBox_GetSelectedIndex(roam->list);
@@ -2052,9 +2169,6 @@ static void Roam__DrawGameHud(SceneRoam *roam) {
         Label_Draw(roam->life_label, 340, VIEW_H - 37);
         Label_SetColor(roam->life_label, 0xFF, 0xFF, 0xFF, 0xFF);
     }
-    if (SDL_GetTicks64() < roam->message_until) {
-        Label_Draw(roam->message_label, VIEW_W / 2, 110);
-    }
 }
 
 static void Roam__Render(SceneRoam *roam) {
@@ -2126,9 +2240,13 @@ static void Roam__Render(SceneRoam *roam) {
                  roam->character->level, Character_ClassName(roam->character->class_id),
                  roam->character->hardcore ? " (hardcore)" : "", light_levels[light_level].name);
     } else {
-        snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s",
+        char seed[32] = "";
+        if (roam->free_roam) {
+            snprintf(seed, sizeof(seed), "   seed %u", World_GetSeed());
+        }
+        snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s%s",
                  roam->map->name, roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
-                 roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name);
+                 roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name, seed);
     }
     Label_SetText(roam->status_label, status);
     Label_Draw(roam->status_label, 4, 2);
@@ -2176,10 +2294,23 @@ static void Roam__Render(SceneRoam *roam) {
         if (roam->panel == PANEL_MONSTERS) {
             Button_Draw(roam->preview_button);
         }
+        if (roam->panel == PANEL_PLACES && roam->seed_box != NULL) {
+            char text[64];
+            snprintf(text, sizeof(text), "World seed: %u%s", World_GetSeed(),
+                     fixed_seed != 0 ? " (fixed)" : " (random)");
+            Label_SetText(roam->seed_label, text);
+            Label_Draw(roam->seed_label, PANEL_INNER_X, SEED_LABEL_Y);
+            TextBox_Draw(roam->seed_box);
+            Button_Draw(roam->seed_use_button);
+            Button_Draw(roam->seed_random_button);
+        }
     }
 
     if (roam->game && roam->char_panel) {
         Roam__DrawCharacterPanel(roam);
+    }
+    if (SDL_GetTicks64() < roam->message_until) {
+        Label_Draw(roam->message_label, VIEW_W / 2, 110);
     }
 
     const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};

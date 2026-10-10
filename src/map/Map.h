@@ -41,6 +41,19 @@ typedef struct MapEntity {
     char  mode[4];    // objects: the animation it shows ("nu", "on" for lit torches); "" = the usual one
 } MapEntity;
 
+// A way out of the map into another area: walking off this part of the edge, or stepping on an entrance
+#define MAP_MAX_EXITS 12
+typedef struct MapExit {
+    int   target_level; // Levels.txt Id
+    int   x0;           // sub-tiles, inclusive
+    int   y0;
+    int   x1;
+    int   y1;
+    float arrive_x; // where you come in when arriving from that area
+    float arrive_y;
+    bool  entrance; // a cave mouth, stairs, ...: taken when you click it, not just by walking over it
+} MapExit;
+
 typedef struct Map {
     char     name[64];
     int      width;
@@ -71,6 +84,9 @@ typedef struct Map {
     // presets with clashing tile numbers don't mix. One bit per dt1s[] entry; 0 or NULL = any.
     uint64_t *dt1_masks;
 
+    int     exit_count;
+    MapExit exits[MAP_MAX_EXITS];
+
     bool  has_start; // where the player enters (generated areas); otherwise the middle
     float start_x;   // sub-tiles
     float start_y;
@@ -98,7 +114,12 @@ bool Map_SaveFile(const Map *map, const char *file_path);
 Map *Map_CreateEmpty(int width, int height, int act);
 void Map_StampDS1(Map *map, const DS1 *ds1, int tx, int ty, unsigned flags);
 void Map_Finish(Map *map);
-void Map_Destroy(Map **map);
+
+// Exits to other areas
+void           Map_AddExit(Map *map, int target_level, int x0, int y0, int x1, int y1, float arrive_x, float arrive_y);
+const MapExit *Map_ExitAt(const Map *map, float subtile_x, float subtile_y); // NULL if none
+const MapExit *Map_ExitTo(const Map *map, int target_level);                 // NULL if none
+void           Map_Destroy(Map **map);
 
 // Tiles
 void Map_SetCell(Map *map, MapLayerKind kind, int layer, int tx, int ty, const MapTileChoice *choice); // NULL clears

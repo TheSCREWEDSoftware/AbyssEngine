@@ -4,6 +4,7 @@
 #include "../data/DataTable.h"
 #include "LevelBuilder.h"
 #include "Map.h"
+#include "World.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,10 +12,9 @@
 #define EXCEL_LVLPREST "/data/global/excel/LvlPrest.txt"
 #define EXCEL_LEVELS   "/data/global/excel/Levels.txt"
 
-// Outdoor presets that are really dungeons or special arenas
+// Whole-area presets left out
 static const int excluded_levels[] = {
-    124, // Halls of Vaught (Nihlathak)
-    136, // Uber Tristram
+    136, // Uber Tristram (a copy of Tristram)
 };
 
 static Place *places      = NULL;
@@ -48,8 +48,7 @@ static void Places__Load(void) {
     places         = calloc(rows > 0 ? (size_t)rows : 1, sizeof(Place));
     FAIL_IF_NULL(places);
 
-    const int c_level    = DataTable_GetColumnIndex(preset, "LevelId");
-    const int c_outdoors = DataTable_GetColumnIndex(preset, "Outdoors");
+    const int c_level = DataTable_GetColumnIndex(preset, "LevelId");
     int       c_files[PLACE_MAX_FILES];
     for (int f = 0; f < PLACE_MAX_FILES; f++) {
         char column[8];
@@ -62,7 +61,7 @@ static void Places__Load(void) {
 
     for (int row = 0; row < rows; row++) {
         const int level_id = DataTable_GetInt(preset, row, c_level);
-        if (level_id <= 0 || DataTable_GetInt(preset, row, c_outdoors) != 1 || Places__Excluded(level_id)) {
+        if (level_id <= 0 || Places__Excluded(level_id)) {
             continue;
         }
 
@@ -156,7 +155,16 @@ Map *Places_LoadMap(const Place *place) {
     if (place == NULL) {
         return NULL;
     }
-    Map *map = place->generated ? LevelBuilder_Build(place->level_id, 0) : Map_LoadDS1(place->files[0]);
+    Map *map = NULL;
+    if (place->generated) {
+        map = LevelBuilder_Build(place->level_id, World_LevelSeed(place->level_id));
+    } else {
+        // Areas with several versions (the encampment's exit to the north, east or south): the world seed picks one
+        map = Map_LoadDS1(place->files[World_PickVariant(place->level_id, place->file_count)]);
+        if (map != NULL) {
+            World_AddFixedExits(map, place->level_id);
+        }
+    }
     if (map != NULL) {
         snprintf(map->name, sizeof(map->name), "%s", place->name);
     }

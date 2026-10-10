@@ -474,6 +474,43 @@ void Map_Finish(Map *map) {
     Map__ResolveAll(map);
 }
 
+void Map_AddExit(Map *map, const int target_level, const int x0, const int y0, const int x1, const int y1,
+                 const float arrive_x, const float arrive_y) {
+    if (map->exit_count >= MAP_MAX_EXITS || target_level <= 0) {
+        return;
+    }
+    MapExit *exit      = &map->exits[map->exit_count++];
+    exit->target_level = target_level;
+    exit->x0           = x0 < x1 ? x0 : x1;
+    exit->y0           = y0 < y1 ? y0 : y1;
+    exit->x1           = x0 < x1 ? x1 : x0;
+    exit->y1           = y0 < y1 ? y1 : y0;
+    exit->arrive_x     = arrive_x;
+    exit->arrive_y     = arrive_y;
+    exit->entrance     = false;
+}
+
+const MapExit *Map_ExitAt(const Map *map, const float subtile_x, const float subtile_y) {
+    const int x = (int)subtile_x;
+    const int y = (int)subtile_y;
+    for (int e = 0; e < map->exit_count; e++) {
+        const MapExit *exit = &map->exits[e];
+        if (x >= exit->x0 && x <= exit->x1 && y >= exit->y0 && y <= exit->y1) {
+            return exit;
+        }
+    }
+    return NULL;
+}
+
+const MapExit *Map_ExitTo(const Map *map, const int target_level) {
+    for (int e = 0; e < map->exit_count; e++) {
+        if (map->exits[e].target_level == target_level) {
+            return &map->exits[e];
+        }
+    }
+    return NULL;
+}
+
 void Map_Destroy(Map **map_ref) {
     if (map_ref == NULL || *map_ref == NULL) {
         return;

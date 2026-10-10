@@ -4,6 +4,7 @@
 #include "MonsterStats.h"
 #include "Objects.h"
 #include "Places.h"
+#include "World.h"
 #include <stddef.h>
 
 static CatalogCharacters *session_bestiary = NULL;
@@ -46,4 +47,5 @@ void MapSession_Release(void) {
     Objects_Release();
     Places_Release();
     LevelBuilder_Release();
+    World_Release();
 }

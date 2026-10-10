@@ -10,4 +10,5 @@ target_sources(${PROJECT_NAME}
         Pathfinding.c Pathfinding.h
         Objects.c Objects.h ObjectPresets.inc
         Places.c Places.h
+        World.c World.h
 )

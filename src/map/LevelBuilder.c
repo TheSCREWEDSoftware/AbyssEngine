@@ -2,6 +2,7 @@
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
 #include "../types/DS1.h"
+#include "World.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -691,12 +692,19 @@ static void Builder__Populate(Map *map, const LevelInfo *level, const uint8_t *m
             if (!main_area[(y * sub_w) + x]) {
                 continue;
             }
+            bool crowded = false;
             if (map->has_start) {
                 const float dx = (float)x - map->start_x;
                 const float dy = (float)y - map->start_y;
-                if ((dx * dx) + (dy * dy) < 30.0f * 30.0f) {
-                    continue; // let the player get their bearings first
-                }
+                crowded        = (dx * dx) + (dy * dy) < 30.0f * 30.0f;
+            }
+            for (int e = 0; e < map->exit_count && !crowded; e++) {
+                const float dx = (float)x - map->exits[e].arrive_x;
+                const float dy = (float)y - map->exits[e].arrive_y;
+                crowded        = (dx * dx) + (dy * dy) < 25.0f * 25.0f;
+            }
+            if (crowded) {
+                continue; // let the player get their bearings first
             }
             const int size = 2 + Rng_Below(rng, 4);
             for (int m = 0; m < size; m++) {
@@ -845,6 +853,71 @@ static void Builder__StampCluster(Map *map, const Cluster *cluster, const int tx
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Entrances
+
+// The entrances in a preset (cave mouths, stairs, tomb doors): special tiles (orientation 10/11) with a low main index
+// (30 and up are start and town portal markers). Neighbouring tiles are one entrance. Returns the count (tiles).
+static int Builder__FindWarps(const DS1 *ds1, int *xs, int *ys, const int max) {
+    int count = 0;
+    for (int w = 0; w < ds1->wall_layer_count; w++) {
+        for (int c = 0; c < ds1->width * ds1->height; c++) {
+            const DS1Cell *cell = &ds1->walls[w][c];
+            if (cell->prop1 == 0 || (cell->orientation != 10 && cell->orientation != 11) || cell->style >= 8) {
+                continue;
+            }
+            const int x    = c % ds1->width;
+            const int y    = c / ds1->width;
+            bool      near = false;
+            for (int i = 0; i < count && !near; i++) {
+                near = abs(xs[i] - x) <= 1 && abs(ys[i] - y) <= 1;
+            }
+            if (!near && count < max) {
+                xs[count]   = x;
+                ys[count++] = y;
+            }
+        }
+    }
+    return count;
+}
+
+// An exit on an entrance tile; you arrive next to it
+static void Builder__AddWarpExit(Map *map, const int target, const int tx, const int ty) {
+    const int x      = tx * MAP_SUBTILES;
+    const int y      = ty * MAP_SUBTILES;
+    const int before = map->exit_count;
+    Map_AddExit(map, target, x - 1, y - 1, x + MAP_SUBTILES, y + MAP_SUBTILES, (float)x + 2.5f, (float)y + 2.5f);
+    if (map->exit_count > before) {
+        map->exits[before].entrance = true;
+    }
+}
+
+// Is this area reached on foot from that one?
+static bool Builder__IsWalkLink(const int level_id, const int target) {
+    int       targets[4];
+    WorldSide sides[4];
+    const int count = World_GetWalkLinks(level_id, targets, sides, 4);
+    for (int i = 0; i < count; i++) {
+        if (targets[i] == target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The areas entered through this one's entrances (not the ones you walk to)
+static int Builder__WarpTargets(const int level_id, int *targets, const int max) {
+    int       all[8];
+    const int count = World_GetWarpLinks(level_id, all, 8);
+    int       kept  = 0;
+    for (int i = 0; i < count && kept < max; i++) {
+        if (!Builder__IsWalkLink(level_id, all[i])) {
+            targets[kept++] = all[i];
+        }
+    }
+    return kept;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Wilderness
 
 typedef struct Grid {
@@ -876,7 +949,8 @@ static void Grid__Take(Grid *grid, const int x, const int y, const int w, const 
 }
 
 // Puts a piece somewhere free inside the ring; false if there's no room
-static bool Builder__PlacePiece(Map *map, Grid *grid, Rng *rng, const Preset *preset, const int cell, const bool any) {
+static bool Builder__PlacePiece(Map *map, Grid *grid, Rng *rng, const Preset *preset, const int cell, const bool any,
+                                const DS1 **placed, int *placed_tx, int *placed_ty) {
     const DS1 *ds1 = Builder__PickFile(rng, preset);
     if (ds1 == NULL) {
         return false;
@@ -889,6 +963,11 @@ static bool Builder__PlacePiece(Map *map, Grid *grid, Rng *rng, const Preset *pr
         if (Grid__Free(grid, x, y, w, h)) {
             Grid__Take(grid, x, y, w, h);
             Map_StampDS1(map, ds1, x * cell, y * cell, 0);
+            if (placed != NULL) {
+                *placed    = ds1;
+                *placed_tx = x * cell;
+                *placed_ty = y * cell;
+            }
             return true;
         }
     }
@@ -898,6 +977,7 @@ static bool Builder__PlacePiece(Map *map, Grid *grid, Rng *rng, const Preset *pr
 typedef struct BorderSet {
     const DS1 *pieces[16][8]; // by shape (CORNER_* bits)
     int        counts[16];
+    const DS1 *openings[16]; // the straight edges with a path through them ("Bord1o.ds1"), NULL = none
 } BorderSet;
 
 static bool Builder__IsOpening(const char *file) {
@@ -911,6 +991,12 @@ static bool Builder__IsOpening(const char *file) {
 // The game numbers its border pieces the same way in every act: which corners each one closes off
 static const int border_shapes[12] = {EDGE_S,   EDGE_W,   EDGE_N,    EDGE_E,    OUTER_SW,  OUTER_NW,
                                       OUTER_NE, OUTER_SE, CORNER_BL, CORNER_TL, CORNER_TR, CORNER_BR};
+
+static bool Builder__IsOpeningEnd(const char *file) {
+    const char *dot = strrchr(file, '.');
+    return dot != NULL && dot - file >= 2 && tolower((unsigned char)dot[-1]) == 'e' &&
+           tolower((unsigned char)dot[-2]) == 'o';
+}
 
 static void Builder__LoadBorders(const OutdoorArea *area, BorderSet *set) {
     memset(set, 0, sizeof(BorderSet));
@@ -928,9 +1014,14 @@ static void Builder__LoadBorders(const OutdoorArea *area, BorderSet *set) {
         }
         const int shape = border_shapes[number - 1];
         for (int f = 0; f < preset->file_count && set->counts[shape] < 8; f++) {
-            const DS1 *ds1 = Builder__IsOpening(preset->files[f]) ? NULL : Builder__LoadDS1(preset->files[f]);
-            if (ds1 != NULL) {
+            const DS1 *ds1 = Builder__LoadDS1(preset->files[f]);
+            if (ds1 == NULL) {
+                continue;
+            }
+            if (!Builder__IsOpening(preset->files[f])) {
                 set->pieces[shape][set->counts[shape]++] = ds1;
+            } else if (set->openings[shape] == NULL && !Builder__IsOpeningEnd(preset->files[f])) {
+                set->openings[shape] = ds1;
             }
         }
     }
@@ -1150,6 +1241,38 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
         Builder__Dent(&grid, shapes, &borders, rng);
     }
 
+    // Openings to the neighbouring areas: a gap in the border near the middle of the side that leads there
+    int       walk_targets[4];
+    WorldSide walk_sides[4];
+    const int walk_count = World_GetWalkLinks(level->id, walk_targets, walk_sides, 4);
+    int       opening_x[4];
+    int       opening_y[4];
+    for (int l = 0; l < walk_count; l++) {
+        const WorldSide side    = walk_sides[l];
+        const int       edge    = side == WORLD_SIDE_N   ? EDGE_N
+                                  : side == WORLD_SIDE_S ? EDGE_S
+                                  : side == WORLD_SIDE_W ? EDGE_W
+                                                         : EDGE_E;
+        const bool      along_x = side == WORLD_SIDE_N || side == WORLD_SIDE_S;
+        const int       length  = along_x ? grid.width : grid.height;
+        opening_x[l]            = -1;
+        for (int k = 0; k < length && opening_x[l] < 0; k++) {
+            // From the middle outwards: middle, one after, one before, ...
+            const int i = (length / 2) + ((k % 2 == 0) ? (k / 2) : -((k + 1) / 2));
+            const int x = along_x ? i : (side == WORLD_SIDE_W ? 0 : grid.width - 1);
+            const int y = along_x ? (side == WORLD_SIDE_N ? 0 : grid.height - 1) : i;
+            if (i > 0 && i < length - 1 && shapes[y][x] == edge) {
+                opening_x[l] = x;
+                opening_y[l] = y;
+                shapes[y][x] = -2 - edge; // an opening of that edge
+                // Keep the block inside it clear: that's where you arrive
+                const int inner_x           = side == WORLD_SIDE_W ? 1 : side == WORLD_SIDE_E ? grid.width - 2 : x;
+                const int inner_y           = side == WORLD_SIDE_N ? 1 : side == WORLD_SIDE_S ? grid.height - 2 : y;
+                grid.used[inner_y][inner_x] = 1;
+            }
+        }
+    }
+
     // Open ground everywhere inside first; pieces go on top
     for (int y = 0; y < grid.height; y++) {
         for (int x = 0; x < grid.width; x++) {
@@ -1165,14 +1288,65 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
                 if (piece != NULL) {
                     Map_StampDS1(map, piece, x * cell, y * cell, MAP_STAMP_NO_MONSTERS);
                 }
+            } else if (shapes[y][x] <= -2) {
+                // The border piece with a path through it where there is one, plain ground otherwise
+                const DS1 *piece = borders.openings[-2 - shapes[y][x]];
+                if (piece != NULL) {
+                    Map_StampDS1(map, piece, x * cell, y * cell, MAP_STAMP_NO_ENTITIES);
+                } else {
+                    Builder__StampGround(map, ground_source, &ground, x * cell, y * cell, cell, cell);
+                }
             }
         }
     }
+    for (int l = 0; l < walk_count; l++) {
+        if (opening_x[l] < 0) {
+            continue;
+        }
+        // Walking into the outer strip of the opening takes you on; you arrive a block inside it
+        const int   span  = cell * MAP_SUBTILES;
+        const int   x0    = opening_x[l] * span;
+        const int   y0    = opening_y[l] * span;
+        const int   sub_w = map->width * MAP_SUBTILES;
+        const int   sub_h = map->height * MAP_SUBTILES;
+        const float mid_x = (float)x0 + ((float)span / 2.0f);
+        const float mid_y = (float)y0 + ((float)span / 2.0f);
+        switch (walk_sides[l]) {
+        case WORLD_SIDE_N:
+            Map_AddExit(map, walk_targets[l], x0, 0, x0 + span, 2, mid_x, (float)span * 1.5f);
+            break;
+        case WORLD_SIDE_S:
+            Map_AddExit(map, walk_targets[l], x0, sub_h - 3, x0 + span, sub_h - 1, mid_x,
+                        (float)sub_h - ((float)span * 1.5f));
+            break;
+        case WORLD_SIDE_W:
+            Map_AddExit(map, walk_targets[l], 0, y0, 2, y0 + span, (float)span * 1.5f, mid_y);
+            break;
+        default:
+            Map_AddExit(map, walk_targets[l], sub_w - 3, y0, sub_w - 1, y0 + span, (float)sub_w - ((float)span * 1.5f),
+                        mid_y);
+            break;
+        }
+    }
 
+    // Landmarks; their entrances lead to the areas this one opens into, in the order Levels.txt lists them
+    int       warp_targets[8];
+    const int warp_count = Builder__WarpTargets(level->id, warp_targets, 8);
+    int       next_warp  = 0;
     for (int i = 0; i < 4 && area->landmarks[i] != NULL; i++) {
         const Preset *preset = Builder__FindPreset(area->landmarks[i]);
-        if (preset == NULL || !Builder__PlacePiece(map, &grid, rng, preset, cell, true)) {
+        const DS1    *placed = NULL;
+        int           px     = 0;
+        int           py     = 0;
+        if (preset == NULL || !Builder__PlacePiece(map, &grid, rng, preset, cell, true, &placed, &px, &py)) {
             LOG_WARN("%s: could not place '%s'", level->name, area->landmarks[i]);
+            continue;
+        }
+        int       wx[4];
+        int       wy[4];
+        const int warps = Builder__FindWarps(placed, wx, wy, 4);
+        for (int w = 0; w < warps && next_warp < warp_count; w++) {
+            Builder__AddWarpExit(map, warp_targets[next_warp++], px + wx[w], py + wy[w]);
         }
     }
     int fill_count = 0;
@@ -1183,7 +1357,7 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
     for (int n = 0; n < interior / 3 && fill_count > 0; n++) {
         const Preset *preset = Builder__FindPreset(area->fills[Rng_Below(rng, fill_count)]);
         if (preset != NULL) {
-            Builder__PlacePiece(map, &grid, rng, preset, cell, false);
+            Builder__PlacePiece(map, &grid, rng, preset, cell, false, NULL, NULL, NULL);
         }
     }
 
@@ -1375,6 +1549,10 @@ static Map *Builder__BuildMaze(const MazeArea *area, const LevelInfo *level, Rng
     Map      *map    = Map_CreateEmpty(width, height, level->act);
     snprintf(map->name, sizeof(map->name), "%s", level->name);
 
+    // The entry room's stairs lead back up (the first area Levels.txt lists), the last room's on down
+    int       warp_targets[8];
+    const int warp_count = Builder__WarpTargets(level->id, warp_targets, 8);
+
     for (int i = 0; i < count; i++) {
         const Preset *preset = NULL;
         if (i == 0 && area->entry != NULL) {
@@ -1400,6 +1578,17 @@ static Map *Builder__BuildMaze(const MazeArea *area, const LevelInfo *level, Rng
         const int ty = (rooms[i].gy - min_y) * room_h;
         // Rooms share their edge row; later rooms must not wipe a neighbour's walls with empty cells
         Map_StampDS1(map, ds1, tx, ty, MAP_STAMP_FILLED_ONLY);
+        const int target = (i == 0 && warp_count > 0)         ? warp_targets[0]
+                           : (i == exit_at && warp_count > 1) ? warp_targets[1]
+                                                              : 0;
+        if (target > 0) {
+            int       wx[2];
+            int       wy[2];
+            const int warps = Builder__FindWarps(ds1, wx, wy, 2);
+            if (warps > 0) {
+                Builder__AddWarpExit(map, target, tx + wx[0], ty + wy[0]);
+            }
+        }
         if (i == 0) {
             map->has_start = true;
             map->start_x   = (float)((tx * MAP_SUBTILES) + ((room_w * MAP_SUBTILES) / 2));
@@ -1487,6 +1676,21 @@ static Map *Builder__BuildStrips(const LevelInfo *level, Rng *rng) {
     map->has_start = true;
     map->start_x   = (float)(strip * MAP_SUBTILES) / 2.0f;
     map->start_y   = (float)(((offsets[0] - low) * MAP_SUBTILES) + ((first->size_y * MAP_SUBTILES) / 2));
+
+    // Harrogath's gate at the west end, the way on to the Highlands at the east end
+    int       walk_targets[4];
+    WorldSide walk_sides[4];
+    const int walk_count = World_GetWalkLinks(level->id, walk_targets, walk_sides, 4);
+    const int sub_w      = map->width * MAP_SUBTILES;
+    for (int l = 0; l < walk_count; l++) {
+        const bool west = walk_sides[l] == WORLD_SIDE_W;
+        const int  oy   = (west ? offsets[0] : offsets[count - 1]) - low;
+        const int  y0   = oy * MAP_SUBTILES;
+        const int  y1   = (oy + first->size_y) * MAP_SUBTILES;
+        Map_AddExit(map, walk_targets[l], west ? 0 : sub_w - 3, y0, west ? 2 : sub_w - 1, y1,
+                    west ? (float)(strip * MAP_SUBTILES) / 2.0f : (float)sub_w - ((float)(strip * MAP_SUBTILES) / 2.0f),
+                    (float)(y0 + y1) / 2.0f);
+    }
     Map_Finish(map);
     return map;
 }
