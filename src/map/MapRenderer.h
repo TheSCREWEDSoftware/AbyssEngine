@@ -1,0 +1,56 @@
+#ifndef ABYSS_MAP_RENDERER_H
+#define ABYSS_MAP_RENDERER_H
+
+#include "Map.h"
+#include <SDL2/SDL.h>
+#include <stdbool.h>
+
+// Draws a Map isometrically: floors, shadows, then walls and entities from back to front, then roofs.
+//
+// World pixels: the top corner of tile (tx, ty) is at ((tx - ty) * 80, (tx + ty) * 40); one sub-tile is 32x16.
+// The camera names the world pixel shown at the centre of the view.
+
+typedef struct MapCamera {
+    float x;
+    float y;
+    float zoom;
+} MapCamera;
+
+// Something drawn in the world between the walls (a monster, the player, a marker).
+typedef struct MapDrawable {
+    float x; // sub-tiles
+    float y;
+    void (*draw)(void *context, int screen_x, int screen_y, float zoom);
+    void *context;
+} MapDrawable;
+
+#define MAP_DRAW_WALLS   0x01
+#define MAP_DRAW_SHADOWS 0x02
+#define MAP_DRAW_ROOFS   0x04
+#define MAP_DRAW_GRID    0x08
+#define MAP_DRAW_BLOCKED 0x10 // tint sub-tiles you can't walk on
+#define MAP_DRAW_SPECIAL 0x20 // markers the game never shows (warps, spawn points)
+#define MAP_DRAW_DEFAULT (MAP_DRAW_WALLS | MAP_DRAW_SHADOWS | MAP_DRAW_ROOFS)
+
+typedef struct MapRenderer MapRenderer;
+
+MapRenderer *MapRenderer_Create(void);
+void         MapRenderer_Destroy(MapRenderer **renderer);
+void         MapRenderer_ClearCache(MapRenderer *renderer); // call when the map (or its act) changes
+void         MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *camera, const SDL_Rect *view,
+                              const MapDrawable *drawables, int drawable_count, unsigned flags);
+// A single tile, e.g. a palette preview, scaled to fit the box.
+void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT1Tile *tile, const SDL_Rect *box);
+// Outline of a tile's floor diamond.
+void MapRenderer_DrawTileOutline(const MapCamera *camera, const SDL_Rect *view, int tx, int ty, SDL_Color color);
+
+// Coordinate helpers
+void MapView_SubtileToWorld(float sx, float sy, float *world_x, float *world_y);
+void MapView_WorldToSubtile(float world_x, float world_y, float *sx, float *sy);
+void MapView_WorldToScreen(const MapCamera *camera, const SDL_Rect *view, float world_x, float world_y, int *screen_x,
+                           int *screen_y);
+void MapView_ScreenToWorld(const MapCamera *camera, const SDL_Rect *view, int screen_x, int screen_y, float *world_x,
+                           float *world_y);
+const char *MapView_ActPalette(int act);
+
+#endif // ABYSS_MAP_RENDERER_H

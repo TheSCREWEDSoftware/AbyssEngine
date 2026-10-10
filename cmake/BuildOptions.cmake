@@ -47,6 +47,8 @@ option(DEBUG_FEATURES "Enable developer/debug features" ON)
 cmake_dependent_option(DEBUG_SKIP_INTRO "Skip the intro videos and start at the main menu" ON "DEBUG_FEATURES" OFF)
 cmake_dependent_option(DEBUG_SHOW_CATALOG "Show the Catalog (item, class, sprite and bestiary browser) on the main menu" ON
                        "DEBUG_FEATURES" OFF)
+cmake_dependent_option(DEBUG_SHOW_MAP_EDITOR "Show the Map Editor and Testing Grounds on the main menu" ON
+                       "DEBUG_FEATURES" OFF)
 
 option(WITHOUT_GIT "Don't ask git for the commit shown on the main menu" OFF)
 set(ABYSS_VERSION_TEXT "" CACHE STRING "Override the commit hash shown on the main menu (CI passes the GitHub sha)")

@@ -50,6 +50,9 @@ endif ()
 if (DEBUG_SHOW_CATALOG)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ABYSS_DEBUG_SHOW_CATALOG)
 endif ()
+if (DEBUG_SHOW_MAP_EDITOR)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ABYSS_DEBUG_SHOW_MAP_EDITOR)
+endif ()
 
 include(AutoClangFormat)
 

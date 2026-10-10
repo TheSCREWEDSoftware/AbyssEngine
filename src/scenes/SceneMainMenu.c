@@ -5,7 +5,11 @@
 #include "../drawing/Button.h"
 #include "../drawing/Cursor.h"
 #include "../managers/AudioManager.h"
+#include "../managers/InputManager.h"
+#include "../map/MapSession.h"
 #include "SceneCatalog.h"
+#include "SceneMapEditor.h"
+#include "SceneTestingGrounds.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +25,12 @@ typedef struct SceneMainMenu {
     Button *single_player_button;
     Button *multiplayer_button;
     Button *catalog_button;
+    Button *map_editor_button;
+    // "Map Editor" submenu, shown in place of the main buttons
+    bool    map_menu_open;
+    Button *editor_button;
+    Button *testing_grounds_button;
+    Button *map_back_button;
     Button *credits_button;
     Button *cinematics_button;
     Button *exit_button;
@@ -28,11 +38,17 @@ typedef struct SceneMainMenu {
 
 static void MainMenu__OnExitClicked(void *user_data);
 static void MainMenu__OnCatalogClicked(void *user_data);
+static void MainMenu__OnMapEditorClicked(void *user_data);
+static void MainMenu__OnEditorClicked(void *user_data);
+static void MainMenu__OnTestingGroundsClicked(void *user_data);
+static void MainMenu__OnMapBackClicked(void *user_data);
 
 DEFINE_SCENE_CALLBACKS(MainMenu);
 
 void *MainMenu_Create(void) {
     Cursor_SetVisible(true);
+
+    MapSession_Release(); // back from the map editor / testing grounds: free what they shared
 
     AudioManager_PlayMusic(MUSIC_TITLE, true);
 
@@ -75,6 +91,23 @@ void *MainMenu_Create(void) {
     Button_SetVisible(result->catalog_button, false); // CMake option DEBUG_SHOW_CATALOG is off
 #endif
 
+    result->map_editor_button = Button_Create(BUTTON_TYPE_WIDE, "Map Editor");
+    Button_SetPosition(result->map_editor_button, 264, 420);
+    Button_SetClickHandler(result->map_editor_button, MainMenu__OnMapEditorClicked, result);
+#ifndef ABYSS_DEBUG_SHOW_MAP_EDITOR
+    Button_SetVisible(result->map_editor_button, false); // CMake option DEBUG_SHOW_MAP_EDITOR is off
+#endif
+
+    result->editor_button = Button_Create(BUTTON_TYPE_WIDE, "Map Editor");
+    Button_SetPosition(result->editor_button, 264, 290);
+    Button_SetClickHandler(result->editor_button, MainMenu__OnEditorClicked, NULL);
+    result->testing_grounds_button = Button_Create(BUTTON_TYPE_WIDE, "Testing Grounds");
+    Button_SetPosition(result->testing_grounds_button, 264, 330);
+    Button_SetClickHandler(result->testing_grounds_button, MainMenu__OnTestingGroundsClicked, NULL);
+    result->map_back_button = Button_Create(BUTTON_TYPE_WIDE, "Back");
+    Button_SetPosition(result->map_back_button, 264, 380);
+    Button_SetClickHandler(result->map_back_button, MainMenu__OnMapBackClicked, result);
+
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
     Button_SetPosition(result->credits_button, 264, 505);
 
@@ -111,9 +144,16 @@ void MainMenu_Render(void *scene_ref) {
     Label_Draw(mainmenu->disclaimer_label, 400, 590);
     Label_Draw(mainmenu->build_label, 797, 1);
 
-    Button_Draw(mainmenu->single_player_button);
-    Button_Draw(mainmenu->multiplayer_button);
-    Button_Draw(mainmenu->catalog_button);
+    if (mainmenu->map_menu_open) {
+        Button_Draw(mainmenu->editor_button);
+        Button_Draw(mainmenu->testing_grounds_button);
+        Button_Draw(mainmenu->map_back_button);
+    } else {
+        Button_Draw(mainmenu->single_player_button);
+        Button_Draw(mainmenu->multiplayer_button);
+        Button_Draw(mainmenu->catalog_button);
+        Button_Draw(mainmenu->map_editor_button);
+    }
     Button_Draw(mainmenu->credits_button);
     Button_Draw(mainmenu->cinematics_button);
     Button_Draw(mainmenu->exit_button);
@@ -123,9 +163,16 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
     (void)(delta);
     const SceneMainMenu *mainmenu = (SceneMainMenu *)scene_ref;
 
-    Button_Update(mainmenu->single_player_button);
-    Button_Update(mainmenu->multiplayer_button);
-    Button_Update(mainmenu->catalog_button);
+    if (mainmenu->map_menu_open) {
+        Button_Update(mainmenu->editor_button);
+        Button_Update(mainmenu->testing_grounds_button);
+        Button_Update(mainmenu->map_back_button);
+    } else {
+        Button_Update(mainmenu->single_player_button);
+        Button_Update(mainmenu->multiplayer_button);
+        Button_Update(mainmenu->catalog_button);
+        Button_Update(mainmenu->map_editor_button);
+    }
     Button_Update(mainmenu->credits_button);
     Button_Update(mainmenu->cinematics_button);
     Button_Update(mainmenu->exit_button);
@@ -134,6 +181,28 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
 static void MainMenu__OnCatalogClicked(void *user_data) {
     (void)(user_data);
     Scene_Set(SCENE_REF(Catalog));
+}
+
+static void MainMenu__OnMapEditorClicked(void *user_data) {
+    SceneMainMenu *mainmenu = user_data;
+    mainmenu->map_menu_open = true;
+    InputManager_ResetMouseButtons(); // don't let this click also press the button that replaces it
+}
+
+static void MainMenu__OnMapBackClicked(void *user_data) {
+    SceneMainMenu *mainmenu = user_data;
+    mainmenu->map_menu_open = false;
+    InputManager_ResetMouseButtons();
+}
+
+static void MainMenu__OnEditorClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(MapEditor));
+}
+
+static void MainMenu__OnTestingGroundsClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(TestingGrounds));
 }
 
 static void MainMenu__OnExitClicked(void *user_data) {
@@ -148,6 +217,10 @@ void MainMenu_Free(void **scene_ref) {
     Button_Destroy(&mainmenu->single_player_button);
     Button_Destroy(&mainmenu->multiplayer_button);
     Button_Destroy(&mainmenu->catalog_button);
+    Button_Destroy(&mainmenu->map_editor_button);
+    Button_Destroy(&mainmenu->editor_button);
+    Button_Destroy(&mainmenu->testing_grounds_button);
+    Button_Destroy(&mainmenu->map_back_button);
     Button_Destroy(&mainmenu->credits_button);
     Button_Destroy(&mainmenu->cinematics_button);
     Button_Destroy(&mainmenu->exit_button);

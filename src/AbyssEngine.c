@@ -8,6 +8,8 @@
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
 #include "managers/VideoManager.h"
+#include "map/LevelTypes.h"
+#include "map/MapSession.h"
 #include "scenes/Scene.h"
 #include "scenes/SceneIntroVideos.h"
 #include "types/Palette.h"
@@ -165,6 +167,8 @@ int main(int argc, char **argv) {
     InputManager_DestroySingleton();
     Label_FinalizeCaches();
     Scene_DestroyManager();
+    MapSession_Release();
+    LevelTypes_Release();
     Cursor_Destroy();
     Palette_Finalize();
     AbyssConfiguration_DestroySingleton();

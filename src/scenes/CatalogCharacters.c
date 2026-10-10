@@ -241,6 +241,7 @@ static void Characters__LoadPlayers(CatalogCharacters *characters, int *capacity
         CharacterEntry *entry = Characters__Add(characters, capacity);
         entry->category       = CHARACTER_CATEGORY_PLAYERS;
         Characters__Name(entry->name, sizeof(entry->name), players[p].name, players[p].name);
+        snprintf(entry->id, sizeof(entry->id), "%s", players[p].token);
 
         entry->spec.base = "chars";
         snprintf(entry->spec.token, sizeof(entry->spec.token), "%s", players[p].token);
@@ -553,6 +554,46 @@ void CatalogCharacters_Destroy(CatalogCharacters **characters_ref) {
 }
 
 int CatalogCharacters_GetCount(const CatalogCharacters *characters) { return characters->visible_count; }
+
+static void Characters__FillInfo(const CharacterEntry *entry, CatalogCharacterInfo *info) {
+    info->name      = entry->name;
+    info->id        = entry->id;
+    info->spec      = &entry->spec;
+    info->idle_mode = entry->modes[0]->code;
+    info->walk_mode = NULL;
+    // Prefer the calm town animations for players and NPCs
+    for (int m = 0; m < entry->mode_count; m++) {
+        if (strcmp(entry->modes[m]->code, "tn") == 0) {
+            info->idle_mode = "tn";
+        }
+    }
+    for (int m = 0; m < entry->mode_count; m++) {
+        const char *code = entry->modes[m]->code;
+        if (strcmp(code, "tw") == 0 || (info->walk_mode == NULL && strcmp(code, "wl") == 0)) {
+            info->walk_mode = code;
+        }
+    }
+}
+
+bool CatalogCharacters_GetInfo(const CatalogCharacters *characters, const int index, CatalogCharacterInfo *info) {
+    if (index < 0 || index >= characters->visible_count) {
+        return false;
+    }
+    Characters__FillInfo(&characters->entries[characters->visible[index]], info);
+    return true;
+}
+
+bool CatalogCharacters_Find(const CatalogCharacters *characters, const char *base, const char *id,
+                            CatalogCharacterInfo *info) {
+    for (int e = 0; e < characters->entry_count; e++) {
+        const CharacterEntry *entry = &characters->entries[e];
+        if (strcmp(entry->spec.base, base) == 0 && strcmp(entry->id, id) == 0) {
+            Characters__FillInfo(entry, info);
+            return true;
+        }
+    }
+    return false;
+}
 
 const char *CatalogCharacters_GetName(const CatalogCharacters *characters, const int index) {
     return characters->entries[characters->visible[index]].name;

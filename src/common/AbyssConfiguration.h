@@ -21,5 +21,6 @@ float       AbyssConfiguration_GetMusicVolume(void);
 float       AbyssConfiguration_GetSfxVolume(void);
 float       AbyssConfiguration_GetUiVolume(void);
 bool        AbyssConfiguration_GetSkipIntroMovies(void);
+const char *AbyssConfiguration_GetConfigFolder(void); // folder holding abyss.ini (no trailing separator)
 
 #endif // ABYSS_CONFIG_H

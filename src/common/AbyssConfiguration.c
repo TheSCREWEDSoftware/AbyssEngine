@@ -12,6 +12,7 @@
 
 typedef struct AbyssConfiguration {
     char  *base_path;
+    char  *config_folder; // where abyss.ini lives; user data (maps) goes here too
     char  *locale;
     char **mpqs;
     int    num_mpqs;
@@ -280,6 +281,21 @@ void AbyssConfiguration_LoadSingleton(const char *file_path) {
 
     AbyssConfiguration__SetSaneDefaults();
 
+    abyss_configuration.config_folder = strdup(file_path);
+    if (abyss_configuration.config_folder == NULL) {
+        LOG_FATAL("Failed to allocate memory.");
+    }
+    char *separator = strrchr(abyss_configuration.config_folder, '/');
+    char *backslash = strrchr(abyss_configuration.config_folder, '\\');
+    if (backslash != NULL && (separator == NULL || backslash > separator)) {
+        separator = backslash;
+    }
+    if (separator != NULL) {
+        separator[0] = '\0';
+    } else {
+        strcpy(abyss_configuration.config_folder, ".");
+    }
+
     char category[MAX_LINE_LEN];
     char key[MAX_LINE_LEN];
     char value[MAX_LINE_LEN];
@@ -336,6 +352,7 @@ void AbyssConfiguration_LoadSingleton(const char *file_path) {
 
 void AbyssConfiguration_DestroySingleton(void) {
     free(abyss_configuration.base_path);
+    free(abyss_configuration.config_folder);
     free(abyss_configuration.locale);
     free(abyss_configuration.graphics.scale_quality);
 
@@ -416,4 +433,8 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.audio.ui_volume     = 1.0f;
 
     SET_PARAM_STR(abyss_configuration.locale, "latin");
+}
+
+const char *AbyssConfiguration_GetConfigFolder(void) {
+    return abyss_configuration.config_folder != NULL ? abyss_configuration.config_folder : ".";
 }

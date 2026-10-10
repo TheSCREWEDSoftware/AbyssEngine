@@ -36,6 +36,12 @@ sources = [
     'common/Revision.c',
     'common/RingBuffer.c',
 
+    'map/Map.c',
+    'map/MapRenderer.c',
+    'map/MapSession.c',
+    'map/MapUnits.c',
+    'map/LevelTypes.c',
+
     'data/DataTable.c',
     'data/StringTable.c',
 
@@ -60,11 +66,15 @@ sources = [
     'scenes/SceneCatalog.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
+    'scenes/SceneMapEditor.c',
+    'scenes/SceneTestingGrounds.c',
 
     'types/DC6.c',
     'types/DC6Frame.c',
     'types/COF.c',
     'types/DCC.c',
+    'types/DS1.c',
+    'types/DT1.c',
     'types/Font.c',
     'types/MPQ.c',
     'types/MPQBlock.c',
@@ -85,6 +95,9 @@ if get_option('debug_skip_intro')
 endif
 if get_option('debug_show_catalog')
     build_opts += ['-DABYSS_DEBUG_SHOW_CATALOG']
+endif
+if get_option('debug_show_map_editor')
+    build_opts += ['-DABYSS_DEBUG_SHOW_MAP_EDITOR']
 endif
 
 build_opts += ['-DABYSS_BUILD_TYPE="' + get_option('buildtype') + '"']

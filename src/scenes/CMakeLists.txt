@@ -7,5 +7,7 @@ target_sources(${PROJECT_NAME}
         CatalogTheme.c CatalogTheme.h
         SceneCatalog.c SceneCatalog.h
         SceneMainMenu.c SceneMainMenu.h
+        SceneMapEditor.c SceneMapEditor.h
+        SceneTestingGrounds.c SceneTestingGrounds.h
         SceneIntroVideos.c SceneIntroVideos.h
 )
