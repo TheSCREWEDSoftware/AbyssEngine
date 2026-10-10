@@ -1,5 +1,5 @@
-# Writes ${BUILDDIR}/revision.h with the git commit the engine was built from (modelled on AzerothCore's genrev).
-# Runs at configure time and again on every build (the "revision.h" target), so the main menu always shows the
+# Writes ${BUILDDIR}/revision_data.h with the git commit the engine was built from (modelled on AzerothCore's genrev).
+# Runs at configure time and again on every build (the "revision_h" target), so the main menu always shows the
 # commit that was actually compiled. Files are only rewritten when something changed, to avoid needless rebuilds.
 #
 #   ABYSS_VERSION_TEXT  overrides the hash (CI passes the GitHub sha)
@@ -66,6 +66,6 @@ else ()
     set(rev_linkage "Dynamic")
 endif ()
 
-configure_file("${SOURCEDIR}/src/common/revision.h.in" "${BUILDDIR}/revision.h.tmp" @ONLY)
-execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BUILDDIR}/revision.h.tmp" "${BUILDDIR}/revision.h")
-file(REMOVE "${BUILDDIR}/revision.h.tmp")
+configure_file("${SOURCEDIR}/src/common/revision_data.h.in" "${BUILDDIR}/revision_data.h.tmp" @ONLY)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BUILDDIR}/revision_data.h.tmp" "${BUILDDIR}/revision_data.h")
+file(REMOVE "${BUILDDIR}/revision_data.h.tmp")

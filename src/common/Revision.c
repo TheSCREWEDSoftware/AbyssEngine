@@ -1,5 +1,5 @@
 #include "Revision.h"
-#include "revision.h"
+#include "revision_data.h" // generated in the build folder (not "revision.h": Windows would pick Revision.h)
 
 #if defined(_WIN64)
 #define ABYSS_PLATFORM_STR "Win64"

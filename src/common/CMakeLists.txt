@@ -7,6 +7,6 @@ target_sources(${PROJECT_NAME}
         MemoryStream.c MemoryStream.h
         MpqStream.c MpqStream.h
         ResourcePaths.h
-        Revision.c Revision.h revision.h.in
+        Revision.c Revision.h revision_data.h.in
         RingBuffer.c RingBuffer.h
 )

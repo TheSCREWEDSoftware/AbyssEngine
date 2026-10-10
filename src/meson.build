@@ -120,7 +120,7 @@ if git.found()
         rev.set('rev_branch', git_branch.stdout().strip())
     endif
 endif
-configure_file(input: 'common/revision.h.in', output: 'revision.h', configuration: rev)
+configure_file(input: 'common/revision_data.h.in', output: 'revision_data.h', configuration: rev)
 
 executable('AbyssEngine',
     install: true,
