@@ -1,0 +1,28 @@
+# Publishes docs/wiki to the repository's GitHub wiki on every push to main.
+# README.md becomes the wiki's Home page and links between the .md files are rewritten into wiki links.
+#
+# One-time setup: enable the wiki (Settings > Features > Wikis) and create any first page in the browser, so the
+# wiki repository exists. After that, edit the pages in docs/wiki; the wiki is overwritten from that folder.
+name: Wiki
+
+on:
+    push:
+        branches: [ main ]
+        paths: [ 'docs/wiki/**', '.github/workflows/wiki.yml' ]
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: wiki
+    cancel-in-progress: true
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            -   uses: actions/checkout@v4
+            -   uses: Andrew-Chen-Wang/github-wiki-action@v5
+                with:
+                    path: docs/wiki

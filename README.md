@@ -9,6 +9,11 @@ compaible with the original game's save files or multiplayer systems.
 
 Before running the engine, make sure it is [configured](#configuration) properly.
 
+**Documentation:** the [wiki](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki) has a step-by-step
+installation guide, the build options, the developer tools (Catalog, Map Editor, Testing Grounds, Free Roam) and a
+[feature status](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/Feature-Status) page listing what works and
+what doesn't. Its pages live in [`docs/wiki`](docs/wiki).
+
 You can hang out with the developers and other community members on `#AbyssEngine` at `irc.libera.chat`.
 We no longer maintain a Discord presence. Any such servers are not affiliated with this project.
 
