@@ -26,6 +26,7 @@ struct Figure {
     int            ymin;
     int            xmax;
     int            ymax;
+    uint8_t        alpha; // 255 = opaque; lower draws it see-through (placement previews)
 };
 
 static void Figure__CofPath(char *out, const size_t out_len, const FigureSpec *spec, const char *mode) {
@@ -105,6 +106,7 @@ Figure *Figure_Create(const FigureSpec *spec, const char *mode, const char *pale
     memset(figure, 0, sizeof(Figure));
     figure->cof     = cof;
     figure->palette = Palette_Get(palette_name);
+    figure->alpha   = 255;
     figure->xmin    = 0x7FFFFFFF;
     figure->ymin    = 0x7FFFFFFF;
     figure->xmax    = -0x7FFFFFFF;
@@ -254,9 +256,12 @@ void Figure_Draw(Figure *figure, const int direction, const int frame, const int
             if (source != NULL && texture != NULL) {
                 const SDL_Rect dest = {x + (int)((float)source->x * scale), y + (int)((float)source->y * scale),
                                        (int)((float)source->width * scale), (int)((float)source->height * scale)};
+                SDL_SetTextureAlphaMod(texture, figure->alpha);
                 SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
             }
             break;
         }
     }
 }
+
+void Figure_SetAlpha(Figure *figure, const uint8_t alpha) { figure->alpha = alpha; }

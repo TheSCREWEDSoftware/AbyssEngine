@@ -28,20 +28,21 @@
 
 // Testing Grounds and Free Roam: a character walking around a map with NPCs and monsters, and optional combat.
 
-#define VIEW_W          800
-#define VIEW_H          558
-#define BOTTOM_Y        562
-#define BUTTON_STEP     132
-#define PANEL_X         580
-#define PANEL_INNER_X   588
-#define PANEL_INNER_W   204
-#define CATEGORIES_Y    48
-#define LIST_ROWS       20
-#define LIST_ROW_H      18
-#define MAX_UNITS       512
-#define WALK_SPEED      5.0f // sub-tiles per second
-#define RUN_SPEED       9.0f
-#define ARRIVE_DISTANCE 0.15f
+#define VIEW_W           800
+#define VIEW_H           558
+#define BOTTOM_Y         562
+#define BUTTON_STEP      132
+#define PANEL_X          580
+#define PANEL_INNER_X    588
+#define PANEL_INNER_W    204
+#define CATEGORIES_Y     48
+#define PREVIEW_BUTTON_Y 500 // Monsters panel: placement preview toggle
+#define LIST_ROWS        20
+#define LIST_ROW_H       18
+#define MAX_UNITS        512
+#define WALK_SPEED       5.0f // sub-tiles per second
+#define RUN_SPEED        9.0f
+#define ARRIVE_DISTANCE  0.15f
 
 // Combat
 #define AGGRO_RANGE       10.0f // sub-tiles
@@ -143,6 +144,11 @@ typedef struct SceneRoam {
     Button   *places_button; // Free Roam
     Button   *clear_button;  // Testing Grounds
     Button   *combat_button;
+    Button   *preview_button; // in the Monsters panel
+    bool      preview;        // show what right click would place, under the mouse
+    bool      hover_valid;
+    float     hover_x; // sub-tile under the mouse
+    float     hover_y;
     RoamPanel panel;
     ListBox  *list;
     char    **list_names;
@@ -490,6 +496,8 @@ static void Roam__UpdateButtons(SceneRoam *roam) {
         Button_SetText(roam->places_button, roam->panel == PANEL_PLACES ? "Hide List" : "Places");
     }
     Button_SetText(roam->combat_button, combat_enabled ? "Combat On" : "Combat Off");
+    Button_SetText(roam->preview_button, roam->preview ? "Preview On" : "Preview Off");
+    Button_SetToggled(roam->preview_button, roam->preview);
     Button_SetToggled(roam->combat_button, combat_enabled);
 }
 
@@ -597,9 +605,8 @@ static void *Roam__Create(const bool free_roam) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Label_SetText(roam->help_label,
-                  "Left: walk / attack   Right: drop monster   Shift+Right: remove   R run   C combat   "
-                  "B blocked   Wheel zoom   Esc back");
+    Label_SetText(roam->help_label, "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  P preview  "
+                                    "B blocked  Wheel zoom  Esc back");
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -618,6 +625,10 @@ static void *Roam__Create(const bool free_roam) {
         roam->monsters_button = roam->buttons[3];
         roam->clear_button    = roam->buttons[4];
     }
+
+    roam->preview        = true;
+    roam->preview_button = Button_Create(BUTTON_TYPE_MEDIUM, "Preview On");
+    Button_SetPosition(roam->preview_button, PANEL_INNER_X + 38, PREVIEW_BUTTON_Y);
 
     roam->list = ListBox_Create(FONTS_FONT8, PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W, LIST_ROWS, LIST_ROW_H);
     ListBox_SetBackground(roam->list, 0, 0, 0, 160);
@@ -666,6 +677,7 @@ static void Roam__Free(void **scene_ref) {
     for (int i = 0; i < 6; i++) {
         Button_Destroy(&roam->buttons[i]);
     }
+    Button_Destroy(&roam->preview_button);
     Label_Destroy(&roam->title_label);
     Label_Destroy(&roam->status_label);
     Label_Destroy(&roam->help_label);
@@ -841,6 +853,10 @@ static void Roam__Update(SceneRoam *roam) {
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_B)) {
         roam->draw_flags ^= MAP_DRAW_BLOCKED;
     }
+    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
+        roam->preview = !roam->preview;
+        Roam__UpdateButtons(roam);
+    }
 
     float world_x;
     float world_y;
@@ -848,7 +864,10 @@ static void Roam__Update(SceneRoam *roam) {
     float sub_y;
     MapView_ScreenToWorld(&roam->camera, &view, mouse_x, mouse_y, &world_x, &world_y);
     MapView_WorldToSubtile(world_x, world_y, &sub_x, &sub_y);
-    roam->hovered = over_view ? Roam__UnitAt(roam, sub_x, sub_y) : -1;
+    roam->hovered     = over_view ? Roam__UnitAt(roam, sub_x, sub_y) : -1;
+    roam->hover_valid = over_view;
+    roam->hover_x     = floorf(sub_x) + 0.5f;
+    roam->hover_y     = floorf(sub_y) + 0.5f;
 
     // Left: attack what's under the mouse (combat on), otherwise walk there (hold to keep following the mouse)
     if (over_view && left && Roam__IsAlive(&roam->player)) {
@@ -874,7 +893,7 @@ static void Roam__Update(SceneRoam *roam) {
         } else if (roam->panel != PANEL_PLACES) {
             CatalogCharacterInfo info;
             if (CatalogCharacters_GetInfo(MapSession_GetBestiary(), roam->selected, &info)) {
-                Unit *unit = Roam__AddUnit(roam, info.spec->base, info.id, floorf(sub_x) + 0.5f, floorf(sub_y) + 0.5f);
+                Unit *unit = Roam__AddUnit(roam, info.spec->base, info.id, roam->hover_x, roam->hover_y);
                 if (unit != NULL) {
                     unit->dropped = true;
                 }
@@ -895,6 +914,10 @@ static void Roam__Update(SceneRoam *roam) {
     if (roam->panel == PANEL_MONSTERS &&
         CatalogCharacters_UpdateCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W)) {
         Roam__RefreshList(roam);
+    }
+    if (roam->panel == PANEL_MONSTERS && Button_Update(roam->preview_button)) {
+        roam->preview = !roam->preview;
+        Roam__UpdateButtons(roam);
     }
     if (roam->panel != PANEL_NONE && ListBox_Update(roam->list)) {
         roam->selected = ListBox_GetSelectedIndex(roam->list);
@@ -1010,6 +1033,50 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
     }
 }
 
+static void Roam__DrawPreview(SceneRoam *roam, const SDL_Rect *view) {
+    CatalogCharacterInfo info;
+    if (!CatalogCharacters_GetInfo(MapSession_GetBestiary(), roam->selected, &info)) {
+        return;
+    }
+    float wx;
+    float wy;
+    MapView_SubtileToWorld(roam->hover_x, roam->hover_y, &wx, &wy);
+    int sx;
+    int sy;
+    MapView_WorldToScreen(&roam->camera, view, wx, wy, &sx, &sy);
+
+    // The sub-tile it lands on: green if it can stand there, red if not
+    const bool walkable   = Map_IsWalkable(roam->map, (int)floorf(roam->hover_x), (int)floorf(roam->hover_y));
+    const int  hw         = (int)(16.0f * roam->camera.zoom);
+    const int  hh         = (int)(8.0f * roam->camera.zoom);
+    SDL_Point  diamond[5] = {
+        {sx,      sy - hh},
+        {sx + hw, sy     },
+        {sx,      sy + hh},
+        {sx - hw, sy     },
+        {sx,      sy - hh}
+    };
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, walkable ? 80 : 255, walkable ? 255 : 60, 80, 220);
+    SDL_RenderDrawLines(sdl_renderer, diamond, 5);
+
+    Figure *figure = MapUnits_GetFigure(roam->units_cache, info.spec->base, info.id, info.idle_mode);
+    if (figure != NULL) {
+        int turn = 0;
+        Roam__TurnTowards(&turn, roam->hover_x, roam->hover_y, roam->player.x, roam->player.y);
+        const int frames = Figure_GetFramesPerDirection(figure);
+        const int ms     = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
+        const int frame  = frames > 0 ? (int)((SDL_GetTicks64() / (uint64_t)ms) % (uint64_t)frames) : 0;
+        Figure_SetAlpha(figure, 140);
+        Figure_Draw(figure, MapUnits_Direction(figure, turn), frame, sx, sy, roam->camera.zoom);
+        Figure_SetAlpha(figure, 255);
+    }
+
+    Label_SetText(roam->target_label, info.name);
+    Label_SetColor(roam->target_label, 0xA0, 0xFF, 0xA0, 0xFF);
+    Label_Draw(roam->target_label, sx, sy + hh + 18);
+}
+
 static void Roam__Render(SceneRoam *roam) {
     const SDL_Rect view = {0, 0, VIEW_W, VIEW_H};
 
@@ -1039,6 +1106,11 @@ static void Roam__Render(SceneRoam *roam) {
         SDL_SetRenderDrawColor(sdl_renderer, 255, 230, 120, 200);
         SDL_RenderDrawLine(sdl_renderer, sx - 6, sy, sx + 6, sy);
         SDL_RenderDrawLine(sdl_renderer, sx, sy - 3, sx, sy + 3);
+    }
+
+    // Placement preview: the selected monster, see-through, where right click would drop it
+    if (roam->panel == PANEL_MONSTERS && roam->preview && roam->hover_valid) {
+        Roam__DrawPreview(roam, &view);
     }
 
     // Who's under the mouse / being attacked
@@ -1099,6 +1171,9 @@ static void Roam__Render(SceneRoam *roam) {
             CatalogCharacters_DrawCategories(MapSession_GetBestiary(), PANEL_INNER_X, CATEGORIES_Y, PANEL_INNER_W);
         }
         ListBox_Draw(roam->list);
+        if (roam->panel == PANEL_MONSTERS) {
+            Button_Draw(roam->preview_button);
+        }
     }
 
     const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};
