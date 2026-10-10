@@ -1,6 +1,7 @@
 #include "MapSession.h"
 #include "../drawing/LoadingScreen.h"
 #include "MonsterStats.h"
+#include "Objects.h"
 #include "Places.h"
 #include <stddef.h>
 
@@ -41,5 +42,6 @@ void MapSession_Release(void) {
     session_playtest = false;
     CatalogCharacters_Destroy(&session_bestiary);
     MonsterStats_Release();
+    Objects_Release();
     Places_Release();
 }

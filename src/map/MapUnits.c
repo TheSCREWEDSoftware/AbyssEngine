@@ -3,6 +3,7 @@
 #include "../common/ResourcePaths.h"
 #include "../drawing/Figure.h"
 #include "MapSession.h"
+#include "Objects.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,12 +144,27 @@ int MapUnits_BuildDrawables(MapUnits *units, const Map *map, const uint64_t time
     int count = 0;
     for (int e = 0; e < map->entity_count && count < max && count < UNITS_MAX_DRAW; e++) {
         const MapEntity *entity = &map->entities[e];
-        Figure          *figure =
-            MapUnits_GetFigure(units, entity->base, entity->id, MapUnits_IdleMode(units, entity->base, entity->id));
+        // Objects can say which animation they show (lit torches); otherwise the usual idle one
+        Figure *figure =
+            entity->mode[0] != '\0' ? MapUnits_GetFigure(units, entity->base, entity->id, entity->mode) : NULL;
+        if (figure == NULL) {
+            figure =
+                MapUnits_GetFigure(units, entity->base, entity->id, MapUnits_IdleMode(units, entity->base, entity->id));
+        }
         if (figure == NULL) {
             continue;
         }
-        const int frames   = Figure_GetFramesPerDirection(figure);
+        int frames = Figure_GetFramesPerDirection(figure);
+        int first  = 0;
+        if (entity->object_row >= 0) {
+            // An object's files often hold every state's frames (closed, opening..., open): objects.txt says which
+            // ones the resting animation shows
+            ObjectInfo info;
+            if (Objects_Get(entity->object_row, &info)) {
+                Objects_FrameRange(&info, Objects_ModeIndex(entity->mode[0] != '\0' ? entity->mode : "nu"), frames,
+                                   &first, &frames);
+            }
+        }
         const int frame_ms = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
         // Offset each entity's animation so a group doesn't move in lockstep
         const uint64_t offset = (uint64_t)e * 7919u;
@@ -156,7 +172,7 @@ int MapUnits_BuildDrawables(MapUnits *units, const Map *map, const uint64_t time
         UnitDraw *draw  = &units->draws[count];
         draw->figure    = figure;
         draw->direction = MapUnits_Direction(figure, entity->direction);
-        draw->frame     = frames > 0 ? (int)(((time_ms + offset) / (uint64_t)frame_ms) % (uint64_t)frames) : 0;
+        draw->frame     = frames > 0 ? first + (int)(((time_ms + offset) / (uint64_t)frame_ms) % (uint64_t)frames) : 0;
 
         drawables[count].x       = entity->x;
         drawables[count].y       = entity->y;

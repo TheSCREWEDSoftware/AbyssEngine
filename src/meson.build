@@ -44,6 +44,7 @@ sources = [
     'map/MapUnits.c',
     'map/MonsterStats.c',
     'map/Pathfinding.c',
+    'map/Objects.c',
     'map/Places.c',
     'map/LevelTypes.c',
 

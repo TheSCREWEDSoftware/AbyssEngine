@@ -11,7 +11,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 
 | | |
 |---|---|
-| **Left click** | Walk there, around walls and objects (hold to keep following the mouse). If the spot can't be reached you walk to the closest point you can. With combat on, clicking a monster or NPC walks up and attacks it. |
+| **Left click** | Walk there, around walls and objects (hold to keep following the mouse). If the spot can't be reached you walk to the closest point you can. With combat on, clicking a monster or NPC walks up and attacks it. Clicking a chest, door, shrine or waypoint walks over and opens / activates it. |
 | **Right click** | Drop the monster selected in the **Monsters** list |
 | **Shift + right click** | Remove the unit under the mouse |
 | **R** / Walk button | Walk or run |
@@ -54,6 +54,15 @@ A debugging switch for fighting between you and the NPCs/monsters:
   - Your life: your class's starting life (`charstats.txt`; Amazon 50). Your hits do a fixed 6-14 damage (debug
     value; NPCs, which have no life in the tables, get 20).
   - When you die you come back at the start after 3 seconds, and monsters leave you alone for 3 more.
+
+## Objects
+
+Areas come with their objects: chests, doors, shrines, waypoints, torches, campfires, corpses, ... Torches and fires
+burn. Hovering a chest, door, shrine or waypoint shows its name; click it and you walk over and open it (chests open,
+doors open and let you through, shrines and waypoints light up), with the game's sound. Objects block walking where
+the game says they do (a closed door, a chest, a shrine's base). What they do beyond that (loot, shrine effects,
+travelling by waypoint) isn't in yet. In the Testing Grounds objects can be dropped from the Monsters list's
+**Others** tab.
 
 ## Known limits
 

@@ -16,6 +16,7 @@
 #include "../map/MapSession.h"
 #include "../map/MapUnits.h"
 #include "../map/MonsterStats.h"
+#include "../map/Objects.h"
 #include "../map/Pathfinding.h"
 #include "../map/Places.h"
 #include "CatalogCharacters.h"
@@ -50,7 +51,8 @@
 // Combat
 #define AGGRO_RANGE       10.0f // sub-tiles
 #define ATTACK_RANGE      1.6f
-#define ATTACK_COOLDOWN   900 // ms between a monster's attacks
+#define ATTACK_COOLDOWN   900  // ms between a monster's attacks
+#define USE_RANGE         1.5f // how close to an object's footprint the player must be to open it
 #define RESPAWN_DELAY     3000
 #define RESPAWN_GRACE     3000 // after coming back, monsters leave you alone for a moment
 #define PLAYER_DAMAGE_MIN 6
@@ -98,7 +100,7 @@ static const struct {
 #define LIGHT_LEVEL_COUNT (int)(sizeof(light_levels) / sizeof(light_levels[0]))
 static int light_level = 0; // kept between visits
 
-typedef enum UnitState { UNIT_IDLE, UNIT_WALK, UNIT_ATTACK, UNIT_HIT, UNIT_DYING, UNIT_DEAD } UnitState;
+typedef enum UnitState { UNIT_IDLE, UNIT_WALK, UNIT_ATTACK, UNIT_HIT, UNIT_DYING, UNIT_DEAD, UNIT_OPERATE } UnitState;
 
 typedef struct DrawContext {
     Figure *figure;
@@ -140,6 +142,11 @@ typedef struct Unit {
     int         can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
     int         can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
     bool        vanished;    // died without death or corpse graphics: no longer drawn
+    bool        is_object;   // a chest, door, shrine, torch, ...
+    ObjectInfo  object;
+    char        object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
+    bool        used;           // opened / activated: can't be clicked again
+    int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     DrawContext draw;
 } Unit;
 
@@ -162,6 +169,7 @@ typedef struct SceneRoam {
     bool     running;
     bool     moving;
     int      attack_target; // index into units, -1 = none
+    int      use_target;    // object being walked to, to open it; -1 = none
     float    spawn_x;
     float    spawn_y;
     uint64_t respawn_at;
@@ -245,8 +253,13 @@ static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
         return "dt";
     case UNIT_DEAD:
         return "dd";
+    case UNIT_OPERATE:
+        return "op";
     case UNIT_IDLE:
         break;
+    }
+    if (unit->is_object) {
+        return unit->object_mode;
     }
     if (player) {
         return combat_enabled ? "nu" : "tn";
@@ -267,6 +280,18 @@ static Figure *Roam__Figure(SceneRoam *roam, const Unit *unit) {
     return figure;
 }
 
+// Frames of the animation shown: [first, first + count). Objects' files often hold every state's frames (a chest's
+// closed and open pictures): objects.txt says which ones each animation uses.
+static int Roam__FrameRange(const Unit *unit, const Figure *figure, int *first) {
+    int count = Figure_GetFramesPerDirection(figure);
+    *first    = 0;
+    if (unit->is_object) {
+        const int mode = unit->state == UNIT_OPERATE ? 1 : Objects_ModeIndex(unit->object_mode);
+        Objects_FrameRange(&unit->object, mode, count, first, &count);
+    }
+    return count;
+}
+
 static void Roam__SetState(Unit *unit, const UnitState state, const uint64_t now) {
     if (unit->state == state) {
         return;
@@ -280,11 +305,15 @@ static void Roam__SetState(Unit *unit, const UnitState state, const uint64_t now
 static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     Figure *figure = Roam__Figure(roam, unit);
     if (figure == NULL) {
-        return unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING;
+        return unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING ||
+               unit->state == UNIT_OPERATE;
     }
-    const int  frames   = Figure_GetFramesPerDirection(figure);
+    int       first  = 0; // (where the frames start doesn't matter for timing)
+    const int frames = Roam__FrameRange(unit, figure, &first);
+    (void)first;
     const int  ms       = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
-    const bool one_shot = unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING;
+    const bool one_shot = unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING ||
+                          unit->state == UNIT_OPERATE;
     if (unit->state == UNIT_DEAD) {
         unit->frame = frames > 0 ? frames - 1 : 0;
         return false;
@@ -326,6 +355,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     unit->home_y     = y;
     unit->can_walk   = -1;
     unit->can_attack = -1;
+    unit->rest_frame = -1;
     unit->state      = UNIT_IDLE;
 
     MonsterStats stats;
@@ -344,6 +374,11 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     }
     unit->speed = unit->speed < 2.0f ? 2.0f : (unit->speed > 9.0f ? 9.0f : unit->speed);
     unit->hp    = unit->max_hp;
+    if (strcmp(base, "objects") == 0 && Objects_Get(Objects_FindToken(id), &unit->object)) {
+        unit->is_object = true;
+        unit->turn      = 0;
+        snprintf(unit->object_mode, sizeof(unit->object_mode), "%s", unit->object.idle_mode);
+    }
     return true;
 }
 
@@ -515,6 +550,104 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const ui
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Objects
+
+static bool Roam__CanUse(const Unit *unit) { return unit->is_object && unit->object.selectable && !unit->used; }
+
+// The object's footprint in sub-tiles (what it blocks), at least the sub-tile it stands on
+static void Roam__Footprint(const Unit *unit, int *x0, int *y0, int *width, int *height) {
+    *width  = unit->object.size_x > 0 ? unit->object.size_x : 1;
+    *height = unit->object.size_y > 0 ? unit->object.size_y : 1;
+    *x0     = (int)floorf(unit->x) - (*width / 2);
+    *y0     = (int)floorf(unit->y) - (*height / 2);
+}
+
+// How far a point is from the edge of an object's footprint
+static float Roam__DistanceToObject(const Unit *unit, const float x, const float y) {
+    int x0;
+    int y0;
+    int width;
+    int height;
+    Roam__Footprint(unit, &x0, &y0, &width, &height);
+    const float dx = fmaxf(fmaxf((float)x0 - x, 0.0f), x - (float)(x0 + width));
+    const float dy = fmaxf(fmaxf((float)y0 - y, 0.0f), y - (float)(y0 + height));
+    return sqrtf((dx * dx) + (dy * dy));
+}
+
+// Objects' footprints block walking while their animation says so (chests, closed doors, ...)
+static void Roam__UpdateBlocking(SceneRoam *roam) {
+    Map_ClearBlocked(roam->map);
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        if (!unit->is_object) {
+            continue;
+        }
+        const int mode = unit->state == UNIT_OPERATE ? 1 : Objects_ModeIndex(unit->object_mode);
+        if (mode < 0 || !unit->object.collision[mode] || unit->object.size_x <= 0 || unit->object.size_y <= 0) {
+            continue;
+        }
+        int x0;
+        int y0;
+        int width;
+        int height;
+        Roam__Footprint(unit, &x0, &y0, &width, &height);
+        Map_SetBlocked(roam->map, x0, y0, width, height, true);
+    }
+}
+
+static void Roam__ObjectSound(const Unit *unit) {
+    const char *name = NULL;
+    if (unit->object.is_door) {
+        name = "object_door_wood_open";
+    } else {
+        switch (unit->object.operate_fn) {
+        case 1:
+            name = "object_casket";
+            break;
+        case 2:
+            name = "object_shrine_holy";
+            break;
+        case 4:
+            name = unit->object.size_x * unit->object.size_y >= 6 ? "object_chest_large" : "object_chest_small";
+            break;
+        case 23:
+            name = "object_waypoint_open";
+            break;
+        default:
+            break;
+        }
+    }
+    if (name != NULL) {
+        Sounds_Play(name, SOUND_KIND_SFX);
+    }
+}
+
+// Done opening: rest in the "opened" animation (a chest's open lid, an active waypoint, an open door)
+static void Roam__FinishOperate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    snprintf(unit->object_mode, sizeof(unit->object_mode), "%s", unit->object.has_mode[2] ? "on" : "nu");
+    // Some doors have nothing in their "on" files but end their opening on the open door: rest on that frame
+    Figure *op = MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op");
+    if (unit->object.is_door && op != NULL && Figure_GetFramesPerDirection(op) > 1) {
+        snprintf(unit->object_mode, sizeof(unit->object_mode), "op");
+        unit->rest_frame = Figure_GetFramesPerDirection(op) - 1;
+    }
+    Roam__SetState(unit, UNIT_IDLE, now);
+    Roam__UpdateBlocking(roam);
+}
+
+static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    unit->used = true;
+    Roam__ObjectSound(unit);
+    if (unit->object.has_mode[1] && unit->object.frame_count[1] > 0 &&
+        MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op") != NULL) {
+        Roam__SetState(unit, UNIT_OPERATE, now);
+        Roam__UpdateBlocking(roam);
+    } else {
+        Roam__FinishOperate(roam, unit, now);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Player
 
 static int Roam__PlayerLife(const int player_class) {
@@ -552,6 +685,27 @@ static void Roam__ResetPlayer(SceneRoam *roam) {
     player->frame_time  = SDL_GetTicks64();
     roam->moving        = false;
     roam->attack_target = -1;
+    roam->use_target    = -1;
+}
+
+// The player opens the object being walked to once close enough. Returns true when that's done (or there's nothing
+// to open any more).
+static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
+    Unit *player = &roam->player;
+    Unit *object = &roam->units[roam->use_target];
+    if (!Roam__CanUse(object)) {
+        roam->use_target = -1;
+        return true;
+    }
+    if (Roam__DistanceToObject(object, player->x, player->y) > USE_RANGE) {
+        return false;
+    }
+    Roam__TurnTowards(&player->turn, player->x, player->y, object->x, object->y);
+    roam->moving     = false;
+    roam->use_target = -1;
+    Roam__ClearPath(player);
+    Roam__Operate(roam, object, now);
+    return true;
 }
 
 // Start on the walkable sub-tile closest to the middle of the map
@@ -582,8 +736,14 @@ static void Roam__Populate(SceneRoam *roam) {
         Unit            *unit   = Roam__AddUnit(roam, entity->base, entity->id, entity->x, entity->y);
         if (unit != NULL) {
             unit->turn = entity->direction;
+            if (unit->is_object && entity->object_row >= 0) {
+                Objects_Get(entity->object_row, &unit->object); // the exact object the map placed
+                snprintf(unit->object_mode, sizeof(unit->object_mode), "%s",
+                         entity->mode[0] != '\0' ? entity->mode : unit->object.idle_mode);
+            }
         }
     }
+    Roam__UpdateBlocking(roam);
     Roam__FindSpawn(roam);
     Roam__ResetPlayer(roam);
 }
@@ -749,6 +909,7 @@ static void *Roam__Create(const bool free_roam) {
     roam->last_tick     = SDL_GetTicks64();
     roam->draw_flags    = MAP_DRAW_DEFAULT;
     roam->attack_target = -1;
+    roam->use_target    = -1;
     roam->step_frame    = -1;
     roam->hovered       = -1;
     srand((unsigned)SDL_GetTicks64());
@@ -826,6 +987,8 @@ static void Roam__Free(void **scene_ref) {
     SceneRoam *roam = *(SceneRoam **)scene_ref;
     if (!roam->borrowed) {
         Map_Destroy(&roam->map);
+    } else if (roam->map != NULL) {
+        Map_ClearBlocked(roam->map); // the editor's map: leave it as it was
     }
     MapRenderer_Destroy(&roam->renderer);
     MapUnits_Destroy(&roam->units_cache);
@@ -888,6 +1051,13 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         return;
     }
 
+    // Opening something: walk up to it, then open it
+    if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
+        player->target_x = roam->units[roam->use_target].x;
+        player->target_y = roam->units[roam->use_target].y;
+        roam->moving     = true;
+    }
+
     // Attacking: walk up to the target, then swing
     if (roam->attack_target >= 0) {
         Unit *target = &roam->units[roam->attack_target];
@@ -914,6 +1084,9 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         roam->moving = Roam__FollowPath(roam->map, player, roam->running ? RUN_SPEED : WALK_SPEED, seconds);
         if (!roam->moving) {
             Roam__ClearPath(player);
+            if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
+                roam->use_target = -1; // got as close as it gets, and it's still out of reach
+            }
         }
     }
     Roam__SetState(player, roam->moving ? UNIT_WALK : UNIT_IDLE, now);
@@ -993,7 +1166,11 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                 Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f) {
                 Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
             }
-            Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
+            if (unit->state == UNIT_OPERATE) {
+                Roam__FinishOperate(roam, unit, now);
+            } else {
+                Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
+            }
         }
         if (!Roam__IsAlive(unit) || !Roam__IsCombatant(unit) || unit->state == UNIT_ATTACK || unit->state == UNIT_HIT) {
             continue;
@@ -1052,8 +1229,8 @@ static int Roam__UnitAt(const SceneRoam *roam, const float sub_x, const float su
     float distance = HOVER_RANGE;
     for (int i = 0; i < roam->unit_count; i++) {
         const Unit *unit = &roam->units[i];
-        if (!Roam__IsAlive(unit)) {
-            continue;
+        if (!Roam__IsAlive(unit) || (unit->is_object && !Roam__CanUse(unit))) {
+            continue; // torches, opened chests, ... can't be clicked
         }
         // Figures stand on their feet but most of the body is above: aim a little higher up the screen
         const float d = Roam__Distance(unit->x - 0.8f, unit->y - 0.8f, sub_x, sub_y);
@@ -1119,10 +1296,18 @@ static void Roam__Update(SceneRoam *roam) {
 
     // Left: attack what's under the mouse (combat on), otherwise walk there (hold to keep following the mouse)
     if (over_view && left && Roam__IsAlive(&roam->player)) {
-        if (!roam->prev_left && combat_enabled && roam->hovered >= 0 &&
-            Roam__IsCombatant(&roam->units[roam->hovered])) {
+        if (!roam->prev_left && roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+            roam->use_target    = roam->hovered; // walk over and open it
+            roam->attack_target = -1;
+            Roam__ClearPath(&roam->player);
+        } else if (!roam->prev_left && combat_enabled && roam->hovered >= 0 &&
+                   Roam__IsCombatant(&roam->units[roam->hovered])) {
             roam->attack_target = roam->hovered;
+            roam->use_target    = -1;
+        } else if (roam->use_target >= 0 && roam->prev_left) {
+            // holding the button after clicking an object: keep going to it
         } else if (roam->attack_target < 0 || roam->prev_left == false) {
+            roam->use_target      = -1;
             roam->attack_target   = -1;
             roam->player.target_x = sub_x;
             roam->player.target_y = sub_y;
@@ -1139,7 +1324,9 @@ static void Roam__Update(SceneRoam *roam) {
             if (roam->hovered >= 0) {
                 roam->units[roam->hovered] = roam->units[--roam->unit_count];
                 roam->attack_target        = -1;
+                roam->use_target           = -1;
                 roam->hovered              = -1;
+                Roam__UpdateBlocking(roam);
             }
         } else if (roam->panel != PANEL_PLACES) {
             CatalogCharacterInfo info;
@@ -1147,6 +1334,7 @@ static void Roam__Update(SceneRoam *roam) {
                 Unit *unit = Roam__AddUnit(roam, info.spec->base, info.id, roam->hover_x, roam->hover_y);
                 if (unit != NULL) {
                     unit->dropped = true;
+                    Roam__UpdateBlocking(roam);
                 }
             }
         }
@@ -1205,6 +1393,8 @@ static void Roam__Update(SceneRoam *roam) {
         }
         roam->unit_count    = kept;
         roam->attack_target = -1;
+        roam->use_target    = -1;
+        Roam__UpdateBlocking(roam);
     }
     if (Button_Update(roam->combat_button)) {
         combat_enabled = !combat_enabled;
@@ -1242,12 +1432,16 @@ static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable
     if (figure == NULL) {
         return false;
     }
-    const int frames     = Figure_GetFramesPerDirection(figure);
+    int       first      = 0;
+    const int frames     = Roam__FrameRange(unit, figure, &first);
     unit->draw.figure    = figure;
     unit->draw.direction = MapUnits_Direction(figure, unit->turn);
-    unit->draw.frame     = frames > 0 ? unit->frame % frames : 0;
+    unit->draw.frame     = frames > 0 ? first + (unit->frame % frames) : 0;
     if (unit->state == UNIT_DEAD) {
-        unit->draw.frame = frames > 0 ? frames - 1 : 0;
+        unit->draw.frame = frames > 0 ? first + frames - 1 : 0;
+    }
+    if (unit->is_object && unit->rest_frame >= 0 && unit->state == UNIT_IDLE) {
+        unit->draw.frame = unit->rest_frame;
     }
     drawable->x       = unit->x;
     drawable->y       = unit->y;

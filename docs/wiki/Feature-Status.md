@@ -15,7 +15,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | DCC animations | ✅ | All 21,717 DCC files load. |
 | COF (layered characters and monsters) | ✅ | Armor/weapon layers, draw order per direction and frame. |
 | DT1 tiles | ✅ | All 263 tile sets (floors, walls, roofs, shadows, walk flags). |
-| DS1 maps (area presets) | ✅ | All 2,276. NPCs/monsters placed in them are loaded; objects (chests, waypoints...) are not yet. |
+| DS1 maps (area presets) | ✅ | All 2,276, with the NPCs, monsters and objects (chests, doors, shrines, waypoints, torches, ...) placed in them. |
 | Data tables (`data/global/excel/*.txt`) | ✅ | Items, monsters, skills, levels, presets, ... |
 | String tables (`.tbl`) | ✅ | |
 | Fonts and text | ✅ | Latin fonts. |
@@ -43,7 +43,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Player stats, leveling, experience | ❌ | Life comes from the class's starting value. |
 | Skills | ❌ | Skill trees can be browsed in the [Catalog](Catalog.md). |
 | Items: inventory, equipment, drops, stash | ❌ | Item data and pictures can be browsed in the Catalog. |
-| Objects (chests, shrines, waypoints, doors) | ❌ | |
+| Objects (chests, shrines, waypoints, doors, torches) | 🧪 | Placed from the areas' presets; torches and fires burn. In Free Roam / Testing Grounds click one to walk over and open it (chests open, doors open and stop blocking, shrines and waypoints activate) with its sound; objects block walking where the game says they do. Not yet: what they do (loot, shrine effects, waypoint travel, locked doors, traps). |
 | Quests | ❌ | |
 | Saving / loading characters | ❌ | |
 | Lighting | 🧪 | Free Roam / Testing Grounds: **L** cycles day / dusk / night (a soft pool of light around the player, darkness elsewhere). Not yet the game's own per-area light levels, light from torches or the palette-based shading. |

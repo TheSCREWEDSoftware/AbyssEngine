@@ -36,7 +36,9 @@ typedef struct MapEntity {
     char  name[MAP_ENTITY_NAME_LEN];
     float x; // sub-tiles
     float y;
-    int   direction; // 0..15 in turn order (0 = facing south)
+    int   direction;  // 0..15 in turn order (0 = facing south)
+    int   object_row; // objects: the objects.txt row (-1 = not an object / unknown)
+    char  mode[4];    // objects: the animation it shows ("nu", "on" for lit torches); "" = the usual one
 } MapEntity;
 
 typedef struct Map {
@@ -62,6 +64,8 @@ typedef struct Map {
     int        entity_count;
     int        entity_capacity;
     MapEntity *entities;
+
+    uint8_t *blocked; // per sub-tile: blocked by something standing there (objects), NULL = nothing
 
     // All tiles of all DT1s, sorted by (orientation, style, sequence) for lookups
     int                  tile_index_count;
@@ -90,6 +94,10 @@ int Map_GetChoices(const Map *map, MapLayerKind kind, const MapTileChoice **choi
 // Entities
 MapEntity *Map_AddEntity(Map *map, const char *base, const char *id, const char *name, float x, float y);
 void       Map_RemoveEntity(Map *map, int index);
+
+// Blocking sub-tiles that the tiles leave open (objects: chests, closed doors, ...); Map_IsWalkable honours it.
+void Map_SetBlocked(Map *map, int subtile_x, int subtile_y, int width, int height, bool blocked);
+void Map_ClearBlocked(Map *map);
 
 // Folder our own maps are saved in (created on demand)
 const char *Map_GetSaveFolder(void);

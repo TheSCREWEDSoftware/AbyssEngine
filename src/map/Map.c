@@ -3,6 +3,7 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "MonsterStats.h"
+#include "Objects.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -330,15 +331,23 @@ Map *Map_LoadDS1(const char *ds1_path) {
     }
     memcpy(map->shadows, ds1->shadows, cells * sizeof(DS1Cell));
 
-    // Its NPCs, bosses and monsters (objects use another preset table that isn't read yet)
+    // Its NPCs, bosses and monsters (type 1) and objects (type 2: chests, doors, shrines, waypoints, torches, ...)
     for (int o = 0; o < ds1->object_count; o++) {
         const DS1Object *object = &ds1->objects[o];
-        if (object->type != 1) {
-            continue;
-        }
-        const char *monster = MonsterStats_PresetMonster(map->act, object->id);
-        if (monster != NULL && monster[0] != '\0') {
-            Map_AddEntity(map, "monsters", monster, monster, (float)object->x + 0.5f, (float)object->y + 0.5f);
+        const float      x      = (float)object->x + 0.5f;
+        const float      y      = (float)object->y + 0.5f;
+        if (object->type == 1) {
+            const char *monster = MonsterStats_PresetMonster(map->act, object->id);
+            if (monster != NULL && monster[0] != '\0') {
+                Map_AddEntity(map, "monsters", monster, monster, x, y);
+            }
+        } else if (object->type == 2) {
+            ObjectInfo info;
+            if (Objects_Get(Objects_PresetRow(map->act, object->id), &info) && info.token[0] != '\0') {
+                MapEntity *entity  = Map_AddEntity(map, "objects", info.token, info.name, x, y);
+                entity->object_row = info.row;
+                snprintf(entity->mode, sizeof(entity->mode), "%s", info.idle_mode);
+            }
         }
     }
     DS1_Destroy(&ds1);
@@ -384,6 +393,7 @@ void Map_Destroy(Map **map_ref) {
     free(map->shadows);
     free(map->shadow_tiles);
     free(map->entities);
+    free(map->blocked);
     free(map->tile_index);
     free(map->anim_frames);
     for (int k = 0; k < 3; k++) {
@@ -452,6 +462,9 @@ bool Map_IsWalkable(const Map *map, const int subtile_x, const int subtile_y) {
         subtile_y >= map->height * MAP_SUBTILES) {
         return false;
     }
+    if (map->blocked != NULL && map->blocked[(subtile_y * map->width * MAP_SUBTILES) + subtile_x] != 0) {
+        return false;
+    }
     const int tx = subtile_x / MAP_SUBTILES;
     const int ty = subtile_y / MAP_SUBTILES;
     const int c  = (ty * map->width) + tx;
@@ -502,8 +515,17 @@ MapEntity *Map_AddEntity(Map *map, const char *base, const char *id, const char 
     snprintf(entity->base, sizeof(entity->base), "%s", base);
     snprintf(entity->id, sizeof(entity->id), "%s", id);
     snprintf(entity->name, sizeof(entity->name), "%s", name != NULL ? name : id);
-    entity->x = x;
-    entity->y = y;
+    entity->x          = x;
+    entity->y          = y;
+    entity->object_row = -1;
+    if (strcmp(base, "objects") == 0) {
+        // Placed by token (the editor, older saves): the first object using those graphics
+        ObjectInfo info;
+        if (Objects_Get(Objects_FindToken(id), &info)) {
+            entity->object_row = info.row;
+            snprintf(entity->mode, sizeof(entity->mode), "%s", info.idle_mode);
+        }
+    }
     return entity;
 }
 
@@ -514,6 +536,31 @@ void Map_RemoveEntity(Map *map, const int index) {
     memmove(&map->entities[index], &map->entities[index + 1],
             sizeof(MapEntity) * (size_t)(map->entity_count - index - 1));
     map->entity_count--;
+}
+
+void Map_SetBlocked(Map *map, const int subtile_x, const int subtile_y, const int width, const int height,
+                    const bool blocked) {
+    const int map_w = map->width * MAP_SUBTILES;
+    const int map_h = map->height * MAP_SUBTILES;
+    if (map->blocked == NULL) {
+        if (!blocked) {
+            return;
+        }
+        map->blocked = calloc((size_t)map_w * (size_t)map_h, 1);
+        FAIL_IF_NULL(map->blocked);
+    }
+    for (int y = subtile_y; y < subtile_y + height; y++) {
+        for (int x = subtile_x; x < subtile_x + width; x++) {
+            if (x >= 0 && y >= 0 && x < map_w && y < map_h) {
+                map->blocked[(y * map_w) + x] = blocked ? 1 : 0;
+            }
+        }
+    }
+}
+
+void Map_ClearBlocked(Map *map) {
+    free(map->blocked);
+    map->blocked = NULL;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -529,6 +576,7 @@ void Map_RemoveEntity(Map *map, const int index) {
 //   wall 0
 //   shadow
 //   entity monsters zombie1 60.50 42.50 0 Zombie
+//   object 37 on        (for the entity above: its objects.txt row and animation)
 //   end
 
 static uint32_t Map__Encode(const DS1Cell *cell) {
@@ -583,6 +631,9 @@ bool Map_SaveFile(const Map *map, const char *file_path) {
         const MapEntity *entity = &map->entities[e];
         fprintf(file, "entity %s %s %.2f %.2f %d %s\n", entity->base, entity->id, (double)entity->x, (double)entity->y,
                 entity->direction, entity->name);
+        if (entity->object_row >= 0) {
+            fprintf(file, "object %d %s\n", entity->object_row, entity->mode[0] != '\0' ? entity->mode : "-");
+        }
     }
     fprintf(file, "end\n");
     const bool ok = ferror(file) == 0;
@@ -670,6 +721,14 @@ Map *Map_LoadFile(const char *file_path) {
             if (sscanf(line + 7, "%11s %39s %f %f %d %n", base, id, &x, &y, &direction, &consumed) >= 5) {
                 MapEntity *entity = Map_AddEntity(map, base, id, consumed > 0 ? line + 7 + consumed : id, x, y);
                 entity->direction = direction;
+            }
+        } else if (strncmp(line, "object ", 7) == 0 && map->entity_count > 0) {
+            int  row;
+            char mode[4] = "";
+            if (sscanf(line + 7, "%d %3s", &row, mode) >= 1) {
+                MapEntity *entity  = &map->entities[map->entity_count - 1];
+                entity->object_row = row;
+                snprintf(entity->mode, sizeof(entity->mode), "%s", strcmp(mode, "-") == 0 ? "" : mode);
             }
         } else if (strcmp(line, "end") == 0) {
             break;
