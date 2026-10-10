@@ -5,10 +5,6 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 
-#ifndef ABYSS_VERSION_TEXT
-#define ABYSS_VERSION_TEXT "local build"
-#endif // ABYSS_VERSION_TEXT
-
 extern SDL_Window   *sdl_window;
 extern SDL_Renderer *sdl_renderer;
 extern bool          running;

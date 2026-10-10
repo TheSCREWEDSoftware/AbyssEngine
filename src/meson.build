@@ -33,6 +33,7 @@ sources = [
     'common/Logging.c',
     'common/MemoryStream.c',
     'common/MpqStream.c',
+    'common/Revision.c',
     'common/RingBuffer.c',
 
     'data/DataTable.c',
@@ -87,6 +88,24 @@ if get_option('debug_show_catalog')
 endif
 
 add_global_arguments(build_opts, language: 'c')
+
+# Git commit shown on the main menu (read when the build is configured; see cmake/genrev.cmake for CMake)
+git = find_program('git', required: false)
+rev = configuration_data()
+rev.set('rev_hash', 'unknown')
+rev.set('rev_branch', 'local build')
+rev.set('rev_date', 'unknown')
+if git.found()
+    git_hash = run_command(git, 'describe', '--always', '--dirty=+', '--abbrev=12', '--match', 'NO_TAGS_PLEASE', check: false)
+    if git_hash.returncode() == 0
+        git_date = run_command(git, 'show', '-s', '--format=%cd', '--date=format:%Y-%m-%d', check: false)
+        git_branch = run_command(git, 'rev-parse', '--abbrev-ref', 'HEAD', check: false)
+        rev.set('rev_hash', git_hash.stdout().strip())
+        rev.set('rev_date', git_date.stdout().strip())
+        rev.set('rev_branch', git_branch.stdout().strip())
+    endif
+endif
+configure_file(input: 'common/revision.h.in', output: 'revision.h', configuration: rev)
 
 executable('AbyssEngine',
     install: true,

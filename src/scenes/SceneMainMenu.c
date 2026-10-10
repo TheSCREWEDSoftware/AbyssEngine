@@ -1,6 +1,7 @@
 #include "SceneMainMenu.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
+#include "../common/Revision.h"
 #include "../drawing/Button.h"
 #include "../drawing/Cursor.h"
 #include "../managers/AudioManager.h"
@@ -91,7 +92,7 @@ void *MainMenu_Create(void) {
     Button_SetEnabled(result->cinematics_button, false);
 
     result->build_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
-    Label_SetText(result->build_label, ABYSS_VERSION_TEXT);
+    Label_SetText(result->build_label, Revision_GetFullVersion());
     Label_SetColor(result->build_label, 0xFF, 0xFF, 0xFF, 0xFF);
     Label_SetAlignment(result->build_label, LABEL_ALIGN_END, LABEL_ALIGN_BEGIN);
     return result;

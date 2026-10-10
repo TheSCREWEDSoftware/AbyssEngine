@@ -13,10 +13,6 @@ typedef struct SceneIntroVideos {
     enum IntroVideoState intro_video_state;
 } SceneIntroVideos;
 
-#ifndef ABYSS_VERSION_TEXT
-#define ABYSS_VERSION_TEXT "local build"
-#endif // ABYSS_VERSION_TEXT
-
 DEFINE_SCENE_CALLBACKS(IntroVideos);
 
 void *IntroVideos_Create(void) {
