@@ -78,6 +78,13 @@ sources = [
     'util/WavDecompress.c',
 ]
 
+if get_option('debug_skip_intro')
+    build_opts += ['-DABYSS_DEBUG_SKIP_INTRO']
+endif
+if get_option('debug_show_catalog')
+    build_opts += ['-DABYSS_DEBUG_SHOW_CATALOG']
+endif
+
 add_global_arguments(build_opts, language: 'c')
 
 executable('AbyssEngine',

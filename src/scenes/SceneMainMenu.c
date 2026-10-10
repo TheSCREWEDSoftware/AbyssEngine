@@ -70,6 +70,9 @@ void *MainMenu_Create(void) {
     result->catalog_button = Button_Create(BUTTON_TYPE_WIDE, "Catalog");
     Button_SetPosition(result->catalog_button, 264, 380);
     Button_SetClickHandler(result->catalog_button, MainMenu__OnCatalogClicked, NULL);
+#ifndef ABYSS_DEBUG_SHOW_CATALOG
+    Button_SetVisible(result->catalog_button, false); // CMake option DEBUG_SHOW_CATALOG is off
+#endif
 
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
     Button_SetPosition(result->credits_button, 264, 505);

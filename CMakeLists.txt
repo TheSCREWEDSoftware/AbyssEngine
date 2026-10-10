@@ -30,6 +30,13 @@ endif ()
 
 target_link_libraries(AbyssEngine PRIVATE ${ABYSS_DEPENDENCIES} ${ADDITIONAL_LIBRARIES})
 
+if (DEBUG_SKIP_INTRO)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ABYSS_DEBUG_SKIP_INTRO)
+endif ()
+if (DEBUG_SHOW_CATALOG)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ABYSS_DEBUG_SHOW_CATALOG)
+endif ()
+
 include(AutoClangFormat)
 
 if (APPLE)

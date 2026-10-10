@@ -40,7 +40,12 @@ void IntroVideos_Update(void *scene_ref, uint64_t delta) {
     (void)(delta);
     SceneIntroVideos *scene = (SceneIntroVideos *)scene_ref;
 
-    if (AbyssConfiguration_GetSkipIntroMovies()) {
+#ifdef ABYSS_DEBUG_SKIP_INTRO
+    const bool skip_intro = true; // CMake option DEBUG_SKIP_INTRO
+#else
+    const bool skip_intro = AbyssConfiguration_GetSkipIntroMovies();
+#endif
+    if (skip_intro) {
         Scene_Set(SCENE_REF(MainMenu));
         return;
     }

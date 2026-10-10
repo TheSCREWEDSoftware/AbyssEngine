@@ -1,0 +1,2 @@
+option('debug_skip_intro', type: 'boolean', value: true, description: 'Skip the intro videos and start at the main menu')
+option('debug_show_catalog', type: 'boolean', value: true, description: 'Show the Catalog on the main menu')

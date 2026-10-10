@@ -40,3 +40,11 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     )
     set(LibArchive_INCLUDE_DIR "${LIBARCHIVE_PREFIX}/include")
 endif ()
+
+# --- Debug features ---------------------------------------------------------------------------------------------------
+# Shown together as the "DEBUG" group in cmake-gui (tick "Grouped"). The sub-options only appear while DEBUG_FEATURES is on.
+include(CMakeDependentOption)
+option(DEBUG_FEATURES "Enable developer/debug features" ON)
+cmake_dependent_option(DEBUG_SKIP_INTRO "Skip the intro videos and start at the main menu" ON "DEBUG_FEATURES" OFF)
+cmake_dependent_option(DEBUG_SHOW_CATALOG "Show the Catalog (item, class, sprite and bestiary browser) on the main menu" ON
+                       "DEBUG_FEATURES" OFF)
