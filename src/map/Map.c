@@ -432,6 +432,21 @@ void Map_SetCell(Map *map, const MapLayerKind kind, const int layer, const int t
     Map__ResolveCell(map, tx, ty);
 }
 
+uint16_t Map_GetFloorMaterial(const Map *map, const int subtile_x, const int subtile_y) {
+    if (subtile_x < 0 || subtile_y < 0 || subtile_x >= map->width * MAP_SUBTILES ||
+        subtile_y >= map->height * MAP_SUBTILES) {
+        return 0;
+    }
+    const int c = ((subtile_y / MAP_SUBTILES) * map->width) + (subtile_x / MAP_SUBTILES);
+    for (int f = map->floor_layer_count - 1; f >= 0; f--) { // the top floor is what you stand on
+        const DT1Tile *tile = map->floor_tiles[f][c];
+        if (tile != NULL && tile->material != 0) {
+            return tile->material;
+        }
+    }
+    return 0;
+}
+
 bool Map_IsWalkable(const Map *map, const int subtile_x, const int subtile_y) {
     if (subtile_x < 0 || subtile_y < 0 || subtile_x >= map->width * MAP_SUBTILES ||
         subtile_y >= map->height * MAP_SUBTILES) {

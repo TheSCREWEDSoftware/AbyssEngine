@@ -21,7 +21,8 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Fonts and text | ✅ | Latin fonts. |
 | Intro videos (`.bik`) | ✅ | Through FFmpeg. |
 | Music | ✅ | Title music. |
-| Sound effects, speech | ❌ | `d2sfx`/`d2speech` aren't played yet. |
+| Sound effects | 🧪 | Button clicks everywhere; in Free Roam / Testing Grounds: footsteps by floor (dirt, stone, wood, sand, snow; walk and run), swings, getting hit and dying for the player and monsters (`sounds.txt`, `MonSounds.txt`). Needs `d2sfx.mpq` (and `d2exp.mpq` for the expansion's). Not yet: positional volume/panning, ambient sounds, item and spell sounds. |
+| Speech (NPC dialogue) | ❌ | `d2speech` isn't played yet. |
 
 ## Game
 

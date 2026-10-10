@@ -82,6 +82,8 @@ void Map_Destroy(Map **map);
 void Map_SetCell(Map *map, MapLayerKind kind, int layer, int tx, int ty, const MapTileChoice *choice); // NULL clears
 const DS1Cell *Map_GetCell(const Map *map, MapLayerKind kind, int layer, int tx, int ty);
 bool           Map_IsWalkable(const Map *map, int subtile_x, int subtile_y);
+// What the floor under a sub-tile is made of (DT1_MATERIAL_* flags), 0 if unknown
+uint16_t Map_GetFloorMaterial(const Map *map, int subtile_x, int subtile_y);
 // Every paintable tile in the map's DT1s for one layer kind (floors, walls or shadows)
 int Map_GetChoices(const Map *map, MapLayerKind kind, const MapTileChoice **choices);
 

@@ -5,6 +5,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#define AUDIO_MAX_VOICES 32
+
+typedef struct AudioVoice {
+    const SoundEffect *sound;    // NULL = free
+    int                position; // next sample (interleaved left/right)
+    float              volume;
+    bool               ui;
+} AudioVoice;
+
 typedef struct AudioManager {
     bool                audio_available;
     bool                audio_mute;
@@ -15,6 +24,7 @@ typedef struct AudioManager {
     struct AudioStream *background_music;
     float               volume[AUDIO_SET_VOLUME_TYPE_MAX];
     float               volume_actual[AUDIO_SET_VOLUME_TYPE_MAX];
+    AudioVoice          voices[AUDIO_MAX_VOICES];
 } AudioManager;
 
 AudioManager *audio_manager;
@@ -35,6 +45,8 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
 
     float volume_bgm    = audio_manager->volume_actual[AUDIO_SET_VOLUME_TYPE_MUSIC];
     float volume_master = audio_manager->volume_actual[AUDIO_SET_VOLUME_TYPE_MASTER];
+    float volume_sfx    = audio_manager->volume_actual[AUDIO_SET_VOLUME_TYPE_SFX];
+    float volume_ui     = audio_manager->volume_actual[AUDIO_SET_VOLUME_TYPE_UI];
 
     for (int i = 0; i < len; i += 2) {
         int32_t sample = 0;
@@ -44,6 +56,19 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
         } else {
             if (manager->background_music != NULL) {
                 sample += (int32_t)((double)AudioStream_GetSample(manager->background_music) * volume_bgm);
+            }
+        }
+
+        // Sound effects (16-bit stereo at the device rate, like the output)
+        for (int v = 0; v < AUDIO_MAX_VOICES; v++) {
+            AudioVoice *voice = &manager->voices[v];
+            if (voice->sound == NULL) {
+                continue;
+            }
+            const float volume  = voice->volume * (voice->ui ? volume_ui : volume_sfx);
+            sample             += (int32_t)((float)voice->sound->samples[voice->position] * volume);
+            if (++voice->position >= voice->sound->frame_count * 2) {
+                voice->sound = NULL;
             }
         }
 
@@ -126,6 +151,7 @@ void AudioManager_DestroySingleton(void) {
     }
 
     free(audio_manager);
+    audio_manager = NULL;
 }
 
 void AudioManager_Update(void) {}
@@ -164,6 +190,60 @@ void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float
     } else if (audio_manager->volume_actual[audio_set_volume_type] < 0.0f) {
         audio_manager->volume_actual[audio_set_volume_type] = 0.0f;
     }
+}
+
+void AudioManager_PlaySound(const SoundEffect *sound, const float volume, const bool ui) {
+    if (audio_manager == NULL || !audio_manager->audio_available || sound == NULL || sound->frame_count <= 0) {
+        return;
+    }
+    SDL_LockAudioDevice(audio_manager->audio_device_id);
+    AudioVoice *chosen = NULL;
+    int         left   = 0;
+    for (int v = 0; v < AUDIO_MAX_VOICES; v++) {
+        const AudioVoice *voice = &audio_manager->voices[v];
+        // The same sound just started: don't stack it (several monsters hit on the same frame)
+        if (voice->sound == sound && voice->position < 2048) {
+            SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+            return;
+        }
+    }
+    // A free voice; when all are busy, the one closest to finishing makes room
+    for (int v = 0; v < AUDIO_MAX_VOICES; v++) {
+        AudioVoice *voice = &audio_manager->voices[v];
+        if (voice->sound == NULL) {
+            chosen = voice;
+            break;
+        }
+        const int remaining = (voice->sound->frame_count * 2) - voice->position;
+        if (chosen == NULL || remaining < left) {
+            chosen = voice;
+            left   = remaining;
+        }
+    }
+    chosen->sound    = sound;
+    chosen->position = 0;
+    chosen->volume   = volume;
+    chosen->ui       = ui;
+    SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+}
+
+void AudioManager_StopSounds(void) {
+    if (audio_manager == NULL) {
+        return;
+    }
+    if (audio_manager->audio_available) {
+        SDL_LockAudioDevice(audio_manager->audio_device_id);
+    }
+    for (int v = 0; v < AUDIO_MAX_VOICES; v++) {
+        audio_manager->voices[v].sound = NULL;
+    }
+    if (audio_manager->audio_available) {
+        SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+    }
+}
+
+int AudioManager_GetOutputRate(void) {
+    return audio_manager != NULL && audio_manager->audio_available ? audio_manager->audio_spec.freq : 0;
 }
 
 SDL_AudioSpec AudioManager_GetAudioSpec(void) { return audio_manager->audio_spec; }

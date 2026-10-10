@@ -52,6 +52,11 @@ Fixed: MPQ names are now matched without caring about upper/lower case
 It loads the graphics of every monster and NPC once. A loading screen shows progress; later visits are quicker (and the
 bar is accurate from the second time).
 
+### No sound effects (music plays)
+
+Sound effects come from `d2sfx.mpq`: check it's in the game folder and, if your `abyss.ini` has an `[MPQs]` list, that
+it's in it. The volume is set with `SfxVolume` (and `UIVolume` for button clicks) in `[Audio]`, 0.0 to 1.0.
+
 ## Reporting a problem
 
 Include:

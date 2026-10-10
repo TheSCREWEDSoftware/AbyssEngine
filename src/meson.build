@@ -26,6 +26,8 @@ sources = [
     'AbyssEngine.c',
 
     'audio/AudioStream.c',
+    'audio/SoundEffect.c',
+    'audio/Sounds.c',
 
     'common/AbyssConfiguration.c',
     'common/FileManager.c',

@@ -1,3 +1,4 @@
+#include "../audio/Sounds.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
@@ -22,6 +23,7 @@
 #include "SceneMainMenu.h"
 #include "SceneMapEditor.h"
 #include "SceneTestingGrounds.h"
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -164,6 +166,7 @@ typedef struct SceneRoam {
     float    spawn_y;
     uint64_t respawn_at;
     uint64_t safe_until; // grace period after respawning
+    int      step_frame; // walk frame the last footstep was played on, -1 = none
 
     Unit units[MAX_UNITS];
     int  unit_count;
@@ -442,6 +445,56 @@ static bool Roam__CanAttack(SceneRoam *roam, Unit *unit) {
     return unit->can_attack == 1;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Sounds
+
+// Swings, getting hit, dying: the player's class sounds (bare-handed swing), a monster's from MonSounds.txt
+static void Roam__UnitSound(const SceneRoam *roam, const Unit *unit, const MonsterSound which) {
+    if (Roam__IsPlayer(roam, unit)) {
+        if (which == MONSTER_SOUND_ATTACK) {
+            Sounds_Play("weapon_punch_1", SOUND_KIND_SFX);
+            return;
+        }
+        char name[64];
+        snprintf(name, sizeof(name), "%s_%s_1", player_classes[roam->player_class][2],
+                 which == MONSTER_SOUND_HIT ? "hit" : "death");
+        for (char *c = name; *c != '\0'; c++) {
+            *c = (char)tolower((unsigned char)*c);
+        }
+        Sounds_Play(name, SOUND_KIND_SFX);
+        return;
+    }
+    if (strcmp(unit->base, "monsters") == 0) {
+        const char *name = Sounds_MonsterSound(unit->id, which);
+        if (name != NULL) {
+            Sounds_Play(name, SOUND_KIND_SFX);
+        }
+    }
+}
+
+// The footstep for the floor under the player: "light_walk_dirt_1", "light_run_snow_1", ...
+static void Roam__Footstep(const SceneRoam *roam) {
+    const uint16_t material = Map_GetFloorMaterial(roam->map, (int)floorf(roam->player.x), (int)floorf(roam->player.y));
+    const char    *surface  = "dirt";
+    if (material & (DT1_MATERIAL_WATER | DT1_MATERIAL_LAVA)) {
+        return; // no footsteps for these
+    }
+    if (material & DT1_MATERIAL_SNOW) {
+        surface = "snow";
+    } else if (material & DT1_MATERIAL_SAND) {
+        surface = "sand";
+    } else if (material & DT1_MATERIAL_WOOD) {
+        surface = "wood";
+    } else if (material & DT1_MATERIAL_OUTSIDE_STONE) {
+        surface = "ostone";
+    } else if (material & DT1_MATERIAL_INSIDE_STONE) {
+        surface = "istone";
+    }
+    char name[48];
+    snprintf(name, sizeof(name), "light_%s_%s_1", roam->running ? "run" : "walk", surface);
+    Sounds_Play(name, SOUND_KIND_SFX);
+}
+
 static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
@@ -452,8 +505,12 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const ui
         const bool dying = Roam__HasMode(roam, unit, "dt");
         unit->vanished   = !dying && !Roam__HasMode(roam, unit, "dd");
         Roam__SetState(unit, dying ? UNIT_DYING : UNIT_DEAD, now);
-    } else if ((unit->state == UNIT_IDLE || unit->state == UNIT_WALK) && Roam__HasMode(roam, unit, "gh")) {
-        Roam__SetState(unit, UNIT_HIT, now);
+        Roam__UnitSound(roam, unit, MONSTER_SOUND_DEATH);
+    } else {
+        Roam__UnitSound(roam, unit, MONSTER_SOUND_HIT);
+        if ((unit->state == UNIT_IDLE || unit->state == UNIT_WALK) && Roam__HasMode(roam, unit, "gh")) {
+            Roam__SetState(unit, UNIT_HIT, now);
+        }
     }
 }
 
@@ -692,6 +749,7 @@ static void *Roam__Create(const bool free_roam) {
     roam->last_tick     = SDL_GetTicks64();
     roam->draw_flags    = MAP_DRAW_DEFAULT;
     roam->attack_target = -1;
+    roam->step_frame    = -1;
     roam->hovered       = -1;
     srand((unsigned)SDL_GetTicks64());
 
@@ -841,6 +899,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 roam->moving = false;
                 Roam__ClearPath(player);
                 Roam__SetState(player, UNIT_ATTACK, now);
+                Roam__UnitSound(roam, player, MONSTER_SOUND_ATTACK);
                 return;
             }
             player->target_x = target->x;
@@ -858,6 +917,19 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         }
     }
     Roam__SetState(player, roam->moving ? UNIT_WALK : UNIT_IDLE, now);
+
+    // A footstep as each foot comes down (the start and the middle of the walk cycle)
+    Figure *figure = player->state == UNIT_WALK ? Roam__Figure(roam, player) : NULL;
+    if (figure != NULL) {
+        const int frames = Figure_GetFramesPerDirection(figure);
+        const int frame  = frames > 0 ? player->frame % frames : 0;
+        if (frame != roam->step_frame && (frame == 0 || frame == frames / 2)) {
+            Roam__Footstep(roam);
+        }
+        roam->step_frame = frame;
+    } else {
+        roam->step_frame = -1;
+    }
 }
 
 // Strolling around home while nobody's fighting: wait a few seconds, walk to a random reachable spot nearby, repeat
@@ -952,6 +1024,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             if (now >= unit->next_attack) {
                 unit->next_attack = now + ATTACK_COOLDOWN;
                 Roam__SetState(unit, UNIT_ATTACK, now);
+                Roam__UnitSound(roam, unit, MONSTER_SOUND_ATTACK);
             } else {
                 Roam__SetState(unit, UNIT_IDLE, now);
             }

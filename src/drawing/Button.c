@@ -1,4 +1,5 @@
 #include "Button.h"
+#include "../audio/Sounds.h"
 
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
@@ -229,6 +230,7 @@ bool Button_Update(Button *button) {
     // Press started on this button
     if (mouse_left && !was_mouse_left && button->hovered) {
         button->armed = true;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
         return false;
     }
 

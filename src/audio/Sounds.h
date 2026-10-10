@@ -1,0 +1,19 @@
+#ifndef ABYSS_SOUNDS_H
+#define ABYSS_SOUNDS_H
+
+#include <stdbool.h>
+
+// The game's sound effects by name (sounds.txt): "cursor_button_click", "zombie_attack_1", ... A name that starts a
+// group ("Group Size" > 1) plays one of the group's sounds at random. Files are loaded on first use and kept.
+
+typedef enum SoundKind { SOUND_KIND_SFX, SOUND_KIND_UI } SoundKind;
+
+typedef enum MonsterSound { MONSTER_SOUND_ATTACK, MONSTER_SOUND_HIT, MONSTER_SOUND_DEATH } MonsterSound;
+
+bool Sounds_Play(const char *name, SoundKind kind); // false if there's no such sound
+bool Sounds_Exists(const char *name);
+// The name of a monster's sound (monstats.txt "MonSound" -> MonSounds.txt), NULL if it has none
+const char *Sounds_MonsterSound(const char *monstats_id, MonsterSound which);
+void        Sounds_Release(void);
+
+#endif // ABYSS_SOUNDS_H

@@ -14,7 +14,8 @@ legitimate copy of the game (classic, not *Resurrected*), all in one folder, nor
 | `d2char.mpq` | player character graphics |
 | `d2music.mpq`, `d2xmusic.mpq` | music |
 | `d2video.mpq`, `d2xvideo.mpq` | intro videos |
-| `d2sfx.mpq`, `d2speech.mpq`, `d2xtalk.mpq` | sounds and speech (not used yet) |
+| `d2sfx.mpq` | sound effects |
+| `d2speech.mpq`, `d2xtalk.mpq` | speech (not used yet) |
 
 Missing files are skipped, but without `d2data.mpq` and `d2exp.mpq` nothing will show. Modded or repacked copies of the
 game are not supported.

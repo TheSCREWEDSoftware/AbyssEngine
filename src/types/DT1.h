@@ -29,6 +29,16 @@
 #define DT1_SUBTILE_BLOCK_JUMP   0x04
 #define DT1_SUBTILE_BLOCK_PLAYER 0x08
 
+// Floor materials (what footsteps sound like)
+#define DT1_MATERIAL_WATER         0x0002
+#define DT1_MATERIAL_INSIDE_STONE  0x0008
+#define DT1_MATERIAL_OUTSIDE_STONE 0x0010
+#define DT1_MATERIAL_DIRT          0x0020
+#define DT1_MATERIAL_SAND          0x0040
+#define DT1_MATERIAL_WOOD          0x0080
+#define DT1_MATERIAL_LAVA          0x0100
+#define DT1_MATERIAL_SNOW          0x0400
+
 typedef struct DT1Tile DT1Tile;
 struct DT1Tile {
     int32_t  direction;

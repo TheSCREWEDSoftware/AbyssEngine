@@ -1,3 +1,4 @@
+#include "audio/Sounds.h"
 #include "common/AbyssConfiguration.h"
 #include "common/FileManager.h"
 #include "common/Globals.h"
@@ -171,6 +172,7 @@ int main(int argc, char **argv) {
     Label_FinalizeCaches();
     MapSession_Release();
     LevelTypes_Release();
+    Sounds_Release();
     Cursor_Destroy();
     Palette_Finalize();
     AbyssConfiguration_DestroySingleton();
