@@ -1,4 +1,5 @@
 #include "MapSession.h"
+#include "../drawing/LoadingScreen.h"
 #include "MonsterStats.h"
 #include "Places.h"
 #include <stddef.h>
@@ -9,7 +10,9 @@ static bool               session_playtest = false;
 
 CatalogCharacters *MapSession_GetBestiary(void) {
     if (session_bestiary == NULL) {
+        LoadingScreen_Begin("Loading monsters and NPCs...");
         session_bestiary = CatalogCharacters_Create();
+        LoadingScreen_End();
     }
     return session_bestiary;
 }

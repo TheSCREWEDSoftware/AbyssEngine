@@ -159,9 +159,17 @@ bool FileManager_FileExists(const char *file_path) {
     return result;
 }
 
+static void (*file_read_hook)(void) = NULL;
+
+void FileManager_SetReadHook(void (*hook)(void)) { file_read_hook = hook; }
+
 MpqStream *FileManager_OpenFile(const char *file_path) {
     assert(file_manager != NULL);
     assert(file_path != NULL);
+
+    if (file_read_hook != NULL) {
+        file_read_hook();
+    }
 
     char          *path_fixed = fix_path(file_path);
     const uint64_t file_hash  = crypto_hash_file_name(path_fixed);

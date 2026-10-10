@@ -5,6 +5,7 @@
 #include "data/StringTable.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
+#include "drawing/LoadingScreen.h"
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
 #include "managers/VideoManager.h"
@@ -165,8 +166,9 @@ int main(int argc, char **argv) {
     AudioManager_DestroySingleton(); // Destroy this first as it reaches into things via threads
     VideoManager_DestroySingleton();
     InputManager_DestroySingleton();
-    Label_FinalizeCaches();
     Scene_DestroyManager();
+    LoadingScreen_Release();
+    Label_FinalizeCaches();
     MapSession_Release();
     LevelTypes_Release();
     Cursor_Destroy();

@@ -1,5 +1,6 @@
 #include "Scene.h"
 #include "../common/Logging.h"
+#include "../drawing/LoadingScreen.h"
 #include "../managers/InputManager.h"
 #include <stdlib.h>
 
@@ -39,9 +40,11 @@ void Scene_UpdateCurrentScene(uint64_t delta) {
 
         InputManager_ResetMouseButtons();
 
-        current_scene     = next_scene;
-        next_scene        = NULL;
+        current_scene = next_scene;
+        next_scene    = NULL;
+        LoadingScreen_Begin("Loading...");
         current_scene_ptr = current_scene->create();
+        LoadingScreen_End();
     }
 
     if (current_scene == NULL) {

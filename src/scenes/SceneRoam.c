@@ -7,6 +7,7 @@
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
+#include "../drawing/LoadingScreen.h"
 #include "../managers/InputManager.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
@@ -549,8 +550,12 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     if (place == NULL) {
         return;
     }
+    char text[96];
+    snprintf(text, sizeof(text), "Loading %s...", place->name);
+    LoadingScreen_Begin(text);
     Map *map = Map_LoadDS1(place->files[0]);
     if (map == NULL) {
+        LoadingScreen_End();
         return;
     }
     snprintf(map->name, sizeof(map->name), "%s", place->name);
@@ -562,6 +567,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     roam->place    = place_index;
     MapRenderer_ClearCache(roam->renderer);
     Roam__Populate(roam);
+    LoadingScreen_End();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

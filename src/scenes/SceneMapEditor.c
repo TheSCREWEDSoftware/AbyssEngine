@@ -7,6 +7,7 @@
 #include "../drawing/Cursor.h"
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
+#include "../drawing/LoadingScreen.h"
 #include "../drawing/TabBar.h"
 #include "../drawing/TextBox.h"
 #include "../managers/InputManager.h"
@@ -613,6 +614,7 @@ static void Editor__UpdateDialog(SceneMapEditor *editor) {
             const int index = editor->dialog_visible[row];
             Map      *map   = NULL;
             char      path[4200];
+            LoadingScreen_Begin("Loading map...");
             if (TabBar_GetSelected(editor->open_tabs) == OPEN_MY_MAPS) {
                 snprintf(path, sizeof(path), "%s/%s.abm", Map_GetSaveFolder(), editor->saved_names[index]);
                 map = Map_LoadFile(path);
@@ -620,6 +622,7 @@ static void Editor__UpdateDialog(SceneMapEditor *editor) {
                 path[0] = '\0';
                 map     = Map_LoadDS1(editor->game_maps[index]);
             }
+            LoadingScreen_End();
             if (map != NULL) {
                 Editor__SetMap(editor, map, path);
                 Editor__CloseDialog(editor);

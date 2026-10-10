@@ -52,6 +52,7 @@ sources = [
     'drawing/Figure.c',
     'drawing/Label.c',
     'drawing/ListBox.c',
+    'drawing/LoadingScreen.c',
     'drawing/TabBar.c',
     'drawing/TextBox.c',
     'drawing/Sprite.c',
