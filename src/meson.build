@@ -55,6 +55,8 @@ sources = [
     'data/StringTable.c',
 
     'game/Character.c',
+    'game/Controls.c',
+    'game/Settings.c',
 
     'drawing/Button.c',
     'drawing/Cursor.c',
@@ -64,6 +66,7 @@ sources = [
     'drawing/LoadingScreen.c',
     'drawing/TabBar.c',
     'drawing/TextBox.c',
+    'drawing/Screenshot.c',
     'drawing/Sprite.c',
 
     'managers/AudioManager.c',

@@ -17,6 +17,7 @@
 **Playing**
 
 - [Single Player](Single-Player.md)
+- [Options](Options.md)
 
 **Developer tools**
 

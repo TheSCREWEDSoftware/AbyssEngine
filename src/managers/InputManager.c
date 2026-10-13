@@ -2,9 +2,13 @@
 #include "../common/AbyssConfiguration.h"
 #include "../common/Globals.h"
 #include <assert.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MAX_TEXT_INPUT_LENGTH 100
+#define MAX_PRESSES           64
+#define MAX_PADS              4
 
 typedef struct InputManager {
     int     mouse_x;
@@ -13,9 +17,40 @@ typedef struct InputManager {
     char    text_input[MAX_TEXT_INPUT_LENGTH + 1];
     uint8_t mouse_buttons;
     int     mouse_wheel_y;
+
+    bool       key_down[SDL_NUM_SCANCODES];
+    uint16_t   mods;
+    InputPress presses[MAX_PRESSES]; // ring buffer
+    int        press_head;
+    int        press_count;
+
+    SDL_GameController *pads[MAX_PADS];
+    bool                pad_buttons[SDL_CONTROLLER_BUTTON_MAX];
+    float               pad_axes[MAX_PADS][SDL_CONTROLLER_AXIS_MAX];
 } InputManager;
 
 InputManager *input_manager;
+
+static void InputManager__Press(const InputKind kind, const int value) {
+    InputPress *press = &input_manager->presses[(input_manager->press_head + input_manager->press_count) % MAX_PRESSES];
+    if (input_manager->press_count == MAX_PRESSES) {
+        input_manager->press_head = (input_manager->press_head + 1) % MAX_PRESSES; // nobody's reading: drop the oldest
+    } else {
+        input_manager->press_count++;
+    }
+    press->kind  = kind;
+    press->value = value;
+    press->mods  = input_manager->mods;
+    press->time  = SDL_GetTicks64();
+}
+
+static uint16_t InputManager__Mods(const uint16_t sdl_mods) {
+    return (uint16_t)(sdl_mods & (KMOD_CTRL | KMOD_SHIFT | KMOD_ALT));
+}
+
+static float InputManager__AxisValue(const int pad, const SDL_GameControllerAxis axis) {
+    return input_manager->pad_axes[pad][axis];
+}
 
 void InputManager_InitializeSingleton(void) {
     input_manager = malloc(sizeof(InputManager));
@@ -41,16 +76,74 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
         input_manager->mouse_buttons |= SDL_BUTTON(sdl_event->button.button);
+        InputManager__Press(INPUT_MOUSE_BUTTON, sdl_event->button.button);
         return true;
     case SDL_MOUSEBUTTONUP:
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
         input_manager->mouse_buttons &= ~SDL_BUTTON(sdl_event->button.button);
         return true;
-    case SDL_MOUSEWHEEL:
-        input_manager->mouse_wheel_y +=
+    case SDL_MOUSEWHEEL: {
+        const int steps =
             (sdl_event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -sdl_event->wheel.y : sdl_event->wheel.y;
+        input_manager->mouse_wheel_y += steps;
+        for (int s = 0; s < abs(steps) && s < 4; s++) {
+            InputManager__Press(INPUT_MOUSE_WHEEL, steps > 0 ? 1 : -1);
+        }
         return true;
+    }
+    case SDL_CONTROLLERDEVICEADDED:
+        for (int p = 0; p < MAX_PADS; p++) {
+            if (input_manager->pads[p] == NULL) {
+                input_manager->pads[p] = SDL_GameControllerOpen(sdl_event->cdevice.which);
+                break;
+            }
+        }
+        return true;
+    case SDL_CONTROLLERDEVICEREMOVED:
+        for (int p = 0; p < MAX_PADS; p++) {
+            SDL_GameController *pad = input_manager->pads[p];
+            if (pad != NULL && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad)) == sdl_event->cdevice.which) {
+                SDL_GameControllerClose(pad);
+                input_manager->pads[p] = NULL;
+                memset(input_manager->pad_axes[p], 0, sizeof(input_manager->pad_axes[p]));
+            }
+        }
+        return true;
+    case SDL_CONTROLLERBUTTONDOWN:
+        if (sdl_event->cbutton.button < SDL_CONTROLLER_BUTTON_MAX) {
+            input_manager->pad_buttons[sdl_event->cbutton.button] = true;
+            InputManager__Press(INPUT_PAD_BUTTON, sdl_event->cbutton.button);
+        }
+        return true;
+    case SDL_CONTROLLERBUTTONUP:
+        if (sdl_event->cbutton.button < SDL_CONTROLLER_BUTTON_MAX) {
+            input_manager->pad_buttons[sdl_event->cbutton.button] = false;
+        }
+        return true;
+    case SDL_CONTROLLERAXISMOTION: {
+        int pad = 0;
+        for (int p = 0; p < MAX_PADS; p++) {
+            SDL_GameController *c = input_manager->pads[p];
+            if (c != NULL && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)) == sdl_event->caxis.which) {
+                pad = p;
+            }
+        }
+        const int axis = sdl_event->caxis.axis;
+        if (axis < 0 || axis >= SDL_CONTROLLER_AXIS_MAX) {
+            return true;
+        }
+        const float before                 = InputManager__AxisValue(pad, (SDL_GameControllerAxis)axis);
+        const float after                  = (float)sdl_event->caxis.value / 32767.0f;
+        input_manager->pad_axes[pad][axis] = after;
+        if (before < INPUT_PAD_AXIS_THRESHOLD && after >= INPUT_PAD_AXIS_THRESHOLD) {
+            InputManager__Press(INPUT_PAD_AXIS, (axis * 2) + 1);
+        }
+        if (before > -INPUT_PAD_AXIS_THRESHOLD && after <= -INPUT_PAD_AXIS_THRESHOLD) {
+            InputManager__Press(INPUT_PAD_AXIS, axis * 2);
+        }
+        return true;
+    }
     case SDL_KEYDOWN:
         if (sdl_event->key.keysym.sym == SDLK_RETURN &&
             (sdl_event->key.keysym.mod == KMOD_LALT || sdl_event->key.keysym.mod == KMOD_RALT)) {
@@ -63,10 +156,19 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
             input_manager->text_input[strlen(input_manager->text_input) - 1] = '\0';
         }
         input_manager->key_pressed[sdl_event->key.keysym.scancode] = true;
+        input_manager->mods                                        = InputManager__Mods(sdl_event->key.keysym.mod);
+        if (!sdl_event->key.repeat && sdl_event->key.keysym.scancode < SDL_NUM_SCANCODES) {
+            input_manager->key_down[sdl_event->key.keysym.scancode] = true;
+            InputManager__Press(INPUT_KEY, sdl_event->key.keysym.scancode);
+        }
 
         return true;
     case SDL_KEYUP:
         input_manager->key_pressed[sdl_event->key.keysym.scancode] = false;
+        input_manager->mods                                        = InputManager__Mods(sdl_event->key.keysym.mod);
+        if (sdl_event->key.keysym.scancode < SDL_NUM_SCANCODES) {
+            input_manager->key_down[sdl_event->key.keysym.scancode] = false;
+        }
         return true;
     case SDL_TEXTINPUT:
         if (strlen(input_manager->text_input) + strlen(sdl_event->text.text) < MAX_TEXT_INPUT_LENGTH) {
@@ -128,6 +230,49 @@ void InputManager_SetTextInput(const char *text) {
     memset(input_manager->text_input, 0, sizeof(input_manager->text_input));
     if (text != NULL) {
         strncat(input_manager->text_input, text, MAX_TEXT_INPUT_LENGTH - 1);
+    }
+}
+
+bool InputManager_PollPress(InputPress *press) {
+    if (input_manager->press_count == 0) {
+        return false;
+    }
+    *press                    = input_manager->presses[input_manager->press_head];
+    input_manager->press_head = (input_manager->press_head + 1) % MAX_PRESSES;
+    input_manager->press_count--;
+    return true;
+}
+
+void InputManager_ClearPresses(void) {
+    input_manager->press_head  = 0;
+    input_manager->press_count = 0;
+}
+
+uint16_t InputManager_GetMods(void) { return input_manager->mods; }
+
+float InputManager_GetPadAxis(const SDL_GameControllerAxis axis) {
+    float strongest = 0.0f;
+    for (int p = 0; p < MAX_PADS; p++) {
+        const float v = input_manager->pad_axes[p][axis];
+        strongest     = fabsf(v) > fabsf(strongest) ? v : strongest;
+    }
+    return strongest;
+}
+
+bool InputManager_IsDown(const InputKind kind, const int value) {
+    switch (kind) {
+    case INPUT_KEY:
+        return value >= 0 && value < SDL_NUM_SCANCODES && input_manager->key_down[value];
+    case INPUT_MOUSE_BUTTON:
+        return value > 0 && value <= 8 && (input_manager->mouse_buttons & SDL_BUTTON(value)) != 0;
+    case INPUT_PAD_BUTTON:
+        return value >= 0 && value < SDL_CONTROLLER_BUTTON_MAX && input_manager->pad_buttons[value];
+    case INPUT_PAD_AXIS: {
+        const float v = InputManager_GetPadAxis((SDL_GameControllerAxis)(value / 2));
+        return (value % 2 == 1) ? v >= INPUT_PAD_AXIS_THRESHOLD : v <= -INPUT_PAD_AXIS_THRESHOLD;
+    }
+    default:
+        return false;
     }
 }
 

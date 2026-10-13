@@ -42,6 +42,8 @@ void         MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCa
 // Where the player stands (sub-tiles). Like the game, the roof over a building fades away while they're inside it, so
 // you can see in. Call before MapRenderer_Draw; without it (or with x < 0) roofs are always drawn.
 void MapRenderer_SetViewer(MapRenderer *renderer, float subtile_x, float subtile_y);
+// "See through obstructions": walls and trees in front of the viewer that would hide them turn see-through
+void MapRenderer_SetSeeThrough(MapRenderer *renderer, bool see_through);
 // A single tile, e.g. a palette preview, scaled to fit the box.
 void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT1Tile *tile, const SDL_Rect *box);
 // Darkens the view except for a soft pool of light around (world_x, world_y). darkness: 0 (none) to 255 (black);

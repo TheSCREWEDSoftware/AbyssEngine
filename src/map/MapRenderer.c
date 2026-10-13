@@ -21,10 +21,16 @@ typedef struct TextureEntry {
 #define LIGHT_TEXTURE_W 256
 #define LIGHT_TEXTURE_H 128 // an isometric ellipse, like the ground
 
-#define ROOF_FADE_MS    250    // roofs fade out when you walk in, and back in when you leave
-#define FRONT_WALL_FADE 150.0f // and the building's walls between you and the camera go this see-through (of 255)
+#define ROOF_FADE_MS       250    // roofs fade out when you walk in, and back in when you leave
+#define FRONT_WALL_FADE    150.0f // and the building's walls between you and the camera go this see-through (of 255)
+#define SEE_THROUGH_ALPHA  100    // "See through obstructions": what's left of a wall or tree hiding you
+#define SEE_THROUGH_HALF_W 40     // the box around you (screen pixels at zoom 1) it looks at: your body, feet to head
+#define SEE_THROUGH_UP     110
+#define SEE_THROUGH_DOWN   12
 
 struct MapRenderer {
+    bool see_through; // walls and trees hiding the viewer fade (MapRenderer_SetSeeThrough)
+
     // Roofs over the building the viewer is in (see MapRenderer_SetViewer)
     bool       has_viewer;
     float      viewer_x;
@@ -297,6 +303,22 @@ static bool MapRenderer__NearBuilding(const MapRenderer *renderer, const Map *ma
     return false;
 }
 
+void MapRenderer_SetSeeThrough(MapRenderer *renderer, const bool see_through) { renderer->see_through = see_through; }
+
+// The screen rectangle a tile's picture covers
+static SDL_Rect MapRenderer__TileRect(const MapCamera *camera, const SDL_Rect *view, const DT1Tile *tile, const int tx,
+                                      const int ty) {
+    float wx;
+    float wy;
+    MapRenderer__TileOrigin(tile, tx, ty, &wx, &wy);
+    int sx;
+    int sy;
+    MapView_WorldToScreen(camera, view, wx, wy, &sx, &sy);
+    const SDL_Rect rect = {sx, sy, (int)ceilf((float)tile->image_width * camera->zoom),
+                           (int)ceilf((float)tile->image_height * camera->zoom)};
+    return rect;
+}
+
 void MapRenderer_SetViewer(MapRenderer *renderer, const float subtile_x, const float subtile_y) {
     renderer->has_viewer = subtile_x >= 0.0f && subtile_y >= 0.0f;
     renderer->viewer_x   = subtile_x;
@@ -525,6 +547,25 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
     const int     viewer_sum  = inside ? renderer->roof_tile_x + renderer->roof_tile_y : 0;
     const uint8_t front_alpha = (uint8_t)(255.0f - (FRONT_WALL_FADE * renderer->roof_fade));
 
+    // See through obstructions: the box around the viewer on screen, and the diagonal they stand on
+    SDL_Rect   viewer_box  = {0, 0, 0, 0};
+    const bool see_through = renderer->see_through && renderer->has_viewer;
+    const int  viewer_tile_sum =
+        see_through ? (int)floorf(renderer->viewer_x / MAP_SUBTILES) + (int)floorf(renderer->viewer_y / MAP_SUBTILES)
+                     : 0;
+    if (see_through) {
+        float wx;
+        float wy;
+        MapView_SubtileToWorld(renderer->viewer_x, renderer->viewer_y, &wx, &wy);
+        int sx;
+        int sy;
+        MapView_WorldToScreen(camera, view, wx, wy, &sx, &sy);
+        viewer_box.x = sx - (int)(SEE_THROUGH_HALF_W * camera->zoom);
+        viewer_box.y = sy - (int)(SEE_THROUGH_UP * camera->zoom);
+        viewer_box.w = (int)(2 * SEE_THROUGH_HALF_W * camera->zoom);
+        viewer_box.h = (int)((SEE_THROUGH_UP + SEE_THROUGH_DOWN) * camera->zoom);
+    }
+
     int next = 0;
     for (int sum = 0; sum <= (map->width - 1) + (map->height - 1); sum++) {
         if (flags & MAP_DRAW_WALLS) {
@@ -542,9 +583,15 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                         (MapRenderer__IsSpecial(tile->orientation) && !(flags & MAP_DRAW_SPECIAL))) {
                         continue;
                     }
-                    const uint8_t alpha =
-                        (inside && sum > viewer_sum && MapRenderer__NearBuilding(renderer, map, tx, ty)) ? front_alpha
-                                                                                                         : 255;
+                    uint8_t alpha = (inside && sum > viewer_sum && MapRenderer__NearBuilding(renderer, map, tx, ty))
+                                        ? front_alpha
+                                        : 255;
+                    if (see_through && sum > viewer_tile_sum) {
+                        const SDL_Rect rect = MapRenderer__TileRect(camera, view, tile, tx, ty);
+                        if (SDL_HasIntersection(&rect, &viewer_box)) {
+                            alpha = alpha < SEE_THROUGH_ALPHA ? alpha : SEE_THROUGH_ALPHA;
+                        }
+                    }
                     MapRenderer__DrawTileAlpha(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty, alpha);
                     MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
                 }
@@ -593,8 +640,15 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                     const DT1Tile *tile = map->wall_tiles[w][c];
                     if (tile != NULL && tile->orientation == DT1_ORIENTATION_ROOF) {
                         const bool hidden = renderer->roof_tile_x >= 0 && renderer->roof_hidden[c] != 0;
-                        MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty,
-                                                   hidden ? hidden_alpha : 255);
+                        uint8_t    alpha  = hidden ? hidden_alpha : 255;
+                        if (see_through) {
+                            // Roofs (tents, porches) hiding the viewer: whatever their tile, they're drawn over them
+                            const SDL_Rect rect = MapRenderer__TileRect(camera, view, tile, tx, ty);
+                            if (SDL_HasIntersection(&rect, &viewer_box)) {
+                                alpha = alpha < SEE_THROUGH_ALPHA ? alpha : SEE_THROUGH_ALPHA;
+                            }
+                        }
+                        MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
                     }
                 }
             }

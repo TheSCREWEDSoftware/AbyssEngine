@@ -4,6 +4,7 @@
 #include "common/Globals.h"
 #include "common/Logging.h"
 #include "data/StringTable.h"
+#include "game/Settings.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "drawing/LoadingScreen.h"
@@ -64,6 +65,7 @@ int main(int argc, char **argv) {
     }
     LOG_INFO("Using configuration file '%s'", config_path);
     AbyssConfiguration_LoadSingleton(config_path);
+    Settings_Load(); // gameplay and controls (options.ini)
 
     LOG_DEBUG("Initializing file manager...");
     FileManager_CreateSingleton();

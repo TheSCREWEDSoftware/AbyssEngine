@@ -9,9 +9,12 @@
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
 #include "../drawing/LoadingScreen.h"
+#include "../drawing/Screenshot.h"
 #include "../drawing/Sprite.h"
 #include "../drawing/TextBox.h"
 #include "../game/Character.h"
+#include "../game/Controls.h"
+#include "../game/Settings.h"
 #include "../managers/InputManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
@@ -242,6 +245,10 @@ typedef struct SceneRoam {
     Button  *seed_use_button;
     Button  *seed_random_button;
     Label   *seed_label;
+    float    key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
+    float    key_dy;
+    bool     screenshot;      // take one at the end of this frame's drawing
+    bool     attack_in_place; // the swing under way was from where you stand: don't walk after the target
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
@@ -308,7 +315,19 @@ static bool Roam__IsAlive(const Unit *unit) { return unit->state != UNIT_DYING &
 static bool Roam__IsCombatant(const Unit *unit) { return unit->max_hp > 0; }
 
 // Running (and not out of stamina)
-static bool Roam__IsRunning(const SceneRoam *roam) { return roam->running && !roam->exhausted; }
+// Running: the Run / walk switch, flipped while the run key is held
+static bool Roam__IsRunning(const SceneRoam *roam) {
+    return (roam->running != Controls_Held(ACTION_RUN_HOLD)) && !roam->exhausted;
+}
+
+// The settings for the class being played (or all classes')
+static int Roam__Profile(const SceneRoam *roam) {
+    return roam->game ? (int)roam->character->class_id + 1 : roam->player_class + 1;
+}
+
+static const GameplaySettings *Roam__Gameplay(const SceneRoam *roam) {
+    return Settings_GetGameplay(Roam__Profile(roam));
+}
 
 // The player's town animations (relaxed) when nobody's fighting: in the game that's in town
 static bool Roam__PlayerAtEase(const SceneRoam *roam) { return roam->game ? roam->in_town : !combat_enabled; }
@@ -1237,8 +1256,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   W waypoint (near one)   "
-                                           "T town   Tab map   L light   Esc save and exit"
+    Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   V waypoint (near one)   "
+                                           "Home town   Tab map   L light   Esc save and exit"
                                     : free_roam
                                         ? "Left walk/attack  Right drop  Shift+Right remove  R run  C combat  "
                                           "L light  B collision  Tab map  N new world  Esc back"
@@ -1425,6 +1444,43 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     }
 }
 
+// Attacking from where you stand (Stand still, Modern movement, the attack key): what's under the mouse if it's in
+// reach, else the nearest monster in reach, else a swing at the air towards the mouse
+static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float x, const float y, const uint64_t now) {
+    Unit *player = &roam->player;
+    if (player->state == UNIT_ATTACK || player->state == UNIT_HIT || !Roam__IsAlive(player)) {
+        return;
+    }
+    int target = -1;
+    if (Roam__Combat(roam)) {
+        float nearest = ATTACK_RANGE;
+        for (int i = 0; i < roam->unit_count; i++) {
+            const Unit *unit = &roam->units[i];
+            if (!Roam__IsCombatant(unit) || !Roam__IsAlive(unit) || Roam__IsPeaceful(roam, unit)) {
+                continue;
+            }
+            const float distance = Roam__Distance(player->x, player->y, unit->x, unit->y);
+            if (i == hovered && distance <= ATTACK_RANGE) {
+                target = i;
+                break;
+            }
+            if (distance <= nearest) {
+                nearest = distance;
+                target  = i;
+            }
+        }
+    }
+    roam->moving          = false;
+    roam->use_target      = -1;
+    roam->attack_target   = target;
+    roam->attack_in_place = true;
+    Roam__ClearPath(player);
+    Roam__TurnTowards(&player->turn, player->x, player->y, target >= 0 ? roam->units[target].x : x,
+                      target >= 0 ? roam->units[target].y : y);
+    Roam__SetState(player, UNIT_ATTACK, now);
+    Roam__UnitSound(roam, player, MONSTER_SOUND_ATTACK);
+}
+
 static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit *player = &roam->player;
 
@@ -1455,7 +1511,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         const float max_stamina = (float)Character_MaxStamina(roam->character);
         const int   regen       = Character_ManaRegenSeconds(roam->character);
         roam->mana              = fminf(max_mana, roam->mana + (max_mana * seconds / (float)(regen > 0 ? regen : 120)));
-        if (Roam__IsRunning(roam) && roam->moving) {
+        if (Roam__IsRunning(roam) && (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
             // charstats RunDrain is per frame (25 a second), in 256ths
             roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;
             if (roam->stamina <= 0.0f) {
@@ -1479,6 +1535,10 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                     Roam__PlayerStrikes(roam, target, now);
                 }
             }
+            if (roam->attack_in_place) {
+                roam->attack_target   = -1; // one swing, no chasing
+                roam->attack_in_place = false;
+            }
             Roam__SetState(player, UNIT_IDLE, now);
         } else if (player->state == UNIT_DYING) {
             Roam__SetState(player, UNIT_DEAD, now);
@@ -1499,15 +1559,39 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         return;
     }
 
+    // Modern / Combined: walking with the movement keys (or the stick), straight, sliding along walls
+    const bool key_walking = roam->key_dx != 0.0f || roam->key_dy != 0.0f;
+    if (key_walking) {
+        roam->use_target    = -1;
+        roam->attack_target = -1;
+        roam->moving        = false;
+        Roam__ClearPath(player);
+        const float step = (Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED) * seconds;
+        const float nx   = player->x + (roam->key_dx * step);
+        const float ny   = player->y + (roam->key_dy * step);
+        if (Map_IsWalkable(roam->map, (int)nx, (int)ny)) {
+            player->x = nx;
+            player->y = ny;
+        } else if (Map_IsWalkable(roam->map, (int)nx, (int)player->y)) {
+            player->x = nx;
+        } else if (Map_IsWalkable(roam->map, (int)player->x, (int)ny)) {
+            player->y = ny;
+        }
+        Roam__TurnTowards(&player->turn, player->x, player->y, player->x + roam->key_dx, player->y + roam->key_dy);
+        // Heading somewhere a few steps ahead (entrances take you in when you walk into them)
+        player->target_x = player->x + (roam->key_dx * 3.0f);
+        player->target_y = player->y + (roam->key_dy * 3.0f);
+    }
+
     // Opening something: walk up to it, then open it
-    if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
+    if (!key_walking && roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
         player->target_x = roam->units[roam->use_target].x;
         player->target_y = roam->units[roam->use_target].y;
         roam->moving     = true;
     }
 
     // Attacking: walk up to the target, then swing
-    if (roam->attack_target >= 0) {
+    if (!key_walking && roam->attack_target >= 0) {
         Unit *target = &roam->units[roam->attack_target];
         if (!Roam__Combat(roam) || !Roam__IsAlive(target)) {
             roam->attack_target = -1;
@@ -1526,7 +1610,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         }
     }
 
-    if (roam->moving) {
+    if (!key_walking && roam->moving) {
         // Around walls, not through them
         Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
         roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
@@ -1537,7 +1621,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             }
         }
     }
-    Roam__SetState(player, roam->moving ? UNIT_WALK : UNIT_IDLE, now);
+    Roam__SetState(player, (roam->moving || key_walking) ? UNIT_WALK : UNIT_IDLE, now);
 
     // A footstep as each foot comes down (the start and the middle of the walk cycle)
     Figure *figure = player->state == UNIT_WALK ? Roam__Figure(roam, player) : NULL;
@@ -1805,8 +1889,7 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
         return true;
     }
 
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_C) || InputManager_ConsumeKeyPress(SDL_SCANCODE_A) ||
-        Button_Update(roam->character_button)) {
+    if (Controls_Pressed(ACTION_CHARACTER) || Button_Update(roam->character_button)) {
         roam->char_panel = !roam->char_panel;
         Roam__UpdateButtons(roam);
     }
@@ -1830,14 +1913,14 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
     }
 
     const bool can_waypoint = roam->in_town || Roam__NearWaypoint(roam);
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_W) || Button_Update(roam->places_button)) {
+    if (Controls_Pressed(ACTION_WAYPOINT) || Button_Update(roam->places_button)) {
         if (roam->panel == PANEL_PLACES || can_waypoint) {
             Roam__TogglePanel(roam, PANEL_PLACES);
         } else {
             Roam__ShowMessage(roam, "Stand near a waypoint (or go back to town) to travel.");
         }
     }
-    if ((InputManager_ConsumeKeyPress(SDL_SCANCODE_T) || Button_Update(roam->town_button)) && !roam->in_town &&
+    if ((Controls_Pressed(ACTION_TOWN) || Button_Update(roam->town_button)) && !roam->in_town &&
         Roam__IsAlive(&roam->player)) {
         Roam__GoToTown(roam, roam->character->act);
         Roam__UpdateButtons(roam);
@@ -1873,12 +1956,20 @@ static void Roam__Update(SceneRoam *roam) {
     roam->last_tick        = now;
     const SDL_Rect view    = {0, 0, VIEW_W, VIEW_H};
 
+    // Controls: the class's own (or all classes'), the actions of this mode; nothing while typing a seed
+    Controls_SetProfile(Roam__Profile(roam));
+    Controls_SetContext(roam->game ? CONTROL_CONTEXT_GAME : CONTROL_CONTEXT_DEBUG);
+    if (TextBox_IsFocused(roam->seed_box)) {
+        InputManager_ClearPresses();
+    }
+    Controls_Update();
+    const GameplaySettings *gameplay = Roam__Gameplay(roam);
+
     int  mouse_x;
     int  mouse_y;
-    bool left;
-    bool right;
+    bool left  = Controls_Held(ACTION_MOVE_ATTACK);
+    bool right = Controls_Held(ACTION_RIGHT_SKILL);
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
-    InputManager_GetMouseButtons(&left, NULL, &right);
     const bool over_panel = (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
                             (roam->game && roam->char_panel && mouse_x < CHAR_PANEL_W && mouse_y < CHAR_PANEL_H);
     const bool over_view = mouse_y < VIEW_H && !over_panel;
@@ -1887,39 +1978,69 @@ static void Roam__Update(SceneRoam *roam) {
         return;
     }
 
-    if (over_view) {
-        const int wheel = InputManager_ConsumeMouseWheel();
-        if (wheel != 0) {
-            roam->camera.zoom =
-                wheel > 0 ? fminf(roam->camera.zoom * 2.0f, 2.0f) : fmaxf(roam->camera.zoom / 2.0f, 0.25f);
-        }
+    if (over_view && (Controls_Pressed(ACTION_ZOOM_IN) || Controls_Pressed(ACTION_ZOOM_OUT))) {
+        roam->camera.zoom = Controls_Pressed(ACTION_ZOOM_IN) ? fminf(roam->camera.zoom * 2.0f, 2.0f)
+                                                             : fmaxf(roam->camera.zoom / 2.0f, 0.25f);
     }
-    // Hotkeys (not while typing a seed)
-    if (!TextBox_IsFocused(roam->seed_box)) {
-        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_R)) {
-            roam->running = !roam->running;
-            Roam__UpdateButtons(roam);
+    InputManager_ConsumeMouseWheel(); // the wheel is bound through the controls
+    if (Controls_Pressed(ACTION_RUN_TOGGLE)) {
+        roam->running = !roam->running;
+        Roam__UpdateButtons(roam);
+    }
+    if (Controls_Pressed(ACTION_COMBAT)) {
+        combat_enabled = !combat_enabled;
+        Roam__UpdateButtons(roam);
+    }
+    if (Controls_Pressed(ACTION_COLLISION)) {
+        roam->draw_flags ^= MAP_DRAW_BLOCKED;
+    }
+    if (Controls_Pressed(ACTION_LIGHT)) {
+        light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
+    }
+    if (Controls_Pressed(ACTION_PREVIEW)) {
+        roam->preview = !roam->preview;
+        Roam__UpdateButtons(roam);
+    }
+    if (roam->free_roam && Controls_Pressed(ACTION_AUTOMAP)) {
+        roam->show_automap = !roam->show_automap; // the automap, like the game's
+    }
+    if (Controls_Pressed(ACTION_SCREENSHOT)) {
+        roam->screenshot = true;
+    }
+    if (Controls_Pressed(ACTION_CLEAR_SCREEN)) {
+        roam->panel        = PANEL_NONE;
+        roam->char_panel   = false;
+        roam->show_automap = false;
+        Roam__UpdateButtons(roam);
+    }
+    if (!roam->game && roam->free_roam && Controls_Pressed(ACTION_WAYPOINT)) {
+        Roam__TogglePanel(roam, PANEL_PLACES);
+    }
+    if (roam->free_roam && Controls_Pressed(ACTION_NEW_WORLD)) {
+        Roam__NewWorld(roam, 0); // the same area in a new random world
+        return;
+    }
+
+    // Modern / Combined: the movement keys (and the left stick) walk
+    roam->key_dx = 0.0f;
+    roam->key_dy = 0.0f;
+    if (gameplay->movement != MOVEMENT_CLASSIC) {
+        // On screen, up is towards lower x and y in sub-tiles, right towards higher x and lower y
+        float sx = (Controls_Held(ACTION_MOVE_RIGHT) ? 1.0f : 0.0f) - (Controls_Held(ACTION_MOVE_LEFT) ? 1.0f : 0.0f);
+        float sy = (Controls_Held(ACTION_MOVE_DOWN) ? 1.0f : 0.0f) - (Controls_Held(ACTION_MOVE_UP) ? 1.0f : 0.0f);
+        const float stick_x = InputManager_GetPadAxis(SDL_CONTROLLER_AXIS_LEFTX);
+        const float stick_y = InputManager_GetPadAxis(SDL_CONTROLLER_AXIS_LEFTY);
+        if (fabsf(stick_x) > 0.25f || fabsf(stick_y) > 0.25f) {
+            sx = stick_x;
+            sy = stick_y;
         }
-        if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
-            combat_enabled = !combat_enabled;
-            Roam__UpdateButtons(roam);
-        }
-        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_B)) {
-            roam->draw_flags ^= MAP_DRAW_BLOCKED;
-        }
-        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_L)) {
-            light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
-        }
-        if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
-            roam->preview = !roam->preview;
-            Roam__UpdateButtons(roam);
-        }
-        if (roam->free_roam && InputManager_ConsumeKeyPress(SDL_SCANCODE_TAB)) {
-            roam->show_automap = !roam->show_automap; // the automap, like the game's
-        }
-        if (roam->free_roam && !roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
-            Roam__NewWorld(roam, 0); // the same area in a new random world
-            return;
+        // Screen directions to sub-tiles (the screen is squashed 2:1, so a step right is half a step in y)
+        const float dx     = sx + (sy * 2.0f);
+        const float dy     = (sy * 2.0f) - sx;
+        const float length = sqrtf((dx * dx) + (dy * dy));
+        if (length > 0.01f) {
+            roam->key_dx = dx / length;
+            roam->key_dy = dy / length;
         }
     }
 
@@ -1934,8 +2055,31 @@ static void Roam__Update(SceneRoam *roam) {
     roam->hover_x     = floorf(sub_x) + 0.5f;
     roam->hover_y     = floorf(sub_y) + 0.5f;
 
+    // Modern / Combined: the attack key hits what's under the mouse, or the nearest monster in reach
+    if (gameplay->movement != MOVEMENT_CLASSIC && Controls_Pressed(ACTION_ATTACK) && Roam__IsAlive(&roam->player)) {
+        Roam__AttackInPlace(roam, roam->hovered, sub_x, sub_y, now);
+    }
+    // Modern: the mouse attacks and opens things within reach, but doesn't walk
+    if (gameplay->movement == MOVEMENT_MODERN && over_view && left && !roam->prev_left &&
+        Roam__IsAlive(&roam->player)) {
+        if (roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+            roam->use_target = roam->hovered;
+            if (!Roam__TryUse(roam, now)) {
+                roam->use_target = -1; // out of reach
+            }
+        } else {
+            Roam__AttackInPlace(roam, roam->hovered, sub_x, sub_y, now);
+        }
+    }
+    // Stand still (Shift): clicks attack where you stand instead of walking
+    const bool stand_still = Controls_Held(ACTION_STAND_STILL);
+    if (gameplay->movement != MOVEMENT_MODERN && stand_still && over_view && left && !roam->prev_left &&
+        Roam__IsAlive(&roam->player)) {
+        Roam__AttackInPlace(roam, roam->hovered, sub_x, sub_y, now);
+    }
+
     // Left: attack what's under the mouse (combat on), otherwise walk there (hold to keep following the mouse)
-    if (over_view && left && Roam__IsAlive(&roam->player)) {
+    if (gameplay->movement != MOVEMENT_MODERN && !stand_still && over_view && left && Roam__IsAlive(&roam->player)) {
         if (!roam->prev_left && roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
             roam->use_target    = roam->hovered; // walk over and open it
             roam->attack_target = -1;
@@ -1943,8 +2087,9 @@ static void Roam__Update(SceneRoam *roam) {
         } else if (!roam->prev_left && Roam__Combat(roam) && roam->hovered >= 0 &&
                    Roam__IsCombatant(&roam->units[roam->hovered]) &&
                    !Roam__IsPeaceful(roam, &roam->units[roam->hovered])) {
-            roam->attack_target = roam->hovered;
-            roam->use_target    = -1;
+            roam->attack_target   = roam->hovered;
+            roam->attack_in_place = false;
+            roam->use_target      = -1;
         } else if (roam->use_target >= 0 && roam->prev_left) {
             // holding the button after clicking an object: keep going to it
         } else if (roam->attack_target < 0 || roam->prev_left == false) {
@@ -1960,8 +2105,7 @@ static void Roam__Update(SceneRoam *roam) {
     }
     // Right: drop the selected monster; Shift+Right removes the nearest one
     if (over_view && right && !roam->prev_right && !roam->game) {
-        const Uint8 *keys = SDL_GetKeyboardState(NULL);
-        if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) {
+        if ((InputManager_GetMods() & KMOD_SHIFT) != 0) {
             if (roam->hovered >= 0) {
                 roam->units[roam->hovered] = roam->units[--roam->unit_count];
                 roam->attack_target        = -1;
@@ -2348,6 +2492,7 @@ static void Roam__Render(SceneRoam *roam) {
         count++;
     }
     MapRenderer_SetViewer(roam->renderer, roam->player.x, roam->player.y); // roofs fade over the player
+    MapRenderer_SetSeeThrough(roam->renderer, Roam__Gameplay(roam)->see_through);
     MapRenderer_Draw(roam->renderer, roam->map, &roam->camera, &view, drawables, count, roam->draw_flags);
     if (roam->draw_flags & MAP_DRAW_BLOCKED) {
         Roam__DrawUnitFootprints(roam, &view);
@@ -2499,6 +2644,16 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_RenderFillRect(sdl_renderer, &bottom);
     for (int i = 0; i < 6; i++) {
         Button_Draw(roam->buttons[i]);
+    }
+    if (roam->screenshot) {
+        roam->screenshot = false;
+        char path[4300];
+        if (Screenshot_Save(path, sizeof(path))) {
+            const char *name = strrchr(path, '/');
+            char        text[160];
+            snprintf(text, sizeof(text), "Screenshot saved: %.120s", name != NULL ? name + 1 : path);
+            Roam__ShowMessage(roam, text);
+        }
     }
 }
 

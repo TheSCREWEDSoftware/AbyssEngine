@@ -30,6 +30,7 @@ Follow these in order. Each page ends with a link to the next one.
 ## Playing
 
 - [Single Player](Single-Player.md): characters, creation, levels and stats, controls
+- [Options](Options.md): gameplay (movement type, see-through), controls and key binding, `options.ini`
 
 ## Developer tools
 

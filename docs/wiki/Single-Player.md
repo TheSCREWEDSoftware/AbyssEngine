@@ -30,13 +30,20 @@ Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 S
 
 ## Playing
 
+These are the default keys; every one can be changed (and more added) in **Options › Controls**, for all classes or
+for one ([Options](Options.md)). With **Modern** or **Combined** movement (Options › Gameplay) the arrow keys (or a
+gamepad's left stick) walk and **E** attacks.
+
 | | |
 |---|---|
 | **Left click** | Walk; click a monster to attack it; click a chest, door, shrine or waypoint to open / use it |
 | **C** or **A** / Character button | Character screen |
-| **R** / Run button | Run or walk (running uses stamina) |
-| **W** / Waypoint button | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
-| **T** / Town button | Back to the act's town |
+| **R** / Run button | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
+| **Shift** + click | Stand still: attack where you stand instead of walking |
+| **V** / Waypoint button | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
+| **Home** / Town button | Back to the act's town |
+| **Space** | Close the open screens |
+| **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
 | **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled |
 | Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |

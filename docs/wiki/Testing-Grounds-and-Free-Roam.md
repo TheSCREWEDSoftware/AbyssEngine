@@ -22,6 +22,10 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **N** | Free Roam: a new random world (the area you're in is built again from the new seed) |
 | **Tab** | Free Roam: the automap. What you've seen of the area (everything within about nine tiles of where you've been), drawn with the game's own automap pieces (`MaxiMap.dc6`, picked per tile by `AutoMap.txt`) over the view and centred on you, with the ways out labelled ("To The Cold Plains"). It's kept per area until the world seed changes |
 | Mouse wheel | Zoom |
+| **V** | Free Roam: the Places list |
+| **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
+
+These are the default keys; they can all be changed in **Options › Controls** ([Options](Options.md)).
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
 

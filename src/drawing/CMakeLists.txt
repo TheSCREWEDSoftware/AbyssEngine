@@ -8,5 +8,6 @@ target_sources(${PROJECT_NAME}
         Cursor.c Cursor.h
         Figure.c Figure.h
         Label.c Label.h
+        Screenshot.c Screenshot.h
         Sprite.c Sprite.h
 )
