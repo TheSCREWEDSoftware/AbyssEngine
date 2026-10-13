@@ -70,4 +70,8 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 |----------|--------|
 | Windows 10/11 x64 (Visual Studio 2022 + vcpkg) | ✅ |
 | Linux x64 (GCC/Clang, CMake or Meson) | ✅ |
-| macOS | 🧪 Supported by the build files; not tested recently. |
+| macOS (Apple Silicon, Homebrew) | 🧪 Built by CI on every push; not played on recently. |
+
+Every push to `main` is built on all three by GitHub Actions (`.github/workflows/ci.yml`): Windows with vcpkg, Linux
+with the distribution's packages, macOS with Homebrew. The builds of `main` can be downloaded from the run's
+*Artifacts* (`unstable-Windows`, `unstable-Linux`, `unstable-macOS`).
