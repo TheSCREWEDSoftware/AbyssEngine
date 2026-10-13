@@ -413,7 +413,9 @@ bool AbyssConfiguration_GetSkipIntroMovies(void) { return abyss_configuration.sk
 void AbyssConfiguration__SetSaneDefaults(void) {
     char base_path[4096];
     memset(base_path, 0, sizeof(char) * 4096);
-    getcwd(base_path, 4096);
+    if (getcwd(base_path, 4096) == NULL) {
+        strcpy(base_path, ".");
+    }
     SET_PARAM_STR(abyss_configuration.base_path, base_path);
 
     abyss_configuration.skip_intro_movies = false;

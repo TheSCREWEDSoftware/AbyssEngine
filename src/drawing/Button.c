@@ -294,8 +294,7 @@ static const ButtonLayout *Button__GetLayout(const ButtonType button_type) {
         }
     }
 
-    LOG_FATAL("Could not locate button type %d.", (int)button_type);
-    return NULL;
+    LOG_FATAL("Could not locate button type %d.", (int)button_type); // exits
 }
 
 static void Button__ApplyLabelColor(const Button *button, const uint32_t rgba) {

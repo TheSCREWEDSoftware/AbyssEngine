@@ -437,7 +437,7 @@ static bool Character__Load(const char *path, Character *character) {
         }
         const int number = atoi(value);
         if (strcmp(key, "name") == 0) {
-            snprintf(character->name, sizeof(character->name), "%s", value);
+            snprintf(character->name, sizeof(character->name), "%.*s", (int)sizeof(character->name) - 1, value);
         } else if (strcmp(key, "class") == 0) {
             for (int c = 0; c < CHARACTER_CLASS_COUNT; c++) {
                 if (strcmp(value, classes[c].name) == 0) {

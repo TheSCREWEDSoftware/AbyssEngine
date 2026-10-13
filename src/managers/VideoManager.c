@@ -408,8 +408,8 @@ bool VideoManager__ProcessFrame(void) {
             }
 
             const size_t sample_size = av_get_bytes_per_sample(AudioManager_GetSampleFormat());
-            const int    total_samples =
-                AUDIO_STREAM_DECODE_BUFFER_SIZE / (sample_size * AudioManager_GetChannelLayout().nb_channels);
+            const int    total_samples = (int)(AUDIO_STREAM_DECODE_BUFFER_SIZE /
+                                                (sample_size * (size_t)AudioManager_GetChannelLayout().nb_channels));
 
             uint8_t  *ptr[1] = {video_manager->audio_out_buffer};
             const int result =

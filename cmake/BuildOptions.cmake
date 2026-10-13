@@ -23,6 +23,9 @@ endif ()
 
 if (CMAKE_C_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+    # C4996: MSVC wants its own Windows-only versions of standard C functions (strcpy_s, fopen_s, ...). The engine
+    # sticks to standard C so it builds everywhere; don't flag every strdup, sscanf and getenv.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
 endif ()
 
 if (CMAKE_C_COMPILER_ID MATCHES "Clang")

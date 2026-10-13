@@ -459,10 +459,11 @@ static void Characters__DisambiguateNames(CatalogCharacters *characters) {
     for (int a = 0; a < characters->entry_count; a++) {
         CharacterEntry *entry = &characters->entries[a];
         if (duplicate[a] && entry->id[0] != '\0') {
-            entry->name[sizeof(entry->name) - sizeof(entry->id) - 4] = '\0';
-            strncat(entry->name, " (", sizeof(entry->name) - strlen(entry->name) - 1);
-            strncat(entry->name, entry->id, sizeof(entry->name) - strlen(entry->name) - 1);
-            strncat(entry->name, ")", sizeof(entry->name) - strlen(entry->name) - 1);
+            // "Name (id)", cutting the name short if needed to keep the id
+            char name[sizeof(entry->name)];
+            snprintf(name, sizeof(name), "%.*s (%s)", (int)(sizeof(entry->name) - strlen(entry->id) - 4), entry->name,
+                     entry->id);
+            memcpy(entry->name, name, sizeof(entry->name));
         }
     }
     free(duplicate);

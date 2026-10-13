@@ -28,8 +28,9 @@ void Log_Message(enum LogLevel level, const char *file, const int line, const ch
         memset(msg, 0, sizeof(char) * MAX_LOG_LINE_LENGTH);
         snprintf(msg, MAX_LOG_LINE_LENGTH, "%s(%i): [%s] ", file, line, log_level_strings[level]);
         va_start(args, format);
-        const int len = strchr(msg, '\0') - msg;
-        vsnprintf(strchr(msg, '\0'), len, format, args);
+        // The message goes after the prefix, in what's left of the buffer (keeping room for the newline)
+        const size_t used = strlen(msg);
+        vsnprintf(msg + used, MAX_LOG_LINE_LENGTH - used - 1, format, args);
         va_end(args);
         strcat(msg, "\n");
         OutputDebugString(msg);

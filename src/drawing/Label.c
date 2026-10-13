@@ -95,7 +95,7 @@ void Label_SetText(Label *label, const char *text) {
         DC6_GetFrameSize(label->DC6, frame_index, NULL, &frame_height);
 
         label->width  += frame_width;
-        label->height  = label->height > frame_height ? label->height : frame_height;
+        label->height  = label->height > frame_height ? label->height : (uint16_t)frame_height;
     }
 
     if (label->width == 0 || label->height == 0) {

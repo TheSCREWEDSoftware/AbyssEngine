@@ -154,11 +154,11 @@ const char *Sounds_MonsterSound(const char *monstats_id, const MonsterSound whic
         return NULL;
     }
     const int   c_id    = DataTable_GetColumnIndex(monstats, "Id");
-    const int   c_sound = DataTable_GetColumnIndex(monstats, "MonSound");
+    const int   c_monsound = DataTable_GetColumnIndex(monstats, "MonSound");
     const char *set     = NULL;
     for (int row = 0; row < DataTable_GetRowCount(monstats); row++) {
         if (Sounds__Compare(DataTable_GetString(monstats, row, c_id), monstats_id) == 0) {
-            set = DataTable_GetString(monstats, row, c_sound);
+            set = DataTable_GetString(monstats, row, c_monsound);
             break;
         }
     }
