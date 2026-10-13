@@ -597,6 +597,14 @@ uint16_t Map_GetFloorMaterial(const Map *map, const int subtile_x, const int sub
     return 0;
 }
 
+bool Map_IsObjectBlocked(const Map *map, const int subtile_x, const int subtile_y) {
+    if (map->blocked == NULL || subtile_x < 0 || subtile_y < 0 || subtile_x >= map->width * MAP_SUBTILES ||
+        subtile_y >= map->height * MAP_SUBTILES) {
+        return false;
+    }
+    return map->blocked[(subtile_y * map->width * MAP_SUBTILES) + subtile_x] != 0;
+}
+
 bool Map_IsWalkable(const Map *map, const int subtile_x, const int subtile_y) {
     if (subtile_x < 0 || subtile_y < 0 || subtile_x >= map->width * MAP_SUBTILES ||
         subtile_y >= map->height * MAP_SUBTILES) {

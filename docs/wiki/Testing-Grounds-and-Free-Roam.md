@@ -18,7 +18,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **C** / Combat button | Combat on or off |
 | **P** / Preview button | Placement preview on or off |
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
-| **B** | Show the sub-tiles you can't walk on |
+| **B** | Collision view: what you can't walk on and why (red: the map's walls, cliffs and water; blue: objects such as chests and closed doors), the ways to the next area (green) and entrances (yellow), and where each unit stands (purple: monsters and you; light blue: town folk). A legend shows the colours |
 | **N** | Free Roam: a new random world (the area you're in is built again from the new seed) |
 | Mouse wheel | Zoom |
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |

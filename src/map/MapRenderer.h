@@ -28,7 +28,7 @@ typedef struct MapDrawable {
 #define MAP_DRAW_SHADOWS 0x02
 #define MAP_DRAW_ROOFS   0x04
 #define MAP_DRAW_GRID    0x08
-#define MAP_DRAW_BLOCKED 0x10 // tint sub-tiles you can't walk on
+#define MAP_DRAW_BLOCKED 0x10 // collision: red = the map's tiles, blue = objects; exits green, entrances yellow
 #define MAP_DRAW_SPECIAL 0x20 // markers the game never shows (warps, spawn points)
 #define MAP_DRAW_DEFAULT (MAP_DRAW_WALLS | MAP_DRAW_SHADOWS | MAP_DRAW_ROOFS)
 
@@ -39,6 +39,9 @@ void         MapRenderer_Destroy(MapRenderer **renderer);
 void         MapRenderer_ClearCache(MapRenderer *renderer); // call when the map (or its act) changes
 void         MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *camera, const SDL_Rect *view,
                               const MapDrawable *drawables, int drawable_count, unsigned flags);
+// Where the player stands (sub-tiles). Like the game, the roof over a building fades away while they're inside it, so
+// you can see in. Call before MapRenderer_Draw; without it (or with x < 0) roofs are always drawn.
+void MapRenderer_SetViewer(MapRenderer *renderer, float subtile_x, float subtile_y);
 // A single tile, e.g. a palette preview, scaled to fit the box.
 void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT1Tile *tile, const SDL_Rect *box);
 // Darkens the view except for a soft pool of light around (world_x, world_y). darkness: 0 (none) to 255 (black);

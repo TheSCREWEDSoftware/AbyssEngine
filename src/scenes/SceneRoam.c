@@ -2177,6 +2177,67 @@ static void Roam__DrawGameHud(SceneRoam *roam) {
     }
 }
 
+// Collision view (B): where each unit stands (the sub-tile clicks and fights go by); purple = monsters and the
+// player, light blue = town folk
+static void Roam__DrawUnitFootprints(SceneRoam *roam, const SDL_Rect *view) {
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    for (int i = -1; i < roam->unit_count; i++) {
+        const Unit *unit = i < 0 ? &roam->player : &roam->units[i];
+        if (unit->is_object || !Roam__IsAlive(unit)) {
+            continue;
+        }
+        const float x       = floorf(unit->x);
+        const float y       = floorf(unit->y);
+        float       c[4][2] = {
+            {x,        y       },
+            {x + 1.0f, y       },
+            {x + 1.0f, y + 1.0f},
+            {x,        y + 1.0f}
+        };
+        SDL_Point points[5];
+        for (int k = 0; k < 4; k++) {
+            float wx;
+            float wy;
+            MapView_SubtileToWorld(c[k][0], c[k][1], &wx, &wy);
+            MapView_WorldToScreen(&roam->camera, view, wx, wy, &points[k].x, &points[k].y);
+        }
+        points[4] = points[0];
+        if (unit->npc) {
+            SDL_SetRenderDrawColor(sdl_renderer, 140, 220, 255, 255);
+        } else {
+            SDL_SetRenderDrawColor(sdl_renderer, 230, 80, 255, 255);
+        }
+        SDL_RenderDrawLines(sdl_renderer, points, 5);
+    }
+}
+
+// What the collision view's colours mean
+static void Roam__DrawCollisionLegend(SceneRoam *roam) {
+    static const struct {
+        uint8_t     r, g, b;
+        const char *text;
+    } entries[] = {
+        {255, 40,  40,  "Walls, cliffs, water (the map)"},
+        {60,  140, 255, "Objects (chests, doors, ...)"  },
+        {60,  230, 90,  "Way to the next area"          },
+        {255, 220, 40,  "Entrance (click to go in)"     },
+        {230, 80,  255, "Monsters and you"              },
+        {140, 220, 255, "Town folk"                     },
+    };
+    const int      count = (int)(sizeof(entries) / sizeof(entries[0]));
+    const SDL_Rect box   = {4, 18, 210, (count * 13) + 6};
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
+    SDL_RenderFillRect(sdl_renderer, &box);
+    for (int i = 0; i < count; i++) {
+        const SDL_Rect swatch = {box.x + 5, box.y + 5 + (i * 13), 9, 9};
+        SDL_SetRenderDrawColor(sdl_renderer, entries[i].r, entries[i].g, entries[i].b, 255);
+        SDL_RenderFillRect(sdl_renderer, &swatch);
+        Label_SetText(roam->status_label, entries[i].text);
+        Label_Draw(roam->status_label, box.x + 19, swatch.y - 1);
+    }
+}
+
 static void Roam__Render(SceneRoam *roam) {
     const SDL_Rect view = {0, 0, VIEW_W, VIEW_H};
 
@@ -2193,7 +2254,11 @@ static void Roam__Render(SceneRoam *roam) {
     if (Roam__PrepareDraw(roam, &roam->player, &drawables[count])) {
         count++;
     }
+    MapRenderer_SetViewer(roam->renderer, roam->player.x, roam->player.y); // roofs fade over the player
     MapRenderer_Draw(roam->renderer, roam->map, &roam->camera, &view, drawables, count, roam->draw_flags);
+    if (roam->draw_flags & MAP_DRAW_BLOCKED) {
+        Roam__DrawUnitFootprints(roam, &view);
+    }
     if (light_levels[light_level].darkness > 0) {
         float light_x;
         float light_y;
@@ -2256,7 +2321,11 @@ static void Roam__Render(SceneRoam *roam) {
     }
     Label_SetText(roam->status_label, status);
     Label_Draw(roam->status_label, 4, 2);
+    if (roam->draw_flags & MAP_DRAW_BLOCKED) {
+        Roam__DrawCollisionLegend(roam);
+    }
     const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
     SDL_RenderFillRect(sdl_renderer, &help_bar);
     Label_Draw(roam->help_label, 4, VIEW_H - 12);
 

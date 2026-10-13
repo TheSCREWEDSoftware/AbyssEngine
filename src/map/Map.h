@@ -136,6 +136,7 @@ void       Map_RemoveEntity(Map *map, int index);
 
 // Blocking sub-tiles that the tiles leave open (objects: chests, closed doors, ...); Map_IsWalkable honours it.
 void Map_SetBlocked(Map *map, int subtile_x, int subtile_y, int width, int height, bool blocked);
+bool Map_IsObjectBlocked(const Map *map, int subtile_x, int subtile_y); // blocked by Map_SetBlocked (not the tiles)
 void Map_ClearBlocked(Map *map);
 
 // Folder our own maps are saved in (created on demand)

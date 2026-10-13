@@ -21,7 +21,22 @@ typedef struct TextureEntry {
 #define LIGHT_TEXTURE_W 256
 #define LIGHT_TEXTURE_H 128 // an isometric ellipse, like the ground
 
+#define ROOF_FADE_MS    250    // roofs fade out when you walk in, and back in when you leave
+#define FRONT_WALL_FADE 150.0f // and the building's walls between you and the camera go this see-through (of 255)
+
 struct MapRenderer {
+    // Roofs over the building the viewer is in (see MapRenderer_SetViewer)
+    bool       has_viewer;
+    float      viewer_x;
+    float      viewer_y;
+    const Map *roof_map;    // the map roof_hidden was worked out for
+    int        roof_tile_x; // the tile it was worked out from, -1 = not under a roof
+    int        roof_tile_y;
+    uint8_t   *roof_hidden; // per tile: part of the roof being faded
+    int        roof_cells;
+    float      roof_fade; // 0 = drawn, 1 = gone
+    uint64_t   roof_tick;
+
     SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
     uint8_t        light_darkness;
     TextureEntry  *entries; // open addressing, keyed by tile pointer
@@ -92,6 +107,7 @@ void MapRenderer_Destroy(MapRenderer **renderer) {
         SDL_DestroyTexture((*renderer)->light);
     }
     MapRenderer_ClearCache(*renderer);
+    free((*renderer)->roof_hidden);
     free(*renderer);
     *renderer = NULL;
 }
@@ -204,8 +220,20 @@ static void MapRenderer__TileOrigin(const DT1Tile *tile, const int tx, const int
     }
 }
 
+static void MapRenderer__DrawTileAlpha(MapRenderer *renderer, const Map *map, const MapCamera *camera,
+                                       const SDL_Rect *view, const DT1Tile *tile, int tx, int ty, uint8_t alpha);
+
 static void MapRenderer__DrawTile(MapRenderer *renderer, const Map *map, const MapCamera *camera, const SDL_Rect *view,
                                   const DT1Tile *tile, const int tx, const int ty) {
+    MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, 255);
+}
+
+static void MapRenderer__DrawTileAlpha(MapRenderer *renderer, const Map *map, const MapCamera *camera,
+                                       const SDL_Rect *view, const DT1Tile *tile, const int tx, const int ty,
+                                       const uint8_t alpha) {
+    if (alpha == 0) {
+        return;
+    }
     if (tile == NULL) {
         return;
     }
@@ -228,7 +256,123 @@ static void MapRenderer__DrawTile(MapRenderer *renderer, const Map *map, const M
     SDL_Texture *texture = MapRenderer__Texture(renderer, map, tile);
     if (texture != NULL) {
         const SDL_Rect dest = {sx, sy, w, h};
+        if (alpha < 255) {
+            SDL_SetTextureAlphaMod(texture, alpha);
+        }
         SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
+        if (alpha < 255) {
+            SDL_SetTextureAlphaMod(texture, 255); // textures are shared between tiles
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Roofs
+
+static bool MapRenderer__HasRoof(const Map *map, const int tx, const int ty) {
+    if (tx < 0 || ty < 0 || tx >= map->width || ty >= map->height) {
+        return false;
+    }
+    const int c = (ty * map->width) + tx;
+    for (int w = 0; w < map->wall_layer_count; w++) {
+        const DT1Tile *tile = map->wall_tiles[w][c];
+        if (tile != NULL && tile->orientation == DT1_ORIENTATION_ROOF) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A tile of the building the viewer is in, or right next to it (its walls stand on its edge)
+static bool MapRenderer__NearBuilding(const MapRenderer *renderer, const Map *map, const int tx, const int ty) {
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            const int x = tx + dx;
+            const int y = ty + dy;
+            if (x >= 0 && y >= 0 && x < map->width && y < map->height && renderer->roof_hidden[(y * map->width) + x]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void MapRenderer_SetViewer(MapRenderer *renderer, const float subtile_x, const float subtile_y) {
+    renderer->has_viewer = subtile_x >= 0.0f && subtile_y >= 0.0f;
+    renderer->viewer_x   = subtile_x;
+    renderer->viewer_y   = subtile_y;
+}
+
+// The roof over the viewer: every roof tile joined to the one above them (one building's roof)
+static void MapRenderer__UpdateRoofs(MapRenderer *renderer, const Map *map) {
+    const uint64_t now  = SDL_GetTicks64();
+    const float    step = renderer->roof_tick == 0 ? 0.0f : (float)(now - renderer->roof_tick) / ROOF_FADE_MS;
+    renderer->roof_tick = now;
+
+    const int cells = map->width * map->height;
+    if (renderer->roof_map != map || renderer->roof_cells != cells) {
+        free(renderer->roof_hidden);
+        renderer->roof_hidden = calloc((size_t)cells, 1);
+        FAIL_IF_NULL(renderer->roof_hidden);
+        renderer->roof_cells  = cells;
+        renderer->roof_map    = map;
+        renderer->roof_tile_x = -1;
+        renderer->roof_fade   = 0.0f;
+    }
+
+    int tx = -1;
+    int ty = -1;
+    if (renderer->has_viewer) {
+        tx = (int)floorf(renderer->viewer_x / MAP_SUBTILES);
+        ty = (int)floorf(renderer->viewer_y / MAP_SUBTILES);
+        if (!MapRenderer__HasRoof(map, tx, ty)) {
+            tx = -1;
+        }
+    }
+    const bool under = tx >= 0;
+    const bool same  = under && renderer->roof_tile_x >= 0 && renderer->roof_hidden[(ty * map->width) + tx] != 0;
+
+    if (under && !same) {
+        // Walked under a roof (or under another one): flood-fill it
+        memset(renderer->roof_hidden, 0, (size_t)cells);
+        int *queue = malloc(sizeof(int) * (size_t)cells);
+        FAIL_IF_NULL(queue);
+        int head                                      = 0;
+        int tail                                      = 0;
+        queue[tail++]                                 = (ty * map->width) + tx;
+        renderer->roof_hidden[(ty * map->width) + tx] = 1;
+        while (head < tail) {
+            const int c          = queue[head++];
+            const int cx         = c % map->width;
+            const int cy         = c / map->width;
+            const int next[4][2] = {
+                {cx + 1, cy    },
+                {cx - 1, cy    },
+                {cx,     cy + 1},
+                {cx,     cy - 1}
+            };
+            for (int n = 0; n < 4; n++) {
+                const int nx = next[n][0];
+                const int ny = next[n][1];
+                if (MapRenderer__HasRoof(map, nx, ny) && renderer->roof_hidden[(ny * map->width) + nx] == 0) {
+                    renderer->roof_hidden[(ny * map->width) + nx] = 1;
+                    queue[tail++]                                 = (ny * map->width) + nx;
+                }
+            }
+        }
+        free(queue);
+        renderer->roof_tile_x = tx;
+        renderer->roof_tile_y = ty;
+    }
+    if (under) {
+        renderer->roof_tile_x = tx;
+        renderer->roof_tile_y = ty;
+        renderer->roof_fade   = fminf(renderer->roof_fade + step, 1.0f);
+    } else {
+        renderer->roof_fade = fmaxf(renderer->roof_fade - step, 0.0f);
+        if (renderer->roof_fade <= 0.0f) {
+            renderer->roof_tile_x = -1;
+        }
     }
 }
 
@@ -272,6 +416,12 @@ static void MapRenderer__DrawBlocked(const Map *map, const MapCamera *camera, co
             const int subtile_y = (ty * MAP_SUBTILES) + sy;
             if (Map_IsWalkable(map, subtile_x, subtile_y)) {
                 continue;
+            }
+            // Blue: an object standing there (chest, closed door, ...); red: the map's own tiles (walls, cliffs, water)
+            if (Map_IsObjectBlocked(map, subtile_x, subtile_y)) {
+                SDL_SetRenderDrawColor(sdl_renderer, 60, 140, 255, 130);
+            } else {
+                SDL_SetRenderDrawColor(sdl_renderer, 255, 40, 40, 90);
             }
             float wx;
             float wy;
@@ -356,18 +506,6 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
         }
     }
 
-    if (flags & MAP_DRAW_BLOCKED) {
-        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(sdl_renderer, 255, 40, 40, 90);
-        for (int ty = 0; ty < map->height; ty++) {
-            for (int tx = 0; tx < map->width; tx++) {
-                if (MapRenderer__InRange(tx, ty, min_sum, max_sum, min_diff, max_diff)) {
-                    MapRenderer__DrawBlocked(map, camera, view, tx, ty);
-                }
-            }
-        }
-    }
-
     // 3. Walls and entities, back to front: by diagonal (tx + ty), entities after the walls of their tile
     const MapDrawable **sorted = NULL;
     if (drawable_count > 0) {
@@ -378,6 +516,14 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
         }
         qsort(sorted, (size_t)drawable_count, sizeof(MapDrawable *), MapRenderer__CompareDrawables);
     }
+
+    // The building the viewer is in: roof fading away, walls in front of them see-through (worked out before the walls)
+    if ((flags & MAP_DRAW_WALLS) && (flags & MAP_DRAW_ROOFS)) {
+        MapRenderer__UpdateRoofs(renderer, map);
+    }
+    const bool    inside      = (flags & MAP_DRAW_ROOFS) && renderer->roof_tile_x >= 0;
+    const int     viewer_sum  = inside ? renderer->roof_tile_x + renderer->roof_tile_y : 0;
+    const uint8_t front_alpha = (uint8_t)(255.0f - (FRONT_WALL_FADE * renderer->roof_fade));
 
     int next = 0;
     for (int sum = 0; sum <= (map->width - 1) + (map->height - 1); sum++) {
@@ -396,8 +542,11 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                         (MapRenderer__IsSpecial(tile->orientation) && !(flags & MAP_DRAW_SPECIAL))) {
                         continue;
                     }
-                    MapRenderer__DrawTile(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty);
-                    MapRenderer__DrawTile(renderer, map, camera, view, tile, tx, ty);
+                    const uint8_t alpha =
+                        (inside && sum > viewer_sum && MapRenderer__NearBuilding(renderer, map, tx, ty)) ? front_alpha
+                                                                                                         : 255;
+                    MapRenderer__DrawTileAlpha(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty, alpha);
+                    MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
                 }
             }
         }
@@ -431,8 +580,9 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
     }
     free(sorted);
 
-    // 4. Roofs
+    // 4. Roofs (the one over the viewer fades away)
     if ((flags & MAP_DRAW_WALLS) && (flags & MAP_DRAW_ROOFS)) {
+        const uint8_t hidden_alpha = (uint8_t)(255.0f * (1.0f - renderer->roof_fade));
         for (int ty = 0; ty < map->height; ty++) {
             for (int tx = 0; tx < map->width; tx++) {
                 if (!MapRenderer__InRange(tx, ty, min_sum, max_sum, min_diff, max_diff)) {
@@ -442,10 +592,53 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                 for (int w = 0; w < map->wall_layer_count; w++) {
                     const DT1Tile *tile = map->wall_tiles[w][c];
                     if (tile != NULL && tile->orientation == DT1_ORIENTATION_ROOF) {
-                        MapRenderer__DrawTile(renderer, map, camera, view, tile, tx, ty);
+                        const bool hidden = renderer->roof_tile_x >= 0 && renderer->roof_hidden[c] != 0;
+                        MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty,
+                                                   hidden ? hidden_alpha : 255);
                     }
                 }
             }
+        }
+    }
+
+    // 5. Collision view, on top of everything so walls don't hide it
+    if (flags & MAP_DRAW_BLOCKED) {
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 255, 40, 40, 90);
+        for (int ty = 0; ty < map->height; ty++) {
+            for (int tx = 0; tx < map->width; tx++) {
+                if (MapRenderer__InRange(tx, ty, min_sum, max_sum, min_diff, max_diff)) {
+                    MapRenderer__DrawBlocked(map, camera, view, tx, ty);
+                }
+            }
+        }
+        // Exits: green outline = the way to the next area on foot, yellow = an entrance (cave mouth, door, stairs)
+        for (int e = 0; e < map->exit_count; e++) {
+            const MapExit *exit          = &map->exits[e];
+            float          corners[4][2] = {
+                {(float)exit->x0,        (float)exit->y0       },
+                {(float)exit->x1 + 1.0f, (float)exit->y0       },
+                {(float)exit->x1 + 1.0f, (float)exit->y1 + 1.0f},
+                {(float)exit->x0,        (float)exit->y1 + 1.0f},
+            };
+            SDL_Point points[5];
+            for (int k = 0; k < 4; k++) {
+                float wx;
+                float wy;
+                MapView_SubtileToWorld(corners[k][0], corners[k][1], &wx, &wy);
+                MapView_WorldToScreen(camera, view, wx, wy, &points[k].x, &points[k].y);
+            }
+            points[4] = points[0];
+            if (exit->entrance) {
+                SDL_SetRenderDrawColor(sdl_renderer, 255, 220, 40, 230);
+            } else {
+                SDL_SetRenderDrawColor(sdl_renderer, 60, 230, 90, 230);
+            }
+            SDL_RenderDrawLines(sdl_renderer, points, 5);
+            for (int k = 0; k < 5; k++) { // twice as thick
+                points[k].y += 1;
+            }
+            SDL_RenderDrawLines(sdl_renderer, points, 5);
         }
     }
 
