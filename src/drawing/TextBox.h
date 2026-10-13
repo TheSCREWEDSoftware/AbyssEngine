@@ -13,6 +13,7 @@ void        TextBox_Blur(TextBox *text_box);
 bool        TextBox_IsFocused(const TextBox *text_box); // taking the keyboard (keys pressed are typing, not commands)
 const char *TextBox_GetText(const TextBox *text_box);
 void        TextBox_Clear(TextBox *text_box);
+void        TextBox_SetText(TextBox *text_box, const char *text);
 
 // Processes input. Returns true when the text changed.
 bool TextBox_Update(TextBox *text_box);

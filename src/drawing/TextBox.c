@@ -93,6 +93,14 @@ void TextBox_Clear(TextBox *text_box) {
     }
 }
 
+void TextBox_SetText(TextBox *text_box, const char *text) {
+    snprintf(text_box->text, sizeof(text_box->text), "%s", text != NULL ? text : "");
+    Label_SetText(text_box->text_label, text_box->text);
+    if (text_box->focused) {
+        InputManager_SetTextInput(text_box->text);
+    }
+}
+
 bool TextBox_Update(TextBox *text_box) {
     int  mouse_x;
     int  mouse_y;
@@ -109,6 +117,9 @@ bool TextBox_Update(TextBox *text_box) {
                              mouse_y >= text_box->y && mouse_y < text_box->y + text_box->height;
         if (hovered) {
             TextBox_Focus(text_box);
+        } else if (text_box->focused) {
+            TextBox_Blur(text_box); // clicked somewhere else
+            return false;
         }
     }
 

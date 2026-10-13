@@ -1,6 +1,8 @@
 target_sources(${PROJECT_NAME}
         PRIVATE
         Button.c Button.h
+        Checkbox.c Checkbox.h
+        Dropdown.c Dropdown.h
         ListBox.c ListBox.h
         LoadingScreen.c LoadingScreen.h
         TabBar.c TabBar.h
@@ -9,5 +11,6 @@ target_sources(${PROJECT_NAME}
         Figure.c Figure.h
         Label.c Label.h
         Screenshot.c Screenshot.h
+        Slider.c Slider.h
         Sprite.c Sprite.h
 )

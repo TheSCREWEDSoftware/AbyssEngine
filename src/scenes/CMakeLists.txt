@@ -9,6 +9,7 @@ target_sources(${PROJECT_NAME}
         SceneCharacterCreate.c SceneCharacterCreate.h
         SceneCharacterSelect.c SceneCharacterSelect.h
         SceneMainMenu.c SceneMainMenu.h
+        SceneOptions.c SceneOptions.h
         SceneMapEditor.c SceneMapEditor.h
         SceneRoam.c SceneTestingGrounds.h SceneFreeRoam.h SceneGame.h
         SceneIntroVideos.c SceneIntroVideos.h

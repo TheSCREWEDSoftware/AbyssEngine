@@ -59,6 +59,8 @@ sources = [
     'game/Settings.c',
 
     'drawing/Button.c',
+    'drawing/Checkbox.c',
+    'drawing/Dropdown.c',
     'drawing/Cursor.c',
     'drawing/Figure.c',
     'drawing/Label.c',
@@ -67,6 +69,7 @@ sources = [
     'drawing/TabBar.c',
     'drawing/TextBox.c',
     'drawing/Screenshot.c',
+    'drawing/Slider.c',
     'drawing/Sprite.c',
 
     'managers/AudioManager.c',
@@ -83,6 +86,7 @@ sources = [
     'scenes/SceneCharacterSelect.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
+    'scenes/SceneOptions.c',
     'scenes/SceneMapEditor.c',
     'scenes/SceneRoam.c',
 

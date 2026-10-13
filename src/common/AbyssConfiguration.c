@@ -13,6 +13,7 @@
 typedef struct AbyssConfiguration {
     char  *base_path;
     char  *config_folder; // where abyss.ini lives; user data (maps) goes here too
+    char  *ini_path;      // abyss.ini itself
     char  *locale;
     char **mpqs;
     int    num_mpqs;
@@ -281,6 +282,7 @@ void AbyssConfiguration_LoadSingleton(const char *file_path) {
 
     AbyssConfiguration__SetSaneDefaults();
 
+    abyss_configuration.ini_path      = strdup(file_path);
     abyss_configuration.config_folder = strdup(file_path);
     if (abyss_configuration.config_folder == NULL) {
         LOG_FATAL("Failed to allocate memory.");
@@ -353,6 +355,7 @@ void AbyssConfiguration_LoadSingleton(const char *file_path) {
 void AbyssConfiguration_DestroySingleton(void) {
     free(abyss_configuration.base_path);
     free(abyss_configuration.config_folder);
+    free(abyss_configuration.ini_path);
     free(abyss_configuration.locale);
     free(abyss_configuration.graphics.scale_quality);
 
@@ -435,6 +438,165 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.audio.ui_volume     = 1.0f;
 
     SET_PARAM_STR(abyss_configuration.locale, "latin");
+}
+
+void AbyssConfiguration_SetWindowSize(const int width, const int height) {
+    abyss_configuration.graphics.window_width  = width;
+    abyss_configuration.graphics.window_height = height;
+}
+
+void AbyssConfiguration_SetScaleQuality(const char *quality) {
+    SET_PARAM_STR(abyss_configuration.graphics.scale_quality, quality);
+}
+
+void AbyssConfiguration_SetVolumes(const float master, const float music, const float sfx, const float ui) {
+    abyss_configuration.audio.master_volume = master;
+    abyss_configuration.audio.music_volume  = music;
+    abyss_configuration.audio.sfx_volume    = sfx;
+    abyss_configuration.audio.ui_volume     = ui;
+}
+
+// The settings the Options screen changes, as abyss.ini lines
+typedef struct SavedSetting {
+    const char *section; // lower case
+    const char *key;     // as written
+    char        value[64];
+    bool        commented; // written as a comment (Resolution when the window follows InitialScale)
+    bool        written;
+} SavedSetting;
+
+static bool AbyssConfiguration__SameWord(const char *a, const char *b) {
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return false;
+        }
+    }
+    return *a == *b;
+}
+
+bool AbyssConfiguration_Save(void) {
+    SavedSetting settings[] = {
+        {"graphics", "ScaleQuality", "", false, false},
+        {"graphics", "FullScreen",   "", false, false},
+        {"graphics", "Resolution",   "", false, false},
+        {"audio",    "MasterVolume", "", false, false},
+        {"audio",    "MusicVolume",  "", false, false},
+        {"audio",    "SfxVolume",    "", false, false},
+        {"audio",    "UIVolume",     "", false, false},
+    };
+    const int count = (int)(sizeof(settings) / sizeof(settings[0]));
+    snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
+    snprintf(settings[1].value, 64, "%s", abyss_configuration.graphics.fullscreen ? "true" : "false");
+    if (abyss_configuration.graphics.window_width > 0) {
+        snprintf(settings[2].value, 64, "%dx%d", abyss_configuration.graphics.window_width,
+                 abyss_configuration.graphics.window_height);
+    } else {
+        snprintf(settings[2].value, 64, "1080p");
+        settings[2].commented = true;
+    }
+    snprintf(settings[3].value, 64, "%.2f", abyss_configuration.audio.master_volume);
+    snprintf(settings[4].value, 64, "%.2f", abyss_configuration.audio.music_volume);
+    snprintf(settings[5].value, 64, "%.2f", abyss_configuration.audio.sfx_volume);
+    snprintf(settings[6].value, 64, "%.2f", abyss_configuration.audio.ui_volume);
+
+    // Read it all, then write it back with those lines changed (and any missing ones added to their section)
+    FILE  *in         = fopen(abyss_configuration.ini_path, "r");
+    char **lines      = NULL;
+    int    line_count = 0;
+    if (in != NULL) {
+        char buffer[MAX_LINE_LEN];
+        while (fgets(buffer, sizeof(buffer), in) != NULL) {
+            char **grown = realloc(lines, sizeof(char *) * (size_t)(line_count + 1));
+            FAIL_IF_NULL(grown);
+            lines                           = grown;
+            buffer[strcspn(buffer, "\r\n")] = '\0';
+            lines[line_count++]             = strdup(buffer);
+        }
+        fclose(in);
+    }
+    FILE *out = fopen(abyss_configuration.ini_path, "w");
+    if (out == NULL) {
+        LOG_WARN("Could not write %s", abyss_configuration.ini_path);
+        for (int i = 0; i < line_count; i++) {
+            free(lines[i]);
+        }
+        free(lines);
+        return false;
+    }
+
+    char section[64] = "";
+    for (int i = 0; i <= line_count; i++) {
+        const char *line = i < line_count ? lines[i] : NULL;
+        const char *text = line;
+        while (text != NULL && isspace((unsigned char)*text)) {
+            text++;
+        }
+        const bool new_section = text == NULL || text[0] == '[';
+        if (new_section) {
+            // Before leaving a section: the settings it should have and didn't
+            for (int s = 0; s < count; s++) {
+                if (!settings[s].written && strcmp(settings[s].section, section) == 0) {
+                    fprintf(out, "%s%s = %s\n", settings[s].commented ? "# " : "", settings[s].key, settings[s].value);
+                    settings[s].written = true;
+                }
+            }
+            if (text == NULL) {
+                break;
+            }
+            const char  *end    = strchr(text, ']');
+            const size_t length = end != NULL ? (size_t)(end - text - 1) : strlen(text + 1);
+            snprintf(section, sizeof(section), "%.*s", (int)length, text + 1);
+            for (char *c = section; *c != '\0'; c++) {
+                *c = (char)tolower((unsigned char)*c);
+            }
+            fprintf(out, "%s\n", line);
+            continue;
+        }
+        // "Key = value" (or "# Key = value" for one we write commented)
+        const bool  comment = text[0] == '#' || text[0] == ';';
+        const char *body    = comment ? text + 1 : text;
+        while (isspace((unsigned char)*body)) {
+            body++;
+        }
+        char key[64] = "";
+        sscanf(body, "%63[^= \t]", key);
+        bool replaced = false;
+        for (int s = 0; s < count && strchr(body, '=') != NULL; s++) {
+            if (settings[s].written || strcmp(settings[s].section, section) != 0 ||
+                !AbyssConfiguration__SameWord(key, settings[s].key)) {
+                continue;
+            }
+            if (comment && !settings[s].commented) {
+                break; // a commented example: leave it, the real line is added at the end of the section
+            }
+            fprintf(out, "%s%s = %s\n", settings[s].commented ? "# " : "", settings[s].key, settings[s].value);
+            settings[s].written = true;
+            replaced            = true;
+            break;
+        }
+        if (!replaced) {
+            fprintf(out, "%s\n", line);
+        }
+    }
+    // Sections the file didn't have
+    for (int s = 0; s < count; s++) {
+        if (settings[s].written) {
+            continue;
+        }
+        fprintf(out, "\n[%c%s]\n", toupper((unsigned char)settings[s].section[0]), settings[s].section + 1);
+        for (int t = s; t < count; t++) {
+            if (!settings[t].written && strcmp(settings[t].section, settings[s].section) == 0) {
+                fprintf(out, "%s%s = %s\n", settings[t].commented ? "# " : "", settings[t].key, settings[t].value);
+                settings[t].written = true;
+            }
+        }
+    }
+    fclose(out);
+    for (int i = 0; i < line_count; i++) {
+        free(lines[i]);
+    }
+    free(lines);
+    return true;
 }
 
 const char *AbyssConfiguration_GetConfigFolder(void) {

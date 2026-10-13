@@ -11,12 +11,14 @@
 #include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
 #include "SceneMapEditor.h"
+#include "SceneOptions.h"
 #include "SceneTestingGrounds.h"
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct SceneMainMenu {
     Sprite *background_sprite;
+    Button *options_button;
     Sprite *d2logo_black_left_sprite;
     Sprite *d2logo_black_right_sprite;
     Sprite *d2logo_fire_left_sprite;
@@ -42,6 +44,7 @@ typedef struct SceneMainMenu {
 static void MainMenu__OnExitClicked(void *user_data);
 static void MainMenu__OnSinglePlayerClicked(void *user_data);
 static void MainMenu__OnCatalogClicked(void *user_data);
+static void MainMenu__OnOptionsClicked(void *user_data);
 static void MainMenu__OnMapEditorClicked(void *user_data);
 static void MainMenu__OnEditorClicked(void *user_data);
 static void MainMenu__OnTestingGroundsClicked(void *user_data);
@@ -117,6 +120,10 @@ void *MainMenu_Create(void) {
     Button_SetPosition(result->map_back_button, 264, 420);
     Button_SetClickHandler(result->map_back_button, MainMenu__OnMapBackClicked, result);
 
+    result->options_button = Button_Create(BUTTON_TYPE_WIDE, "Options");
+    Button_SetPosition(result->options_button, 264, 460);
+    Button_SetClickHandler(result->options_button, MainMenu__OnOptionsClicked, NULL);
+
     result->credits_button = Button_Create(BUTTON_TYPE_SHORT, "Credits");
     Button_SetPosition(result->credits_button, 264, 505);
 
@@ -163,6 +170,9 @@ void MainMenu_Render(void *scene_ref) {
         Button_Draw(mainmenu->catalog_button);
         Button_Draw(mainmenu->map_editor_button);
     }
+    if (!mainmenu->map_menu_open) {
+        Button_Draw(mainmenu->options_button);
+    }
     Button_Draw(mainmenu->credits_button);
     Button_Draw(mainmenu->cinematics_button);
     Button_Draw(mainmenu->exit_button);
@@ -183,6 +193,9 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
         Button_Update(mainmenu->catalog_button);
         Button_Update(mainmenu->map_editor_button);
     }
+    if (!mainmenu->map_menu_open) {
+        Button_Update(mainmenu->options_button);
+    }
     Button_Update(mainmenu->credits_button);
     Button_Update(mainmenu->cinematics_button);
     Button_Update(mainmenu->exit_button);
@@ -191,6 +204,11 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
 static void MainMenu__OnSinglePlayerClicked(void *user_data) {
     (void)(user_data);
     Scene_Set(SCENE_REF(CharacterSelect));
+}
+
+static void MainMenu__OnOptionsClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(Options));
 }
 
 static void MainMenu__OnCatalogClicked(void *user_data) {
@@ -237,6 +255,7 @@ void MainMenu_Free(void **scene_ref) {
     Button_Destroy(&mainmenu->single_player_button);
     Button_Destroy(&mainmenu->multiplayer_button);
     Button_Destroy(&mainmenu->catalog_button);
+    Button_Destroy(&mainmenu->options_button);
     Button_Destroy(&mainmenu->map_editor_button);
     Button_Destroy(&mainmenu->editor_button);
     Button_Destroy(&mainmenu->testing_grounds_button);
