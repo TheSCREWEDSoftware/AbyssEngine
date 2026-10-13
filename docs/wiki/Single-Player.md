@@ -37,6 +37,7 @@ Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 S
 | **R** / Run button | Run or walk (running uses stamina) |
 | **W** / Waypoint button | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
 | **T** / Town button | Back to the act's town |
+| **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled |
 | Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |
 | **Esc** | Close the open panel; with none open, press twice to save and exit |

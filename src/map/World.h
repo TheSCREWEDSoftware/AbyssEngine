@@ -31,6 +31,12 @@ int World_GetVis(int level_id, int slot);
 // from it, and puts the start at the game's start marker if it has one.
 void World_AddFixedExits(Map *map, int level_id);
 
+// The game's caption when you walk into an area, "Entering The Blood Moor" (from Levels.txt's LevelWarp,
+// "To The Blood Moor", in the game's language)
+void World_GetEnteringText(int level_id, char *text, int size);
+// The way to an area, as the game labels it: "To The Blood Moor" (Levels.txt's LevelWarp)
+void World_GetWarpText(int level_id, char *text, int size);
+
 void World_Release(void);
 
 #endif // ABYSS_WORLD_H

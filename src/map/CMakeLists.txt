@@ -11,4 +11,5 @@ target_sources(${PROJECT_NAME}
         Objects.c Objects.h ObjectPresets.inc
         Places.c Places.h
         World.c World.h
+        Automap.c Automap.h
 )

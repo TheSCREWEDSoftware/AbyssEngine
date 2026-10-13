@@ -13,6 +13,7 @@
 #include "../drawing/TextBox.h"
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
+#include "../map/Automap.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
 #include "../map/MapRenderer.h"
@@ -171,6 +172,7 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 
 #define WAYPOINT_RANGE    8.0f // Single Player: how close to a waypoint the Waypoint button works
 #define MESSAGE_MS        4000 // level up and other messages
+#define CAPTION_MS        3500 // "Entering The Blood Moor"; fades out over the last second
 #define EXIT_CONFIRM_MS   2500 // Esc twice to save and exit
 #define HARDCORE_DEATH_MS 5000 // time to read the bad news
 #define CHAR_PANEL        "/data/global/ui/PANEL/invchar6.dc6"
@@ -252,6 +254,10 @@ typedef struct SceneRoam {
     Label     *panel_label;       // small text on the character screen
     Label     *panel_value_label; // its numbers
     Label     *message_label;     // "Level up!", ...
+    Automap   *automap;           // Tab
+    bool       show_automap;
+    Label     *caption_label; // "Entering The Blood Moor"
+    uint64_t   caption_until;
     char       message[96];
     uint64_t   message_until;
     uint64_t   exit_armed_until; // Esc pressed once
@@ -1034,6 +1040,16 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         roam->in_town = roam->in_town || town_level_ids[t] == place->level_id;
     }
     Roam__Populate(roam);
+    Automap_SetArea(roam->automap, roam->map, place->level_id, World_GetSeed());
+    if (roam->free_roam) {
+        // The game's caption as you come in: "Entering The Blood Moor"
+        char caption[96];
+        World_GetEnteringText(place->level_id, caption, sizeof(caption));
+        if (caption[0] != '\0') {
+            Label_SetText(roam->caption_label, caption);
+            roam->caption_until = SDL_GetTicks64() + CAPTION_MS;
+        }
+    }
     if (roam->game) {
         roam->character->act = place->act;
         roam->exhausted      = false;
@@ -1161,10 +1177,10 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
     Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   W waypoint (near one)   "
-                                           "T town   L light   Esc save and exit"
+                                           "T town   Tab map   L light   Esc save and exit"
                                     : free_roam
-                                        ? "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                          "P preview  L light  B blocked  N new world  Esc back"
+                                        ? "Left walk/attack  Right drop  Shift+Right remove  R run  C combat  "
+                                          "P preview  L light  B collision  Tab map  N new world  Esc back"
                                         : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
                                           "P preview  L light  B blocked  Esc back");
 
@@ -1209,6 +1225,9 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->clear_button    = roam->buttons[4];
     }
 
+    roam->automap       = Automap_Create();
+    roam->caption_label = Label_Create(FONTS_FONT30, PALETTE_STATIC);
+    Label_SetAlignment(roam->caption_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     roam->message_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     Label_SetAlignment(roam->message_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_SetColor(roam->message_label, 0xFF, 0xE8, 0x60, 0xFF);
@@ -1292,6 +1311,8 @@ static void Roam__Free(void **scene_ref) {
     Button_Destroy(&roam->seed_use_button);
     Button_Destroy(&roam->seed_random_button);
     Label_Destroy(&roam->seed_label);
+    Label_Destroy(&roam->caption_label);
+    Automap_Destroy(&roam->automap);
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -1832,6 +1853,9 @@ static void Roam__Update(SceneRoam *roam) {
             roam->preview = !roam->preview;
             Roam__UpdateButtons(roam);
         }
+        if (roam->free_roam && InputManager_ConsumeKeyPress(SDL_SCANCODE_TAB)) {
+            roam->show_automap = !roam->show_automap; // the automap, like the game's
+        }
         if (roam->free_roam && !roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
             Roam__NewWorld(roam, 0); // the same area in a new random world
             return;
@@ -2259,6 +2283,12 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->draw_flags & MAP_DRAW_BLOCKED) {
         Roam__DrawUnitFootprints(roam, &view);
     }
+    if (roam->free_roam) {
+        Automap_Reveal(roam->automap, roam->player.x, roam->player.y);
+        if (roam->show_automap) {
+            Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y);
+        }
+    }
     if (light_levels[light_level].darkness > 0) {
         float light_x;
         float light_y;
@@ -2384,8 +2414,15 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->game && roam->char_panel) {
         Roam__DrawCharacterPanel(roam);
     }
-    if (SDL_GetTicks64() < roam->message_until) {
-        Label_Draw(roam->message_label, VIEW_W / 2, 110);
+    const uint64_t now = SDL_GetTicks64();
+    if (now < roam->caption_until) {
+        const uint64_t left  = roam->caption_until - now;
+        const uint8_t  alpha = left >= 1000 ? 255 : (uint8_t)((left * 255) / 1000);
+        Label_SetColor(roam->caption_label, 0xFF, 0x58, 0x48, alpha); // the game's red
+        Label_Draw(roam->caption_label, VIEW_W / 2, 80);
+    }
+    if (now < roam->message_until) {
+        Label_Draw(roam->message_label, VIEW_W / 2, 125);
     }
 
     const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};

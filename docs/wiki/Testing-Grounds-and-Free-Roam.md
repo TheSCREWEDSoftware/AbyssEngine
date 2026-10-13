@@ -20,6 +20,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Collision view: what you can't walk on and why (red: the map's walls, cliffs and water; blue: objects such as chests and closed doors), the ways to the next area (green) and entrances (yellow), and where each unit stands (purple: monsters and you; light blue: town folk). A legend shows the colours |
 | **N** | Free Roam: a new random world (the area you're in is built again from the new seed) |
+| **Tab** | Free Roam: the automap. What you've seen of the area (everything within about nine tiles of where you've been), drawn with the game's own automap pieces (`MaxiMap.dc6`, picked per tile by `AutoMap.txt`) over the view and centred on you, with the ways out labelled ("To The Cold Plains"). It's kept per area until the world seed changes |
 | Mouse wheel | Zoom |
 | **Esc** / Back | Leave (back to the editor if you came from **Play**) |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
@@ -71,6 +72,7 @@ Areas are joined up like in the game, so you can walk from one into the next:
   crypt door to the Crypt, the mausoleum's to the Mausoleum), and you come out of the matching entrance on the other
   side. Dungeons lead down level by level (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
 - An exit that leads somewhere not built yet says "That way isn't open yet".
+- Coming into an area shows the game's red caption, "Entering The Blood Moor", for a few seconds.
 
 ## Monsters list and placement preview
 

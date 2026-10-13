@@ -47,6 +47,7 @@ sources = [
     'map/Objects.c',
     'map/Places.c',
     'map/World.c',
+    'map/Automap.c',
     'map/LevelBuilder.c',
     'map/LevelTypes.c',
 

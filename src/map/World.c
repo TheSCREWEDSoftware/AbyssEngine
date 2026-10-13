@@ -1,6 +1,7 @@
 #include "World.h"
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
+#include "../data/StringTable.h"
 #include "LevelBuilder.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -419,6 +420,57 @@ void World_AddFixedExits(Map *map, const int level_id) {
                         (float)mid + 0.5f);
             break;
         }
+    }
+}
+
+void World_GetWarpText(const int level_id, char *text, const int size) {
+    text[0] = '\0';
+    if (levels == NULL) {
+        levels = DataTable_Load(EXCEL_LEVELS);
+    }
+    if (levels == NULL) {
+        return;
+    }
+    const int c_id   = DataTable_GetColumnIndex(levels, "Id");
+    const int c_warp = DataTable_GetColumnIndex(levels, "LevelWarp");
+    const int c_name = DataTable_GetColumnIndex(levels, "LevelName");
+    for (int row = 0; row < DataTable_GetRowCount(levels); row++) {
+        if (DataTable_HasValue(levels, row, c_id) && DataTable_GetInt(levels, row, c_id) == level_id) {
+            const char *warp = DataTable_GetString(levels, row, c_warp);
+            if (warp[0] != '\0') {
+                snprintf(text, (size_t)size, "%s", StringTable_Get(warp));
+            } else {
+                snprintf(text, (size_t)size, "To %s", StringTable_Get(DataTable_GetString(levels, row, c_name)));
+            }
+            return;
+        }
+    }
+}
+
+void World_GetEnteringText(const int level_id, char *text, const int size) {
+    text[0] = '\0';
+    if (levels == NULL) {
+        levels = DataTable_Load(EXCEL_LEVELS);
+    }
+    if (levels == NULL) {
+        return;
+    }
+    const int c_id   = DataTable_GetColumnIndex(levels, "Id");
+    const int c_warp = DataTable_GetColumnIndex(levels, "LevelWarp");
+    const int c_name = DataTable_GetColumnIndex(levels, "LevelName");
+    for (int row = 0; row < DataTable_GetRowCount(levels); row++) {
+        if (!DataTable_HasValue(levels, row, c_id) || DataTable_GetInt(levels, row, c_id) != level_id) {
+            continue;
+        }
+        const char *warp = DataTable_GetString(levels, row, c_warp);
+        const char *name = DataTable_GetString(levels, row, c_name);
+        warp             = (warp != NULL && warp[0] != '\0') ? StringTable_Get(warp) : NULL;
+        if (warp != NULL && strncmp(warp, "To ", 3) == 0) {
+            snprintf(text, (size_t)size, "Entering %s", warp + 3);
+        } else if (name != NULL && name[0] != '\0') {
+            snprintf(text, (size_t)size, "Entering %s", StringTable_Get(name));
+        }
+        return;
     }
 }
 
