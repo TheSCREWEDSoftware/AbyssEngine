@@ -22,6 +22,10 @@ int      World_PickVariant(int level_id, int variants); // which of a fixed area
 int World_GetWalkLinks(int level_id, int *targets, WorldSide *sides, int max);
 // The areas reached through entrances in this one (first: the way back up, for dungeons). Returns the count.
 int World_GetWarpLinks(int level_id, int *targets, int max);
+// Where an entrance leads: an entrance tile in a map (a special tile) has a main index, and Levels.txt's Vis<index>
+// column of the area it's in is the area it leads to (the Den of Evil's cave mouth in the Blood Moor is 5: Vis5 = 8).
+// 0 if that column is empty.
+int World_GetVis(int level_id, int slot);
 
 // For a fixed map (towns, ...): finds where paths leave the map and adds them as exits to the areas you can walk to
 // from it, and puts the start at the game's start marker if it has one.

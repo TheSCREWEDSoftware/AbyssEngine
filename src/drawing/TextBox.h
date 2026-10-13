@@ -10,6 +10,7 @@ TextBox    *TextBox_Create(const char *font_path, int x, int y, int width, int h
 void        TextBox_Destroy(TextBox **text_box);
 void        TextBox_Focus(TextBox *text_box);
 void        TextBox_Blur(TextBox *text_box);
+bool        TextBox_IsFocused(const TextBox *text_box); // taking the keyboard (keys pressed are typing, not commands)
 const char *TextBox_GetText(const TextBox *text_box);
 void        TextBox_Clear(TextBox *text_box);
 

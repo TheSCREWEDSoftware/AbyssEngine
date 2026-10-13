@@ -267,8 +267,12 @@ DEFINE_SCENE_CALLBACKS(Game);
 // Fighting is on: always in the game, by the debug switch elsewhere
 static bool Roam__Combat(const SceneRoam *roam) { return roam->game || combat_enabled; }
 
-// In the game, town folk never fight and can't be attacked
-static bool Roam__IsPeaceful(const SceneRoam *roam, const struct Unit *unit) { return roam->game && unit->npc; }
+// Town folk (Akara, the rogue scouts in the encampment, ...) never fight and can't be attacked, whatever the combat
+// switch says: it's for monsters
+static bool Roam__IsPeaceful(const SceneRoam *roam, const struct Unit *unit) {
+    (void)roam;
+    return unit->npc;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Units
@@ -1808,28 +1812,30 @@ static void Roam__Update(SceneRoam *roam) {
                 wheel > 0 ? fminf(roam->camera.zoom * 2.0f, 2.0f) : fmaxf(roam->camera.zoom / 2.0f, 0.25f);
         }
     }
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_R)) {
-        roam->running = !roam->running;
-        Roam__UpdateButtons(roam);
-    }
-    if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
-        combat_enabled = !combat_enabled;
-        Roam__UpdateButtons(roam);
-    }
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_B)) {
-        roam->draw_flags ^= MAP_DRAW_BLOCKED;
-    }
-    if (InputManager_ConsumeKeyPress(SDL_SCANCODE_L)) {
-        light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
-    }
-    if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
-        roam->preview = !roam->preview;
-        Roam__UpdateButtons(roam);
-    }
-    const bool typing = roam->seed_box != NULL && InputManager_IsTextInputActive();
-    if (roam->free_roam && !roam->game && !typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
-        Roam__NewWorld(roam, 0); // the same area in a new random world
-        return;
+    // Hotkeys (not while typing a seed)
+    if (!TextBox_IsFocused(roam->seed_box)) {
+        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_R)) {
+            roam->running = !roam->running;
+            Roam__UpdateButtons(roam);
+        }
+        if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
+            combat_enabled = !combat_enabled;
+            Roam__UpdateButtons(roam);
+        }
+        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_B)) {
+            roam->draw_flags ^= MAP_DRAW_BLOCKED;
+        }
+        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_L)) {
+            light_level = (light_level + 1) % LIGHT_LEVEL_COUNT;
+        }
+        if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_P)) {
+            roam->preview = !roam->preview;
+            Roam__UpdateButtons(roam);
+        }
+        if (roam->free_roam && !roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_N)) {
+            Roam__NewWorld(roam, 0); // the same area in a new random world
+            return;
+        }
     }
 
     float world_x;
@@ -1928,7 +1934,7 @@ static void Roam__Update(SceneRoam *roam) {
     }
     if (roam->panel == PANEL_PLACES && roam->seed_box != NULL) {
         TextBox_Update(roam->seed_box);
-        const bool enter = InputManager_IsTextInputActive() && InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
+        const bool enter = TextBox_IsFocused(roam->seed_box) && InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
         if (Button_Update(roam->seed_use_button) || enter) {
             const unsigned long typed = strtoul(TextBox_GetText(roam->seed_box), NULL, 10);
             TextBox_Blur(roam->seed_box);

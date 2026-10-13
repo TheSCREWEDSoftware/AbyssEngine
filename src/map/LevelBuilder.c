@@ -857,7 +857,7 @@ static void Builder__StampCluster(Map *map, const Cluster *cluster, const int tx
 
 // The entrances in a preset (cave mouths, stairs, tomb doors): special tiles (orientation 10/11) with a low main index
 // (30 and up are start and town portal markers). Neighbouring tiles are one entrance. Returns the count (tiles).
-static int Builder__FindWarps(const DS1 *ds1, int *xs, int *ys, const int max) {
+static int Builder__FindWarps(const DS1 *ds1, int *xs, int *ys, int *slots, const int max) {
     int count = 0;
     for (int w = 0; w < ds1->wall_layer_count; w++) {
         for (int c = 0; c < ds1->width * ds1->height; c++) {
@@ -869,11 +869,14 @@ static int Builder__FindWarps(const DS1 *ds1, int *xs, int *ys, const int max) {
             const int y    = c / ds1->width;
             bool      near = false;
             for (int i = 0; i < count && !near; i++) {
-                near = abs(xs[i] - x) <= 1 && abs(ys[i] - y) <= 1;
+                // Tiles side by side are one entrance, unless they lead to different places (the Forgotten Tower's
+                // way out and stairs down are next to each other)
+                near = abs(xs[i] - x) <= 1 && abs(ys[i] - y) <= 1 && slots[i] == cell->style;
             }
             if (!near && count < max) {
-                xs[count]   = x;
-                ys[count++] = y;
+                xs[count]      = x;
+                ys[count]      = y;
+                slots[count++] = cell->style; // Levels.txt Vis<slot> is where it leads
             }
         }
     }
@@ -1247,6 +1250,8 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
     const int walk_count = World_GetWalkLinks(level->id, walk_targets, walk_sides, 4);
     int       opening_x[4];
     int       opening_y[4];
+    int       arrival_x[4] = {-1, -1, -1, -1};
+    int       arrival_y[4] = {-1, -1, -1, -1};
     for (int l = 0; l < walk_count; l++) {
         const WorldSide side    = walk_sides[l];
         const int       edge    = side == WORLD_SIDE_N   ? EDGE_N
@@ -1265,10 +1270,9 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
                 opening_x[l] = x;
                 opening_y[l] = y;
                 shapes[y][x] = -2 - edge; // an opening of that edge
-                // Keep the block inside it clear: that's where you arrive
-                const int inner_x           = side == WORLD_SIDE_W ? 1 : side == WORLD_SIDE_E ? grid.width - 2 : x;
-                const int inner_y           = side == WORLD_SIDE_N ? 1 : side == WORLD_SIDE_S ? grid.height - 2 : y;
-                grid.used[inner_y][inner_x] = 1;
+                // The block inside it is where you arrive: kept clear of filler (landmarks still go anywhere)
+                arrival_x[l] = side == WORLD_SIDE_W ? 1 : side == WORLD_SIDE_E ? grid.width - 2 : x;
+                arrival_y[l] = side == WORLD_SIDE_N ? 1 : side == WORLD_SIDE_S ? grid.height - 2 : y;
             }
         }
     }
@@ -1344,9 +1348,22 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
         }
         int       wx[4];
         int       wy[4];
-        const int warps = Builder__FindWarps(placed, wx, wy, 4);
-        for (int w = 0; w < warps && next_warp < warp_count; w++) {
-            Builder__AddWarpExit(map, warp_targets[next_warp++], px + wx[w], py + wy[w]);
+        int       slots[4];
+        const int warps = Builder__FindWarps(placed, wx, wy, slots, 4);
+        for (int w = 0; w < warps; w++) {
+            // Where the tile says it leads, or the next area Levels.txt lists
+            int target = World_GetVis(level->id, slots[w]);
+            if (target <= 0 || Builder__IsWalkLink(level->id, target)) {
+                target = next_warp < warp_count ? warp_targets[next_warp++] : 0;
+            }
+            if (target > 0) {
+                Builder__AddWarpExit(map, target, px + wx[w], py + wy[w]);
+            }
+        }
+    }
+    for (int l = 0; l < walk_count; l++) {
+        if (arrival_x[l] >= 0) {
+            grid.used[arrival_y[l]][arrival_x[l]] = 1;
         }
     }
     int fill_count = 0;
@@ -1584,9 +1601,12 @@ static Map *Builder__BuildMaze(const MazeArea *area, const LevelInfo *level, Rng
         if (target > 0) {
             int       wx[2];
             int       wy[2];
-            const int warps = Builder__FindWarps(ds1, wx, wy, 2);
+            int       slots[2];
+            const int warps = Builder__FindWarps(ds1, wx, wy, slots, 2);
             if (warps > 0) {
-                Builder__AddWarpExit(map, target, tx + wx[0], ty + wy[0]);
+                // The tile's own slot wins when Levels.txt fills it in (stairs to a side cave, ...)
+                const int vis = World_GetVis(level->id, slots[0]);
+                Builder__AddWarpExit(map, vis > 0 ? vis : target, tx + wx[0], ty + wy[0]);
             }
         }
         if (i == 0) {
@@ -1600,7 +1620,8 @@ static Map *Builder__BuildMaze(const MazeArea *area, const LevelInfo *level, Rng
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The Bloody Foothills: siege strips side by side, from the town's gate to the barricade
+// The Bloody Foothills: siege strips side by side, from the barricade in the west to Harrogath's gate in the east (the
+// strips are drawn to join up in that order: each one's west edge meets the next one's east edge)
 
 static bool Builder__HasFloor(const DS1 *ds1, const int x, const int y) {
     if (x < 0 || y < 0 || x >= ds1->width || y >= ds1->height) {
@@ -1656,7 +1677,8 @@ static Map *Builder__BuildStrips(const LevelInfo *level, Rng *rng) {
         if (strips[i] == NULL) {
             return NULL;
         }
-        offsets[i] = i == 0 ? 0 : offsets[i - 1] + Builder__StripShift(strips[i - 1], strips[i]);
+        // Strip i sits west of strip i - 1
+        offsets[i] = i == 0 ? 0 : offsets[i - 1] - Builder__StripShift(strips[i], strips[i - 1]);
     }
     int low  = 0;
     int high = 0;
@@ -1671,20 +1693,20 @@ static Map *Builder__BuildStrips(const LevelInfo *level, Rng *rng) {
     Map *map = Map_CreateEmpty((count * strip) + 1, height, level->act);
     snprintf(map->name, sizeof(map->name), "%s", level->name);
     for (int i = 0; i < count; i++) {
-        Map_StampDS1(map, strips[i], i * strip, offsets[i] - low, i == 0 ? 0 : MAP_STAMP_FILLED_ONLY);
+        Map_StampDS1(map, strips[i], (count - 1 - i) * strip, offsets[i] - low, i == 0 ? 0 : MAP_STAMP_FILLED_ONLY);
     }
-    map->has_start = true;
-    map->start_x   = (float)(strip * MAP_SUBTILES) / 2.0f;
-    map->start_y   = (float)(((offsets[0] - low) * MAP_SUBTILES) + ((first->size_y * MAP_SUBTILES) / 2));
+    const int sub_w = map->width * MAP_SUBTILES;
+    map->has_start  = true;
+    map->start_x    = (float)sub_w - ((float)(strip * MAP_SUBTILES) / 2.0f);
+    map->start_y    = (float)(((offsets[0] - low) * MAP_SUBTILES) + ((first->size_y * MAP_SUBTILES) / 2));
 
-    // Harrogath's gate at the west end, the way on to the Highlands at the east end
+    // Harrogath's gate at the east end, the way on to the Highlands at the west end
     int       walk_targets[4];
     WorldSide walk_sides[4];
     const int walk_count = World_GetWalkLinks(level->id, walk_targets, walk_sides, 4);
-    const int sub_w      = map->width * MAP_SUBTILES;
     for (int l = 0; l < walk_count; l++) {
         const bool west = walk_sides[l] == WORLD_SIDE_W;
-        const int  oy   = (west ? offsets[0] : offsets[count - 1]) - low;
+        const int  oy   = (west ? offsets[count - 1] : offsets[0]) - low;
         const int  y0   = oy * MAP_SUBTILES;
         const int  y1   = (oy + first->size_y) * MAP_SUBTILES;
         Map_AddExit(map, walk_targets[l], west ? 0 : sub_w - 3, y0, west ? 2 : sub_w - 1, y1,

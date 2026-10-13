@@ -72,6 +72,8 @@ void TextBox_Focus(TextBox *text_box) {
     InputManager_SetTextInput(text_box->text);
 }
 
+bool TextBox_IsFocused(const TextBox *text_box) { return text_box != NULL && text_box->focused; }
+
 void TextBox_Blur(TextBox *text_box) {
     if (!text_box->focused) {
         return;

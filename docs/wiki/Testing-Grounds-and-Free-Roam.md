@@ -33,8 +33,9 @@ The list follows the game's order of areas, act by act.
   the game (guards stay put).
 - **Randomly built areas**: the wilderness (Blood Moor, Cold Plains, ..., the desert, the Outer Steppes, the Highlands,
   ...), the dungeons (Den of Evil, caves, Crypt, Jail, Catacombs, sewers, tombs, ..., Worldstone Keep), the Act 3 jungle
-  and the Bloody Foothills. They're put together from the game's pieces every time you go there ("Building ..."), with
-  monsters from the area's list; press **N** for another layout. You start at the entrance room of a dungeon, and on
+  and the Bloody Foothills. They're put together from the game's pieces ("Building ..."), with monsters from the area's
+  list. The [world seed](#world-seed) decides how each one is built, so going back gives you the same layout; press
+  **N** for a new world. You start at the entrance room of a dungeon, and on
   open ground near the middle of the wilderness.
 
 Monsters that aren't fighting wander a little. Kurast, Travincal, the Arcane Sanctuary and the Chaos Sanctum aren't in
@@ -60,11 +61,15 @@ Areas are joined up like in the game, so you can walk from one into the next:
   Wood, Black Marsh and Tamoe Highland (and the Burial Grounds off the Cold Plains). Act 2: Lut Gholein to the Rocky
   Waste, Dry Hills, Far Oasis, Lost City and Valley of Snakes. Act 4: the Pandemonium Fortress to the Outer Steppes,
   Plains of Despair and City of the Damned. Act 5: Harrogath to the Bloody Foothills, Rigid Highlands and Arreat
-  Plateau. Each area has a gap in its border on the side that leads on (the world seed picks the side); you arrive just
-  inside the gap that leads back.
+  Plateau. The way between two areas is on opposite sides of them: leave the encampment to the west and you come into
+  the Blood Moor through a gap in its east border (the world seed picks the sides, the towns' are set by which version
+  of the town the seed picked). You arrive just inside the gap that leads back. The Bloody Foothills run west from
+  Harrogath's gate to the barricade, the way on to the Rigid Highlands.
 - **Entrances**: click a cave mouth, the Den of Evil, a tomb door, the Forgotten Tower, stairs up or down, the sewers
-  and the harem in Lut Gholein, ... to go in (walking across one doesn't take you in). Dungeons lead down level by level
-  (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
+  and the harem in Lut Gholein, ... to go in (walking across one doesn't take you in). Each entrance leads where the game says
+  it does (an entrance tile's number picks the area from `Levels.txt`'s `Vis0`-`Vis7` columns: the Burial Grounds'
+  crypt door to the Crypt, the mausoleum's to the Mausoleum), and you come out of the matching entrance on the other
+  side. Dungeons lead down level by level (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
 - An exit that leads somewhere not built yet says "That way isn't open yet".
 
 ## Monsters list and placement preview
@@ -76,13 +81,13 @@ Grounds) removes everything you dropped.
 
 ## Combat toggle
 
-A debugging switch for fighting between you and the NPCs/monsters:
+A debugging switch for fighting between you and the monsters:
 
 - **Off**: nobody fights; walk around freely.
-- **On**: NPCs and monsters within about 10 sub-tiles come at you (around walls if needed) and attack, but only those
-  that have an attack animation (in town that's the rogue scouts; Gheed, Akara, Charsi and the other traders keep
-  strolling). A unit only does what it has an animation for: without a get-hit animation it doesn't flinch, and
-  without death or corpse graphics it simply disappears when killed. You can still attack anyone. Click one to attack it; its name and a
+- **On**: monsters within about 10 sub-tiles come at you (around walls if needed) and attack, but only those that have
+  an attack animation. Town folk (Akara, Charsi, Gheed, the rogue scouts, ...) never fight and can't be attacked,
+  like in the game. A unit only does what it has an animation for: without a get-hit animation it doesn't flinch, and
+  without death or corpse graphics it simply disappears when killed. Click a monster to attack it; its name and a
   life bar show over it.
   - Monster life and damage: the game's own tables (`monstats.txt` percentages of the `MonLvl.txt` base values,
     normal difficulty). A Zombie has 7-12 life and hits for 1-3.

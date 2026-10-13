@@ -20,6 +20,9 @@ InputManager *input_manager;
 void InputManager_InitializeSingleton(void) {
     input_manager = malloc(sizeof(InputManager));
     memset(input_manager, 0, sizeof(InputManager));
+    // SDL starts with text input on (on Windows and macOS). It's only wanted while a text box has the focus: left on,
+    // it opens on-screen keyboards / IME windows, and "is the player typing?" checks would always say yes.
+    SDL_StopTextInput();
 }
 
 void InputManager_DestroySingleton(void) {
