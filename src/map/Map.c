@@ -409,8 +409,8 @@ Map *Map_CreateBlank(const int width, const int height, const int act, const cha
 }
 
 Map *Map_CreateEmpty(const int width, const int height, const int act) {
-    const int w    = width < 1 ? 1 : (width > MAP_MAX_SIZE ? MAP_MAX_SIZE : width);
-    const int h    = height < 1 ? 1 : (height > MAP_MAX_SIZE ? MAP_MAX_SIZE : height);
+    const int w    = width < 1 ? 1 : (width > MAP_MAX_WORLD_SIZE ? MAP_MAX_WORLD_SIZE : width);
+    const int h    = height < 1 ? 1 : (height > MAP_MAX_WORLD_SIZE ? MAP_MAX_WORLD_SIZE : height);
     Map      *map  = Map__Allocate(w, h, MAP_WALL_LAYERS, MAP_FLOOR_LAYERS);
     map->act       = act < 0 ? 0 : (act > 4 ? 4 : act);
     map->dt1_masks = calloc((size_t)w * (size_t)h, sizeof(uint64_t));
@@ -467,6 +467,86 @@ void Map_StampDS1(Map *map, const DS1 *ds1, const int tx, const int ty, const un
         }
     }
     Map__AddPresetEntities(map, ds1, tx, ty, flags);
+}
+
+void Map_StampMap(Map *map, const Map *source, const int tx, const int ty) {
+    // The source's tile sets, as indices in this map
+    int remap[MAP_MAX_DT1];
+    for (int d = 0; d < source->dt1_count; d++) {
+        remap[d] = Map__AddDt1(map, source->dt1_paths[d]);
+    }
+    uint64_t all = 0;
+    for (int d = 0; d < source->dt1_count; d++) {
+        all |= (remap[d] >= 0 && remap[d] < 64) ? (1ull << remap[d]) : 0;
+    }
+    for (int y = 0; y < source->height; y++) {
+        for (int x = 0; x < source->width; x++) {
+            const int mx = tx + x;
+            const int my = ty + y;
+            if (mx < 0 || my < 0 || mx >= map->width || my >= map->height) {
+                continue;
+            }
+            const int s    = (y * source->width) + x;
+            const int t    = (my * map->width) + mx;
+            bool      used = false;
+            for (int f = 0; f < source->floor_layer_count && f < MAP_FLOOR_LAYERS; f++) {
+                if (source->floors[f][s].prop1 != 0) {
+                    map->floors[f][t] = source->floors[f][s];
+                    used              = true;
+                }
+            }
+            for (int w = 0; w < source->wall_layer_count && w < MAP_WALL_LAYERS; w++) {
+                if (source->walls[w][s].prop1 != 0) {
+                    map->walls[w][t] = source->walls[w][s];
+                    used             = true;
+                }
+            }
+            if (source->shadows[s].prop1 != 0) {
+                map->shadows[t] = source->shadows[s];
+            }
+            if (used && map->dt1_masks != NULL) {
+                uint64_t mask = all;
+                if (source->dt1_masks != NULL && source->dt1_masks[s] != 0) {
+                    mask = 0;
+                    for (int d = 0; d < source->dt1_count && d < 64; d++) {
+                        if ((source->dt1_masks[s] & (1ull << d)) != 0 && remap[d] >= 0 && remap[d] < 64) {
+                            mask |= 1ull << remap[d];
+                        }
+                    }
+                }
+                map->dt1_masks[t] = mask;
+            }
+        }
+    }
+    for (int e = 0; e < source->entity_count; e++) {
+        const MapEntity *entity = &source->entities[e];
+        MapEntity       *copy   = Map_AddEntity(map, entity->base, entity->id, entity->name,
+                                                entity->x + (float)(tx * MAP_SUBTILES), entity->y + (float)(ty * MAP_SUBTILES));
+        copy->object_row        = entity->object_row;
+        snprintf(copy->mode, sizeof(copy->mode), "%s", entity->mode);
+    }
+}
+
+const MapArea *Map_AreaAt(const Map *map, const float subtile_x, const float subtile_y) {
+    if (map->area_of == NULL || subtile_x < 0.0f || subtile_y < 0.0f) {
+        return NULL;
+    }
+    const int tx = (int)(subtile_x / MAP_SUBTILES);
+    const int ty = (int)(subtile_y / MAP_SUBTILES);
+    if (tx >= map->width || ty >= map->height) {
+        return NULL;
+    }
+    const uint8_t index = map->area_of[(ty * map->width) + tx];
+    return index < map->area_count ? &map->areas[index] : NULL;
+}
+
+const MapArea *Map_FindArea(const Map *map, const int level_id) {
+    for (int a = 0; a < map->area_count; a++) {
+        if (map->areas[a].level_id == level_id) {
+            return &map->areas[a];
+        }
+    }
+    return NULL;
 }
 
 void Map_Finish(Map *map) {
@@ -534,6 +614,7 @@ void Map_Destroy(Map **map_ref) {
     free(map->entities);
     free(map->blocked);
     free(map->dt1_masks);
+    free(map->area_of);
     free(map->tile_index);
     free(map->anim_frames);
     for (int k = 0; k < 3; k++) {

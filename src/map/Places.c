@@ -2,9 +2,11 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
+#include "../types/DS1.h"
 #include "LevelBuilder.h"
 #include "Map.h"
 #include "World.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,17 +146,60 @@ static void Places__Load(void) {
     DataTable_Destroy(&levels);
 }
 
+// How big an area's map is (tiles): built areas from Levels.txt, fixed ones from their preset (the version the seed
+// picks). For the world layout.
+static bool Places__AreaSize(const int level_id, int *width, int *height) {
+    static int   sizes[256][2];
+    static int   seeds[256];
+    const Place *place = NULL;
+    for (int i = 0; i < place_count && place == NULL; i++) {
+        place = places[i].level_id == level_id ? &places[i] : NULL;
+    }
+    if (place == NULL || level_id <= 0 || level_id >= 256) {
+        return false;
+    }
+    const int variant = place->generated ? 0 : World_PickVariant(level_id, place->file_count);
+    if (sizes[level_id][0] == 0 || seeds[level_id] != variant + 1) {
+        sizes[level_id][0] = 0;
+        if (place->generated) {
+            DataTable *levels = DataTable_Load(EXCEL_LEVELS);
+            const int  c_id   = DataTable_GetColumnIndex(levels, "Id");
+            for (int row = 0; levels != NULL && row < DataTable_GetRowCount(levels); row++) {
+                if (DataTable_HasValue(levels, row, c_id) && DataTable_GetInt(levels, row, c_id) == level_id) {
+                    sizes[level_id][0] = DataTable_GetInt(levels, row, DataTable_GetColumnIndex(levels, "SizeX")) + 1;
+                    sizes[level_id][1] = DataTable_GetInt(levels, row, DataTable_GetColumnIndex(levels, "SizeY")) + 1;
+                    break;
+                }
+            }
+            DataTable_Destroy(&levels);
+        } else {
+            DS1 *ds1 = DS1_Load(place->files[variant]);
+            if (ds1 != NULL) {
+                sizes[level_id][0] = ds1->width;
+                sizes[level_id][1] = ds1->height;
+                DS1_Destroy(&ds1);
+            }
+        }
+        seeds[level_id] = variant + 1;
+    }
+    if (sizes[level_id][0] <= 0) {
+        return false;
+    }
+    *width  = sizes[level_id][0];
+    *height = sizes[level_id][1];
+    return true;
+}
+
 int Places_GetCount(void) {
     if (place_count < 0) {
         Places__Load();
+        World_SetAreaSizes(Places__AreaSize);
     }
     return place_count;
 }
 
-Map *Places_LoadMap(const Place *place) {
-    if (place == NULL) {
-        return NULL;
-    }
+// One area on its own
+static Map *Places__LoadArea(const Place *place) {
     Map *map = NULL;
     if (place->generated) {
         map = LevelBuilder_Build(place->level_id, World_LevelSeed(place->level_id));
@@ -167,8 +212,224 @@ Map *Places_LoadMap(const Place *place) {
     }
     if (map != NULL) {
         snprintf(map->name, sizeof(map->name), "%s", place->name);
+        map->seed = World_GetSeed();
     }
     return map;
+}
+
+static const Place *Places__ByLevel(const int level_id) {
+    for (int i = 0; i < Places_GetCount(); i++) {
+        if (places[i].level_id == level_id) {
+            return &places[i];
+        }
+    }
+    return NULL;
+}
+
+// The middle of a map's exit to an area (sub-tiles); the middle of that side if it has none
+static void Places__ExitMiddle(const Map *map, const int target, const WorldSide side, float *x, float *y) {
+    const MapExit *exit = Map_ExitTo(map, target);
+    if (exit != NULL) {
+        *x = (float)(exit->x0 + exit->x1 + 1) / 2.0f;
+        *y = (float)(exit->y0 + exit->y1 + 1) / 2.0f;
+        return;
+    }
+    const float w = (float)(map->width * MAP_SUBTILES);
+    const float h = (float)(map->height * MAP_SUBTILES);
+    *x            = side == WORLD_SIDE_W ? 0.0f : side == WORLD_SIDE_E ? w : w / 2.0f;
+    *y            = side == WORLD_SIDE_N ? 0.0f : side == WORLD_SIDE_S ? h : h / 2.0f;
+}
+
+// An act's outdoors as one map, like the game: the town and every area you can walk to from it, side by side where
+// they join, so walking from one into the next is just walking. Each area is built on its own from the world seed
+// (the same as when it's loaded alone), then placed so the way out of one meets the way into the next.
+static Map *Places__LoadOutdoors(const Place *requested) {
+    int  levels[MAP_MAX_AREAS];
+    Map *maps[MAP_MAX_AREAS];
+    int  pos_x[MAP_MAX_AREAS]; // tiles
+    int  pos_y[MAP_MAX_AREAS];
+    int  count      = 0;
+    levels[count++] = requested->level_id;
+
+    // Every area joined on foot (breadth first, so each one is placed next to one already placed)
+    int parent[MAP_MAX_AREAS];
+    parent[0] = -1;
+    for (int i = 0; i < count; i++) {
+        int       targets[4];
+        WorldSide sides[4];
+        const int links = World_GetWalkLinks(levels[i], targets, sides, 4);
+        for (int l = 0; l < links && count < MAP_MAX_AREAS; l++) {
+            bool known = Places__ByLevel(targets[l]) == NULL;
+            for (int k = 0; k < count && !known; k++) {
+                known = levels[k] == targets[l];
+            }
+            if (!known) {
+                parent[count]   = i;
+                levels[count++] = targets[l];
+            }
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        maps[i] = Places__LoadArea(Places__ByLevel(levels[i]));
+        if (maps[i] == NULL) {
+            for (int k = 0; k < i; k++) {
+                Map_Destroy(&maps[k]);
+            }
+            return Places__LoadArea(requested);
+        }
+    }
+
+    // Placed one after another: the next area's side touching this one's, their ways through lined up. Neighbouring
+    // maps share their edge row (the last row of a preset is the first of the next).
+    pos_x[0] = 0;
+    pos_y[0] = 0;
+    for (int i = 1; i < count; i++) {
+        const int p = parent[i];
+        int       targets[4];
+        WorldSide sides[4];
+        const int links = World_GetWalkLinks(levels[p], targets, sides, 4);
+        WorldSide side  = WORLD_SIDE_E;
+        for (int l = 0; l < links; l++) {
+            side = targets[l] == levels[i] ? sides[l] : side;
+        }
+        const WorldSide back = side == WORLD_SIDE_N   ? WORLD_SIDE_S
+                               : side == WORLD_SIDE_S ? WORLD_SIDE_N
+                               : side == WORLD_SIDE_E ? WORLD_SIDE_W
+                                                      : WORLD_SIDE_E;
+        float           ax;
+        float           ay;
+        float           bx;
+        float           by;
+        Places__ExitMiddle(maps[p], levels[i], side, &ax, &ay);
+        Places__ExitMiddle(maps[i], levels[p], back, &bx, &by);
+        switch (side) {
+        case WORLD_SIDE_E:
+            pos_x[i] = pos_x[p] + maps[p]->width - 1;
+            pos_y[i] = pos_y[p] + (int)lroundf((ay - by) / MAP_SUBTILES);
+            break;
+        case WORLD_SIDE_W:
+            pos_x[i] = pos_x[p] - maps[i]->width + 1;
+            pos_y[i] = pos_y[p] + (int)lroundf((ay - by) / MAP_SUBTILES);
+            break;
+        case WORLD_SIDE_S:
+            pos_y[i] = pos_y[p] + maps[p]->height - 1;
+            pos_x[i] = pos_x[p] + (int)lroundf((ax - bx) / MAP_SUBTILES);
+            break;
+        default:
+            pos_y[i] = pos_y[p] - maps[i]->height + 1;
+            pos_x[i] = pos_x[p] + (int)lroundf((ax - bx) / MAP_SUBTILES);
+            break;
+        }
+    }
+
+    int min_x = 0;
+    int min_y = 0;
+    int max_x = 0;
+    int max_y = 0;
+    for (int i = 0; i < count; i++) {
+        min_x = pos_x[i] < min_x ? pos_x[i] : min_x;
+        min_y = pos_y[i] < min_y ? pos_y[i] : min_y;
+        max_x = pos_x[i] + maps[i]->width > max_x ? pos_x[i] + maps[i]->width : max_x;
+        max_y = pos_y[i] + maps[i]->height > max_y ? pos_y[i] + maps[i]->height : max_y;
+    }
+    for (int i = 0; i < count; i++) {
+        for (int k = 0; k < i; k++) {
+            const bool overlap = pos_x[i] + 1 < pos_x[k] + maps[k]->width && pos_x[k] + 1 < pos_x[i] + maps[i]->width &&
+                                 pos_y[i] + 1 < pos_y[k] + maps[k]->height && pos_y[k] + 1 < pos_y[i] + maps[i]->height;
+            if (overlap) {
+                LOG_WARN("%s overlaps %s", maps[i]->name, maps[k]->name);
+            }
+        }
+    }
+    if (max_x - min_x > MAP_MAX_WORLD_SIZE || max_y - min_y > MAP_MAX_WORLD_SIZE) {
+        LOG_WARN("Outdoors too big to join (%dx%d): loading %s alone", max_x - min_x, max_y - min_y, requested->name);
+        for (int i = 0; i < count; i++) {
+            Map_Destroy(&maps[i]);
+        }
+        return Places__LoadArea(requested);
+    }
+
+    Map *world = Map_CreateEmpty(max_x - min_x, max_y - min_y, maps[0]->act);
+    snprintf(world->name, sizeof(world->name), "%s", requested->name);
+    world->seed    = World_GetSeed();
+    world->area_of = malloc((size_t)world->width * (size_t)world->height);
+    FAIL_IF_NULL(world->area_of);
+    memset(world->area_of, 0xFF, (size_t)world->width * (size_t)world->height);
+
+    for (int i = 0; i < count; i++) {
+        const Map *map = maps[i];
+        const int  ox  = pos_x[i] - min_x;
+        const int  oy  = pos_y[i] - min_y;
+        Map_StampMap(world, map, ox, oy);
+
+        MapArea *area  = &world->areas[world->area_count];
+        area->level_id = levels[i];
+        snprintf(area->name, sizeof(area->name), "%s", Places__ByLevel(levels[i])->name);
+        area->x0 = ox;
+        area->y0 = oy;
+        area->x1 = ox + map->width - 1;
+        area->y1 = oy + map->height - 1;
+        area->start_x =
+            (float)(ox * MAP_SUBTILES) + (map->has_start ? map->start_x : (float)(map->width * MAP_SUBTILES) / 2.0f);
+        area->start_y =
+            (float)(oy * MAP_SUBTILES) + (map->has_start ? map->start_y : (float)(map->height * MAP_SUBTILES) / 2.0f);
+        // Its tiles (the ones it has something on; shared edge rows go to whoever has something there)
+        for (int y = 0; y < map->height; y++) {
+            for (int x = 0; x < map->width; x++) {
+                const int s   = (y * map->width) + x;
+                bool      has = false;
+                for (int f = 0; f < map->floor_layer_count && !has; f++) {
+                    has = map->floors[f][s].prop1 != 0;
+                }
+                if (has || world->area_of[((oy + y) * world->width) + ox + x] == 0xFF) {
+                    world->area_of[((oy + y) * world->width) + ox + x] = (uint8_t)world->area_count;
+                }
+            }
+        }
+
+        // Its exits, except the ways into the areas joined here (those are just walked through now)
+        for (int e = 0; e < map->exit_count; e++) {
+            const MapExit *exit   = &map->exits[e];
+            bool           joined = false;
+            for (int k = 0; k < count && !exit->entrance; k++) {
+                joined = joined || levels[k] == exit->target_level;
+            }
+            if (joined) {
+                continue;
+            }
+            const int dx     = ox * MAP_SUBTILES;
+            const int dy     = oy * MAP_SUBTILES;
+            const int before = world->exit_count;
+            Map_AddExit(world, exit->target_level, exit->x0 + dx, exit->y0 + dy, exit->x1 + dx, exit->y1 + dy,
+                        exit->arrive_x + (float)dx, exit->arrive_y + (float)dy);
+            if (world->exit_count > before) {
+                world->exits[before].entrance = exit->entrance;
+            }
+        }
+        world->area_count++;
+    }
+    for (int i = 0; i < count; i++) {
+        Map_Destroy(&maps[i]);
+    }
+    Map_Finish(world);
+
+    world->has_start = true;
+    world->start_x   = world->areas[0].start_x; // the requested area
+    world->start_y   = world->areas[0].start_y;
+    return world;
+}
+
+Map *Places_LoadMap(const Place *place) {
+    if (place == NULL) {
+        return NULL;
+    }
+    int       targets[4];
+    WorldSide sides[4];
+    if (World_GetWalkLinks(place->level_id, targets, sides, 4) > 0) {
+        return Places__LoadOutdoors(place);
+    }
+    return Places__LoadArea(place);
 }
 
 const Place *Places_Get(const int index) { return (index >= 0 && index < Places_GetCount()) ? &places[index] : NULL; }

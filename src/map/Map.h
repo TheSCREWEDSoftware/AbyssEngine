@@ -11,7 +11,8 @@
 // Coordinates: tiles (tx, ty); sub-tiles are 1/5 of a tile and are what entities and walkability use.
 
 #define MAP_SUBTILES        5
-#define MAP_MAX_SIZE        256
+#define MAP_MAX_SIZE        256  // maps you make or open in the editor
+#define MAP_MAX_WORLD_SIZE  1024 // built maps: an act's outdoor areas joined into one
 #define MAP_MAX_DT1         48
 #define MAP_WALL_LAYERS     DS1_MAX_WALL_LAYERS
 #define MAP_FLOOR_LAYERS    DS1_MAX_FLOOR_LAYERS
@@ -42,7 +43,8 @@ typedef struct MapEntity {
 } MapEntity;
 
 // A way out of the map into another area: walking off this part of the edge, or stepping on an entrance
-#define MAP_MAX_EXITS 12
+#define MAP_MAX_EXITS 48
+#define MAP_MAX_AREAS 12
 typedef struct MapExit {
     int   target_level; // Levels.txt Id
     int   x0;           // sub-tiles, inclusive
@@ -53,6 +55,18 @@ typedef struct MapExit {
     float arrive_y;
     bool  entrance; // a cave mouth, stairs, ...: taken when you click it, not just by walking over it
 } MapExit;
+
+// One of the areas a joined-up map is made of (an act's outdoors: the Rogue Encampment, the Blood Moor, ...)
+typedef struct MapArea {
+    int   level_id; // Levels.txt Id
+    char  name[48];
+    int   x0; // tiles, inclusive
+    int   y0;
+    int   x1;
+    int   y1;
+    float start_x; // sub-tiles: where you start when you go there from the Places list
+    float start_y;
+} MapArea;
 
 typedef struct Map {
     char     name[64];
@@ -87,6 +101,12 @@ typedef struct Map {
     int     exit_count;
     MapExit exits[MAP_MAX_EXITS];
 
+    // Joined-up maps: the areas in it and which one each tile belongs to (NULL / 0 for a single area)
+    int      area_count;
+    MapArea  areas[MAP_MAX_AREAS];
+    uint8_t *area_of; // per tile: index into areas, 0xFF = none
+    uint32_t seed;    // the world seed it was built from (0 = not built from one)
+
     bool  has_start; // where the player enters (generated areas); otherwise the middle
     float start_x;   // sub-tiles
     float start_y;
@@ -113,12 +133,18 @@ bool Map_SaveFile(const Map *map, const char *file_path);
 
 Map *Map_CreateEmpty(int width, int height, int act);
 void Map_StampDS1(Map *map, const DS1 *ds1, int tx, int ty, unsigned flags);
+// Copies another map's tiles (where it has any), tile sets and entities in at (tx, ty); exits aren't copied
+void Map_StampMap(Map *map, const Map *source, int tx, int ty);
 void Map_Finish(Map *map);
 
 // Exits to other areas
 void           Map_AddExit(Map *map, int target_level, int x0, int y0, int x1, int y1, float arrive_x, float arrive_y);
 const MapExit *Map_ExitAt(const Map *map, float subtile_x, float subtile_y); // NULL if none
 const MapExit *Map_ExitTo(const Map *map, int target_level);                 // NULL if none
+
+// Joined-up maps: the area at a sub-tile (NULL if none, or a single-area map), and an area by level
+const MapArea *Map_AreaAt(const Map *map, float subtile_x, float subtile_y);
+const MapArea *Map_FindArea(const Map *map, int level_id);
 void           Map_Destroy(Map **map);
 
 // Tiles

@@ -78,6 +78,11 @@ int World_PickVariant(const int level_id, const int variants) {
     return variants > 1 ? (int)(World_LevelSeed(level_id) % (uint32_t)variants) : 0;
 }
 
+// The act an area is in, from its Levels.txt Id
+static int World__ActOf(const int level_id) {
+    return level_id < 40 ? 0 : level_id < 75 ? 1 : level_id < 103 ? 2 : level_id < 109 ? 3 : 4;
+}
+
 static WorldSide World__Opposite(const WorldSide side) {
     static const WorldSide opposite[4] = {WORLD_SIDE_S, WORLD_SIDE_N, WORLD_SIDE_W, WORLD_SIDE_E};
     return side < WORLD_SIDE_NONE ? opposite[side] : WORLD_SIDE_NONE;
@@ -115,9 +120,51 @@ typedef struct WorldLayout {
 
 static WorldLayout layout = {0};
 
-static void World__Step(const WorldSide side, int *x, int *y) {
-    *x += side == WORLD_SIDE_E ? 1 : side == WORLD_SIDE_W ? -1 : 0;
-    *y += side == WORLD_SIDE_S ? 1 : side == WORLD_SIDE_N ? -1 : 0;
+static bool (*area_size)(int level_id, int *width, int *height) = NULL;
+
+void World_SetAreaSizes(bool (*size_of)(int level_id, int *width, int *height)) {
+    area_size   = size_of;
+    layout.seed = 0; // lay out again with the real sizes
+}
+
+typedef struct WorldRect {
+    int x; // tiles
+    int y;
+    int w;
+    int h;
+} WorldRect;
+
+// Where an area goes next to another on one of its sides: touching (sharing the edge row), middles lined up
+static WorldRect World__Beside(const WorldRect *a, const WorldSide side, const int w, const int h) {
+    WorldRect b = {0, 0, w, h};
+    switch (side) {
+    case WORLD_SIDE_E:
+        b.x = a->x + a->w - 1;
+        b.y = a->y + (a->h / 2) - (h / 2);
+        break;
+    case WORLD_SIDE_W:
+        b.x = a->x - w + 1;
+        b.y = a->y + (a->h / 2) - (h / 2);
+        break;
+    case WORLD_SIDE_S:
+        b.y = a->y + a->h - 1;
+        b.x = a->x + (a->w / 2) - (w / 2);
+        break;
+    default:
+        b.y = a->y - h + 1;
+        b.x = a->x + (a->w / 2) - (w / 2);
+        break;
+    }
+    return b;
+}
+
+// How much two areas would overlap (tiles); touching edges don't count, and a few tiles' slack is kept because the
+// ways through aren't always in the middle of a side
+static int World__Overlap(const WorldRect *a, const WorldRect *b) {
+    const int slack = 24;
+    const int w     = (a->x + a->w < b->x + b->w ? a->x + a->w : b->x + b->w) - (a->x > b->x ? a->x : b->x) + slack;
+    const int h     = (a->y + a->h < b->y + b->h ? a->y + a->h : b->y + b->h) - (a->y > b->y ? a->y : b->y) + slack;
+    return (w > 1 && h > 1) ? w * h : 0;
 }
 
 static void World__Layout(void) {
@@ -126,21 +173,28 @@ static void World__Layout(void) {
     }
     layout.seed = World_GetSeed();
 
-    // Grid cells, per level Id (Levels.txt Ids are below 256); acts are laid out apart from each other
-    static int  cell_x[256];
-    static int  cell_y[256];
-    static bool placed[256];
+    // Each act's outdoors laid out from its town: each link goes on a free side of the area it leaves from, the one
+    // (from where the seed starts looking) where the next area doesn't run into one already placed
+    static WorldRect rects[256];
+    static bool      placed[256];
     memset(placed, 0, sizeof(placed));
     bool used_sides[256][4];
     memset(used_sides, 0, sizeof(used_sides));
 
     for (int l = 0; l < WALK_LINK_COUNT; l++) {
-        const int a = walk_links[l][0];
-        const int b = walk_links[l][1];
+        const int a  = walk_links[l][0];
+        const int b  = walk_links[l][1];
+        int       aw = 80;
+        int       ah = 80;
+        int       bw = 80;
+        int       bh = 80;
+        if (area_size != NULL) {
+            area_size(a, &aw, &ah);
+            area_size(b, &bw, &bh);
+        }
         if (!placed[a]) {
             placed[a] = true;
-            cell_x[a] = a * 100; // a town: its act gets a grid of its own
-            cell_y[a] = 0;
+            rects[a]  = (WorldRect){0, 0, aw, ah};
         }
 
         WorldSide side = World__TownSide(a);
@@ -148,31 +202,28 @@ static void World__Layout(void) {
             side = WORLD_SIDE_W; // the strips run west from Harrogath, which is on their east
         }
         if (side == WORLD_SIDE_NONE || used_sides[a][side]) {
-            // A free side whose cell is free too, starting from one the seed picks; any free side if none is
             const int first = (int)(World__Mix(World_LevelSeed(a) + (uint32_t)b) % 4u);
-            side            = WORLD_SIDE_NONE;
-            for (int pass = 0; pass < 2 && side == WORLD_SIDE_NONE; pass++) {
-                for (int k = 0; k < 4; k++) {
-                    const WorldSide candidate = (WorldSide)((first + k) % 4);
-                    if (used_sides[a][candidate]) {
-                        continue;
-                    }
-                    int x = cell_x[a];
-                    int y = cell_y[a];
-                    World__Step(candidate, &x, &y);
-                    bool taken = false;
-                    for (int other = 0; other < 256 && pass == 0 && !taken; other++) {
-                        taken = placed[other] && cell_x[other] == x && cell_y[other] == y;
-                    }
-                    if (!taken) {
-                        side = candidate;
-                        break;
+            int       best  = -1;
+            int       least = 0;
+            for (int k = 0; k < 4; k++) {
+                const WorldSide candidate = (WorldSide)((first + k) % 4);
+                if (used_sides[a][candidate]) {
+                    continue;
+                }
+                const WorldRect next    = World__Beside(&rects[a], candidate, bw, bh);
+                int             overlap = 0;
+                for (int other = 0; other < 256; other++) {
+                    // Only the same act's areas share a map (Levels.txt Ids run act by act)
+                    if (placed[other] && other != a && World__ActOf(other) == World__ActOf(a)) {
+                        overlap += World__Overlap(&next, &rects[other]);
                     }
                 }
+                if (best < 0 || overlap < least) {
+                    best  = (int)candidate;
+                    least = overlap;
+                }
             }
-        }
-        if (side == WORLD_SIDE_NONE) {
-            side = WORLD_SIDE_N; // an area with more than four links (none in the game's)
+            side = best >= 0 ? (WorldSide)best : WORLD_SIDE_N; // more than four links: none in the game's
         }
         const WorldSide back = World__Opposite(side);
         layout.side_a[l]     = side;
@@ -180,9 +231,7 @@ static void World__Layout(void) {
         used_sides[a][side]  = true;
         used_sides[b][back]  = true;
         placed[b]            = true;
-        cell_x[b]            = cell_x[a];
-        cell_y[b]            = cell_y[a];
-        World__Step(side, &cell_x[b], &cell_y[b]);
+        rects[b]             = World__Beside(&rects[a], side, bw, bh);
     }
 }
 

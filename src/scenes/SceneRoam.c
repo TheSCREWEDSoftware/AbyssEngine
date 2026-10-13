@@ -53,7 +53,7 @@
 #define SEED_LABEL_Y     418 // Free Roam: the world seed, under the Places list
 #define SEED_BOX_Y       432
 #define SEED_BUTTONS_Y   460
-#define MAX_UNITS        512
+#define MAX_UNITS        2048 // an act's outdoors joined into one map has many
 #define WALK_SPEED       5.0f // sub-tiles per second
 #define RUN_SPEED        9.0f
 #define ARRIVE_DISTANCE  0.15f
@@ -189,7 +189,8 @@ typedef struct SceneRoam {
     MapCamera    camera;
     uint64_t     last_tick;
     unsigned     draw_flags;
-    int          place; // Free Roam: current Places index
+    int          place;      // Free Roam: current Places index (the area you're in)
+    int          area_level; // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
 
     // Player
     Unit     player;
@@ -1011,9 +1012,30 @@ static void Roam__TogglePanel(SceneRoam *roam, const RoamPanel panel) {
 }
 
 // Free Roam: go to another place
+static void Roam__EnteredArea(SceneRoam *roam, int level_id);
+static int  Roam__FindPlace(int level_id);
+static void Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
+
 static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     const Place *place = Places_Get(place_index);
     if (place == NULL) {
+        return;
+    }
+    // Already on the map (an act's outdoors are one map): just go there
+    const MapArea *area = roam->map != NULL && !roam->borrowed && roam->map->seed == World_GetSeed()
+                              ? Map_FindArea(roam->map, place->level_id)
+                              : NULL;
+    if (area != NULL) {
+        Roam__ArrivalSpot(roam->map, area->start_x, area->start_y, &roam->spawn_x, &roam->spawn_y);
+        roam->player.x        = roam->spawn_x;
+        roam->player.y        = roam->spawn_y;
+        roam->player.target_x = roam->spawn_x;
+        roam->player.target_y = roam->spawn_y;
+        roam->moving          = false;
+        roam->attack_target   = -1;
+        Roam__ClearPath(&roam->player);
+        roam->exits_armed = false;
+        Roam__EnteredArea(roam, place->level_id);
         return;
     }
     if (roam->game && roam->map != NULL && Roam__IsAlive(&roam->player)) {
@@ -1033,6 +1055,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     roam->map         = map;
     roam->borrowed    = false;
     roam->place       = place_index;
+    roam->area_level  = place->level_id;
     roam->exits_armed = false;
     MapRenderer_ClearCache(roam->renderer);
     roam->in_town = false;
@@ -1040,7 +1063,12 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         roam->in_town = roam->in_town || town_level_ids[t] == place->level_id;
     }
     Roam__Populate(roam);
-    Automap_SetArea(roam->automap, roam->map, place->level_id, World_GetSeed());
+    // The automap of an act's outdoors is kept under its lowest level Id (the town), whichever area you came in by
+    int automap_key = place->level_id;
+    for (int a = 0; a < roam->map->area_count; a++) {
+        automap_key = roam->map->areas[a].level_id < automap_key ? roam->map->areas[a].level_id : automap_key;
+    }
+    Automap_SetArea(roam->automap, roam->map, automap_key, World_GetSeed());
     if (roam->free_roam) {
         // The game's caption as you come in: "Entering The Blood Moor"
         char caption[96];
@@ -1112,11 +1140,44 @@ static void Roam__ArrivalSpot(const Map *map, const float x, const float y, floa
     }
 }
 
+// Walked into another area of a joined-up map (or arrived in one): the game's caption, and town or not
+static void Roam__EnteredArea(SceneRoam *roam, const int level_id) {
+    if (level_id == roam->area_level) {
+        return;
+    }
+    roam->area_level = level_id;
+    const int place  = Roam__FindPlace(level_id);
+    roam->place      = place >= 0 ? place : roam->place;
+    char caption[96];
+    World_GetEnteringText(level_id, caption, sizeof(caption));
+    if (caption[0] != '\0') {
+        Label_SetText(roam->caption_label, caption);
+        roam->caption_until = SDL_GetTicks64() + CAPTION_MS;
+    }
+    const bool was_in_town = roam->in_town;
+    roam->in_town          = false;
+    for (int t = 0; t < TOWN_COUNT; t++) {
+        roam->in_town = roam->in_town || town_level_ids[t] == level_id;
+    }
+    if (roam->game && roam->in_town && !was_in_town) {
+        // In town you're looked after: life and mana back to full
+        roam->player.hp = roam->player.max_hp;
+        roam->mana      = (float)Character_MaxMana(roam->character);
+        Roam__StoreCharacter(roam);
+    }
+    Roam__UpdateButtons(roam);
+}
+
+// The name of where you are: the area you're standing in on a joined-up map
+static const char *Roam__AreaName(const SceneRoam *roam) {
+    const MapArea *area = Map_AreaAt(roam->map, roam->player.x, roam->player.y);
+    return area != NULL ? area->name : roam->map->name;
+}
+
 // Through an exit into the next area, coming in at its way back
 static void Roam__Travel(SceneRoam *roam, const int target_level) {
-    const Place *here       = Places_Get(roam->place);
-    const int    from_level = here != NULL ? here->level_id : 0;
-    const int    place      = Roam__FindPlace(target_level);
+    const int from_level = roam->area_level;
+    const int place      = Roam__FindPlace(target_level);
     if (place < 0) {
         Roam__ShowMessage(roam, "That way isn't open yet.");
         roam->exits_armed = false;
@@ -1180,7 +1241,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
                                            "T town   Tab map   L light   Esc save and exit"
                                     : free_roam
                                         ? "Left walk/attack  Right drop  Shift+Right remove  R run  C combat  "
-                                          "P preview  L light  B collision  Tab map  N new world  Esc back"
+                                          "L light  B collision  Tab map  N new world  Esc back"
                                         : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
                                           "P preview  L light  B blocked  Esc back");
 
@@ -1925,6 +1986,14 @@ static void Roam__Update(SceneRoam *roam) {
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
 
+    // Which area of a joined-up map you're in
+    if (roam->free_roam && roam->map->area_count > 0) {
+        const MapArea *area = Map_AreaAt(roam->map, roam->player.x, roam->player.y);
+        if (area != NULL) {
+            Roam__EnteredArea(roam, area->level_id);
+        }
+    }
+
     // Walking off the edge into the next area, or onto an entrance
     if (roam->free_roam && Roam__IsAlive(&roam->player)) {
         const MapExit *exit = Map_ExitAt(roam->map, roam->player.x, roam->player.y);
@@ -2337,8 +2406,8 @@ static void Roam__Render(SceneRoam *roam) {
     }
     char status[200];
     if (roam->game) {
-        snprintf(status, sizeof(status), "%s   %s, level %d %s%s   light: %s", roam->map->name, roam->character->name,
-                 roam->character->level, Character_ClassName(roam->character->class_id),
+        snprintf(status, sizeof(status), "%s   %s, level %d %s%s   light: %s", Roam__AreaName(roam),
+                 roam->character->name, roam->character->level, Character_ClassName(roam->character->class_id),
                  roam->character->hardcore ? " (hardcore)" : "", light_levels[light_level].name);
     } else {
         char seed[32] = "";
@@ -2346,7 +2415,7 @@ static void Roam__Render(SceneRoam *roam) {
             snprintf(seed, sizeof(seed), "   seed %u", World_GetSeed());
         }
         snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s%s",
-                 roam->map->name, roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
+                 Roam__AreaName(roam), roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
                  roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name, seed);
     }
     Label_SetText(roam->status_label, status);

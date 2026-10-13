@@ -14,6 +14,8 @@
 typedef enum WorldSide { WORLD_SIDE_N, WORLD_SIDE_S, WORLD_SIDE_E, WORLD_SIDE_W, WORLD_SIDE_NONE } WorldSide;
 
 void     World_SetSeed(uint32_t seed); // 0 = pick a random one
+// How big each area is (tiles), so the layout keeps areas from running into each other; set by Places
+void     World_SetAreaSizes(bool (*size_of)(int level_id, int *width, int *height));
 uint32_t World_GetSeed(void);
 uint32_t World_LevelSeed(int level_id);                 // the seed one area is built from
 int      World_PickVariant(int level_id, int variants); // which of a fixed area's files (the encampment's exits)

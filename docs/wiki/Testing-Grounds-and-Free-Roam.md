@@ -58,14 +58,15 @@ Changing the seed builds the area you're in again from it.
 
 Areas are joined up like in the game, so you can walk from one into the next:
 
-- **On foot**: walk out of the Rogue Encampment into the Blood Moor, then on to the Cold Plains, Stony Field, Dark
-  Wood, Black Marsh and Tamoe Highland (and the Burial Grounds off the Cold Plains). Act 2: Lut Gholein to the Rocky
-  Waste, Dry Hills, Far Oasis, Lost City and Valley of Snakes. Act 4: the Pandemonium Fortress to the Outer Steppes,
-  Plains of Despair and City of the Damned. Act 5: Harrogath to the Bloody Foothills, Rigid Highlands and Arreat
-  Plateau. The way between two areas is on opposite sides of them: leave the encampment to the west and you come into
-  the Blood Moor through a gap in its east border (the world seed picks the sides, the towns' are set by which version
-  of the town the seed picked). You arrive just inside the gap that leads back. The Bloody Foothills run west from
-  Harrogath's gate to the barricade, the way on to the Rigid Highlands.
+- **On foot**: an act's outdoors are one map, like in the game. Walk out of the Rogue Encampment's gate and you're in
+  the Blood Moor, then on to the Cold Plains, Stony Field, Dark Wood, Black Marsh and Tamoe Highland (and the Burial
+  Grounds off the Cold Plains), with no loading in between. Act 2: Lut Gholein to the Rocky Waste, Dry Hills, Far
+  Oasis, Lost City and Valley of Snakes. Act 4: the Pandemonium Fortress to the Outer Steppes, Plains of Despair and
+  City of the Damned. Act 5: Harrogath to the Bloody Foothills, Rigid Highlands and Arreat Plateau. Each area is built
+  on its own from the world seed and placed so that the gap in its border meets the way out of the area before it
+  (leave the encampment to the west and the Blood Moor is to the west); the seed picks which side each area goes on,
+  keeping them from running into each other. The status bar shows the area you're standing in, and walking into a
+  new one shows its caption. Picking an area of the same act in the Places list takes you there without loading.
 - **Entrances**: click a cave mouth, the Den of Evil, a tomb door, the Forgotten Tower, stairs up or down, the sewers
   and the harem in Lut Gholein, ... to go in (walking across one doesn't take you in). Each entrance leads where the game says
   it does (an entrance tile's number picks the area from `Levels.txt`'s `Vis0`-`Vis7` columns: the Burial Grounds'

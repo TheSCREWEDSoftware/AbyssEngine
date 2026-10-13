@@ -29,6 +29,7 @@
 
 // One AutoMap.txt row: which automap pieces a range of tiles of one tile set gets
 typedef struct AutomapRow {
+    int type; // which of the area's tile sets (joined-up maps have several: the town's and the wilderness')
     int orientation;
     int style;
     int first_sequence; // -1 = any
@@ -105,17 +106,17 @@ static void Automap__TypeName(const int level_id, char *out, const size_t size) 
     DataTable_Destroy(&lvl_types);
 }
 
-static void Automap__LoadRows(Automap *automap, const char *type_name) {
-    free(automap->rows);
-    automap->rows      = NULL;
-    automap->row_count = 0;
-    DataTable *table   = DataTable_Load(AUTOMAP_TABLE);
+// Adds a tile set's rows, tagged with `type`
+static void Automap__LoadRows(Automap *automap, const char *type_name, const int type) {
+    DataTable *table = DataTable_Load(AUTOMAP_TABLE);
     if (table == NULL || type_name[0] == '\0') {
         DataTable_Destroy(&table);
         return;
     }
-    automap->rows = calloc(MAX_PIECE_ROWS, sizeof(AutomapRow));
-    FAIL_IF_NULL(automap->rows);
+    if (automap->rows == NULL) {
+        automap->rows = calloc(MAX_PIECE_ROWS, sizeof(AutomapRow));
+        FAIL_IF_NULL(automap->rows);
+    }
     const int c_level  = DataTable_GetColumnIndex(table, "LevelName");
     const int c_tile   = DataTable_GetColumnIndex(table, "TileName");
     const int c_style  = DataTable_GetColumnIndex(table, "Style");
@@ -128,6 +129,7 @@ static void Automap__LoadRows(Automap *automap, const char *type_name) {
             continue;
         }
         AutomapRow *out  = &automap->rows[automap->row_count];
+        out->type        = type;
         out->orientation = Automap__Orientation(DataTable_GetString(table, row, c_tile));
         if (out->orientation < 0) {
             continue;
@@ -150,14 +152,14 @@ static void Automap__LoadRows(Automap *automap, const char *type_name) {
 }
 
 // The piece for one tile (-1: not on the automap). Tiles with several pieces get one picked by position.
-static int Automap__Cel(const Automap *automap, const DS1Cell *cell, const int orientation, const int tx,
-                        const int ty) {
+static int Automap__Cel(const Automap *automap, const int type, const DS1Cell *cell, const int orientation,
+                        const int tx, const int ty) {
     if (cell == NULL || cell->prop1 == 0 || cell->hidden) {
         return -1;
     }
     for (int r = 0; r < automap->row_count; r++) {
         const AutomapRow *row = &automap->rows[r];
-        if (row->orientation != orientation || row->style != cell->style) {
+        if (row->type != type || row->orientation != orientation || row->style != cell->style) {
             continue;
         }
         if (row->first_sequence >= 0 && cell->sequence < row->first_sequence) {
@@ -223,9 +225,27 @@ void Automap_SetArea(Automap *automap, const Map *map, const int level_id, const
         return;
     }
 
-    char type_name[32];
-    Automap__TypeName(level_id, type_name, sizeof(type_name));
-    Automap__LoadRows(automap, type_name);
+    // The tile sets' automap pieces: one per area of a joined-up map (the town's and the wilderness'), else the area's
+    free(automap->rows);
+    automap->rows      = NULL;
+    automap->row_count = 0;
+    int       area_type[MAP_MAX_AREAS];
+    char      type_names[MAP_MAX_AREAS][32];
+    const int areas = map->area_count > 0 ? map->area_count : 1;
+    for (int a = 0; a < areas; a++) {
+        Automap__TypeName(map->area_count > 0 ? map->areas[a].level_id : level_id, type_names[a],
+                          sizeof(type_names[a]));
+        area_type[a] = a;
+        for (int b = 0; b < a; b++) { // areas of the same tile set share their rows
+            if (strcmp(type_names[b], type_names[a]) == 0) {
+                area_type[a] = area_type[b];
+                break;
+            }
+        }
+        if (area_type[a] == a) {
+            Automap__LoadRows(automap, type_names[a], a);
+        }
+    }
 
     // The pieces per tile, worked out once: floors, then walls
     automap->layers = map->floor_layer_count + map->wall_layer_count;
@@ -233,15 +253,17 @@ void Automap_SetArea(Automap *automap, const Map *map, const int level_id, const
     automap->cels   = malloc(sizeof(int) * (size_t)cells * (size_t)(automap->layers > 0 ? automap->layers : 1));
     FAIL_IF_NULL(automap->cels);
     for (int c = 0; c < cells; c++) {
-        const int tx = c % map->width;
-        const int ty = c / map->width;
-        int       l  = 0;
+        const int     tx   = c % map->width;
+        const int     ty   = c / map->width;
+        const uint8_t area = map->area_of != NULL ? map->area_of[c] : 0;
+        const int     type = area < areas ? area_type[area] : -1;
+        int           l    = 0;
         for (int f = 0; f < map->floor_layer_count; f++) {
-            automap->cels[(c * automap->layers) + l++] = Automap__Cel(automap, &map->floors[f][c], 0, tx, ty);
+            automap->cels[(c * automap->layers) + l++] = Automap__Cel(automap, type, &map->floors[f][c], 0, tx, ty);
         }
         for (int w = 0; w < map->wall_layer_count; w++) {
             const DS1Cell *cell                        = &map->walls[w][c];
-            automap->cels[(c * automap->layers) + l++] = Automap__Cel(automap, cell, cell->orientation, tx, ty);
+            automap->cels[(c * automap->layers) + l++] = Automap__Cel(automap, type, cell, cell->orientation, tx, ty);
         }
     }
 
