@@ -40,7 +40,13 @@ sudo apt install build-essential cmake git pkg-config \
     zlib1g-dev libbz2-dev libarchive-dev
 ```
 
+Fedora: `sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel`.
+Arch: `sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib`.
+
 Optional: `meson` and `ninja-build` if you prefer Meson to CMake, `clang-format` if you'll contribute.
+
+Building from source links against your distribution's own libraries, so there's no minimum glibc version beyond what
+your distribution ships (the CI builds on the latest Ubuntu).
 
 ## macOS
 

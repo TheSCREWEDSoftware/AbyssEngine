@@ -1,115 +1,127 @@
 # Abyss Engine
 
-Abyss Engine clean-room reimplementation of **Diablo 2**, written in C.
-The goal is to recreate the original game engine, but on a portable platform that can also easily be modded and
-extended.
+[![Continuous Integration](https://github.com/TheSCREWEDSoftware/AbyssEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSCREWEDSoftware/AbyssEngine/actions/workflows/ci.yml)
 
-This is **not** a reverse-engineering project, and no original code from the game is used. It will also not be
-compaible with the original game's save files or multiplayer systems.
+Abyss Engine is a clean-room reimplementation of the **Diablo II: Lord of Destruction** engine, written in C. It runs on
+the game's own data files (the MPQs from your copy of the game) on a modern, portable engine that is easy to mod and
+extend.
 
-Before running the engine, make sure it is [configured](#configuration) properly.
+This is **not** a reverse-engineering project: no original code from the game is used. It is not compatible with the
+original game's save files or with Battle.net.
 
-**Documentation:** the [wiki](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki) has a step-by-step
-installation guide, the build options, the developer tools (Catalog, Map Editor, Testing Grounds, Free Roam) and a
-[feature status](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/Feature-Status) page listing what works and
-what doesn't. Its pages live in [`docs/wiki`](docs/wiki).
+## Status
 
-You can hang out with the developers and other community members on `#AbyssEngine` at `irc.libera.chat`.
-We no longer maintain a Discord presence. Any such servers are not affiliated with this project.
+Early, but playable in parts:
 
-## Supported Platforms
+- **Menus**: intro videos, the main menu, loading screens, the game's fonts, buttons, cursors and sounds.
+- **Single Player** (first version): create a character on the game's "Select Hero Class" screen, pick it from the
+  character list, walk out of town, fight, gain experience and levels, spend stat points, travel by waypoint, save.
+  No items, skills, quests, trading or hirelings yet.
+- **The world**: the towns and fixed areas from the game's maps with their NPCs and objects; the wilderness, dungeons,
+  jungle and Bloody Foothills built at random from the game's pieces. One world seed builds every area, and areas are
+  joined like in the game: walk out of the Rogue Encampment into the Blood Moor, go down into caves and back up.
+- **Developer tools**: a Catalog (items, classes and skill trees, every sprite, the whole bestiary), a Map Editor,
+  the Testing Grounds and Free Roam.
 
-* Windows 10+ (x64, Arm64)
-* macOS (Arm64)
-* Linux (x64, Arm64)
+The wiki's **[Feature Status](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/Feature-Status)** page says
+exactly what works and what doesn't, and [`TODO.md`](TODO.md) lists what's being worked on next.
 
-Other platforms may work, but are not officially supported.
+## Documentation
 
-## Building
+The **[wiki](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki)** has a step-by-step installation guide
+(requirements, getting the source, building, game files, first run), the build options, the developer tools and
+troubleshooting. Its pages live in [`docs/wiki`](docs/wiki) and are published to the wiki on every push.
 
-### Prerequisites
+## Quick start
 
-* CMake 3.20 or later
-* A C99 compliant compiler (GCC, Clang, MSVC)
+### 1. Install the tools and libraries
 
-Please make sure you recursively pull the submodules when cloning the repository:
+The engine needs a C99 compiler, CMake 3.20+, Git, and four libraries: **SDL2**, **FFmpeg** (libavcodec, libavformat,
+libavutil, libswscale, libswresample), **libarchive** and **zlib**.
 
-```bash
-git submodule update --init --recursive
-```
+**Windows**: Visual Studio 2022 with *Desktop development with C++*, the *C++ CMake tools* and the *vcpkg package
+manager*. vcpkg downloads and builds the libraries the first time you configure (this takes a while).
 
-### Compiling
-
-#### Visual Studio 2022 / Clion / VSCode (with CMake Tools extensions)
-
-Open the root project folder in the IDE and build the solution.
-
-#### XCode
-
-Generate an XCode project with cmake:
+**Linux** (Debian / Ubuntu):
 
 ```bash
-mkdir build
-cd build
-cmake .. -G Xcode
+sudo apt install build-essential cmake git pkg-config ninja-build \
+    libsdl2-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+    libarchive-dev zlib1g-dev
 ```
 
-Then load the generated Xcode project and build it.
+Fedora: `sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel`.
+Arch: `sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib`.
 
-#### Command Line
+Building from source links against your system's own libraries, so it works on whatever glibc your distribution has.
+
+**macOS**: `xcode-select --install`, then `brew install cmake ninja pkg-config sdl2 ffmpeg libarchive`.
+
+### 2. Get the source and build
 
 ```bash
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+git clone --recursive https://github.com/TheSCREWEDSoftware/AbyssEngine.git
+cd AbyssEngine
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-Alternatively, meson can be used:
+On macOS, if CMake can't find libarchive, add `-DCMAKE_PREFIX_PATH=$(brew --prefix libarchive)`.
 
-```bash
-meson setup build
-ninja -C build
+On Windows, open the folder in Visual Studio (or run `Open CMake GUI.bat`), which configures with vcpkg for you; see
+[Building](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/03-Building) for the details.
+
+Meson works too: `meson setup build && ninja -C build`.
+
+Every push is built on Windows, Linux and macOS by GitHub Actions. The latest builds of `main` can be downloaded from
+the [Actions](https://github.com/TheSCREWEDSoftware/AbyssEngine/actions/workflows/ci.yml) page (the run's
+*Artifacts*). They are development builds: there are no releases yet.
+
+### 3. Point it at your game files
+
+You need the MPQ files from a legitimate copy of **Diablo II** and **Lord of Destruction** (the classic game, not
+*Resurrected*): at least `d2data.mpq`, `d2exp.mpq`, `d2char.mpq` and `Patch_D2.mpq`; add `d2sfx.mpq`, the music and the
+video MPQs for sound, music and the intro videos. They are not included, and modded or repacked copies are not
+supported.
+
+Copy [`content/abyss.ini`](content/abyss.ini) to one of these places (the first one found is used) and set `BasePath`
+to the folder with your MPQs, **ending with a slash**:
+
+1. next to the program (`AbyssEngine` / `AbyssEngine.exe`), for a portable setup;
+2. your user settings folder:
+   - Windows: `%APPDATA%\abyss\abyss.ini`
+   - Linux: `~/.config/abyss/abyss.ini`
+   - macOS: `~/Library/Application Support/abyss/abyss.ini`
+
+```ini
+[General]
+BasePath = C:\Program Files (x86)\Diablo II\
 ```
 
-### Running
+### 4. Run
 
-On **Linux** and **Windows**, you can run the engine by executing the `abyss` executable in the build directory.
+Start `AbyssEngine` (`AbyssEngine.exe` on Windows, the `AbyssEngine.app` bundle on macOS) from the build folder. Logs go
+to the console; on macOS run `./AbyssEngine.app/Contents/MacOS/AbyssEngine` from a terminal to see them. If something
+doesn't start, see [Troubleshooting](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/Troubleshooting).
 
-For **macOS**, you can run the engine by executing the `Abyss Engine.app` bundle in the build directory.
+## Contributing
 
-Please note that the engine requires the `abyss.ini` configuration file. If you haven't set it,
-please refer to the [Configuration](#configuration) section below.
+- Format C code with the repository's `.clang-format` (`clang-format -i` on the files you changed).
+- Keep the wiki in step: a change to what works goes into [`docs/wiki`](docs/wiki) (especially Feature Status) in the
+  same commit.
+- Plain C99/gnu99 and the standard library, SDL2, FFmpeg and libarchive only; it has to build with MSVC, GCC and Clang.
 
-### Output Logs
+## Related projects
 
-If you run AbyssEngine from the command line, it will output logs to the console.
-On **macOS**, you will need to run the binary directly by executing the binary inside
-of the app bundle on the command line:
+- [AbyssEngine/AbyssEngine](https://github.com/AbyssEngine/AbyssEngine): the original C engine this repository
+  continues from.
+- [AbyssEngine/AbyssEngineOld](https://github.com/AbyssEngine/AbyssEngineOld) (C++) and
+  [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) (Go, archived; GPL-3.0): earlier attempts by the same
+  community, useful as a reference for the file formats and how the game behaves. Their code is under different
+  licenses, so it isn't copied here.
+- [DevilutionX](https://github.com/diasurgical/devilutionX): what this aims to be for Diablo II, for the first Diablo.
 
-```bash
-./AbyssEngine.app/Contents/MacOS/AbyssEngine
-```
+## License
 
-## Configuration
-
-### MPQ files
-
-This engine requires the original Diablo 2+LOD MPQ files to run. These files are not included in the repository.
-You can legally obtain them by purchasing a physical copy of the game, or from a digital distribution platform
-such as battle.net.
-
-There are a lot of pirated versions of the game available online, but we do not condone piracy, and most of them
-are modded in a way that is not supported by the engine. Please don't waste developer resources by reporting issues
-while using pirated versions of the game.
-
-### abyss.ini
-
-In order for Abyss Engine to run, it needs to load abyss.ini. A template of this file is located at
-`/content/abyss.ini` in the source repo, and should be placed in the local settings folder for abyss
-based on the platform:
-
-- Windows: `%APPDATA%/abyss/abyss.ini`
-- Linux: `~/.config/abyss/abyss.ini`
-- MacOS: `~/Library/Application Support/abyss/abyss.ini`
-
-Please make sure that you have copied the template file into that location, and updated it to match your system.
+MIT, see [LICENSE](LICENSE). Diablo II and Diablo II: Lord of Destruction are trademarks of Blizzard Entertainment. This
+project is not made, supported or endorsed by Blizzard.
