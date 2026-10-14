@@ -34,6 +34,7 @@ static struct {
     uint32_t  seed;
     NetPlayer players[MAX_REMOTE];
     int       player_count;
+    int       players_version; // goes up when someone joins or leaves
     char      chat[CHAT_QUEUE][NET_CHAT_MAX + CHARACTER_NAME_MAX + 4];
     int       chat_head;
     int       chat_count;
@@ -211,6 +212,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
             player->hardcore   = NetReader_U8(reader) != 0;
             player->color      = NetReader_U8(reader) % NET_COLOR_COUNT;
         }
+        client.players_version++;
         break;
     }
     case MSG_PLAYER_GONE: {
@@ -221,6 +223,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
                 break;
             }
         }
+        client.players_version++;
         break;
     }
     case MSG_STATES: {
@@ -406,6 +409,17 @@ void NetClient_SendChat(const char *text) {
 int NetClient_Players(NetPlayer **players) {
     *players = client.players;
     return client.player_count;
+}
+
+int NetClient_PlayersVersion(void) { return client.players_version; }
+
+bool NetClient_NameInGame(const char *name) {
+    for (int p = 0; p < client.player_count; p++) {
+        if (SDL_strcasecmp(client.players[p].name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool NetClient_TakeChat(char *text, const int size) {

@@ -69,7 +69,8 @@ typedef struct SceneCharacterSelect {
     bool       confirming_delete;
     // Multiplayer: the game's characters (yours on a dedicated server, or your own checked against its rules)
     bool     online;
-    bool     waiting; // picked: the server is deciding
+    int      players_version; // NetClient's, when the slots were last labelled
+    bool     waiting;         // picked: the server is deciding
     int      list_version;
     char     status[160];
     Label   *status_label;
@@ -100,6 +101,12 @@ static bool CharacterSelect__Allowed(const SceneCharacterSelect *scene, const Ch
             *why = NULL;
         }
         return true;
+    }
+    if (NetClient_NameInGame(character->name)) {
+        if (why != NULL) {
+            *why = "Already in this game: someone is playing this character.";
+        }
+        return false;
     }
     return NetSettings_Allows(NetClient_Settings(), character, NetClient_Realm(), why);
 }
@@ -141,7 +148,10 @@ static void CharacterSelect__BuildSlots(SceneCharacterSelect *scene) {
         Label_SetText(slot->class_label, text);
 
         slot->extra_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        if (!CharacterSelect__Allowed(scene, character, NULL) && !character->dead) {
+        if (scene->online && NetClient_NameInGame(character->name) && !character->dead) {
+            Label_SetText(slot->extra_label, "Already in this game");
+            Label_SetColor(slot->extra_label, 0xFF, 0x60, 0x60, 0xFF);
+        } else if (!CharacterSelect__Allowed(scene, character, NULL) && !character->dead) {
             Label_SetText(slot->extra_label, "Not allowed in this game");
             Label_SetColor(slot->extra_label, 0xFF, 0x60, 0x60, 0xFF);
         } else if (character->dead) {
@@ -334,10 +344,17 @@ void CharacterSelect_Update(void *scene_ref, const uint64_t delta) {
         bool        ok     = false;
         const char *result = NetClient_TakeResult(&ok);
         if (result != NULL && !ok) {
-            snprintf(scene->status, sizeof(scene->status), "%s", result);
             scene->waiting = false;
-            Sounds_Play("cursor_error", SOUND_KIND_UI);
             CharacterSelect__UpdateTitle(scene);
+            snprintf(scene->status, sizeof(scene->status), "%s", result); // after: the title clears the line
+            Sounds_Play("cursor_error", SOUND_KIND_UI);
+        }
+        if (scene->players_version != NetClient_PlayersVersion()) {
+            scene->players_version = NetClient_PlayersVersion(); // someone joined or left: "Already in this game"
+            CharacterSelect__BuildSlots(scene);
+            if (!scene->waiting) {
+                CharacterSelect__UpdateTitle(scene);
+            }
         }
         if (NetClient_ServerKeepsCharacters() && scene->list_version != NetClient_CharacterListVersion()) {
             CharacterSelect__Reload(scene);

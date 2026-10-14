@@ -378,6 +378,16 @@ static void Server__Broadcast(NetServer *server, const uint8_t type, const NetWr
     }
 }
 
+// To the players still on the character screen: who's in the game (so a character already playing shows as such)
+static void Server__TellWaiting(NetServer *server, const uint8_t type, const NetWriter *writer) {
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *peer = &server->peers[p];
+        if (peer->connection != NULL && peer->stage == STAGE_CHARACTERS) {
+            Server__Send(peer, type, writer);
+        }
+    }
+}
+
 static void Server__Chat(NetServer *server, const int from, const char *text, const Peer *except) {
     NetWriter writer;
     NetWriter_Begin(&writer);
@@ -502,6 +512,7 @@ static void Server__Enter(NetServer *server, Peer *peer) {
     NetWriter_Begin(&writer);
     Server__WritePlayer(&writer, peer);
     Server__Broadcast(server, MSG_PLAYER, &writer, peer);
+    Server__TellWaiting(server, MSG_PLAYER, &writer);
     char text[96];
     snprintf(text, sizeof(text), "%s (%s) joined the game.", peer->character.name,
              Character_ClassName(peer->character.class_id));
@@ -518,6 +529,7 @@ static void Server__Drop(NetServer *server, Peer *peer) {
         NetWriter_Begin(&writer);
         NetWriter_U8(&writer, (uint8_t)peer->id);
         Server__Broadcast(server, MSG_PLAYER_GONE, &writer, peer);
+        Server__TellWaiting(server, MSG_PLAYER_GONE, &writer);
         char text[96];
         snprintf(text, sizeof(text), "%s left the game.", peer->character.name);
         Server__Chat(server, 0, text, peer);
@@ -571,6 +583,15 @@ static void Server__Hello(NetServer *server, Peer *peer, NetReader *reader) {
     Server__Send(peer, MSG_WELCOME, &writer);
     if (server->dedicated) {
         Server__SendCharacterList(peer);
+    }
+    // Who's playing now (and, on, who joins and leaves while this player picks)
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        const Peer *other = &server->peers[p];
+        if (other->connection != NULL && other->stage == STAGE_IN_GAME) {
+            NetWriter_Begin(&writer);
+            Server__WritePlayer(&writer, other);
+            Server__Send(peer, MSG_PLAYER, &writer);
+        }
     }
 }
 

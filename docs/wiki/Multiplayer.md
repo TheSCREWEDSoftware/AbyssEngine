@@ -32,7 +32,9 @@ knows whose characters are whose by it.
 | **Host** | Your own game, with the settings below. **Start** opens it and takes you to the character screen |
 
 Joining goes to the **character screen**, the same as Single Player's, showing the game's name. Characters the game's
-rules don't let in say "Not allowed in this game", and picking one says why. **Create New** makes the character
+rules don't let in say "Not allowed in this game", and picking one says why. A character someone is already
+playing in that game (your own, from a second copy of the game on the same computer, say) shows "Already in this
+game" and can't be picked until they leave. **Create New** makes the character
 on the dedicated server, or (hosted) on your computer, marked as made in that host's games. **Leave** goes back.
 
 In the game, **Enter** opens the chat line (Enter sends, Esc stops); what's said shows at the top left. **Esc ›
