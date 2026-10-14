@@ -35,7 +35,9 @@ bool GameInventory_DrinkBelt(Character *character, int slot, Item *drunk);
 
 bool GameInventory_Holding(const GameInventory *inventory); // an item on the cursor
 // Options > Gameplay > Picking up worn gear: Modern keeps it worn until it is put somewhere else
-void        GameInventory_SetModernPickup(GameInventory *inventory, bool modern);
+void GameInventory_SetModernPickup(GameInventory *inventory, bool modern);
+// Where the control panel shows the belt's bottom row (its top-left; the Classic panel: 422, 568)
+void        GameInventory_SetBeltPosition(int x, int y);
 const char *GameInventory_Sound(const GameInventory *inventory); // the sound of what was last put down ("" none)
 void        GameInventory_PutBack(GameInventory *inventory, Character *character); // the carried item back where it was
 bool        GameInventory_IsOver(int mouse_x, int mouse_y);                        // over the panel

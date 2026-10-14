@@ -31,6 +31,10 @@ void AbyssConfiguration_SetScaleQuality(const char *quality); // nearest, linear
 void AbyssConfiguration_SetVolumes(float master, float music, float sfx, float ui);
 bool AbyssConfiguration_Save(void);
 
+// Single Player's control panel: Classic (the game's) or Modern (CMake DEFAULT_STYLE picks the default)
+bool AbyssConfiguration_GetModernPanel(void);
+void AbyssConfiguration_SetModernPanel(bool modern);
+
 // Frames drawn a second at most (0: no limit; 25: the game's own). Multiplayer never goes above 60.
 int  AbyssConfiguration_GetFrameRate(bool multiplayer);
 void AbyssConfiguration_SetFrameRate(int rate);

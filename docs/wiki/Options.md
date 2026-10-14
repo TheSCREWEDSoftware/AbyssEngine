@@ -31,6 +31,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | Setting | Values | |
 |---|---|---|
 | `FrameRate` | **Classic**: `25` (the game's own) · **Modern**: `60` (the default) · or the slider: Slowest `10`, Slower `15`, Slow `20`, Medium `30`, Fast `45`, Faster `60`, Fastest `unlimited` | Frames drawn a second at most. The game runs at the same speed whatever you pick; only how smooth it looks changes. Multiplayer never goes above 60 |
+| `ControlPanel` | `Classic` / `Modern` | Single Player's control panel. **Classic**: the game's. **Modern**, laid out like the remaster's: the globes on their holders; between them the experience bar, the run button and stamina, then the mini panel (always shown), the left skill, a spot to drop items on the ground (once there are items on the ground), the right skill and the belt. Changes straight away; the default comes from the build's `DEFAULT_STYLE` |
 | `Brightness`, `Contrast`, `Gamma` | `0` to `100`, `50` = the picture as the game made it | Each frame is drawn to an 800x600 picture first and adjusted on the graphics card as it goes on the window (scaling happens there too), so changes show straight away. Gamma brightens or darkens the dark and middle shades and leaves black and white alone |
 
 **Mouse** (Controls › **Mouse**, `[Input]` in `abyss.ini`):

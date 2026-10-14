@@ -28,6 +28,7 @@ typedef struct AbyssConfiguration {
         int   brightness; // 0..100, 50 = the game's picture
         int   contrast;
         int   gamma;
+        bool  modern_panel; // the control panel: Classic (the game's) or Modern
     } graphics;
     struct {
         int  mouse_speed_x; // percent (100 = as the system moves it)
@@ -237,6 +238,8 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             *(IS_STR_EQUAL(key, "brightness") ? &abyss_configuration.graphics.brightness
               : IS_STR_EQUAL(key, "contrast") ? &abyss_configuration.graphics.contrast
                                               : &abyss_configuration.graphics.gamma) = v;
+        } else if (IS_STR_EQUAL(key, "controlpanel")) {
+            abyss_configuration.graphics.modern_panel = value[0] == 'M' || value[0] == 'm'; // "Modern"
         } else if (IS_STR_EQUAL(key, "fullscreen")) {
             if (IS_STR_EQUAL(value, "true")) {
                 abyss_configuration.graphics.fullscreen = true;
@@ -494,12 +497,15 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.graphics.brightness    = 50;
     abyss_configuration.graphics.contrast      = 50;
     abyss_configuration.graphics.gamma         = 50;
-    abyss_configuration.input.mouse_speed_x    = 100;
-    abyss_configuration.input.mouse_speed_y    = 100;
-    abyss_configuration.input.match_axes       = true;
-    abyss_configuration.input.wheel_speed      = 100;
-    abyss_configuration.network.show_names     = true;
-    abyss_configuration.network.show_circles   = true;
+#ifdef ABYSS_DEFAULT_MODERN
+    abyss_configuration.graphics.modern_panel = true; // CMake DEFAULT_STYLE = Modern
+#endif
+    abyss_configuration.input.mouse_speed_x  = 100;
+    abyss_configuration.input.mouse_speed_y  = 100;
+    abyss_configuration.input.match_axes     = true;
+    abyss_configuration.input.wheel_speed    = 100;
+    abyss_configuration.network.show_names   = true;
+    abyss_configuration.network.show_circles = true;
 
     abyss_configuration.audio.master_volume = 0.8f;
     abyss_configuration.audio.music_volume  = 1.0f;
@@ -518,6 +524,9 @@ void AbyssConfiguration_SetWindowSize(const int width, const int height) {
 static bool playing_online = false;
 void        AbyssConfiguration_SetOnline(const bool online) { playing_online = online; }
 bool        AbyssConfiguration_IsOnline(void) { return playing_online; }
+
+bool AbyssConfiguration_GetModernPanel(void) { return abyss_configuration.graphics.modern_panel; }
+void AbyssConfiguration_SetModernPanel(const bool modern) { abyss_configuration.graphics.modern_panel = modern; }
 
 int AbyssConfiguration_GetFrameRate(const bool multiplayer) {
     const int rate = abyss_configuration.graphics.frame_rate;
@@ -622,6 +631,7 @@ bool AbyssConfiguration_Save(void) {
         {"network",  "Colour",       "", false, false},
         {"network",  "ShowNames",    "", false, false},
         {"network",  "ShowCircles",  "", false, false},
+        {"graphics", "ControlPanel", "", false, false},
     };
     const int count = (int)(sizeof(settings) / sizeof(settings[0]));
     snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
@@ -657,6 +667,7 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[18].value, 64, "%d", abyss_configuration.network.color);
     snprintf(settings[19].value, 64, "%s", abyss_configuration.network.show_names ? "true" : "false");
     snprintf(settings[20].value, 64, "%s", abyss_configuration.network.show_circles ? "true" : "false");
+    snprintf(settings[21].value, 64, "%s", abyss_configuration.graphics.modern_panel ? "Modern" : "Classic");
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

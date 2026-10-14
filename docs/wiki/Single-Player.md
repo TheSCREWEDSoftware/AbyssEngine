@@ -42,6 +42,10 @@ Inventory, Skill Tree, Party, Automap, Message Log, Quest Log, Game Menu; the on
 When you have stat points to spend, the **New Stats** button lights up on the left; with skill points, **New Skills**
 on the right. **Save and Exit Game** is in the game menu (**Esc**).
 
+**Options › Video › Control panel › Modern** lays it out like the remaster: the globes on their holders, and between
+them the experience bar along the top, the run button and stamina bar, then the mini panel's buttons (always shown),
+the left skill, a spot for dropping items on the ground (between the skills), the right skill and the belt.
+
 | | |
 |---|---|
 | **Left click** | Walk; click a monster to attack it; click a chest, door, shrine or waypoint to open / use it |

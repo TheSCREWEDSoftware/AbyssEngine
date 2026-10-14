@@ -12,6 +12,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+int game_skill_left_x  = 117;
+int game_skill_right_x = 635;
+int game_skill_y       = 552;
+
+void GameSkills_SetButtons(const int left_x, const int right_x, const int y) {
+    game_skill_left_x  = left_x;
+    game_skill_right_x = right_x;
+    game_skill_y       = y;
+}
+
 #define ICON          48
 #define ATTACK_ICON   2  // in the shared Skillicon.dc6
 #define TREE_ICON_X   15 // the skill tree's layout, from the panel's top left

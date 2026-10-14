@@ -2193,24 +2193,83 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
 // Single Player's control panel, the game's: life and mana globes, skills, run/walk, stamina and experience, the mini
 // panel (character, inventory, skill tree, party, automap, messages, quests, game menu). Positions at 800x600.
 
-#define CTRL_RUN_X      255
-#define CTRL_RUN_Y      570
-#define CTRL_STAMINA_X  273
-#define CTRL_STAMINA_Y  572
-#define CTRL_XP_X       256
-#define CTRL_XP_Y       561
-#define CTRL_MENU_X     392
-#define CTRL_MENU_Y     562
-#define CTRL_LEVEL_X    206
-#define CTRL_LEVEL_Y    561
-#define CTRL_MINI_X     312
-#define CTRL_MINI_Y     532
 #define CTRL_MINI_COUNT 8
 #define CTRL_MINI_STEP  21
-#define CTRL_SKILLS_X   562 // "new skills", when there are skill points to spend
-#define CTRL_SKILLS_Y   561
 
-enum { CTRL_RUN = 100, CTRL_MENU, CTRL_LEVEL, CTRL_SKILLS }; // mini panel buttons are 0 to 7
+// Where everything is: the game's panel (Classic), or the Modern one (Options > Video > Control panel), laid out like
+// the remaster's: the globes on their holders; between them the experience bar, the run button and stamina, then the
+// mini panel (always shown), the left skill, a spot to drop items on the ground, the right skill, the belt
+typedef struct CtrlLayout {
+    bool     modern;
+    int      run_x; // 16 x 20
+    int      run_y;
+    SDL_Rect stamina;
+    SDL_Rect xp;
+    bool     has_menu; // the button that opens the mini panel (Modern: always open)
+    int      menu_x;
+    int      menu_y;
+    int      level_x; // "new stats" (30 x 30)
+    int      level_y;
+    int      skills_x; // "new skills"
+    int      skills_y;
+    int      mini_x;
+    int      mini_y;
+    SDL_Rect drop; // Modern: drop items here
+    int      skill_left_x;
+    int      skill_right_x;
+    int      skill_y;
+    int      belt_x;
+    int      belt_y;
+} CtrlLayout;
+
+static const CtrlLayout ctrl_classic = {
+    false,
+    255,
+    570,
+    {273, 572, 102, 19},
+    {256, 561, 120, 2 },
+    true,
+    392,
+    562,
+    206,
+    561,
+    562,
+    561,
+    312,
+    532,
+    {0,   0,   0,   0 },
+    117,
+    635,
+    552,
+    422,
+    568
+};
+static const CtrlLayout ctrl_modern = {
+    true,
+    123,
+    551,
+    {143, 554, 150, 13},
+    {124, 545, 552, 3 },
+    false,
+    0,
+    0,
+    609,
+    560,
+    643,
+    560,
+    120,
+    551 + 22,
+    {352, 556, 60,  40},
+    300,
+    416,
+    552,
+    470,
+    562
+};
+
+static const CtrlLayout *Roam__Ctrl(void) { return AbyssConfiguration_GetModernPanel() ? &ctrl_modern : &ctrl_classic; }
+
+enum { CTRL_RUN = 100, CTRL_MENU, CTRL_LEVEL, CTRL_SKILLS, CTRL_DROP }; // mini panel buttons are 0 to 7
 
 static const char *ctrl_mini_names[CTRL_MINI_COUNT] = {"Character (A)", "Inventory (I)",  "Skill Tree (T)",
                                                        "Party (P)",     "Automap (Tab)",  "Message Log (M)",
@@ -2222,21 +2281,25 @@ static bool Roam__In(const int x, const int y, const int rx, const int ry, const
 
 // The panel button under the mouse (CTRL_RUN, CTRL_MENU, CTRL_LEVEL, a mini panel slot), -1 = none
 static int Roam__CtrlButtonAt(const SceneRoam *roam, const int x, const int y) {
-    if (Roam__In(x, y, CTRL_RUN_X, CTRL_RUN_Y, 16, 20)) {
+    const CtrlLayout *at = Roam__Ctrl();
+    if (Roam__In(x, y, at->run_x, at->run_y, 16, 20)) {
         return CTRL_RUN;
     }
-    if (Roam__In(x, y, CTRL_MENU_X, CTRL_MENU_Y, 15, 24)) {
+    if (at->has_menu && Roam__In(x, y, at->menu_x, at->menu_y, 15, 24)) {
         return CTRL_MENU;
     }
-    if (roam->character->stat_points > 0 && Roam__In(x, y, CTRL_LEVEL_X, CTRL_LEVEL_Y, 30, 30)) {
+    if (roam->character->stat_points > 0 && Roam__In(x, y, at->level_x, at->level_y, 30, 30)) {
         return CTRL_LEVEL;
     }
-    if (roam->character->skill_points > 0 && Roam__In(x, y, CTRL_SKILLS_X, CTRL_SKILLS_Y, 30, 30)) {
+    if (roam->character->skill_points > 0 && Roam__In(x, y, at->skills_x, at->skills_y, 30, 30)) {
         return CTRL_SKILLS;
     }
-    if (roam->mini_open) {
+    if (at->modern && SDL_PointInRect(&(SDL_Point){x, y}, &at->drop)) {
+        return CTRL_DROP;
+    }
+    if (roam->mini_open || at->modern) {
         for (int b = 0; b < CTRL_MINI_COUNT; b++) {
-            if (Roam__In(x, y, CTRL_MINI_X + 4 + (b * CTRL_MINI_STEP), CTRL_MINI_Y + 3, 20, 20)) {
+            if (Roam__In(x, y, at->mini_x + 4 + (b * CTRL_MINI_STEP), at->mini_y + 3, 20, 20)) {
                 return b;
             }
         }
@@ -2246,8 +2309,12 @@ static int Roam__CtrlButtonAt(const SceneRoam *roam, const int x, const int y) {
 
 // Whether the mouse is on the panel (clicks there don't walk)
 static bool Roam__OverControlPanel(const SceneRoam *roam, const int x, const int y) {
+    const CtrlLayout *at = Roam__Ctrl();
+    if (at->modern) {
+        return y >= 540 || (y >= 496 && (x < 117 || x >= 683));
+    }
     return y >= 545 || (y >= 496 && (x < 117 || x >= 683)) ||
-           (roam->mini_open && Roam__In(x, y, CTRL_MINI_X, CTRL_MINI_Y, 176, 26));
+           (roam->mini_open && Roam__In(x, y, at->mini_x, at->mini_y, 176, 26));
 }
 
 static void Roam__CtrlPress(SceneRoam *roam, const int button) {
@@ -2276,6 +2343,11 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
         break;
     case 7: // game menu
         roam->menu_open = true;
+        break;
+    case CTRL_DROP:
+        Roam__ShowMessage(roam, GameInventory_Holding(roam->inventory_ui)
+                                    ? "There's no dropping items on the ground yet: put it in your inventory."
+                                    : "Drop items on the ground here (once the engine has items on the ground).");
         break;
     default: {
         char text[96];
@@ -2324,8 +2396,25 @@ static void Roam__DrawGlobe(const SceneRoam *roam, const int frame, const int x,
     Sprite_SetBlendMode(roam->ctrl_globes, SDL_BLENDMODE_BLEND);
 }
 
+// Puts the skill buttons and the belt where the panel in use has them
+static void Roam__PlaceCtrl(void) {
+    const CtrlLayout *at = Roam__Ctrl();
+    GameSkills_SetButtons(at->skill_left_x, at->skill_right_x, at->skill_y);
+    GameInventory_SetBeltPosition(at->belt_x, at->belt_y);
+}
+
+static void Roam__DrawCtrlBox(const SDL_Rect *box, const bool lit) {
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, lit ? 60 : 14, lit ? 50 : 12, lit ? 30 : 10, 235);
+    SDL_RenderFillRect(sdl_renderer, box);
+    SDL_SetRenderDrawColor(sdl_renderer, 120, 100, 60, 255);
+    SDL_RenderDrawRect(sdl_renderer, box);
+}
+
 static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int mouse_y) {
-    const Character *character = roam->character;
+    const Character  *character = roam->character;
+    const CtrlLayout *at        = Roam__Ctrl();
+    Roam__PlaceCtrl();
     // The panel: left globe holder, the middle pieces, right globe holder (a skill icon's width between)
     static const int pieces[6][2] = {
         {0, 0  },
@@ -2336,7 +2425,38 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         {5, 683}
     };
     for (int p = 0; p < 6; p++) {
-        Sprite_Draw(roam->ctrl_panel, (uint8_t)pieces[p][0], pieces[p][1], 600);
+        if (!at->modern || p == 0 || p == 5) { // Modern: the holders only, the middle is its own
+            Sprite_Draw(roam->ctrl_panel, (uint8_t)pieces[p][0], pieces[p][1], 600);
+        }
+    }
+    if (at->modern) {
+        // A dark band between the holders with a gold edge, the remaster's way
+        const SDL_Rect band = {117, 541, 566, 59};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 12, 11, 10, 242);
+        SDL_RenderFillRect(sdl_renderer, &band);
+        SDL_SetRenderDrawColor(sdl_renderer, 150, 125, 70, 255);
+        SDL_RenderDrawLine(sdl_renderer, 117, 541, 682, 541);
+        SDL_SetRenderDrawColor(sdl_renderer, 70, 60, 40, 255);
+        SDL_RenderDrawLine(sdl_renderer, 117, 542, 682, 542);
+        Roam__DrawCtrlBox(&at->stamina, false);
+        Roam__DrawCtrlBox(&at->xp, false);
+        // Where items go on the ground: an arrow pointing down
+        const bool over = SDL_PointInRect(&(SDL_Point){mouse_x, mouse_y}, &at->drop);
+        Roam__DrawCtrlBox(&at->drop, over && GameInventory_Holding(roam->inventory_ui));
+        const int cx = at->drop.x + (at->drop.w / 2);
+        const int cy = at->drop.y + (at->drop.h / 2);
+        SDL_SetRenderDrawColor(sdl_renderer, 199, 179, 119, 255);
+        SDL_RenderDrawLine(sdl_renderer, cx, cy - 10, cx, cy + 4);
+        for (int i = 0; i < 6; i++) {
+            SDL_RenderDrawLine(sdl_renderer, cx - 6 + i, cy + i, cx + 6 - i, cy + i);
+        }
+        SDL_RenderDrawLine(sdl_renderer, cx - 10, cy + 12, cx + 10, cy + 12);
+        // Frames for the belt's slots
+        for (int b = 0; b < 4; b++) {
+            const SDL_Rect slot = {at->belt_x - 1 + (b * 31), at->belt_y - 1, 31, 31};
+            Roam__DrawCtrlBox(&slot, false);
+        }
     }
     // The globes sit on the holders (the angel and the demon hold them up), the glass over them
     Roam__DrawGlobe(roam, 0, 30, 507, (float)roam->player.hp, (float)roam->player.max_hp);
@@ -2350,7 +2470,7 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
     // Stamina (red when you've run yourself out) and experience through this level
     const int      max_stamina = Character_MaxStamina(character);
     const float    stamina     = max_stamina > 0 ? fminf(roam->stamina / (float)max_stamina, 1.0f) : 0.0f;
-    const SDL_Rect stamina_bar = {CTRL_STAMINA_X, CTRL_STAMINA_Y, (int)(102.0f * stamina), 19};
+    const SDL_Rect stamina_bar = {at->stamina.x, at->stamina.y, (int)((float)at->stamina.w * stamina), at->stamina.h};
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
     if (roam->exhausted || stamina < 0.25f) {
         SDL_SetRenderDrawColor(sdl_renderer, 0xC8, 0x20, 0x10, 0xC8);
@@ -2363,27 +2483,31 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
     const float    done = (character->level >= CHARACTER_MAX_LEVEL || high <= low)
                               ? 1.0f
                               : (float)(character->experience - low) / (float)(high - low);
-    const SDL_Rect xp   = {CTRL_XP_X, CTRL_XP_Y, (int)(120.0f * fminf(fmaxf(done, 0.0f), 1.0f)), 2};
+    const SDL_Rect xp   = {at->xp.x, at->xp.y, (int)((float)at->xp.w * fminf(fmaxf(done, 0.0f), 1.0f)), at->xp.h};
     SDL_SetRenderDrawColor(sdl_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
     SDL_RenderFillRect(sdl_renderer, &xp);
 
     // Buttons (drawn pressed while held)
     const int pressed = roam->ctrl_pressed == Roam__CtrlButtonAt(roam, mouse_x, mouse_y) ? roam->ctrl_pressed : -1;
-    Sprite_Draw(roam->ctrl_run, (uint8_t)((roam->running ? 2 : 0) + (pressed == CTRL_RUN ? 1 : 0)), CTRL_RUN_X,
-                CTRL_RUN_Y + 20);
-    Sprite_Draw(roam->ctrl_menu, (uint8_t)((roam->mini_open ? 2 : 0) + (pressed == CTRL_MENU ? 1 : 0)), CTRL_MENU_X,
-                CTRL_MENU_Y + 24);
+    Sprite_Draw(roam->ctrl_run, (uint8_t)((roam->running ? 2 : 0) + (pressed == CTRL_RUN ? 1 : 0)), at->run_x,
+                at->run_y + 20);
+    if (at->has_menu) {
+        Sprite_Draw(roam->ctrl_menu, (uint8_t)((roam->mini_open ? 2 : 0) + (pressed == CTRL_MENU ? 1 : 0)), at->menu_x,
+                    at->menu_y + 24);
+    }
     if (character->stat_points > 0) {
-        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_LEVEL ? 1 : 0), CTRL_LEVEL_X, CTRL_LEVEL_Y + 30);
+        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_LEVEL ? 1 : 0), at->level_x, at->level_y + 30);
     }
     if (character->skill_points > 0) {
-        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_SKILLS ? 1 : 0), CTRL_SKILLS_X, CTRL_SKILLS_Y + 30);
+        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_SKILLS ? 1 : 0), at->skills_x, at->skills_y + 30);
     }
-    if (roam->mini_open) {
-        Sprite_Draw(roam->ctrl_mini, 0, CTRL_MINI_X, CTRL_MINI_Y + 26);
+    if (roam->mini_open || at->modern) {
+        if (!at->modern) {
+            Sprite_Draw(roam->ctrl_mini, 0, at->mini_x, at->mini_y + 26);
+        }
         for (int b = 0; b < CTRL_MINI_COUNT; b++) {
             Sprite_Draw(roam->ctrl_mini_buttons, (uint8_t)((b * 2) + (pressed == b ? 1 : 0)),
-                        CTRL_MINI_X + 4 + (b * CTRL_MINI_STEP), CTRL_MINI_Y + 23);
+                        at->mini_x + 4 + (b * CTRL_MINI_STEP), at->mini_y + 23);
         }
     }
 
@@ -2400,9 +2524,9 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         snprintf(text, sizeof(text), "Mana: %d / %d", (int)roam->mana, Character_MaxMana(character));
         tx = 730;
         ty = 490;
-    } else if (Roam__In(mouse_x, mouse_y, CTRL_STAMINA_X, CTRL_STAMINA_Y, 102, 19)) {
+    } else if (SDL_PointInRect(&(SDL_Point){mouse_x, mouse_y}, &at->stamina)) {
         snprintf(text, sizeof(text), "Stamina: %d / %d", (int)roam->stamina, max_stamina);
-    } else if (Roam__In(mouse_x, mouse_y, CTRL_XP_X, CTRL_XP_Y - 3, 120, 8)) {
+    } else if (Roam__In(mouse_x, mouse_y, at->xp.x, at->xp.y - 3, at->xp.w, at->xp.h + 6)) {
         snprintf(text, sizeof(text), "Experience: %u / %u", character->experience, high);
     } else if (button == CTRL_RUN) {
         snprintf(text, sizeof(text), roam->running ? "Walk (R)" : "Run (R)");
@@ -2412,6 +2536,8 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         snprintf(text, sizeof(text), "New Stats");
     } else if (button == CTRL_SKILLS) {
         snprintf(text, sizeof(text), "New Skills");
+    } else if (button == CTRL_DROP) {
+        snprintf(text, sizeof(text), "Drop on the ground");
     } else if (button >= 0) {
         snprintf(text, sizeof(text), "%s", ctrl_mini_names[button]);
     }
@@ -2498,6 +2624,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         }
     }
 
+    Roam__PlaceCtrl(); // the skill buttons and belt where the panel in use has them
     // The inventory's pages (Options > Gameplay, or the multiplayer game's own setting; never fewer than are used)
     // and how worn gear is picked up
     const GameplaySettings *gameplay = Roam__Gameplay(roam);

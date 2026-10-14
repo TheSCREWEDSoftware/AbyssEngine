@@ -92,6 +92,7 @@ static const char *scale_quality_names[] = {"Sharp pixels (nearest)", "Smooth (l
 #define FRAME_STEPS 7
 static const int   frame_steps[FRAME_STEPS]      = {10, 15, 20, 30, 45, 60, 0};
 static const char *frame_step_names[FRAME_STEPS] = {"Slowest", "Slower", "Slow", "Medium", "Fast", "Faster", "Fastest"};
+static const char *panel_choices[2]              = {"Classic (the game's)", "Modern"};
 static const char *frame_modes[]                 = {"Classic: 25 a second (the game's)", "Modern: 60 a second",
                                                     "Your own (the slider)"};
 #define FRAME_CLASSIC 25
@@ -166,7 +167,9 @@ typedef struct SceneOptions {
     Dropdown *frame_mode;
     Slider   *frame_slider;
     int       frame_before; // to put back on Cancel
+    bool      panel_before;
     Slider   *picture[PICTURE_COUNT];
+    Dropdown *control_panel;
     int       picture_before[PICTURE_COUNT]; // these, and the scaling, show straight away: put back on Cancel
     char      scale_before[16];
 
@@ -294,7 +297,8 @@ static bool Options__AnyDropdownOpen(const SceneOptions *options) {
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
            Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
            Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode) ||
-           Dropdown_IsOpen(options->player_color) || Dropdown_IsOpen(options->worn_pickup);
+           Dropdown_IsOpen(options->player_color) || Dropdown_IsOpen(options->worn_pickup) ||
+           Dropdown_IsOpen(options->control_panel);
 }
 
 // The widgets showing what's set now
@@ -491,8 +495,11 @@ OptionsPanel *OptionsPanel_Create(void) {
     for (int i = 0; i < PICTURE_COUNT; i++) {
         options->picture[i] = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + ((5 + i) * ROW_H) + 6, 300, 0, 100);
     }
+    options->control_panel = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (8 * ROW_H) + 24, 220, panel_choices, 2);
+    Dropdown_SetSelected(options->control_panel, AbyssConfiguration_GetModernPanel() ? 1 : 0);
     Options__LoadVideo(options);
     options->frame_before = AbyssConfiguration_GetFrameRate(false);
+    options->panel_before = AbyssConfiguration_GetModernPanel();
     AbyssConfiguration_GetPicture(&options->picture_before[0], &options->picture_before[1],
                                   &options->picture_before[2]);
     snprintf(options->scale_before, sizeof(options->scale_before), "%s", AbyssConfiguration_GetScaleQuality());
@@ -664,6 +671,7 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Dropdown_Destroy(&options->window_size);
     Dropdown_Destroy(&options->scale_quality);
     Dropdown_Destroy(&options->frame_mode);
+    Dropdown_Destroy(&options->control_panel);
     Slider_Destroy(&options->frame_slider);
     for (int i = 0; i < PICTURE_COUNT; i++) {
         Slider_Destroy(&options->picture[i]);
@@ -751,6 +759,7 @@ static void Options__Cancel(SceneOptions *options) {
     }
     Settings_Load(); // gameplay and controls as they were saved
     AbyssConfiguration_SetFrameRate(options->frame_before);
+    AbyssConfiguration_SetModernPanel(options->panel_before);
     AbyssConfiguration_SetPicture(options->picture_before[0], options->picture_before[1], options->picture_before[2]);
     AbyssConfiguration_SetScaleQuality(options->scale_before);
     AbyssConfiguration_SetMouse(options->mouse_before[0], options->mouse_before[1], options->mouse_before[2] != 0,
@@ -765,6 +774,13 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         Checkbox_SetChecked(options->fullscreen, false);
         Dropdown_SetSelected(options->scale_quality, 0);
         Dropdown_SetSelected(options->frame_mode, 1);
+#ifdef ABYSS_DEFAULT_MODERN
+        Dropdown_SetSelected(options->control_panel, 1);
+        AbyssConfiguration_SetModernPanel(true);
+#else
+        Dropdown_SetSelected(options->control_panel, 0);
+        AbyssConfiguration_SetModernPanel(false);
+#endif
         Slider_SetValue(options->frame_slider, 5);
         AbyssConfiguration_SetFrameRate(FRAME_MODERN);
         for (int i = 0; i < PICTURE_COUNT; i++) {
@@ -1423,6 +1439,10 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 }
                 AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
             }
+        } else if (Dropdown_IsOpen(options->control_panel)) {
+            if (Dropdown_Update(options->control_panel)) {
+                AbyssConfiguration_SetModernPanel(Dropdown_GetSelected(options->control_panel) == 1); // straight away
+            }
         } else if (Dropdown_IsOpen(options->worn_pickup)) {
             if (Dropdown_Update(options->worn_pickup)) {
                 GameplaySettings settings = *Settings_GetGameplay(options->profile);
@@ -1450,6 +1470,9 @@ static void OptionsPanel__Update(SceneOptions *options) {
             AbyssConfiguration_SetScaleQuality(scale_qualities[Dropdown_GetSelected(options->scale_quality)]);
         }
         Dropdown_Update(options->frame_mode);
+        if (Dropdown_Update(options->control_panel)) {
+            AbyssConfiguration_SetModernPanel(Dropdown_GetSelected(options->control_panel) == 1);
+        }
         if (Slider_Update(options->frame_slider)) {
             Dropdown_SetSelected(options->frame_mode, Slider_GetValue(options->frame_slider) == 5 ? 1 : 2);
             AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
@@ -1650,6 +1673,8 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Options__Describe(options,
                           "50 is the picture as the game made it. Changes show straight away, also while playing.",
                           CONTENT_Y + (7 * ROW_H) + 22);
+        Options__Name(options, "Control panel", CONTENT_Y + (8 * ROW_H) + 20);
+        Dropdown_Draw(options->control_panel);
         break;
     case TAB_AUDIO:
         for (int v = 0; v < VOLUME_COUNT; v++) {
@@ -1766,6 +1791,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
     Dropdown_DrawList(options->window_size);
     Dropdown_DrawList(options->scale_quality);
     Dropdown_DrawList(options->frame_mode);
+    Dropdown_DrawList(options->control_panel);
     Dropdown_DrawList(options->player_color);
     Dropdown_DrawList(options->profile_dropdown);
     Dropdown_DrawList(options->movement);

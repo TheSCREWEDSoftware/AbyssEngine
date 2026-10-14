@@ -34,8 +34,10 @@ static const SDL_Rect slot_rects[EQUIP_COUNT] = {
 };
 
 // The belt's slots on the control panel (the bottom row; keys 1-4)
-#define BELT_X    422
-#define BELT_Y    568
+static int belt_x = 422; // the belt's bottom row on the control panel (GameInventory_SetBeltPosition)
+static int belt_y = 568;
+#define BELT_X    belt_x
+#define BELT_Y    belt_y
 #define BELT_STEP 31
 
 typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT } Origin;
@@ -210,6 +212,11 @@ static void GameInventory__Take(GameInventory *inventory, const Item *item, cons
 bool GameInventory_Holding(const GameInventory *inventory) { return inventory->holding; }
 
 void GameInventory_SetModernPickup(GameInventory *inventory, const bool modern) { inventory->modern = modern; }
+
+void GameInventory_SetBeltPosition(const int x, const int y) {
+    belt_x = x;
+    belt_y = y;
+}
 
 // The page arrows under the grid (shown with more than one page): < 2 / 5 >
 #define PAGE_Y       390

@@ -9,9 +9,14 @@
 // put a point in it. And the pickers on the control panel: click the left or right skill to choose what the mouse
 // buttons use.
 
-#define GAME_SKILL_LEFT_X  117 // the control panel's skill buttons (48 x 48, bottom at y = 600)
-#define GAME_SKILL_RIGHT_X 635
-#define GAME_SKILL_Y       552
+// The control panel's skill buttons (48 x 48): where the panel puts them (Classic: 117 and 635, at y = 552)
+extern int game_skill_left_x;
+extern int game_skill_right_x;
+extern int game_skill_y;
+#define GAME_SKILL_LEFT_X  game_skill_left_x
+#define GAME_SKILL_RIGHT_X game_skill_right_x
+#define GAME_SKILL_Y       game_skill_y
+void GameSkills_SetButtons(int left_x, int right_x, int y);
 
 typedef struct GameSkills GameSkills;
 
