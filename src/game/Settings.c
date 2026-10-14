@@ -84,7 +84,7 @@ static int Settings__SectionProfile(const char *section, const char *prefix) {
     return -1;
 }
 
-static DebugSettings debug_settings = {5, true, false};
+static DebugSettings debug_settings = {5, true, false, true};
 
 const DebugSettings *Settings_GetDebug(void) { return &debug_settings; }
 void                 Settings_SetDebug(const DebugSettings *settings) { debug_settings = *settings; }
@@ -93,10 +93,12 @@ void Settings_Load(void) {
     debug_settings.editor_autosave_minutes = 5;
     debug_settings.editor_keep_changes     = true;
     debug_settings.collision_in_game       = false;
+    debug_settings.confirm_new_seed        = true;
     for (int p = 0; p < CONTROL_PROFILES; p++) {
-        gameplay[p].movement    = MOVEMENT_CLASSIC;
-        gameplay[p].see_through = true;
-        own_gameplay[p]         = p == 0;
+        gameplay[p].movement          = MOVEMENT_CLASSIC;
+        gameplay[p].see_through       = true;
+        gameplay[p].confirm_entrances = false;
+        own_gameplay[p]               = p == 0;
     }
     Controls_Reset();
 
@@ -142,6 +144,8 @@ void Settings_Load(void) {
                 debug_settings.editor_keep_changes = strcmp(value, "true") == 0;
             } else if (strcmp(key, "CollisionInGame") == 0) {
                 debug_settings.collision_in_game = strcmp(value, "true") == 0;
+            } else if (strcmp(key, "ConfirmNewSeed") == 0) {
+                debug_settings.confirm_new_seed = strcmp(value, "true") == 0;
             }
             continue;
         }
@@ -157,6 +161,8 @@ void Settings_Load(void) {
             }
         } else if (strcmp(key, "SeeThroughObstructions") == 0) {
             gameplay[profile].see_through = strcmp(value, "true") == 0;
+        } else if (strcmp(key, "ConfirmEntrances") == 0) {
+            gameplay[profile].confirm_entrances = strcmp(value, "true") == 0;
         }
     }
     fclose(file);
@@ -190,7 +196,11 @@ void Settings_Save(void) {
             fprintf(file,
                     "# true: walls and trees between you and the camera fade so you can see where you're going\n");
         }
-        fprintf(file, "SeeThroughObstructions = %s\n\n", gameplay[p].see_through ? "true" : "false");
+        fprintf(file, "SeeThroughObstructions = %s\n", gameplay[p].see_through ? "true" : "false");
+        if (p == 0) {
+            fprintf(file, "# true: ask before going through a cave mouth, tomb door or stairs\n");
+        }
+        fprintf(file, "ConfirmEntrances = %s\n\n", gameplay[p].confirm_entrances ? "true" : "false");
     }
     fprintf(file,
             "[Debug]\n"
@@ -201,9 +211,11 @@ void Settings_Save(void) {
             "# nothing is lost if the game closes; the editor offers it back the next time\n"
             "EditorKeepChanges = %s\n"
             "# The collision view (B) in Single Player as well as Free Roam and Testing Grounds\n"
-            "CollisionInGame = %s\n\n",
+            "CollisionInGame = %s\n"
+            "# Free Roam: ask before N makes a new random world\n"
+            "ConfirmNewSeed = %s\n\n",
             debug_settings.editor_autosave_minutes, debug_settings.editor_keep_changes ? "true" : "false",
-            debug_settings.collision_in_game ? "true" : "false");
+            debug_settings.collision_in_game ? "true" : "false", debug_settings.confirm_new_seed ? "true" : "false");
     Controls_Write(file);
     fclose(file);
 }

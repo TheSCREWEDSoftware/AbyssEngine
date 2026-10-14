@@ -18,6 +18,7 @@ typedef enum MovementType {
 typedef struct GameplaySettings {
     MovementType movement;
     bool         see_through; // walls and trees between you and the camera fade, so you can see where you're going
+    bool         confirm_entrances; // ask before going through a cave mouth, tomb door or stairs
 } GameplaySettings;
 
 // Debug (Options › Gameplay › Debug): for the developer tools, the same for every class
@@ -25,6 +26,7 @@ typedef struct DebugSettings {
     int  editor_autosave_minutes; // Map Editor: save the map every this many minutes (0 = never)
     bool editor_keep_changes;     // Map Editor: keep every change in a temporary file too (back after a crash)
     bool collision_in_game;       // the collision view (B) in Single Player, not only Free Roam / Testing Grounds
+    bool confirm_new_seed;        // Free Roam: ask before N makes a new world
 } DebugSettings;
 
 void Settings_Load(void); // options.ini (missing: the defaults)

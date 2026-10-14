@@ -19,7 +19,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **P** / Preview button | Placement preview on or off |
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Collision view: what you can't walk on and why (red: the map's walls, cliffs and water; blue: objects such as chests and closed doors), the ways to the next area (green) and entrances (yellow), and where each unit stands (purple: monsters and you; light blue: town folk). A legend shows the colours |
-| **N** | Free Roam: a new random world (the area you're in is built again from the new seed) |
+| **N** | Free Roam: a new random world (the area you're in is built again from the new seed); asks first unless you turn that off (Options › Gameplay › Debug) |
 | **Tab** | Free Roam: the automap. What you've seen of the area (everything within about nine tiles of where you've been), drawn with the game's own automap pieces (`MaxiMap.dc6`, picked per tile by `AutoMap.txt`) over the view and centred on you, with the ways out labelled ("To The Cold Plains"). It's kept per area until the world seed changes |
 | Mouse wheel | Zoom |
 | **V** | Free Roam: the Places list |
@@ -78,6 +78,8 @@ Areas are joined up like in the game, so you can walk from one into the next:
   crypt door to the Crypt, the mausoleum's to the Mausoleum), and you come out of the matching entrance on the other
   side. Dungeons lead down level by level (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
 - An exit that leads somewhere not built yet says "That way isn't open yet".
+- Pointing at a cave mouth, tomb door or stairs shows where it leads ("To The Den of Evil"), like the game. With
+  **Ask before going through an entrance** (Options › Gameplay) you're asked first.
 - Walking into an area (over its edge or through an entrance) shows the game's red caption, "Entering The Blood Moor", for
   a few seconds; not where you start, and not when you jump there from the Places list.
 

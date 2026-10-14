@@ -254,6 +254,9 @@ typedef struct SceneRoam {
     Button        *menu_return_button;
     OptionsPanel  *options_panel;   // Options opened from that menu
     ConfirmDialog *confirm;         // "Return to the main menu?" (Back and Leave in Free Roam / Testing Grounds)
+    int            question;        // what it asks: ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER
+    int            question_level;  // ROAM_ASK_ENTER: where the entrance leads
+    int            hover_exit;      // the entrance under the mouse (its name is shown), -1 = none
     bool           screenshot;      // take one at the end of this frame's drawing
     bool           attack_in_place; // the swing under way was from where you stand: don't walk after the target
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
@@ -894,6 +897,7 @@ static void Roam__FindSpawn(SceneRoam *roam) {
 static void Roam__Populate(SceneRoam *roam) {
     roam->unit_count = 0;
     roam->hovered    = -1;
+    roam->hover_exit = -1;
     for (int e = 0; e < roam->map->entity_count; e++) {
         const MapEntity *entity = &roam->map->entities[e];
         Unit            *unit   = Roam__AddUnit(roam, entity->base, entity->id, entity->x, entity->y);
@@ -1978,8 +1982,11 @@ static void Roam__Leave(SceneRoam *roam) {
     }
 }
 
+enum { ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER };
+
 // Free Roam and Testing Grounds ask before leaving (Back, or Leave in the menu)
 static void Roam__AskLeave(SceneRoam *roam) {
+    roam->question = ROAM_ASK_LEAVE;
     if (roam->borrowed) {
         ConfirmDialog_Open(roam->confirm, "Back to the Map Editor", "Stop play-testing and go back to the editor?",
                            "Yes", "No", NULL);
@@ -1993,8 +2000,18 @@ static void Roam__AskLeave(SceneRoam *roam) {
 static bool Roam__UpdateMenu(SceneRoam *roam) {
     if (ConfirmDialog_IsOpen(roam->confirm)) {
         if (ConfirmDialog_Update(roam->confirm) == CONFIRM_FIRST) {
-            roam->menu_open = false;
-            Roam__Leave(roam);
+            switch (roam->question) {
+            case ROAM_ASK_NEW_SEED:
+                Roam__NewWorld(roam, 0); // the same area in a new random world
+                break;
+            case ROAM_ASK_ENTER:
+                Roam__Travel(roam, roam->question_level);
+                break;
+            default:
+                roam->menu_open = false;
+                Roam__Leave(roam);
+                break;
+            }
         }
         return true;
     }
@@ -2095,7 +2112,14 @@ static void Roam__Update(SceneRoam *roam) {
         Roam__TogglePanel(roam, PANEL_PLACES);
     }
     if (roam->free_roam && Controls_Pressed(ACTION_NEW_WORLD)) {
-        Roam__NewWorld(roam, 0); // the same area in a new random world
+        if (Settings_GetDebug()->confirm_new_seed) {
+            roam->question = ROAM_ASK_NEW_SEED;
+            ConfirmDialog_Open(roam->confirm, "New World",
+                               "Do you wish to generate a new seed? This area and every random one are built again.",
+                               "Yes", "No", NULL);
+        } else {
+            Roam__NewWorld(roam, 0); // the same area in a new random world
+        }
         return;
     }
 
@@ -2128,7 +2152,17 @@ static void Roam__Update(SceneRoam *roam) {
     float sub_y;
     MapView_ScreenToWorld(&roam->camera, &view, mouse_x, mouse_y, &world_x, &world_y);
     MapView_WorldToSubtile(world_x, world_y, &sub_x, &sub_y);
-    roam->hovered     = over_view ? Roam__UnitAt(roam, sub_x, sub_y) : -1;
+    roam->hovered = over_view ? Roam__UnitAt(roam, sub_x, sub_y) : -1;
+    // An entrance under the mouse (cave mouth, tomb door, stairs): its name is shown, like the game's
+    roam->hover_exit = -1;
+    for (int e = 0; over_view && roam->hovered < 0 && e < roam->map->exit_count; e++) {
+        const MapExit *exit = &roam->map->exits[e];
+        if (exit->entrance && sub_x >= (float)exit->x0 - 4.0f && sub_x <= (float)exit->x1 + 4.0f &&
+            sub_y >= (float)exit->y0 - 4.0f && sub_y <= (float)exit->y1 + 4.0f) {
+            roam->hover_exit = e;
+            break;
+        }
+    }
     roam->hover_valid = over_view;
     roam->hover_x     = floorf(sub_x) + 0.5f;
     roam->hover_y     = floorf(sub_y) + 0.5f;
@@ -2229,6 +2263,18 @@ static void Roam__Update(SceneRoam *roam) {
         } else if (roam->exits_armed && meant) {
             roam->moving = false;
             Roam__ClearPath(&roam->player);
+            if (exit->entrance && Roam__Gameplay(roam)->confirm_entrances) {
+                // Options › Gameplay: asked first (stepping off and back on asks again)
+                roam->exits_armed    = false;
+                roam->question       = ROAM_ASK_ENTER;
+                roam->question_level = exit->target_level;
+                char name[96];
+                char text[160];
+                World_GetWarpText(exit->target_level, name, sizeof(name));
+                snprintf(text, sizeof(text), "%s?", name[0] != '\0' ? name : "Go in");
+                ConfirmDialog_Open(roam->confirm, "Entrance", text, "Go in", "Stay", NULL);
+                return;
+            }
             Roam__Travel(roam, exit->target_level);
             return;
         }
@@ -2618,6 +2664,20 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->hovered >= 0) {
         Roam__DrawUnitInfo(roam, &view, &roam->units[roam->hovered],
                            Roam__Combat(roam) && !Roam__IsPeaceful(roam, &roam->units[roam->hovered]));
+    } else if (roam->hover_exit >= 0 && roam->hover_exit < roam->map->exit_count) {
+        // The entrance's name ("To The Den of Evil") over it
+        const MapExit *exit = &roam->map->exits[roam->hover_exit];
+        char           name[96];
+        World_GetWarpText(exit->target_level, name, sizeof(name));
+        float wx;
+        float wy;
+        MapView_SubtileToWorld((float)(exit->x0 + exit->x1) / 2.0f, (float)(exit->y0 + exit->y1) / 2.0f, &wx, &wy);
+        int sx;
+        int sy;
+        MapView_WorldToScreen(&roam->camera, &view, wx, wy, &sx, &sy);
+        Label_SetText(roam->target_label, name);
+        Label_SetColor(roam->target_label, 0xFF, 0xFF, 0xFF, 0xFF);
+        Label_Draw(roam->target_label, sx, sy - (int)(70.0f * roam->camera.zoom));
     }
 
     // Status bar

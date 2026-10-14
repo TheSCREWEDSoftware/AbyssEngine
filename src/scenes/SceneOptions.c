@@ -142,11 +142,13 @@ typedef struct SceneOptions {
     Checkbox *own_profile;
     Dropdown *movement;
     Checkbox *see_through;
+    Checkbox *confirm_entrances;
 
     // Gameplay › Debug (every class)
     Dropdown *autosave;
     Checkbox *keep_changes;
     Checkbox *collision_in_game;
+    Checkbox *confirm_new_seed;
 
     // Controls
     Dropdown     *group_filter; // "Show:"
@@ -253,6 +255,7 @@ static void Options__LoadGameplay(SceneOptions *options) {
     const GameplaySettings *settings = Settings_GetGameplay(options->profile);
     Dropdown_SetSelected(options->movement, settings->movement);
     Checkbox_SetChecked(options->see_through, settings->see_through);
+    Checkbox_SetChecked(options->confirm_entrances, settings->confirm_entrances);
     char text[64];
     snprintf(text, sizeof(text), "Own settings for the %s", Settings_ProfileName(options->profile));
     Checkbox_Destroy(&options->own_profile);
@@ -283,6 +286,7 @@ static void Options__LoadDebug(SceneOptions *options) {
     Dropdown_SetSelected(options->autosave, pick);
     Checkbox_SetChecked(options->keep_changes, debug->editor_keep_changes);
     Checkbox_SetChecked(options->collision_in_game, debug->collision_in_game);
+    Checkbox_SetChecked(options->confirm_new_seed, debug->confirm_new_seed);
 }
 
 static void Options__StoreDebug(const SceneOptions *options) {
@@ -290,6 +294,7 @@ static void Options__StoreDebug(const SceneOptions *options) {
     debug.editor_autosave_minutes = autosave_minutes[Dropdown_GetSelected(options->autosave)];
     debug.editor_keep_changes     = Checkbox_IsChecked(options->keep_changes);
     debug.collision_in_game       = Checkbox_IsChecked(options->collision_in_game);
+    debug.confirm_new_seed        = Checkbox_IsChecked(options->confirm_new_seed);
     Settings_SetDebug(&debug);
 }
 
@@ -363,12 +368,16 @@ OptionsPanel *OptionsPanel_Create(void) {
         Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (2 * ROW_H), 340, movement_choices, MOVEMENT_TYPE_COUNT);
     options->see_through =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) + 3, "See through obstructions");
+    options->confirm_entrances =
+        Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H) + 6, "Ask before going through an entrance");
     Options__LoadGameplay(options);
     options->autosave = Dropdown_Create(CONTENT_X + LABEL_W, DEBUG_Y, 220, autosave_names, AUTOSAVE_CHOICES);
     options->keep_changes =
         Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 36, "Keep every change in a temporary file too");
     options->collision_in_game =
         Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 62, "Collision view (B) in Single Player too");
+    options->confirm_new_seed =
+        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 88, "Ask before a new world (N in Free Roam)");
     Options__LoadDebug(options);
 
     // Controls
@@ -427,10 +436,12 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Dropdown_Destroy(&options->autosave);
     Checkbox_Destroy(&options->keep_changes);
     Checkbox_Destroy(&options->collision_in_game);
+    Checkbox_Destroy(&options->confirm_new_seed);
     Dropdown_Destroy(&options->group_filter);
     Checkbox_Destroy(&options->fullscreen);
     Checkbox_Destroy(&options->own_profile);
     Checkbox_Destroy(&options->see_through);
+    Checkbox_Destroy(&options->confirm_entrances);
     for (int v = 0; v < VOLUME_COUNT; v++) {
         Slider_Destroy(&options->volumes[v]);
         TextBox_Destroy(&options->volume_boxes[v]);
@@ -497,10 +508,10 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         break;
     }
     case TAB_GAMEPLAY: {
-        const GameplaySettings defaults = {MOVEMENT_CLASSIC, true};
+        const GameplaySettings defaults = {MOVEMENT_CLASSIC, true, false};
         Settings_SetGameplay(options->profile, &defaults);
         Options__LoadGameplay(options);
-        const DebugSettings debug_defaults = {5, true, false};
+        const DebugSettings debug_defaults = {5, true, false, true};
         Settings_SetDebug(&debug_defaults);
         Options__LoadDebug(options);
         break;
@@ -861,23 +872,31 @@ static void OptionsPanel__Update(SceneOptions *options) {
 
     const OptionsTab tab = (OptionsTab)TabBar_GetSelected(options->tabs);
     if (Options__AnyDropdownOpen(options)) {
-        // An open list takes all the clicks
-        Dropdown_Update(options->window_size);
-        Dropdown_Update(options->scale_quality);
-        if (Dropdown_Update(options->profile_dropdown)) {
-            options->profile = Dropdown_GetSelected(options->profile_dropdown);
-            Options__LoadGameplay(options);
-        }
-        if (Dropdown_Update(options->movement)) {
-            GameplaySettings settings = *Settings_GetGameplay(options->profile);
-            settings.movement         = (MovementType)Dropdown_GetSelected(options->movement);
-            Settings_SetGameplay(options->profile, &settings);
-        }
-        if (Dropdown_Update(options->group_filter)) {
-            Options__BuildRows(options);
-        }
-        if (Dropdown_Update(options->autosave)) {
-            Options__StoreDebug(options);
+        // An open list takes all the clicks. Only the open one hears them: a closed one at the same place on
+        // another tab (Window size sits where "Settings for" is) would open on the click that closes this one.
+        if (Dropdown_IsOpen(options->window_size)) {
+            Dropdown_Update(options->window_size);
+        } else if (Dropdown_IsOpen(options->scale_quality)) {
+            Dropdown_Update(options->scale_quality);
+        } else if (Dropdown_IsOpen(options->profile_dropdown)) {
+            if (Dropdown_Update(options->profile_dropdown)) {
+                options->profile = Dropdown_GetSelected(options->profile_dropdown);
+                Options__LoadGameplay(options);
+            }
+        } else if (Dropdown_IsOpen(options->movement)) {
+            if (Dropdown_Update(options->movement)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.movement         = (MovementType)Dropdown_GetSelected(options->movement);
+                Settings_SetGameplay(options->profile, &settings);
+            }
+        } else if (Dropdown_IsOpen(options->group_filter)) {
+            if (Dropdown_Update(options->group_filter)) {
+                Options__BuildRows(options);
+            }
+        } else if (Dropdown_IsOpen(options->autosave)) {
+            if (Dropdown_Update(options->autosave)) {
+                Options__StoreDebug(options);
+            }
         }
         return;
     }
@@ -928,8 +947,13 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 settings.see_through      = Checkbox_IsChecked(options->see_through);
                 Settings_SetGameplay(options->profile, &settings);
             }
+            if (editable && Checkbox_Update(options->confirm_entrances)) {
+                GameplaySettings settings  = *Settings_GetGameplay(options->profile);
+                settings.confirm_entrances = Checkbox_IsChecked(options->confirm_entrances);
+                Settings_SetGameplay(options->profile, &settings);
+            }
             if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
-                Checkbox_Update(options->collision_in_game)) {
+                Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed)) {
                 Options__StoreDebug(options);
             }
         } else if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
@@ -1039,6 +1063,8 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Options__Describe(options, movement_help[Dropdown_GetSelected(options->movement)], CONTENT_Y + (2 * ROW_H));
         Options__Name(options, "View", CONTENT_Y + (4 * ROW_H));
         Checkbox_Draw(options->see_through);
+        Options__Name(options, "Entrances", CONTENT_Y + (3 * ROW_H) + 4);
+        Checkbox_Draw(options->confirm_entrances);
         Options__Describe(options,
                           "Walls, trees, tents and roofs between you and the camera fade, so you can see "
                           "where you're walking.",
@@ -1048,11 +1074,12 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Options__Name(options, "Map Editor auto-save", DEBUG_Y);
         Checkbox_Draw(options->keep_changes);
         Checkbox_Draw(options->collision_in_game);
+        Checkbox_Draw(options->confirm_new_seed);
         Options__Name(options, "Debug", DEBUG_Y + 50);
         Options__Describe(options,
                           "For the Map Editor and testing; the same for every class. A map never saved auto-saves "
                           "to the temporary file, which the editor offers back if it closed with changes.",
-                          DEBUG_Y + 82);
+                          DEBUG_Y + 114);
         Dropdown_Draw(options->autosave); // last: its list opens over the rest
         break;
     }

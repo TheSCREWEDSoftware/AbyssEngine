@@ -553,33 +553,40 @@ static bool Builder__IsOpen(const DS1 *ds1, const int x, const int y) {
     return floor;
 }
 
-// The ground most of a piece's open cells use
-static bool Builder__FindGround(const DS1 *ds1, DS1Cell *ground) {
-    int counts[64 * 64];
+// The grounds a piece's open cells use, most used first (up to max). Border pieces are mostly the game's impassable
+// grass (the strip behind their trees), so the most used isn't always one you can walk on: see Builder__PickGround.
+static int Builder__FindGrounds(const DS1 *ds1, DS1Cell *grounds, const int max) {
+    static int counts[64 * 64];
     memset(counts, 0, sizeof(counts));
-    int best = -1;
     for (int y = 0; y < ds1->height; y++) {
         for (int x = 0; x < ds1->width; x++) {
             const DS1Cell *cell = &ds1->floors[0][(y * ds1->width) + x];
             if (ds1->floor_layer_count == 0 || cell->prop1 == 0 || !Builder__IsOpen(ds1, x, y)) {
                 continue;
             }
-            const int key = ((cell->style & 63) * 64) + (cell->sequence & 63);
-            counts[key]++;
-            if (best < 0 || counts[key] > counts[best]) {
-                best = key;
-            }
+            counts[((cell->style & 63) * 64) + (cell->sequence & 63)]++;
         }
     }
-    if (best < 0) {
-        return false;
+    int found = 0;
+    while (found < max) {
+        int best = -1;
+        for (int key = 0; key < 64 * 64; key++) {
+            best = counts[key] > 0 && (best < 0 || counts[key] > counts[best]) ? key : best;
+        }
+        if (best < 0) {
+            break;
+        }
+        counts[best] = 0;
+        memset(&grounds[found], 0, sizeof(DS1Cell));
+        grounds[found].prop1    = 1;
+        grounds[found].style    = (uint8_t)(best / 64);
+        grounds[found].sequence = (uint8_t)(best % 64);
+        found++;
     }
-    memset(ground, 0, sizeof(DS1Cell));
-    ground->prop1    = 1;
-    ground->style    = (uint8_t)(best / 64);
-    ground->sequence = (uint8_t)(best % 64);
-    return true;
+    return found;
 }
+
+static bool Builder__FindGround(const DS1 *ds1, DS1Cell *ground) { return Builder__FindGrounds(ds1, ground, 1) > 0; }
 
 // Plain ground over a block, using the tile sets of the piece the ground came from
 static void Builder__StampGround(Map *map, const DS1 *source, const DS1Cell *ground, const int tx, const int ty,
@@ -601,6 +608,25 @@ static void Builder__StampGround(Map *map, const DS1 *source, const DS1Cell *gro
     Map_StampDS1(map, &block, tx, ty, MAP_STAMP_FILLED_ONLY);
     free(block.floors[0]);
     free(block.shadows);
+}
+
+// The most used ground of a piece that you can walk on (tried on the map's corner, which is covered later anyway)
+static bool Builder__PickGround(Map *map, const DS1 *source, DS1Cell *ground) {
+    DS1Cell   grounds[8];
+    const int count = Builder__FindGrounds(source, grounds, 8);
+    for (int g = 0; g < count; g++) {
+        Builder__StampGround(map, source, &grounds[g], 0, 0, 0, 0); // adds the piece's tile sets
+        Map_SetCellRaw(map, MAP_LAYER_FLOOR, 0, 0, 0, &grounds[g]);
+        bool walkable = true;
+        for (int s = 0; s < MAP_SUBTILES * MAP_SUBTILES && walkable; s++) {
+            walkable = Map_IsWalkable(map, s % MAP_SUBTILES, s / MAP_SUBTILES);
+        }
+        if (walkable) {
+            *ground = grounds[g];
+            return true;
+        }
+    }
+    return count > 0 && (*ground = grounds[0], true);
 }
 
 // The biggest stretch of ground you can walk around in: the player starts there (not in a pocket closed off by a
@@ -1223,6 +1249,7 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
 
     Map *map = Map_CreateEmpty(size_x + 1, size_y + 1, level->act);
     snprintf(map->name, sizeof(map->name), "%s", level->name);
+    Builder__PickGround(map, ground_source, &ground); // not the impassable grass behind the border's trees
 
     // The ring of border pieces, with the odd dent
     static int shapes[MAX_GRID][MAX_GRID];
