@@ -106,7 +106,7 @@ bool Dropdown_Update(Dropdown *dropdown) {
 static void Dropdown__Box(const int x, const int y, const int w, const int h, const bool highlighted) {
     const SDL_Rect box = {x, y, w, h};
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(sdl_renderer, highlighted ? 120 : 20, highlighted ? 95 : 18, highlighted ? 40 : 15, 235);
+    SDL_SetRenderDrawColor(sdl_renderer, highlighted ? 120 : 20, highlighted ? 95 : 18, highlighted ? 40 : 15, 255);
     SDL_RenderFillRect(sdl_renderer, &box);
 }
 

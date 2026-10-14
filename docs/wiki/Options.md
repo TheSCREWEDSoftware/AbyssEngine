@@ -1,7 +1,37 @@
 # Options
 
-Gameplay settings and controls are kept in **`options.ini`**, next to `abyss.ini` (video, audio and the game files stay
-in `abyss.ini`). Both are plain text with a comment on every setting, so they can be edited outside the game too.
+**Options** on the main menu has four tabs: Video, Audio, Gameplay and Controls. **OK** saves, **Cancel** (or **Esc**)
+puts everything back as it was, **Defaults** resets the tab you're on.
+
+Video and audio are saved in `abyss.ini` (only those lines change: the rest of the file, comments too, stays as you
+wrote it); gameplay settings and controls in **`options.ini`** next to it. Both are plain text with a comment on every
+setting, so they can be edited outside the game too.
+
+## The Options screen
+
+| Tab | |
+|---|---|
+| **Video** | Window size (800x600 up to 4K, or "Follow InitialScale"), full screen, scaling (sharp pixels / smooth; from the next start). The game keeps its 4:3 shape: wider windows get black bars |
+| **Audio** | Master, music, sound effects and interface volume: drag the slider or type a number from 0 to 100; you hear it right away |
+| **Gameplay** | Settings for all classes or one class (tick "Own settings" to give a class its own), type of movement, see-through obstructions |
+| **Controls** | Every action and what it's bound to (see below) |
+
+**Controls tab**, the ArmA way:
+
+- **Show:** picks a group (Movement, Combat and skills, Belt, Screens, Automap, View, Chat, Free Roam). A coloured bar
+  on each row is its group; actions marked `*` aren't in the engine yet.
+- Inputs are white, **orange** when the same input is also on an action that's never active at the same time (fine),
+  **red** when it clashes with one that is (only the first in the list fires). Point at an action to see what it does.
+- **Double click** an action (or click its inputs) to change them, in the **Configure action** window: press any key
+  or gamepad button to add it (Ctrl / Shift / Alt held make a combination; a modifier on its own is added when you let
+  go of it; the same key twice quickly makes it a double tap, "2x K"), or pick mouse buttons, the wheel, mouse
+  combinations and gamepad inputs from the list on the right. Select one and **Delete** it, **Default** puts the
+  game's back, **Undo** what you did in the window, **Previous** / **Next** go through the actions, **OK** / **Cancel**
+  (or **Esc**).
+- **Keyboard** shows a keyboard coloured by group, with the action on each key; point at a key to see everything on
+  it; a red border is a clash. **List** goes back.
+- **Export** writes the whole table to `controls.md` next to `abyss.ini` (input, action, group, whether it works yet,
+  clashes), to print or share.
 
 ## Gameplay
 

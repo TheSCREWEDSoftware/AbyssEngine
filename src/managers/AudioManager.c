@@ -1,5 +1,6 @@
 #include "AudioManager.h"
 #include "../common/AbyssConfiguration.h"
+#include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "../managers/VideoManager.h"
 #include <stdio.h>
@@ -167,13 +168,23 @@ void AudioManager_PlayMusic(const char *path, const bool loop) {
 
     snprintf(current_music_path, sizeof(current_music_path), "%s", path);
 
-    if (audio_manager->background_music != NULL) {
-        AudioStream_Destroy(&audio_manager->background_music);
+    // Without the music MPQs (d2music.mpq, d2xmusic.mpq) there's just no music
+    AudioStream *music = FileManager_FileExists(path) ? AudioStream_Create(path) : NULL;
+    if (music == NULL) {
+        LOG_WARN("No music: '%s' isn't in the MPQs", path);
+    } else {
+        AudioStream_SetLoop(music, loop);
+        AudioStream_Play(music);
     }
 
-    audio_manager->background_music = AudioStream_Create(path);
-    AudioStream_SetLoop(audio_manager->background_music, loop);
-    AudioStream_Play(audio_manager->background_music);
+    // Swapped while the audio thread isn't reading it
+    AudioStream *old = audio_manager->background_music;
+    SDL_LockAudioDevice(audio_manager->audio_device_id);
+    audio_manager->background_music = music;
+    SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+    if (old != NULL) {
+        AudioStream_Destroy(&old);
+    }
 }
 void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float volume) {
     audio_manager->volume[audio_set_volume_type]        = volume;
