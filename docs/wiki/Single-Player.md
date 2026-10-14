@@ -51,7 +51,7 @@ game menu (**Esc**).
 | **Home** | Back to the act's town |
 | **Space** | Close the open screens |
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
-| **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled |
+| **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled and waypoints, shrines and wells marked |
 | Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |
 | **Esc** | Close the open panel; with none open, the game menu: **Options**, **Save and Exit Game**, **Return to Game** (the world waits while it's open) |

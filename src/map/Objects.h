@@ -22,6 +22,7 @@ typedef struct ObjectInfo {
     int         start_frame[OBJECT_MODE_COUNT]; // modes often hold the same frames: closed, opening..., open)
     int operate_fn;        // what clicking it does (objects.txt OperateFn): 2 shrine, 4 chest, 8 door, 23 waypoint, ...
     const char *idle_mode; // how it starts: "on" for torches and fires (lit), otherwise "nu"
+    int         automap;   // its mark on the automap (objects.txt AutoMap): a piece of the act's MaxiMap.dc6, 0 = none
 } ObjectInfo;
 
 extern const char *const object_mode_tokens[OBJECT_MODE_COUNT];

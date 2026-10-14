@@ -10,6 +10,7 @@ typedef struct Sprite Sprite;
 Sprite  *Sprite_Create(const char *path, const char *palette_name);
 void     Sprite_Destroy(Sprite **sprite);
 void     Sprite_SetBlendMode(const Sprite *sprite, SDL_BlendMode blend_mode);
+void     Sprite_SetAlphaMod(const Sprite *sprite, uint8_t alpha); // how much of it is drawn (blended and added)
 void     Sprite_SetPlayLength(Sprite *sprite, double play_length);
 void     Sprite_Draw(const Sprite *sprite, uint8_t frame_index, int x, int y);
 void     Sprite_DrawMulti(const Sprite *sprite, uint8_t frame_index, int x, int y, int frames_x, int frames_y);

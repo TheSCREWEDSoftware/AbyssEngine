@@ -363,7 +363,8 @@ void Automap_Reveal(Automap *automap, const float subtile_x, const float subtile
     }
 }
 
-void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y) {
+void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,
+                  const AutomapMark *marks, const int mark_count) {
     const Map *map  = automap->map;
     SeenArea  *seen = Automap__Seen(automap);
     if (map == NULL || seen == NULL || automap->cels == NULL) {
@@ -401,6 +402,26 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
                 }
             }
         }
+    }
+
+    // The objects' marks you've seen: the piece stands on the object's spot, like a tile's walls
+    for (int m = 0; m < mark_count; m++) {
+        const int tx = (int)(marks[m].x / MAP_SUBTILES);
+        const int ty = (int)(marks[m].y / MAP_SUBTILES);
+        if (tx < 0 || ty < 0 || tx >= map->width || ty >= map->height || !seen->tiles[(ty * map->width) + tx]) {
+            continue;
+        }
+        SDL_Texture *texture = Automap__Texture(automap, marks[m].cel);
+        if (texture == NULL) {
+            continue;
+        }
+        int w;
+        int h;
+        SDL_QueryTexture(texture, NULL, NULL, &w, &h);
+        const int      mx   = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * TILE_HALF_W);
+        const int      my   = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * TILE_HALF_H);
+        const SDL_Rect dest = {mx - (w / 2), my - h + TILE_HALF_H, w, h};
+        SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
     }
 
     // The ways out you've seen, labelled

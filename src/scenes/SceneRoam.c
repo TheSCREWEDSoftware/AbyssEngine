@@ -179,6 +179,7 @@ typedef enum RoamPanel { PANEL_NONE, PANEL_MONSTERS, PANEL_PLACES } RoamPanel;
 #define TOWN_COUNT 5
 static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue Encampment ... Harrogath
 
+#define MAX_AUTOMAP_MARKS 256  // objects marked on the automap (waypoints, shrines, wells, stairs)
 #define WAYPOINT_RANGE    8.0f // Single Player: how close to a waypoint the Waypoint button works
 #define MESSAGE_MS        4000 // level up and other messages
 #define CAPTION_MS        3500 // "Entering The Blood Moor"; fades out over the last second
@@ -2199,12 +2200,20 @@ static bool Roam__UpdateControlPanel(SceneRoam *roam, const int mouse_x, const i
 }
 
 // A globe's fill, as full as value / max (the top cut away)
+#define GLOBE_GLOW 190 // how much of the fill is added again (255: twice as bright)
 static void Roam__DrawGlobe(const SceneRoam *roam, const int frame, const int x, const int y, const float value,
                             const float max) {
     const float    part = max > 0.0f ? fminf(fmaxf(value / max, 0.0f), 1.0f) : 0.0f;
     const int      high = (int)(80.0f * part);
     const SDL_Rect cut  = {0, 80 - high, 80, high};
     Sprite_DrawSection(roam->ctrl_globes, frame, x, y, &cut);
+    // Brighter, like the game shows them: the fill once more, added (black adds nothing, so the shape and the
+    // shading stay; the reds and blues light up)
+    Sprite_SetBlendMode(roam->ctrl_globes, SDL_BLENDMODE_ADD);
+    Sprite_SetAlphaMod(roam->ctrl_globes, GLOBE_GLOW);
+    Sprite_DrawSection(roam->ctrl_globes, frame, x, y, &cut);
+    Sprite_SetAlphaMod(roam->ctrl_globes, 255);
+    Sprite_SetBlendMode(roam->ctrl_globes, SDL_BLENDMODE_BLEND);
 }
 
 static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int mouse_y) {
@@ -3020,7 +3029,20 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->free_roam) {
         Automap_Reveal(roam->automap, roam->player.x, roam->player.y);
         if (roam->show_automap) {
-            Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y);
+            AutomapMark marks[MAX_AUTOMAP_MARKS];
+            int         mark_count = 0;
+            for (int i = 0; i < roam->unit_count && mark_count < MAX_AUTOMAP_MARKS; i++) {
+                const Unit *unit = &roam->units[i];
+                if (!unit->is_object) {
+                    continue;
+                }
+                const int cel = unit->object.operate_fn == 23 && unit->object.automap == 0 ? AUTOMAP_WAYPOINT_CEL
+                                                                                           : unit->object.automap;
+                if (cel > 0) {
+                    marks[mark_count++] = (AutomapMark){unit->x, unit->y, cel};
+                }
+            }
+            Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
         }
     }
     if (light_levels[light_level].darkness > 0) {

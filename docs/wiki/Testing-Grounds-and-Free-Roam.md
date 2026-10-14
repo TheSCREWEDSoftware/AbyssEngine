@@ -22,7 +22,7 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
 | **B** | Collision view: what you can't walk on and why (red: the map's walls, cliffs and water; blue: objects such as chests and closed doors), the ways to the next area (green) and entrances (yellow), and where each unit stands (purple: monsters and you; light blue: town folk). A legend shows the colours |
 | **N** | Free Roam: a new random world (the area you're in is built again from the new seed); asks first unless you turn that off (Options › Gameplay › Debug) |
-| **Tab** | Free Roam: the automap. What you've seen of the area (everything within about nine tiles of where you've been), drawn with the game's own automap pieces (`MaxiMap.dc6`, picked per tile by `AutoMap.txt`) over the view and centred on you, with the ways out labelled ("To The Cold Plains"). It's kept per area until the world seed changes |
+| **Tab** | Free Roam: the automap. What you've seen of the area (everything within about nine tiles of where you've been), drawn with the game's own automap pieces (`MaxiMap.dc6`, picked per tile by `AutoMap.txt`) over the view and centred on you, with the ways out labelled ("To The Cold Plains") and objects marked the way the game marks them: waypoints, shrines, wells, the stash, stairs, the Cairn Stones (the piece `objects.txt` gives each; every waypoint gets the waypoint mark). It's kept per area until the world seed changes |
 | Mouse wheel | Zoom |
 | **V** | Free Roam: the Places list |
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |

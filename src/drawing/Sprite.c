@@ -232,6 +232,14 @@ void Sprite_SetBlendMode(const Sprite *sprite, const SDL_BlendMode blend_mode) {
     }
 }
 
+void Sprite_SetAlphaMod(const Sprite *sprite, const uint8_t alpha) {
+    for (uint32_t frame_idx = 0; frame_idx < sprite->frame_count; frame_idx++) {
+        if (sprite->frames[frame_idx].texture != NULL) {
+            SDL_SetTextureAlphaMod(sprite->frames[frame_idx].texture, alpha);
+        }
+    }
+}
+
 void Sprite_SetPlayLength(Sprite *sprite, const double play_length) {
     sprite->play_length     = play_length;
     sprite->ticks_per_frame = (uint32_t)((1000 * play_length) / (double)sprite->frame_count);
