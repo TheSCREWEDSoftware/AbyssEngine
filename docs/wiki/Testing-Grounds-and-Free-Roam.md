@@ -26,7 +26,8 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
 
 These are the default keys; they can all be changed in **Options › Controls** ([Options](Options.md)).
-| **Esc** / Back | Leave (back to the editor if you came from **Play**) |
+| **Esc** | The menu: **Options**, **Leave** (back to the editor if you came from **Play**), **Back to Free Roam** |
+| Back | Leave |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
 
 ## Places (Free Roam)

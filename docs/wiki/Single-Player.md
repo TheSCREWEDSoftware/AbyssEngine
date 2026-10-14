@@ -47,7 +47,7 @@ gamepad's left stick) walk and **E** attacks.
 | **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled |
 | Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |
-| **Esc** | Close the open panel; with none open, press twice to save and exit |
+| **Esc** | Close the open panel; with none open, the game menu: **Options**, **Save and Exit Game**, **Return to Game** (the world waits while it's open) |
 | Exit Game button | Save and go back to the character list |
 
 - **Combat** is always on. Town folk (Akara, Charsi, Gheed, ...) never fight and can't be attacked. Hits can miss:

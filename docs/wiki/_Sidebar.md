@@ -18,6 +18,7 @@
 
 - [Single Player](Single-Player.md)
 - [Options](Options.md)
+- [Controls](Controls.md)
 
 **Developer tools**
 

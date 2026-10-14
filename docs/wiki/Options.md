@@ -1,6 +1,6 @@
 # Options
 
-**Options** on the main menu has four tabs: Video, Audio, Gameplay and Controls. **OK** saves, **Cancel** (or **Esc**)
+**Options** on the main menu (or in the game: **Esc** › Options) has four tabs: Video, Audio, Gameplay and Controls. **OK** saves, **Cancel** (or **Esc**)
 puts everything back as it was, **Defaults** resets the tab you're on.
 
 Video and audio are saved in `abyss.ini` (only those lines change: the rest of the file, comments too, stays as you
@@ -24,14 +24,15 @@ setting, so they can be edited outside the game too.
   **red** when it clashes with one that is (only the first in the list fires). Point at an action to see what it does.
 - **Double click** an action (or click its inputs) to change them, in the **Configure action** window: press any key
   or gamepad button to add it (Ctrl / Shift / Alt held make a combination; a modifier on its own is added when you let
-  go of it; the same key twice quickly makes it a double tap, "2x K"), or pick mouse buttons, the wheel, mouse
-  combinations and gamepad inputs from the list on the right. Select one and **Delete** it, **Default** puts the
+  go of it; the same key twice quickly makes it a double tap, "2x K"; gamepad buttons and stick directions are added
+  the same way). The list on the right is only for what you can't press there: mouse buttons, the wheel, double
+  clicks and mouse / wheel with Ctrl, Shift or Alt. Select one and **Delete** it, **Default** puts the
   game's back, **Undo** what you did in the window, **Previous** / **Next** go through the actions, **OK** / **Cancel**
   (or **Esc**).
-- **Keyboard** shows a keyboard coloured by group, with the action on each key; point at a key to see everything on
-  it; a red border is a clash. **List** goes back.
-- **Export** writes the whole table to `controls.md` next to `abyss.ini` (input, action, group, whether it works yet,
-  clashes), to print or share.
+- **Export** writes the controls for reading outside the game, next to `abyss.ini`: `controls.md` (a table per group:
+  action, inputs, clashes, whether it works yet) and `controls-keyboard.svg` (a keyboard coloured by group with the
+  actions on each key, and the mouse / gamepad / combination inputs listed under it). The defaults are on the
+  [Controls](Controls.md) page.
 
 ## Gameplay
 
@@ -84,7 +85,9 @@ they can be set up already; they're marked "not in the engine yet".
 | Chat, clear messages | Enter, N | |
 | Free Roam: combat, collision view, placement preview, new world | C, B, P, N | ✅ |
 
-**Esc** isn't bindable: it always closes what's open and leaves.
+**Esc** isn't bindable: it closes what's open, or opens the game menu.
+
+The defaults as a keyboard picture and a table per group: [Controls](Controls.md).
 
 ### Per class
 

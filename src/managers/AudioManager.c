@@ -187,6 +187,9 @@ void AudioManager_PlayMusic(const char *path, const bool loop) {
     }
 }
 void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float volume) {
+    if (audio_manager == NULL) {
+        return;
+    }
     audio_manager->volume[audio_set_volume_type]        = volume;
     audio_manager->volume_actual[audio_set_volume_type] = powf(volume, 2.0f);
 

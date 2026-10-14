@@ -15,6 +15,7 @@
 #include "../drawing/TabBar.h"
 #include "../drawing/TextBox.h"
 #include "../game/Controls.h"
+#include "../game/ControlsExport.h"
 #include "../game/Settings.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
@@ -90,7 +91,7 @@ static const char *movement_help[MOVEMENT_TYPE_COUNT] = {
     "Movement keys and clicks both walk; clicks and the attack key attack.",
 };
 
-// Group colours: the controls table's legend and the keyboard diagram (ArmA / the game's guide style)
+// Group colours: the stripe by each action in the controls table
 static const uint8_t group_colors[GROUP_COUNT][3] = {
     {150, 150, 220}, // movement
     {230, 140, 140}, // combat
@@ -102,53 +103,19 @@ static const uint8_t group_colors[GROUP_COUNT][3] = {
     {240, 170, 90 }, // debug
 };
 
-// Inputs you can't press while the dialog has the mouse, or wouldn't think of: pick them from a list
+// Inputs you can't press while the dialog has the mouse: pick them from a list. Keys, combinations ("Shift+Alt+A")
+// and gamepad buttons and sticks are captured by pressing them.
 static const char *extra_inputs[] = {
-    "Mouse Left",
-    "Mouse Right",
-    "Mouse Middle",
-    "Mouse 4",
-    "Mouse 5",
-    "Wheel Up",
-    "Wheel Down",
-    "Shift+Mouse Left",
-    "Ctrl+Mouse Left",
-    "Alt+Mouse Left",
-    "Shift+Mouse Right",
-    "Ctrl+Mouse Right",
-    "Ctrl+Wheel Up",
-    "Ctrl+Wheel Down",
-    "2x Mouse Left",
-    "2x Mouse Right",
-    "Pad A",
-    "Pad B",
-    "Pad X",
-    "Pad Y",
-    "Pad Left Shoulder",
-    "Pad Right Shoulder",
-    "Pad Left Trigger",
-    "Pad Right Trigger",
-    "Pad Back",
-    "Pad Start",
-    "Pad Up",
-    "Pad Down",
-    "Pad Left",
-    "Pad Right",
-    "Pad Left Stick Up",
-    "Pad Left Stick Down",
-    "Pad Left Stick Left",
-    "Pad Left Stick Right",
-    "Pad Right Stick Up",
-    "Pad Right Stick Down",
-    "Pad Right Stick Left",
-    "Pad Right Stick Right",
-    "Pad Left Stick",
-    "Pad Right Stick",
+    "Mouse Left",         "Mouse Right",       "Mouse Middle",      "Mouse 4",          "Mouse 5",
+    "Wheel Up",           "Wheel Down",        "2x Mouse Left",     "2x Mouse Right",   "Shift+Mouse Left",
+    "Ctrl+Mouse Left",    "Alt+Mouse Left",    "Shift+Mouse Right", "Ctrl+Mouse Right", "Alt+Mouse Right",
+    "Shift+Mouse Middle", "Ctrl+Mouse Middle", "Alt+Mouse Middle",  "Shift+Wheel Up",   "Shift+Wheel Down",
+    "Ctrl+Wheel Up",      "Ctrl+Wheel Down",   "Alt+Wheel Up",      "Alt+Wheel Down",
 };
 #define EXTRA_INPUT_COUNT (int)(sizeof(extra_inputs) / sizeof(extra_inputs[0]))
 
 typedef struct SceneOptions {
-    Sprite  *background;
+    bool     closed; // OK or Cancel: done
     TabBar  *tabs;
     Label   *title_label;
     Label   *text_label;  // setting names (font16)
@@ -185,8 +152,6 @@ typedef struct SceneOptions {
     int           last_click_row;
     uint64_t      last_click_time;
     bool          prev_left;
-    bool          keyboard_view;
-    Button       *keyboard_button;
     Button       *export_button;
 
     // Configure dialog
@@ -208,8 +173,6 @@ typedef struct SceneOptions {
     uint64_t        last_bind_time;
     ControlInput    last_bound;
 } SceneOptions;
-
-DEFINE_SCENE_CALLBACKS(Options);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Helpers
@@ -309,11 +272,9 @@ static void Options__BuildRows(SceneOptions *options) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Create / free
 
-void *Options_Create(void) {
-    Cursor_SetVisible(true);
+OptionsPanel *OptionsPanel_Create(void) {
     SceneOptions *options = calloc(1, sizeof(SceneOptions));
     FAIL_IF_NULL(options);
-    options->background     = Sprite_Create(GAME_SELECT_SCREEN, PALETTE_SKY);
     options->tabs           = TabBar_Create(tab_names, TAB_COUNT, TAB_VIDEO);
     options->hovered_row    = -1;
     options->last_click_row = -1;
@@ -376,10 +337,8 @@ void *Options_Create(void) {
     }
     options->group_filter = Dropdown_Create(CONTENT_X + 480, CONTENT_Y + 27, 180, groups, GROUP_COUNT + 1);
     Options__BuildRows(options);
-    options->keyboard_button = Button_Create(BUTTON_TYPE_MEDIUM, "Keyboard");
-    options->export_button   = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
-    Button_SetPosition(options->keyboard_button, CONTENT_X, CONTROLS_BTN_Y);
-    Button_SetPosition(options->export_button, CONTENT_X + 140, CONTROLS_BTN_Y);
+    options->export_button = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
+    Button_SetPosition(options->export_button, CONTENT_X, CONTROLS_BTN_Y);
 
     // Configure dialog
     options->extras_list = ListBox_Create(FONTS_FONT16, DIALOG_X + 330, DIALOG_Y + 110, 270, 14, 20);
@@ -403,17 +362,19 @@ void *Options_Create(void) {
     return options;
 }
 
-void Options_Free(void **scene_ref) {
-    SceneOptions *options = *scene_ref;
-    Sprite_Destroy(&options->background);
+void OptionsPanel_Destroy(OptionsPanel **panel) {
+    if (panel == NULL || *panel == NULL) {
+        return;
+    }
+    SceneOptions *options = *panel;
     TabBar_Destroy(&options->tabs);
     Label_Destroy(&options->title_label);
     Label_Destroy(&options->text_label);
     Label_Destroy(&options->small_label);
-    Button *buttons[] = {options->ok_button,       options->cancel_button,        options->defaults_button,
-                         options->keyboard_button, options->export_button,        options->previous_button,
-                         options->next_button,     options->default_button,       options->delete_button,
-                         options->undo_button,     options->dialog_cancel_button, options->dialog_ok_button};
+    Button *buttons[] = {
+        options->ok_button,       options->cancel_button,        options->defaults_button, options->export_button,
+        options->previous_button, options->next_button,          options->default_button,  options->delete_button,
+        options->undo_button,     options->dialog_cancel_button, options->dialog_ok_button};
     for (size_t b = 0; b < sizeof(buttons) / sizeof(buttons[0]); b++) {
         Button_Destroy(&buttons[b]);
     }
@@ -431,13 +392,13 @@ void Options_Free(void **scene_ref) {
     }
     ListBox_Destroy(&options->extras_list);
     free(options);
-    *scene_ref = NULL;
+    *panel = NULL;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // OK / Cancel / Defaults
 
-static void Options__Leave(void) { Scene_Set(SCENE_REF(MainMenu)); }
+static void Options__Leave(SceneOptions *options) { options->closed = true; }
 
 static void Options__Save(SceneOptions *options) {
     // Video
@@ -510,7 +471,7 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Controls: table, dialog, keyboard, export
+// Controls: table, dialog, export
 
 static void Options__OpenDialog(SceneOptions *options, const int row) {
     options->dialog           = true;
@@ -649,268 +610,26 @@ static void Options__UpdateDialog(SceneOptions *options, const int mouse_x, cons
     }
 }
 
-// The keyboard, row by row: key names (SDL's), widths in quarter keys (4 = one key); "" = a gap
-static const struct {
-    const char *name;
-    const char *label;
-    int         width;
-} keyboard[6][20] = {
-    {{"Escape", "Esc", 4}, {"", "", 2},       {"F1", "F1", 4},
-     {"F2", "F2", 4},      {"F3", "F3", 4},   {"F4", "F4", 4},
-     {"", "", 2},          {"F5", "F5", 4},   {"F6", "F6", 4},
-     {"F7", "F7", 4},      {"F8", "F8", 4},   {"", "", 2},
-     {"F9", "F9", 4},      {"F10", "F10", 4}, {"F11", "F11", 4},
-     {"F12", "F12", 4},    {"", "", 2},       {"PrintScreen", "PrtSc", 4},
-     {"Home", "Home", 4},  {NULL, NULL, 0}},
-    {{"`", "`", 4},
-     {"1", "1", 4},
-     {"2", "2", 4},
-     {"3", "3", 4},
-     {"4", "4", 4},
-     {"5", "5", 4},
-     {"6", "6", 4},
-     {"7", "7", 4},
-     {"8", "8", 4},
-     {"9", "9", 4},
-     {"0", "0", 4},
-     {"-", "-", 4},
-     {"=", "=", 4},
-     {"Backspace", "Back", 8},
-     {"", "", 2},
-     {"Insert", "Ins", 4},
-     {"PageUp", "PgUp", 4},
-     {NULL, NULL, 0}},
-    {{"Tab", "Tab", 6},
-     {"Q", "Q", 4},
-     {"W", "W", 4},
-     {"E", "E", 4},
-     {"R", "R", 4},
-     {"T", "T", 4},
-     {"Y", "Y", 4},
-     {"U", "U", 4},
-     {"I", "I", 4},
-     {"O", "O", 4},
-     {"P", "P", 4},
-     {"[", "[", 4},
-     {"]", "]", 4},
-     {"\\", "\\", 6},
-     {"", "", 2},
-     {"Delete", "Del", 4},
-     {"PageDown", "PgDn", 4},
-     {NULL, NULL, 0}},
-    {{"CapsLock", "Caps", 7},
-     {"A", "A", 4},
-     {"S", "S", 4},
-     {"D", "D", 4},
-     {"F", "F", 4},
-     {"G", "G", 4},
-     {"H", "H", 4},
-     {"J", "J", 4},
-     {"K", "K", 4},
-     {"L", "L", 4},
-     {";", ";", 4},
-     {"'", "'", 4},
-     {"Return", "Enter", 9},
-     {"", "", 2},
-     {"End", "End", 4},
-     {NULL, NULL, 0}},
-    {{"Left Shift", "Shift", 9},
-     {"Z", "Z", 4},
-     {"X", "X", 4},
-     {"C", "C", 4},
-     {"V", "V", 4},
-     {"B", "B", 4},
-     {"N", "N", 4},
-     {"M", "M", 4},
-     {",", ",", 4},
-     {".", ".", 4},
-     {"/", "/", 4},
-     {"Right Shift", "Shift", 11},
-     {"", "", 6},
-     {"Up", "Up", 4},
-     {NULL, NULL, 0}},
-    {{"Left Ctrl", "Ctrl", 6},
-     {"Left GUI", "Win", 5},
-     {"Left Alt", "Alt", 5},
-     {"Space", "Space", 25},
-     {"Right Alt", "Alt", 5},
-     {"Right Ctrl", "Ctrl", 6},
-     {"", "", 2},
-     {"Left", "Left", 4},
-     {"Down", "Down", 4},
-     {"Right", "Right", 4},
-     {NULL, NULL, 0}},
-};
-
-// The first action (in list order) a plain key is on, and whether it clashes
-static int Options__KeyAction(const SceneOptions *options, const char *key_name, ControlConflict *conflict) {
-    const SDL_Scancode scancode = SDL_GetScancodeFromName(key_name);
-    if (scancode == SDL_SCANCODE_UNKNOWN) {
-        return -1;
-    }
-    const ControlInput input = {INPUT_KEY, scancode, 0, false};
-    for (int a = 0; a < ACTION_COUNT; a++) {
-        const ControlBindings *list = Controls_GetBindings(options->profile, (ControlAction)a);
-        for (int b = 0; b < list->count; b++) {
-            if (Controls_SameInput(&list->inputs[b], &input)) {
-                *conflict = Controls_Conflict(options->profile, (ControlAction)a, &input);
-                return a;
-            }
-        }
-    }
-    return -1;
-}
-
-#define KEY_UNIT   9 // pixels per quarter key
-#define KEY_H      34
-#define KEY_STEP   37
-#define KEYBOARD_Y (TABLE_Y - 16)
-
-// Every action a plain key is on, "Automap, Run / walk", for the line under the keyboard
-static void Options__KeyActions(const SceneOptions *options, const char *key_name, char *text, const size_t size) {
-    text[0]                     = '\0';
-    const SDL_Scancode scancode = SDL_GetScancodeFromName(key_name);
-    const ControlInput input    = {INPUT_KEY, scancode, 0, false};
-    for (int a = 0; a < ACTION_COUNT && scancode != SDL_SCANCODE_UNKNOWN; a++) {
-        const ControlBindings *list = Controls_GetBindings(options->profile, (ControlAction)a);
-        for (int b = 0; b < list->count; b++) {
-            if (Controls_SameInput(&list->inputs[b], &input)) {
-                const size_t used = strlen(text);
-                snprintf(text + used, size - used, "%s%s%s", used > 0 ? ", " : "",
-                         Controls_ActionName((ControlAction)a), Controls_ActionWorks((ControlAction)a) ? "" : " *");
-            }
-        }
-    }
-}
-
-static void Options__DrawKeyboard(SceneOptions *options) {
-    int mouse_x;
-    int mouse_y;
-    InputManager_GetMousePosition(&mouse_x, &mouse_y);
-    const char *hovered_key   = NULL;
-    const char *hovered_label = NULL;
-    for (int r = 0; r < 6; r++) {
-        int x = CONTENT_X;
-        for (int k = 0; k < 20 && keyboard[r][k].name != NULL; k++) {
-            const int w = keyboard[r][k].width * KEY_UNIT;
-            if (keyboard[r][k].name[0] == '\0') {
-                x += w;
-                continue;
-            }
-            ControlConflict conflict = CONFLICT_NONE;
-            const int       action   = Options__KeyAction(options, keyboard[r][k].name, &conflict);
-            const int       y        = KEYBOARD_Y + (r * KEY_STEP) + (r > 0 ? 6 : 0);
-            const bool      over     = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + KEY_H;
-            if (over) {
-                hovered_key   = keyboard[r][k].name;
-                hovered_label = keyboard[r][k].label;
-            }
-            if (action >= 0) {
-                const uint8_t *c = group_colors[Controls_ActionGroup((ControlAction)action)];
-                Options__Fill(x + 1, y, w - 2, KEY_H, c[0] / 2, c[1] / 2, c[2] / 2, 255);
-            } else {
-                Options__Fill(x + 1, y, w - 2, KEY_H, 30, 28, 26, 255);
-            }
-            const SDL_Rect frame = {x + 1, y, w - 2, KEY_H};
-            if (over) {
-                SDL_SetRenderDrawColor(sdl_renderer, 255, 230, 140, 255);
-            } else if (conflict == CONFLICT_CLASH) {
-                SDL_SetRenderDrawColor(sdl_renderer, 255, 60, 50, 255);
-            } else {
-                SDL_SetRenderDrawColor(sdl_renderer, 100, 85, 55, 255);
-            }
-            SDL_RenderDrawRect(sdl_renderer, &frame);
-            Options__Text(options, options->small_label, keyboard[r][k].label, x + 4, y + 8, 0xFF, 0xFF, 0xFF);
-            if (action >= 0) {
-                // The action's name if it fits; the line underneath has them all for the key under the mouse
-                const char *name = Controls_ActionName((ControlAction)action);
-                if (Label_MeasureText(options->small_label, name) <= w - 6) {
-                    Options__Text(options, options->small_label, name, x + 4, y + 24, 0xE8, 0xE0, 0xC0);
-                }
-            }
-            x += w;
-        }
-    }
-
-    // Legend, wrapping at the panel's edge
-    int       lx = CONTENT_X;
-    int       ly = KEYBOARD_Y + (6 * KEY_STEP) + 10;
-    const int lw = PANEL_X + PANEL_W - 16;
-    for (int g = 0; g < GROUP_COUNT; g++) {
-        const char *name  = Controls_GroupName((ControlGroup)g);
-        const int   width = 14 + Label_MeasureText(options->small_label, name) + 14;
-        if (lx + width > lw) {
-            lx  = CONTENT_X;
-            ly += 14;
-        }
-        const uint8_t *c = group_colors[g];
-        Options__Fill(lx, ly - 5, 10, 10, c[0], c[1], c[2], 255);
-        Options__Text(options, options->small_label, name, lx + 14, ly, 0xFF, 0xFF, 0xFF);
-        lx += width;
-    }
-
-    // What the key under the mouse does
-    char line[300];
-    if (hovered_key != NULL) {
-        char actions_text[256];
-        Options__KeyActions(options, hovered_key, actions_text, sizeof(actions_text));
-        snprintf(line, sizeof(line), "%s: %s", hovered_label, actions_text[0] != '\0' ? actions_text : "nothing");
-    } else {
-        snprintf(line, sizeof(line),
-                 "Keys without Ctrl, Shift or Alt; point at one to see everything it's bound to. "
-                 "Red border: it clashes.");
-    }
-    Options__Wrapped(options, line, CONTENT_X, ly + 18, lw);
-}
-
-// A Markdown table of every binding, next to options.ini
+// The controls for outside the game: controls.md (a table) and controls-keyboard.svg (a diagram), next to abyss.ini
 static void Options__Export(SceneOptions *options) {
-    char path[4200];
-    snprintf(path, sizeof(path), "%s/controls.md", AbyssConfiguration_GetConfigFolder());
-    FILE *file = fopen(path, "w");
-    if (file == NULL) {
-        Options__Message(options, "Could not write controls.md.");
+    char md[4200];
+    char svg[4200];
+    snprintf(md, sizeof(md), "%s/controls.md", AbyssConfiguration_GetConfigFolder());
+    snprintf(svg, sizeof(svg), "%s/controls-keyboard.svg", AbyssConfiguration_GetConfigFolder());
+    if (!ControlsExport_Svg(options->profile, svg) ||
+        !ControlsExport_Markdown(options->profile, md, "controls-keyboard.svg")) {
+        Options__Message(options, "Could not write the controls files.");
         return;
     }
-    fprintf(file, "# Controls (%s)\n\n| Input | Action | Group | Works | Note |\n|---|---|---|---|---|\n",
-            Settings_ProfileName(options->profile));
-    for (int a = 0; a < ACTION_COUNT; a++) {
-        const ControlBindings *list = Controls_GetBindings(options->profile, (ControlAction)a);
-        for (int b = 0; b < (list->count > 0 ? list->count : 1); b++) {
-            char name[64] = "(not bound)";
-            if (list->count > 0) {
-                Controls_InputName(&list->inputs[b], name, sizeof(name));
-            }
-            const ControlConflict conflict =
-                list->count > 0 ? Controls_Conflict(options->profile, (ControlAction)a, &list->inputs[b])
-                                : CONFLICT_NONE;
-            fprintf(file, "| %s | %s | %s | %s | %s |\n", name, Controls_ActionName((ControlAction)a),
-                    Controls_GroupName(Controls_ActionGroup((ControlAction)a)),
-                    Controls_ActionWorks((ControlAction)a) ? "yes" : "not yet",
-                    conflict == CONFLICT_CLASH    ? "clashes with another action"
-                    : conflict == CONFLICT_SHARED ? "also used elsewhere"
-                                                  : "");
-        }
-    }
-    fclose(file);
-    char text[160];
-    snprintf(text, sizeof(text), "Saved the table to controls.md (next to abyss.ini).");
-    Options__Message(options, text);
+    Options__Message(options, "Saved controls.md and controls-keyboard.svg (next to abyss.ini).");
 }
 
 static void Options__UpdateControls(SceneOptions *options, const int mouse_x, const int mouse_y, const bool clicked) {
     if (Dropdown_Update(options->group_filter)) {
         Options__BuildRows(options);
     }
-    if (Button_Update(options->keyboard_button)) {
-        options->keyboard_view = !options->keyboard_view;
-        Button_SetText(options->keyboard_button, options->keyboard_view ? "List" : "Keyboard");
-    }
     if (Button_Update(options->export_button)) {
         Options__Export(options);
-    }
-    if (options->keyboard_view) {
-        return;
     }
     const int wheel = InputManager_ConsumeMouseWheel();
     const int most  = options->row_count > TABLE_ROWS ? options->row_count - TABLE_ROWS : 0;
@@ -965,10 +684,6 @@ static void Options__DrawInputs(SceneOptions *options, const ControlAction actio
 
 static void Options__DrawControls(SceneOptions *options) {
     Options__Text(options, options->text_label, "Show:", CONTENT_X + 430, CONTENT_Y + 37, 0xC7, 0xB3, 0x77);
-    if (options->keyboard_view) {
-        Options__DrawKeyboard(options);
-        return;
-    }
     // Header
     Options__Fill(CONTENT_X, TABLE_Y - 20, TABLE_W, 18, 60, 50, 35, 230);
     Options__Text(options, options->small_label, "ACTION", CONTENT_X + 6, TABLE_Y - 11, 0xFF, 0xFF, 0xFF);
@@ -1054,7 +769,7 @@ static void Options__DrawDialog(SceneOptions *options) {
     Button_Draw(options->undo_button);
 
     // More inputs
-    Options__Text(options, options->small_label, "Or pick one:", DIALOG_X + 330, DIALOG_Y + 98, 0xC7, 0xB3, 0x77);
+    Options__Text(options, options->small_label, "Mouse and wheel:", DIALOG_X + 330, DIALOG_Y + 98, 0xC7, 0xB3, 0x77);
     ListBox_Draw(options->extras_list);
 
     const char *hint = options->pending_modifier >= 0
@@ -1074,12 +789,10 @@ static void Options__DrawDialog(SceneOptions *options) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Update / render
 
-void Options_Update(void *scene_ref, const uint64_t delta) {
-    (void)delta;
-    SceneOptions *options = scene_ref;
-    int           mouse_x;
-    int           mouse_y;
-    bool          left;
+static void OptionsPanel__Update(SceneOptions *options) {
+    int  mouse_x;
+    int  mouse_y;
+    bool left;
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
     InputManager_GetMouseButtons(&left, NULL, NULL);
     const bool clicked = left && !options->prev_left;
@@ -1172,12 +885,12 @@ void Options_Update(void *scene_ref, const uint64_t delta) {
     }
     if (Button_Update(options->ok_button)) {
         Options__Save(options);
-        Options__Leave();
+        Options__Leave(options);
         return;
     }
     if (Button_Update(options->cancel_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
         Options__Cancel(options);
-        Options__Leave();
+        Options__Leave(options);
         return;
     }
 }
@@ -1217,9 +930,7 @@ static void Options__Name(SceneOptions *options, const char *text, const int y) 
     Options__Text(options, options->text_label, text, CONTENT_X, y + 10, 0xC7, 0xB3, 0x77);
 }
 
-void Options_Render(void *scene_ref) {
-    SceneOptions *options = scene_ref;
-    Sprite_DrawMulti(options->background, 0, 0, 0, 4, 3);
+void OptionsPanel_Draw(OptionsPanel *options) {
     Options__Fill(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 8, 7, 6, 255);
     Options__Frame(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
     Label_Draw(options->title_label, 400, PANEL_Y + 24);
@@ -1279,7 +990,6 @@ void Options_Render(void *scene_ref) {
             Checkbox_Draw(options->own_profile);
         }
         if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
-            Button_Draw(options->keyboard_button);
             Button_Draw(options->export_button);
             Options__DrawControls(options);
         } else {
@@ -1312,4 +1022,52 @@ void Options_Render(void *scene_ref) {
     if (options->dialog) {
         Options__DrawDialog(options);
     }
+}
+
+bool OptionsPanel_Update(OptionsPanel *panel) {
+    if (!panel->closed) {
+        OptionsPanel__Update(panel);
+    }
+    return !panel->closed;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The Options scene (from the main menu): the panel over the main menu's picture
+
+typedef struct OptionsScene {
+    Sprite       *background;
+    OptionsPanel *panel;
+} OptionsScene;
+
+DEFINE_SCENE_CALLBACKS(Options);
+
+void *Options_Create(void) {
+    Cursor_SetVisible(true);
+    OptionsScene *scene = calloc(1, sizeof(OptionsScene));
+    FAIL_IF_NULL(scene);
+    scene->background = Sprite_Create(GAME_SELECT_SCREEN, PALETTE_SKY);
+    scene->panel      = OptionsPanel_Create();
+    return scene;
+}
+
+void Options_Update(void *scene_ref, const uint64_t delta) {
+    (void)delta;
+    OptionsScene *scene = scene_ref;
+    if (!OptionsPanel_Update(scene->panel)) {
+        Scene_Set(SCENE_REF(MainMenu));
+    }
+}
+
+void Options_Render(void *scene_ref) {
+    OptionsScene *scene = scene_ref;
+    Sprite_DrawMulti(scene->background, 0, 0, 0, 4, 3);
+    OptionsPanel_Draw(scene->panel);
+}
+
+void Options_Free(void **scene_ref) {
+    OptionsScene *scene = *scene_ref;
+    Sprite_Destroy(&scene->background);
+    OptionsPanel_Destroy(&scene->panel);
+    free(scene);
+    *scene_ref = NULL;
 }

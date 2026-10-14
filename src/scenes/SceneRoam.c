@@ -33,6 +33,7 @@
 #include "SceneGame.h"
 #include "SceneMainMenu.h"
 #include "SceneMapEditor.h"
+#include "SceneOptions.h"
 #include "SceneTestingGrounds.h"
 #include <ctype.h>
 #include <math.h>
@@ -176,7 +177,6 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define WAYPOINT_RANGE    8.0f // Single Player: how close to a waypoint the Waypoint button works
 #define MESSAGE_MS        4000 // level up and other messages
 #define CAPTION_MS        3500 // "Entering The Blood Moor"; fades out over the last second
-#define EXIT_CONFIRM_MS   2500 // Esc twice to save and exit
 #define HARDCORE_DEATH_MS 5000 // time to read the bad news
 #define CHAR_PANEL        "/data/global/ui/PANEL/invchar6.dc6"
 #define CHAR_PANEL_W      320
@@ -241,14 +241,19 @@ typedef struct SceneRoam {
     bool      prev_left;
     bool      prev_right;
 
-    TextBox *seed_box; // Free Roam: world seed (in the Places panel)
-    Button  *seed_use_button;
-    Button  *seed_random_button;
-    Label   *seed_label;
-    float    key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
-    float    key_dy;
-    bool     screenshot;      // take one at the end of this frame's drawing
-    bool     attack_in_place; // the swing under way was from where you stand: don't walk after the target
+    TextBox      *seed_box; // Free Roam: world seed (in the Places panel)
+    Button       *seed_use_button;
+    Button       *seed_random_button;
+    Label        *seed_label;
+    float         key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
+    float         key_dy;
+    bool          menu_open; // the game menu (Esc): Options, leave, back to the game; the world waits
+    Button       *menu_options_button;
+    Button       *menu_leave_button;
+    Button       *menu_return_button;
+    OptionsPanel *options_panel;   // Options opened from that menu
+    bool          screenshot;      // take one at the end of this frame's drawing
+    bool          attack_in_place; // the swing under way was from where you stand: don't walk after the target
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
@@ -268,8 +273,7 @@ typedef struct SceneRoam {
     uint64_t   caption_until;
     char       message[96];
     uint64_t   message_until;
-    uint64_t   exit_armed_until; // Esc pressed once
-    uint64_t   leave_at;         // hardcore death: back to the character list at this time
+    uint64_t   leave_at; // hardcore death: back to the character list at this time
 } SceneRoam;
 
 static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);
@@ -1257,12 +1261,12 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
     Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   V waypoint (near one)   "
-                                           "Home town   Tab map   L light   Esc save and exit"
+                                           "Home town   Tab map   L light   Esc menu"
                                     : free_roam
                                         ? "Left walk/attack  Right drop  Shift+Right remove  R run  C combat  "
-                                          "L light  B collision  Tab map  N new world  Esc back"
+                                          "L light  B collision  Tab map  N new world  Esc menu"
                                         : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                          "P preview  L light  B blocked  Esc back");
+                                          "P preview  L light  B blocked  Esc menu");
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -1305,6 +1309,12 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->clear_button    = roam->buttons[4];
     }
 
+    roam->menu_options_button = Button_Create(BUTTON_TYPE_WIDE, "Options");
+    roam->menu_leave_button   = Button_Create(BUTTON_TYPE_WIDE, game ? "Save and Exit Game" : "Leave");
+    roam->menu_return_button  = Button_Create(BUTTON_TYPE_WIDE, game ? "Return to Game" : "Back to Free Roam");
+    Button_SetPosition(roam->menu_options_button, 264, 210);
+    Button_SetPosition(roam->menu_leave_button, 264, 260);
+    Button_SetPosition(roam->menu_return_button, 264, 310);
     roam->automap       = Automap_Create();
     roam->caption_label = Label_Create(FONTS_FONT30, PALETTE_STATIC);
     Label_SetAlignment(roam->caption_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
@@ -1393,6 +1403,10 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->seed_label);
     Label_Destroy(&roam->caption_label);
     Automap_Destroy(&roam->automap);
+    Button_Destroy(&roam->menu_options_button);
+    Button_Destroy(&roam->menu_leave_button);
+    Button_Destroy(&roam->menu_return_button);
+    OptionsPanel_Destroy(&roam->options_panel);
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -1931,13 +1945,8 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
             roam->panel      = PANEL_NONE;
             roam->char_panel = false;
             Roam__UpdateButtons(roam);
-        } else if (now < roam->exit_armed_until) {
-            Roam__StoreCharacter(roam);
-            Scene_Set(SCENE_REF(CharacterSelect));
-            return true;
         } else {
-            roam->exit_armed_until = now + EXIT_CONFIRM_MS;
-            Roam__ShowMessage(roam, "Press Esc again to save and exit.");
+            roam->menu_open = true; // the game menu, like the game's
         }
     }
     if (Button_Update(roam->back_button)) {
@@ -1950,7 +1959,46 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
     return false;
 }
 
+// Leaving from the game menu: Single Player saves and goes back to the character list; Free Roam to where it came from
+static void Roam__Leave(SceneRoam *roam) {
+    if (roam->game) {
+        if (!roam->character->dead) {
+            Roam__StoreCharacter(roam);
+        }
+        Scene_Set(SCENE_REF(CharacterSelect));
+    } else {
+        Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
+    }
+}
+
+// The game menu and Options over the world, which waits meanwhile. Returns true while either is open.
+static bool Roam__UpdateMenu(SceneRoam *roam) {
+    if (roam->options_panel != NULL) {
+        if (!OptionsPanel_Update(roam->options_panel)) {
+            OptionsPanel_Destroy(&roam->options_panel);
+        }
+        return true;
+    }
+    if (!roam->menu_open) {
+        return false;
+    }
+    InputManager_ClearPresses();
+    if (Button_Update(roam->menu_options_button)) {
+        roam->options_panel = OptionsPanel_Create();
+    } else if (Button_Update(roam->menu_leave_button)) {
+        roam->menu_open = false;
+        Roam__Leave(roam);
+    } else if (Button_Update(roam->menu_return_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        roam->menu_open = false;
+    }
+    return true;
+}
+
 static void Roam__Update(SceneRoam *roam) {
+    if (Roam__UpdateMenu(roam)) {
+        roam->last_tick = SDL_GetTicks64(); // the world waits
+        return;
+    }
     const uint64_t now     = SDL_GetTicks64();
     const float    seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
     roam->last_tick        = now;
@@ -2230,7 +2278,10 @@ static void Roam__Update(SceneRoam *roam) {
         combat_enabled = !combat_enabled;
         Roam__UpdateButtons(roam);
     }
-    if (!roam->game && (Button_Update(roam->back_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
+    if (!roam->game && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        roam->menu_open = true;
+    }
+    if (!roam->game && Button_Update(roam->back_button)) {
         // Play-testing goes back to the editor (which takes its map back), otherwise to the main menu
         Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
     }
@@ -2644,6 +2695,21 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_RenderFillRect(sdl_renderer, &bottom);
     for (int i = 0; i < 6; i++) {
         Button_Draw(roam->buttons[i]);
+    }
+    if (roam->options_panel != NULL) {
+        // The game stays dimly behind it, without the bars and labels showing through
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 248);
+        SDL_RenderFillRect(sdl_renderer, NULL);
+        OptionsPanel_Draw(roam->options_panel);
+    } else if (roam->menu_open) {
+        const SDL_Rect screen = {0, 0, 800, 600};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 150);
+        SDL_RenderFillRect(sdl_renderer, &screen);
+        Button_Draw(roam->menu_options_button);
+        Button_Draw(roam->menu_leave_button);
+        Button_Draw(roam->menu_return_button);
     }
     if (roam->screenshot) {
         roam->screenshot = false;
