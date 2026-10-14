@@ -119,12 +119,15 @@ on the right. **Save and Exit Game** is in the game menu (**Esc**).
 
 **I** (or **B**, or the mini panel) opens the game's inventory screen on the right, laid out from the game's
 `inventory.txt`: what you wear around the outline (helm, amulet, armor, the two hands, rings, belt, gloves, boots) and
-the 10 x 4 grid below. The square button in its bottom corner closes it (the skill tree has the same one), as do
+the 10 x 4 grid below, with as many pages as **Options › Gameplay › Inventory pages** says (1 to 255; arrows and the
+page number under the grid, next to the gold). The square button in its bottom corner closes it (the skill tree has the same one), as do
 **I**, **Space** and **Esc**.
 
 - **Click** an item to pick it up; it follows the mouse. **Click** again to put it down: in the grid (a green patch
   shows where), or in a slot it suits. Putting it on another item swaps them. Close the inventory with an item on the
   mouse and it goes back where it came from (there's no dropping items on the ground yet).
+- **Picking up what you wear**: **Classic** (the game's way) takes it off at once; **Modern** (Options › Gameplay ›
+  Worn gear) leaves it worn, faded in its slot, until you put it in the grid or another slot.
 - **Wearing**: an item goes only where it suits (a helm on the head, a shield in a hand, ...) and only if you meet its
   requirements; ones you can't use yet are tinted red, with their unmet requirements in red. A two-handed weapon needs
   both hands; only Barbarians hold a weapon in each hand (Assassins: two claws).

@@ -20,7 +20,17 @@ typedef struct GameplaySettings {
     bool         see_through; // walls and trees between you and the camera fade, so you can see where you're going
     bool         confirm_entrances; // ask before going through a cave mouth, tomb door or stairs
     bool         even_screen_speed; // the same speed on screen in every direction (the game: the same over the ground)
+    bool         modern_pickup; // picking up worn gear: Modern keeps it worn until it's put down (Classic: off at once)
+    int          inventory_pages; // 1..255: pages of the inventory grid (Single Player; a multiplayer game has its own)
 } GameplaySettings;
+
+// The defaults' style (CMake DEFAULT_STYLE / meson default_style): Classic like Diablo II, or Modern
+#ifdef ABYSS_DEFAULT_MODERN
+#define DEFAULT_STYLE_MODERN true
+#else
+#define DEFAULT_STYLE_MODERN false
+#endif
+void Settings_GameplayDefaults(GameplaySettings *settings);
 
 // Debug (Options › Gameplay › Debug): for the developer tools, the same for every class
 typedef struct DebugSettings {

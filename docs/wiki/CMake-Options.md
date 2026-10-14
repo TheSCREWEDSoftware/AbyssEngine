@@ -10,6 +10,18 @@ In **CMake GUI**, tick **Grouped**: these appear under **DEBUG**. All are on by 
 | `DEBUG_SKIP_INTRO` | `debug_skip_intro` | `ON` | Start at the main menu, whatever `SkipIntroMovies` says in `abyss.ini`. |
 | `DEBUG_SHOW_CATALOG` | `debug_show_catalog` | `ON` | Show the **Catalog** button on the main menu. |
 | `DEBUG_SHOW_MAP_EDITOR` | `debug_show_map_editor` | `ON` | Show the **Map Editor** button (Map Editor, Testing Grounds, Free Roam). |
+| `DEBUG_SHOW_OPTIONS_DEBUG` | `debug_show_options_debug` | `ON` | Show the **Debug** tab in Options (Map Editor auto-save, collision view in Single Player, ...). Off, those settings keep their defaults or what `options.ini` says. |
+
+## Defaults
+
+| CMake | Meson | Default | What it does |
+|-------|-------|---------|--------------|
+| `DEFAULT_STYLE` | `default_style` | `Classic` | The starting style of every control and setting that has a **Classic** (Diablo II's) and a **Modern** way: the type of movement (click to walk, or keys to walk), picking up worn gear (it comes off at once, or stays worn until put down), and the control panel. Players can still change each one in Options. The frame rate's default is Modern (60) either way. |
+
+```bash
+cmake -S . -B build -DDEFAULT_STYLE=Modern
+meson setup build-meson -Ddefault_style=Modern
+```
 
 Command line examples:
 

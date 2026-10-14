@@ -17,7 +17,9 @@
 #define CHARACTER_SKILLS    40 // per class (Skills.h's SKILLS_PER_CLASS_MAX)
 #define INVENTORY_W         10 // the inventory grid, in cells
 #define INVENTORY_H         4
-#define INVENTORY_MAX       (INVENTORY_W * INVENTORY_H)
+#define INVENTORY_PAGE      (INVENTORY_W * INVENTORY_H)
+#define INVENTORY_MAX       1024 // items on all the pages together (a page holds 40 at most)
+#define INVENTORY_PAGES_MAX 255
 #define BELT_MAX            16 // four rows of four, with the biggest belt
 
 typedef enum CharacterClass {
@@ -44,6 +46,7 @@ typedef struct InventoryItem {
     Item item;
     int  x; // top left cell
     int  y;
+    int  page; // 0.. (Options > Gameplay > Inventory pages; a multiplayer game's own setting)
 } InventoryItem;
 
 typedef struct Character {
@@ -75,7 +78,7 @@ typedef struct Character {
     char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
 
-#define CHARACTER_TEXT_MAX 32768 // a character as text (Character_WriteText): the save file's contents
+#define CHARACTER_TEXT_MAX 49152 // a character as text (Character_WriteText): the save file's contents
 
 const char *Character_ClassName(CharacterClass class_id);  // "Amazon"
 const char *Character_ClassToken(CharacterClass class_id); // "am" (graphics)

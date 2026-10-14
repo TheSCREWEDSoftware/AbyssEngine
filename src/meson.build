@@ -139,6 +139,12 @@ endif
 if get_option('debug_show_catalog')
     build_opts += ['-DABYSS_DEBUG_SHOW_CATALOG']
 endif
+if get_option('debug_show_options_debug')
+    build_opts += ['-DABYSS_DEBUG_SHOW_OPTIONS_DEBUG']
+endif
+if get_option('default_style') == 'Modern'
+    build_opts += ['-DABYSS_DEFAULT_MODERN']
+endif
 if get_option('debug_show_map_editor')
     build_opts += ['-DABYSS_DEBUG_SHOW_MAP_EDITOR']
 endif

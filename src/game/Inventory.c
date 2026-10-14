@@ -22,14 +22,48 @@ Item Inventory_NewItem(const char *code) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Pages
+
+static int page_count   = 1;
+static int current_page = 0;
+
+void Inventory_SetPages(const int count) {
+    page_count   = count < 1 ? 1 : (count > INVENTORY_PAGES_MAX ? INVENTORY_PAGES_MAX : count);
+    current_page = current_page < page_count ? current_page : page_count - 1;
+}
+
+int  Inventory_Pages(void) { return page_count; }
+void Inventory_SetPage(const int page) { current_page = page < 0 ? 0 : (page >= page_count ? page_count - 1 : page); }
+int  Inventory_Page(void) { return current_page; }
+
+int Inventory_PagesUsed(const Character *character) {
+    int used = 1;
+    for (int i = 0; i < character->inventory_count; i++) {
+        used = character->inventory[i].page + 1 > used ? character->inventory[i].page + 1 : used;
+    }
+    return used;
+}
+
+bool Inventory_PlaceOnPage(Character *character, const Item *item, const int x, const int y, const int page) {
+    const int shown = current_page;
+    current_page    = page < 0 ? 0 : (page >= INVENTORY_PAGES_MAX ? INVENTORY_PAGES_MAX - 1 : page);
+    const bool done = Inventory_Place(character, item, x, y);
+    current_page    = shown;
+    return done;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // The grid
 
 int Inventory_ItemAt(const Character *character, const int cell_x, const int cell_y) {
     for (int i = 0; i < character->inventory_count; i++) {
-        const InventoryItem *it   = &character->inventory[i];
-        const ItemBase      *base = Items_Find(it->item.code);
-        const int            w    = base != NULL ? base->width : 1;
-        const int            h    = base != NULL ? base->height : 1;
+        const InventoryItem *it = &character->inventory[i];
+        if (it->page != current_page) {
+            continue;
+        }
+        const ItemBase *base = Items_Find(it->item.code);
+        const int       w    = base != NULL ? base->width : 1;
+        const int       h    = base != NULL ? base->height : 1;
         if (cell_x >= it->x && cell_x < it->x + w && cell_y >= it->y && cell_y < it->y + h) {
             return i;
         }
@@ -67,6 +101,7 @@ bool Inventory_Place(Character *character, const Item *item, const int x, const 
     slot->item          = *item;
     slot->x             = x;
     slot->y             = y;
+    slot->page          = current_page;
     return true;
 }
 
@@ -75,11 +110,13 @@ bool Inventory_Add(Character *character, const Item *item) {
     if (base == NULL) {
         return false;
     }
-    // Column by column from the left, top to bottom, like the game fills it
-    for (int x = 0; x + base->width <= INVENTORY_W; x++) {
-        for (int y = 0; y + base->height <= INVENTORY_H; y++) {
-            if (Inventory_Place(character, item, x, y)) {
-                return true;
+    // Page by page, column by column from the left, top to bottom, like the game fills it
+    for (int page = 0; page < page_count; page++) {
+        for (int x = 0; x + base->width <= INVENTORY_W; x++) {
+            for (int y = 0; y + base->height <= INVENTORY_H; y++) {
+                if (Inventory_PlaceOnPage(character, item, x, y, page)) {
+                    return true;
+                }
             }
         }
     }
@@ -129,8 +166,7 @@ bool Inventory_CanEquip(const Character *character, const Item *item, const Equi
         } else if (other_base != NULL && other_base->kind == ITEM_KIND_WEAPON && base->kind == ITEM_KIND_WEAPON) {
             // Two weapons: Barbarians, and Assassins with a claw in each hand
             const bool claws = strncmp(base->type, "h2h", 3) == 0 && strncmp(other_base->type, "h2h", 3) == 0;
-            if (!(character->class_id == CHARACTER_BARBARIAN ||
-                  (character->class_id == CHARACTER_ASSASSIN && claws))) {
+            if (!(character->class_id == CHARACTER_BARBARIAN || (character->class_id == CHARACTER_ASSASSIN && claws))) {
                 reason = "Only Barbarians can hold a weapon in each hand.";
             }
         }

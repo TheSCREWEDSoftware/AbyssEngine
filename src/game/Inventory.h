@@ -13,6 +13,15 @@ Item Inventory_NewItem(const char *code); // a fresh one (armor gets its defense
 // The class's starting items from charstats.txt: weapon and shield worn, potions in the belt, the rest in the grid
 void Inventory_GiveStartingItems(Character *character);
 
+// Pages: the grid has 1 to 255 of them (Options > Gameplay > Inventory pages; a multiplayer game's own setting).
+// The grid functions below work on the page being shown; Inventory_Add looks through every page.
+void Inventory_SetPages(int count); // how many there are now (at least those with items on, see Inventory_PagesUsed)
+int  Inventory_Pages(void);
+void Inventory_SetPage(int page); // the one being shown
+int  Inventory_Page(void);
+int  Inventory_PagesUsed(const Character *character); // 1 + the last page with something on it
+bool Inventory_PlaceOnPage(Character *character, const Item *item, int x, int y, int page);
+
 // The grid
 int  Inventory_ItemAt(const Character *character, int cell_x, int cell_y); // index in inventory[], -1 if empty
 bool Inventory_FreeAt(const Character *character, const ItemBase *base, int x, int y); // all its cells free

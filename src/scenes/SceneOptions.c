@@ -114,6 +114,8 @@ static const char *movement_choices[MOVEMENT_TYPE_COUNT] = {
     "Modern: keys walk, mouse attacks",
     "Combined: both",
 };
+static const char *pickup_choices[2] = {"Classic: comes off at once", "Modern: worn until put down"};
+
 static const char *movement_help[MOVEMENT_TYPE_COUNT] = {
     "Like Diablo II: click where to walk, click a monster to attack it, click a chest to open it.",
     "Like Diablo III / IV: the movement keys (or a gamepad stick) walk; clicks and the attack key hit what's in reach.",
@@ -180,6 +182,8 @@ typedef struct SceneOptions {
     Checkbox *see_through;
     Checkbox *confirm_entrances;
     Checkbox *even_speed;
+    Dropdown *worn_pickup;
+    Slider   *inventory_pages;
 
     // Multiplayer
     Checkbox   *show_names;
@@ -290,7 +294,7 @@ static bool Options__AnyDropdownOpen(const SceneOptions *options) {
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
            Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
            Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode) ||
-           Dropdown_IsOpen(options->player_color);
+           Dropdown_IsOpen(options->player_color) || Dropdown_IsOpen(options->worn_pickup);
 }
 
 // The widgets showing what's set now
@@ -372,6 +376,8 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Checkbox_SetChecked(options->see_through, settings->see_through);
     Checkbox_SetChecked(options->confirm_entrances, settings->confirm_entrances);
     Checkbox_SetChecked(options->even_speed, settings->even_screen_speed);
+    Dropdown_SetSelected(options->worn_pickup, settings->modern_pickup ? 1 : 0);
+    Slider_SetValue(options->inventory_pages, settings->inventory_pages);
     char text[64];
     snprintf(text, sizeof(text), "Own settings for the %s", Settings_ProfileName(options->profile));
     Checkbox_Destroy(&options->own_profile);
@@ -446,7 +452,11 @@ static bool Options__IsHeading(const SceneOptions *options, const int row) { ret
 OptionsPanel *OptionsPanel_Create(void) {
     SceneOptions *options = calloc(1, sizeof(SceneOptions));
     FAIL_IF_NULL(options);
-    options->tabs           = TabBar_Create(tab_names, TAB_COUNT, TAB_VIDEO);
+#ifdef ABYSS_DEBUG_SHOW_OPTIONS_DEBUG
+    options->tabs = TabBar_Create(tab_names, TAB_COUNT, TAB_VIDEO);
+#else
+    options->tabs = TabBar_Create(tab_names, TAB_COUNT - 1, TAB_VIDEO); // CMake DEBUG_SHOW_OPTIONS_DEBUG is off
+#endif
     options->hovered_row    = -1;
     options->last_click_row = -1;
 
@@ -510,6 +520,8 @@ OptionsPanel *OptionsPanel_Create(void) {
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) + 3, "See through obstructions");
     options->confirm_entrances =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H) + 6, "Ask before going through an entrance");
+    options->worn_pickup = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (7 * ROW_H) + 4, 260, pickup_choices, 2);
+    options->inventory_pages = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (8 * ROW_H) + 6, 200, 1, 255);
     options->even_speed =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (5 * ROW_H) + 20, "Same speed on screen in every direction");
     Options__LoadGameplay(options);
@@ -657,6 +669,8 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
         Slider_Destroy(&options->picture[i]);
     }
     Checkbox_Destroy(&options->even_speed);
+    Dropdown_Destroy(&options->worn_pickup);
+    Slider_Destroy(&options->inventory_pages);
     Checkbox_Destroy(&options->show_names);
     Checkbox_Destroy(&options->show_circles);
     Dropdown_Destroy(&options->player_color);
@@ -768,7 +782,8 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         break;
     }
     case TAB_GAMEPLAY: {
-        const GameplaySettings defaults = {MOVEMENT_CLASSIC, true, false, false};
+        GameplaySettings defaults;
+        Settings_GameplayDefaults(&defaults);
         Settings_SetGameplay(options->profile, &defaults);
         Options__LoadGameplay(options);
         break;
@@ -1408,6 +1423,12 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 }
                 AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
             }
+        } else if (Dropdown_IsOpen(options->worn_pickup)) {
+            if (Dropdown_Update(options->worn_pickup)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.modern_pickup    = Dropdown_GetSelected(options->worn_pickup) == 1;
+                Settings_SetGameplay(options->profile, &settings);
+            }
         } else if (Dropdown_IsOpen(options->player_color)) {
             Dropdown_Update(options->player_color);
         } else if (Dropdown_IsOpen(options->autosave)) {
@@ -1478,6 +1499,16 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 settings.confirm_entrances = Checkbox_IsChecked(options->confirm_entrances);
                 Settings_SetGameplay(options->profile, &settings);
             }
+            if (editable && Dropdown_Update(options->worn_pickup)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.modern_pickup    = Dropdown_GetSelected(options->worn_pickup) == 1;
+                Settings_SetGameplay(options->profile, &settings);
+            }
+            if (editable && Slider_Update(options->inventory_pages)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.inventory_pages  = Slider_GetValue(options->inventory_pages);
+                Settings_SetGameplay(options->profile, &settings);
+            }
             if (editable && Checkbox_Update(options->even_speed)) {
                 GameplaySettings settings  = *Settings_GetGameplay(options->profile);
                 settings.even_screen_speed = Checkbox_IsChecked(options->even_speed);
@@ -1520,6 +1551,7 @@ static void OptionsPanel__Update(SceneOptions *options) {
     for (int i = 0; i < PICTURE_COUNT; i++) {
         typing = typing || Slider_IsTyping(options->picture[i]);
     }
+    typing = typing || Slider_IsTyping(options->inventory_pages);
     if (Button_Update(options->cancel_button) || (!typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
         Options__Cancel(options);
         Options__Leave(options);
@@ -1659,6 +1691,11 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           "In the game you cover the same ground in every direction, which on the slanted view looks "
                           "twice as fast across as up and down. Tick it to keep the speed on screen the same instead.",
                           CONTENT_Y + (5 * ROW_H) + 20);
+        Options__Name(options, "Worn gear", CONTENT_Y + (7 * ROW_H));
+        Dropdown_Draw(options->worn_pickup);
+        Options__Name(options, "Inventory pages", CONTENT_Y + (8 * ROW_H) + 2);
+        Slider_Draw(options->inventory_pages);
+        Dropdown_DrawList(options->worn_pickup);
         break;
     }
     case TAB_MULTIPLAYER:

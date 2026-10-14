@@ -24,6 +24,7 @@ static struct {
     char        realm[NET_ID_MAX];
     Character  *characters; // dedicated: ours on the server
     int         character_count;
+    int         characters_coming; // MSG_CHAR_ENTRY messages still to come
     int         list_version;
     bool        has_result;
     bool        result_ok;
@@ -149,16 +150,26 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
     case MSG_CHAR_LIST: {
         const int count = NetReader_U8(reader);
         free(client.characters);
-        client.characters      = calloc((size_t)(count > 0 ? count : 1), sizeof(Character));
-        client.character_count = 0;
-        for (int i = 0; i < count && client.characters != NULL; i++) {
-            char *text = NetReader_StringAlloc(reader);
-            if (text != NULL && Character_ReadText(text, &client.characters[client.character_count])) {
-                client.character_count++;
-            }
-            free(text);
+        client.characters        = calloc((size_t)(count > 0 ? count : 1), sizeof(Character));
+        client.character_count   = 0;
+        client.characters_coming = client.characters != NULL ? count : 0;
+        if (client.characters_coming == 0) {
+            client.list_version++; // none: the list is complete
         }
-        client.list_version++;
+        break;
+    }
+    case MSG_CHAR_ENTRY: {
+        if (client.characters_coming <= 0) {
+            break;
+        }
+        char *text = NetReader_StringAlloc(reader);
+        if (text != NULL && Character_ReadText(text, &client.characters[client.character_count])) {
+            client.character_count++;
+        }
+        free(text);
+        if (--client.characters_coming == 0) {
+            client.list_version++; // all here
+        }
         break;
     }
     case MSG_CHAR_RESULT: {

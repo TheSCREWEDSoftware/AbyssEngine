@@ -2498,6 +2498,14 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         }
     }
 
+    // The inventory's pages (Options > Gameplay, or the multiplayer game's own setting; never fewer than are used)
+    // and how worn gear is picked up
+    const GameplaySettings *gameplay = Roam__Gameplay(roam);
+    const int               pages    = roam->online ? NetClient_Settings()->inventory_pages : gameplay->inventory_pages;
+    const int               used     = Inventory_PagesUsed(character);
+    Inventory_SetPages(pages > used ? pages : used);
+    GameInventory_SetModernPickup(roam->inventory_ui, gameplay->modern_pickup);
+
     const bool picker_was_open = GameSkills_PickerOpen(roam->skills_ui);
     const bool over_panels = ((roam->inventory_panel || roam->skill_panel) && GameInventory_IsOver(mouse_x, mouse_y)) ||
                              GameInventory_IsOverBelt(character, mouse_x, mouse_y) ||

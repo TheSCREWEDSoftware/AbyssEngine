@@ -403,40 +403,43 @@ static int Server__InGame(const NetServer *server) {
     return count;
 }
 
-// Dedicated: the player's characters here, whole (the character screen shows them standing in their slots)
+// Dedicated: the player's characters here, whole (the character screen shows them standing in their slots): how many,
+// then one message each (a character with many inventory pages is most of a message on its own)
 static void Server__SendCharacterList(Peer *peer) {
     char folder[4400];
     Server__OwnerFolder(peer->client_id, folder, sizeof(folder));
-    char      names[MAX_SERVER_CHARS][CHARACTER_NAME_MAX];
-    const int count = Server__ListFolder(folder, names, MAX_SERVER_CHARS);
-    char     *text  = malloc(CHARACTER_TEXT_MAX);
-    if (text == NULL) {
+    char       names[MAX_SERVER_CHARS][CHARACTER_NAME_MAX];
+    const int  count  = Server__ListFolder(folder, names, MAX_SERVER_CHARS);
+    char      *text   = malloc(CHARACTER_TEXT_MAX);
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (text == NULL || writer == NULL) {
+        free(text);
+        free(writer);
         return;
     }
-    // One message each would be tidier for big lists; a few characters fit in one
-    NetWriter *writer = malloc(sizeof(NetWriter));
-    if (writer == NULL) {
-        free(text);
-        return;
+    int readable = 0;
+    for (int i = 0; i < count; i++) {
+        char path[5200];
+        snprintf(path, sizeof(path), "%s/%.15s.abc", folder, names[i]);
+        if (Server__ReadFile(path, text, CHARACTER_TEXT_MAX)) {
+            if (readable != i) {
+                memcpy(names[readable], names[i], CHARACTER_NAME_MAX);
+            }
+            readable++;
+        }
     }
     NetWriter_Begin(writer);
-    int sent = 0;
-    for (int i = 0; i < count; i++) {
-        char path[4600];
-        snprintf(path, sizeof(path), "%s/%s.abc", folder, names[i]);
-        if (Server__ReadFile(path, text, CHARACTER_TEXT_MAX)) {
-            sent++;
-        }
-    }
-    NetWriter_U8(writer, (uint8_t)sent);
-    for (int i = 0; i < count; i++) {
-        char path[4600];
-        snprintf(path, sizeof(path), "%s/%s.abc", folder, names[i]);
-        if (Server__ReadFile(path, text, CHARACTER_TEXT_MAX)) {
-            NetWriter_String(writer, text);
-        }
-    }
+    NetWriter_U8(writer, (uint8_t)readable);
     Server__Send(peer, MSG_CHAR_LIST, writer);
+    for (int i = 0; i < readable; i++) {
+        char path[5200];
+        snprintf(path, sizeof(path), "%s/%.15s.abc", folder, names[i]);
+        if (Server__ReadFile(path, text, CHARACTER_TEXT_MAX)) {
+            NetWriter_Begin(writer);
+            NetWriter_String(writer, text);
+            Server__Send(peer, MSG_CHAR_ENTRY, writer);
+        }
+    }
     free(writer);
     free(text);
 }

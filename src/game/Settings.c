@@ -89,17 +89,23 @@ static DebugSettings debug_settings = {5, true, false, true};
 const DebugSettings *Settings_GetDebug(void) { return &debug_settings; }
 void                 Settings_SetDebug(const DebugSettings *settings) { debug_settings = *settings; }
 
+void Settings_GameplayDefaults(GameplaySettings *settings) {
+    settings->movement          = DEFAULT_STYLE_MODERN ? MOVEMENT_MODERN : MOVEMENT_CLASSIC;
+    settings->see_through       = true;
+    settings->confirm_entrances = false;
+    settings->even_screen_speed = false;
+    settings->modern_pickup     = DEFAULT_STYLE_MODERN;
+    settings->inventory_pages   = 1;
+}
+
 void Settings_Load(void) {
     debug_settings.editor_autosave_minutes = 5;
     debug_settings.editor_keep_changes     = true;
     debug_settings.collision_in_game       = false;
     debug_settings.confirm_new_seed        = true;
     for (int p = 0; p < CONTROL_PROFILES; p++) {
-        gameplay[p].movement          = MOVEMENT_CLASSIC;
-        gameplay[p].see_through       = true;
-        gameplay[p].confirm_entrances = false;
-        gameplay[p].even_screen_speed = false;
-        own_gameplay[p]               = p == 0;
+        Settings_GameplayDefaults(&gameplay[p]);
+        own_gameplay[p] = p == 0;
     }
     Controls_Reset();
 
@@ -166,6 +172,11 @@ void Settings_Load(void) {
             gameplay[profile].confirm_entrances = strcmp(value, "true") == 0;
         } else if (strcmp(key, "EvenScreenSpeed") == 0) {
             gameplay[profile].even_screen_speed = strcmp(value, "true") == 0;
+        } else if (strcmp(key, "WornGearPickup") == 0) {
+            gameplay[profile].modern_pickup = strcmp(value, "Modern") == 0;
+        } else if (strcmp(key, "InventoryPages") == 0) {
+            const int pages                   = atoi(value);
+            gameplay[profile].inventory_pages = pages < 1 ? 1 : (pages > 255 ? 255 : pages);
         }
     }
     fclose(file);
@@ -208,7 +219,16 @@ void Settings_Save(void) {
             fprintf(file, "# false: like the game, the same speed over the ground in every direction (so on screen,\n"
                           "# sideways looks twice as fast as up and down); true: the same speed on screen\n");
         }
-        fprintf(file, "EvenScreenSpeed = %s\n\n", gameplay[p].even_screen_speed ? "true" : "false");
+        fprintf(file, "EvenScreenSpeed = %s\n", gameplay[p].even_screen_speed ? "true" : "false");
+        if (p == 0) {
+            fprintf(file, "# Classic: picking up something you wear takes it off at once, like the game; Modern: it\n"
+                          "# stays worn until you put it down somewhere else\n");
+        }
+        fprintf(file, "WornGearPickup = %s\n", gameplay[p].modern_pickup ? "Modern" : "Classic");
+        if (p == 0) {
+            fprintf(file, "# Pages of the inventory grid, 1 to 255 (Single Player; a multiplayer game sets its own)\n");
+        }
+        fprintf(file, "InventoryPages = %d\n\n", gameplay[p].inventory_pages);
     }
     fprintf(file,
             "[Debug]\n"

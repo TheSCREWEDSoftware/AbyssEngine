@@ -33,8 +33,10 @@ int GameInventory_Update(GameInventory *inventory, Character *character, bool op
 // Drinks what's in a belt slot (0..3, the bottom row), the way keys 1-4 do
 bool GameInventory_DrinkBelt(Character *character, int slot, Item *drunk);
 
-bool        GameInventory_Holding(const GameInventory *inventory); // an item on the cursor
-const char *GameInventory_Sound(const GameInventory *inventory);   // the sound of what was last put down ("" none)
+bool GameInventory_Holding(const GameInventory *inventory); // an item on the cursor
+// Options > Gameplay > Picking up worn gear: Modern keeps it worn until it is put somewhere else
+void        GameInventory_SetModernPickup(GameInventory *inventory, bool modern);
+const char *GameInventory_Sound(const GameInventory *inventory); // the sound of what was last put down ("" none)
 void        GameInventory_PutBack(GameInventory *inventory, Character *character); // the carried item back where it was
 bool        GameInventory_IsOver(int mouse_x, int mouse_y);                        // over the panel
 bool        GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);

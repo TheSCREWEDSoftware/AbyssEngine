@@ -423,8 +423,9 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
     Character__Print(file, "items %d\n", character->inventory_count);
     for (int i = 0; i < character->inventory_count; i++) {
         const InventoryItem *it = &character->inventory[i];
-        Character__Print(file, "item inv %d %d %s %d %d\n", it->x, it->y, it->item.code, it->item.defense,
-                         it->item.quantity);
+        // The page last, so builds before pages read the line too (onto the first page)
+        Character__Print(file, "item inv %d %d %s %d %d %d\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity, it->page);
     }
     for (int e = 0; e < EQUIP_COUNT; e++) {
         const Item *it = &character->equipped[e];
@@ -563,9 +564,10 @@ bool Character_ReadText(const char *text, Character *character) {
             int  b = 0;
             Item item;
             memset(&item, 0, sizeof(item));
-            if (sscanf(value, "inv %d %d %7s %d %d", &a, &b, code, &item.defense, &item.quantity) == 5) {
+            int page = 0;
+            if (sscanf(value, "inv %d %d %7s %d %d %d", &a, &b, code, &item.defense, &item.quantity, &page) >= 5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
-                Inventory_Place(character, &item, a, b);
+                Inventory_PlaceOnPage(character, &item, a, b, page);
             } else if (sscanf(value, "%7s %d %7s %d %d", where, &a, code, &item.defense, &item.quantity) == 5 &&
                        Items_Find(code) != NULL) {
                 snprintf(item.code, sizeof(item.code), "%s", code);

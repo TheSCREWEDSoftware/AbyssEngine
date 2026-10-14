@@ -55,7 +55,9 @@ struct GameInventory {
     bool   holding;
     Item   held;
     Origin origin;
-    int    origin_index; // grid: x + y * INVENTORY_W; equip: the slot; belt: the slot
+    int    origin_index; // grid: x + y * INVENTORY_W + page * INVENTORY_PAGE; equip: the slot; belt: the slot
+    bool   modern;       // Options > Gameplay > Picking up worn gear: Modern
+    bool   still_worn;   // Modern: the carried item is still worn (in origin_index's slot) until it's put down
     char   sound[32];    // what was last put down sounds like
 };
 
@@ -207,8 +209,36 @@ static void GameInventory__Take(GameInventory *inventory, const Item *item, cons
 
 bool GameInventory_Holding(const GameInventory *inventory) { return inventory->holding; }
 
+void GameInventory_SetModernPickup(GameInventory *inventory, const bool modern) { inventory->modern = modern; }
+
+// The page arrows under the grid (shown with more than one page): < 2 / 5 >
+#define PAGE_Y       390
+#define PAGE_H       24
+#define PAGE_ARROW_W 22
+#define PAGE_LEFT_X  (GAME_PANEL_X + 206)
+#define PAGE_RIGHT_X (GAME_PANEL_X + 290)
+static bool GameInventory__PageArrow(const int mouse_x, const int mouse_y, int *step) {
+    if (Inventory_Pages() <= 1 || mouse_y < PAGE_Y || mouse_y >= PAGE_Y + PAGE_H) {
+        return false;
+    }
+    if (mouse_x >= PAGE_LEFT_X && mouse_x < PAGE_LEFT_X + PAGE_ARROW_W) {
+        *step = -1;
+        return true;
+    }
+    if (mouse_x >= PAGE_RIGHT_X && mouse_x < PAGE_RIGHT_X + PAGE_ARROW_W) {
+        *step = 1;
+        return true;
+    }
+    return false;
+}
+
 void GameInventory_PutBack(GameInventory *inventory, Character *character) {
     if (!inventory->holding) {
+        return;
+    }
+    if (inventory->still_worn) { // Modern: it never came off
+        inventory->holding    = false;
+        inventory->still_worn = false;
         return;
     }
     bool placed = false;
@@ -226,8 +256,9 @@ void GameInventory_PutBack(GameInventory *inventory, Character *character) {
         }
         break;
     case ORIGIN_GRID:
-        placed = Inventory_Place(character, &inventory->held, inventory->origin_index % INVENTORY_W,
-                                 inventory->origin_index / INVENTORY_W);
+        placed = Inventory_PlaceOnPage(character, &inventory->held, inventory->origin_index % INVENTORY_W,
+                                       (inventory->origin_index % INVENTORY_PAGE) / INVENTORY_W,
+                                       inventory->origin_index / INVENTORY_PAGE);
         break;
     }
     if (!placed && !Inventory_Add(character, &inventory->held)) {
@@ -302,6 +333,14 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         return events;
     }
 
+    // The pages (carried items can go along, onto another page)
+    int step = 0;
+    if (left_click && GameInventory__PageArrow(mouse_x, mouse_y, &step)) {
+        const int pages = Inventory_Pages();
+        Inventory_SetPage((Inventory_Page() + step + pages) % pages);
+        return events;
+    }
+
     // The grid
     int cell_x;
     int cell_y;
@@ -327,12 +366,18 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             if (covered == -2) {
                 return events; // off the grid, or on more than one item
             }
+            if (inventory->still_worn) { // Modern: it comes off now, into the grid
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
             Item lifted;
             memset(&lifted, 0, sizeof(lifted));
             int lifted_at = 0;
             if (covered >= 0) {
                 lifted    = character->inventory[covered].item;
-                lifted_at = character->inventory[covered].x + (character->inventory[covered].y * INVENTORY_W);
+                lifted_at = character->inventory[covered].x + (character->inventory[covered].y * INVENTORY_W) +
+                            (Inventory_Page() * INVENTORY_PAGE);
                 Inventory_Remove(character, covered);
             }
             Inventory_Place(character, &inventory->held, x, y);
@@ -351,7 +396,8 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             if (shift && base != NULL && base->beltable && Inventory_AddToBelt(character, &it.item)) {
                 return events | INVENTORY_EVENT_MOVED;
             }
-            GameInventory__Take(inventory, &it.item, ORIGIN_GRID, it.x + (it.y * INVENTORY_W));
+            GameInventory__Take(inventory, &it.item, ORIGIN_GRID,
+                                it.x + (it.y * INVENTORY_W) + (it.page * INVENTORY_PAGE));
             return events | INVENTORY_EVENT_MOVED;
         }
         return events;
@@ -361,6 +407,19 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     const int slot = GameInventory__SlotAt(mouse_x, mouse_y);
     if (slot >= 0 && left_click) {
         Item *worn = &character->equipped[slot];
+        if (inventory->holding && inventory->still_worn && slot == inventory->origin_index) {
+            inventory->holding    = false; // Modern: back where it never left
+            inventory->still_worn = false;
+            GameInventory__PutDown(inventory, &inventory->held);
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        Item       origin_item;
+        const bool from_worn = inventory->holding && inventory->still_worn;
+        if (from_worn) {
+            // Modern: it comes off its old slot now (put back if it can't go in the new one)
+            origin_item = character->equipped[inventory->origin_index];
+            memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+        }
         if (inventory->holding) {
             // Taking off what's there first, so a shield can be swapped for a shield
             const Item before = *worn;
@@ -369,6 +428,9 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             if (!Inventory_CanEquip(character, &inventory->held, (EquipSlot)slot, &why)) {
                 *worn    = before;
                 *message = why;
+                if (from_worn) {
+                    character->equipped[inventory->origin_index] = origin_item;
+                }
                 return events;
             }
             if (slot == EQUIP_BELT) {
@@ -379,13 +441,17 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
                     if (character->belt[b].code[0] != '\0') {
                         *worn    = before;
                         *message = "That belt is too small for what's in yours: empty its upper rows first.";
+                        if (from_worn) {
+                            character->equipped[inventory->origin_index] = origin_item;
+                        }
                         return events;
                     }
                 }
             }
             *worn = inventory->held;
             GameInventory__PutDown(inventory, &inventory->held);
-            inventory->holding = false;
+            inventory->holding    = false;
+            inventory->still_worn = false;
             if (before.code[0] != '\0') {
                 GameInventory__Take(inventory, &before, ORIGIN_EQUIP, slot);
             }
@@ -405,6 +471,10 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
                 }
             }
             GameInventory__Take(inventory, worn, ORIGIN_EQUIP, slot);
+            if (inventory->modern) {
+                inventory->still_worn = true; // Modern: worn until it's put somewhere else
+                return events | INVENTORY_EVENT_MOVED;
+            }
             memset(worn, 0, sizeof(Item));
             return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_EQUIPMENT;
         }
@@ -433,6 +503,11 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         if (worn->code[0] != '\0') {
             const ItemBase *base = Items_Find(worn->code);
             GameInventory__DrawItem(inventory, base, &slot_rects[s], Inventory_MeetsRequirements(character, base));
+            if (inventory->holding && inventory->still_worn && s == inventory->origin_index) {
+                SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND); // Modern: still worn, on the cursor
+                SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 185);
+                SDL_RenderFillRect(sdl_renderer, &slot_rects[s]);
+            }
         }
     }
 
@@ -453,9 +528,12 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
 
     // The grid's items
     for (int i = 0; i < character->inventory_count; i++) {
-        const InventoryItem *it   = &character->inventory[i];
-        const ItemBase      *base = Items_Find(it->item.code);
-        const SDL_Rect       rect = GameInventory__GridRect(it, base);
+        const InventoryItem *it = &character->inventory[i];
+        if (it->page != Inventory_Page()) {
+            continue;
+        }
+        const ItemBase *base = Items_Find(it->item.code);
+        const SDL_Rect  rect = GameInventory__GridRect(it, base);
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90); // the game's blue behind items
         SDL_RenderFillRect(sdl_renderer, &rect);
@@ -471,6 +549,33 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
     Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
     Label_SetAlignment(inventory->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     Label_Draw(inventory->text, GAME_PANEL_X + 140, 400);
+
+    // The pages: < 2 / 5 >
+    if (Inventory_Pages() > 1) {
+        for (int side = 0; side < 2; side++) {
+            const int      x     = side == 0 ? PAGE_LEFT_X : PAGE_RIGHT_X;
+            const SDL_Rect box   = {x, PAGE_Y, PAGE_ARROW_W, PAGE_H};
+            int            step  = 0;
+            const bool     hover = GameInventory__PageArrow(mouse_x, mouse_y, &step) && (step < 0) == (side == 0);
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, hover ? 70 : 20, hover ? 60 : 18, hover ? 35 : 15, 230);
+            SDL_RenderFillRect(sdl_renderer, &box);
+            SDL_SetRenderDrawColor(sdl_renderer, 199, 179, 119, 255);
+            SDL_RenderDrawRect(sdl_renderer, &box);
+            const int cx = x + (PAGE_ARROW_W / 2);
+            const int cy = PAGE_Y + (PAGE_H / 2);
+            for (int i = 0; i < 6; i++) { // a triangle pointing left or right
+                const int reach = side == 0 ? cx - 3 + i : cx + 3 - i;
+                SDL_RenderDrawLine(sdl_renderer, reach, cy - i, reach, cy + i);
+            }
+        }
+        snprintf(text, sizeof(text), "%d / %d", Inventory_Page() + 1, Inventory_Pages());
+        Label_SetText(inventory->small, text);
+        Label_SetColor(inventory->small, 0xFF, 0xFF, 0xFF, 0xFF);
+        Label_SetAlignment(inventory->small, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        Label_Draw(inventory->small, (PAGE_LEFT_X + PAGE_ARROW_W + PAGE_RIGHT_X) / 2, PAGE_Y + (PAGE_H / 2));
+        Label_SetAlignment(inventory->small, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+    }
 }
 
 void GameInventory_DrawBelt(GameInventory *inventory, const Character *character) {

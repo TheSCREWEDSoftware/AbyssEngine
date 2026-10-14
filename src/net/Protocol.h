@@ -35,13 +35,14 @@ typedef enum NetMessageType {
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
-    MSG_CHAR_LIST,    // dedicated server: your characters here
+    MSG_CHAR_LIST,    // dedicated server: how many characters you have here (MSG_CHAR_ENTRY each follows)
     MSG_CHAR_RESULT,  // ok or why not; ok: the character as the server has it
     MSG_ENTER,        // in you go: your player id, the world seed
     MSG_PLAYER,       // someone in the game: id, name, class, level (sent when they join or change)
     MSG_PLAYER_GONE,  // id
     MSG_STATES,       // everyone's position
     MSG_CHAT_FROM,    // id (0: the server), text
+    MSG_CHAR_ENTRY,   // one of your characters on the server (after MSG_CHAR_LIST)
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;
