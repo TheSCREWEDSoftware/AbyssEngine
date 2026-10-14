@@ -28,6 +28,13 @@ elseif (UNIX)
     set(ADDITIONAL_LIBRARIES "m")
 endif ()
 
+if (WIN32)
+    list(APPEND ADDITIONAL_LIBRARIES dbghelp) # crash reports: call stacks and minidumps
+else ()
+    # Crash reports: function names in the call stack (-rdynamic)
+    set_target_properties(${PROJECT_NAME} PROPERTIES ENABLE_EXPORTS ON)
+endif ()
+
 target_link_libraries(AbyssEngine PRIVATE ${ABYSS_DEPENDENCIES} ${ADDITIONAL_LIBRARIES})
 
 # Git commit shown on the main menu: revision_data.h is written now and refreshed on every build

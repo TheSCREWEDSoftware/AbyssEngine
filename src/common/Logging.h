@@ -28,6 +28,11 @@ enum LogLevel {
 extern enum LogLevel log_level;
 
 void Log_SetLevel(enum LogLevel level);
-void Log_Message(enum LogLevel level, const char *file, int line, const char *format, ...);
+// Also write every line to a file (and keep the last few for crash reports)
+void        Log_OpenFile(const char *path);
+void        Log_CloseFile(void);
+int         Log_GetRecentCount(void);
+const char *Log_GetRecent(int index); // oldest first
+void        Log_Message(enum LogLevel level, const char *file, int line, const char *format, ...);
 
 #endif // ABYSS_LOG_H

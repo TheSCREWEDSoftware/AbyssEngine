@@ -64,3 +64,18 @@ Include:
 1. The version text from the top right of the main menu
 2. Your platform and how you built it (Visual Studio configuration, or the cmake command)
 3. The log output (console, or Visual Studio's *Output* window)
+
+## Logs and crash reports
+
+Every run writes a log to **`logs/abyss.log`** next to `abyss.ini` (the run before is kept as
+`logs/abyss.previous.log`). If the engine crashes, it also writes **`logs/crash-<date>_<time>.txt`** with the error,
+where it happened (the call stack) and the last lines of the log, in every build (Release too):
+
+- **Windows**: the call stack has function names, files and lines when the `.pdb` is next to `AbyssEngine.exe`
+  (Debug and RelWithDebInfo builds). A **`.dmp`** minidump is written next to the report: open it in Visual Studio
+  (with the `.pdb`) to see the crash as if it had happened in the debugger. A message box says where the report is.
+- **Linux / macOS**: the call stack lists `AbyssEngine(+0x1234)` style addresses; `addr2line -f -e AbyssEngine 0x1234`
+  turns one into a function, file and line (for builds with debug information). The engine then crashes as usual,
+  so a core dump is written too if they're on (`ulimit -c unlimited`), for `gdb AbyssEngine core`.
+
+Please attach the crash report (and `abyss.log`) when you report a crash.

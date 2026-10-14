@@ -59,18 +59,29 @@ int64_t VideoManager__StreamSeek(void *opaque, int64_t offset, int whence);
 bool    VideoManager__ProcessFrame(void);
 
 void VideoManager_InitializeSingleton(void) {
-    video_manager = malloc(sizeof(VideoManager));
-    memset(video_manager, 0, sizeof(VideoManager));
-    video_manager->mutex = Mutex_Create();
+    // Ready before it's published: the audio thread asks whether a video is playing at any moment
+    VideoManager *manager = malloc(sizeof(VideoManager));
+    FAIL_IF_NULL(manager);
+    memset(manager, 0, sizeof(VideoManager));
+    manager->mutex = Mutex_Create();
+    video_manager  = manager;
 }
 
 void VideoManager_DestroySingleton(void) {
+    if (video_manager == NULL) {
+        return;
+    }
     VideoManager_StopVideo();
-    Mutex_Destroy(&video_manager->mutex);
-    free(video_manager);
+    VideoManager *manager = video_manager;
+    video_manager         = NULL; // the audio manager (which reads it from its thread) is shut down before this
+    Mutex_Destroy(&manager->mutex);
+    free(manager);
 }
 
 bool VideoManager_IsPlayingVideo(void) {
+    if (video_manager == NULL) {
+        return false; // not started yet (the audio thread can ask before), or shut down
+    }
     Mutex_Lock(video_manager->mutex);
     bool result = video_manager->is_playing;
     Mutex_Unlock(video_manager->mutex);
@@ -272,6 +283,9 @@ void VideoManager_PlayVideo(const char *path) {
 }
 
 int16_t VideoManager_GetAudioSample(void) {
+    if (video_manager == NULL) {
+        return 0;
+    }
     Mutex_Lock(video_manager->mutex);
     if (RingBuffer_GetRemainingToRead(video_manager->ring_buffer) < 2) {
         Mutex_Unlock(video_manager->mutex);
@@ -407,9 +421,9 @@ bool VideoManager__ProcessFrame(void) {
                 LOG_FATAL("Error receiving audio packet: %s", av_err2str(av_error));
             }
 
-            const size_t sample_size = av_get_bytes_per_sample(AudioManager_GetSampleFormat());
+            const size_t sample_size   = av_get_bytes_per_sample(AudioManager_GetSampleFormat());
             const int    total_samples = (int)(AUDIO_STREAM_DECODE_BUFFER_SIZE /
-                                                (sample_size * (size_t)AudioManager_GetChannelLayout().nb_channels));
+                                            (sample_size * (size_t)AudioManager_GetChannelLayout().nb_channels));
 
             uint8_t  *ptr[1] = {video_manager->audio_out_buffer};
             const int result =

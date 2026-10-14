@@ -1,13 +1,15 @@
 #include "audio/Sounds.h"
 #include "common/AbyssConfiguration.h"
+#include "common/CrashHandler.h"
 #include "common/FileManager.h"
 #include "common/Globals.h"
 #include "common/Logging.h"
+#include "common/Revision.h"
 #include "data/StringTable.h"
-#include "game/Settings.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "drawing/LoadingScreen.h"
+#include "game/Settings.h"
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
 #include "managers/VideoManager.h"
@@ -19,6 +21,10 @@
 #include "util/Crypto.h"
 #include <libavutil/log.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 int main(int argc, char **argv) {
     (void)(argc);
@@ -65,6 +71,27 @@ int main(int argc, char **argv) {
     }
     LOG_INFO("Using configuration file '%s'", config_path);
     AbyssConfiguration_LoadSingleton(config_path);
+
+    // Logs next to abyss.ini: logs/abyss.log (the run before: abyss.previous.log), and crash reports
+    {
+        char logs[4096];
+        char log_path[4200];
+        char previous[4200];
+        snprintf(logs, sizeof(logs), "%s/logs", AbyssConfiguration_GetConfigFolder());
+#ifdef _WIN32
+        _mkdir(logs);
+#else
+        mkdir(logs, 0755);
+#endif
+        snprintf(log_path, sizeof(log_path), "%s/abyss.log", logs);
+        snprintf(previous, sizeof(previous), "%s/abyss.previous.log", logs);
+        remove(previous);
+        rename(log_path, previous);
+        Log_OpenFile(log_path);
+        CrashHandler_Install(logs);
+        LOG_INFO("%s", Revision_GetFullVersion());
+        LOG_INFO("Configuration: %s", config_path);
+    }
     Settings_Load(); // gameplay and controls (options.ini)
 
     LOG_DEBUG("Initializing file manager...");
@@ -116,9 +143,9 @@ int main(int argc, char **argv) {
     Cursor_SetType(CURSOR_STANDARD);
     Scene_Set(SCENE_REF(IntroVideos));
     Label_InitializeCaches();
-    AudioManager_InitSingleton();
+    VideoManager_InitializeSingleton(); // before the audio starts: its thread asks whether a video is playing
     InputManager_InitializeSingleton();
-    VideoManager_InitializeSingleton();
+    AudioManager_InitSingleton();
 
     SDL_Event sdl_event;
     running             = true;
@@ -180,6 +207,7 @@ int main(int argc, char **argv) {
     AbyssConfiguration_DestroySingleton();
     StringTable_DestroySingleton();
     FileManager_DestroySingleton();
+    Log_CloseFile();
 
     SDL_DestroyRenderer(sdl_renderer);
     SDL_DestroyWindow(sdl_window);

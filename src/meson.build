@@ -30,6 +30,7 @@ sources = [
     'audio/Sounds.c',
 
     'common/AbyssConfiguration.c',
+    'common/CrashHandler.c',
     'common/FileManager.c',
     'common/Globals.c',
     'common/Logging.c',
@@ -143,10 +144,12 @@ if git.found()
 endif
 configure_file(input: 'common/revision_data.h.in', output: 'revision_data.h', configuration: rev)
 
+crash_link_args = host_machine.system() == 'windows' ? ['-ldbghelp'] : ['-rdynamic'] # crash reports
 executable('AbyssEngine',
     install: true,
     sources: sources,
     dependencies: dependencies,
+    link_args: crash_link_args,
 )
 
 ring_buffer_test = executable('ring_buffer_test',
