@@ -2129,17 +2129,17 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         {4, 549},
         {5, 683}
     };
-    // The globes go behind the holders
-    Roam__DrawGlobe(roam, 0, 30, 507, (float)roam->player.hp, (float)roam->player.max_hp);
-    Roam__DrawGlobe(roam, 1, 690, 508, roam->mana, (float)Character_MaxMana(character));
     for (int p = 0; p < 6; p++) {
         Sprite_Draw(roam->ctrl_panel, (uint8_t)pieces[p][0], pieces[p][1], 600);
     }
+    // The globes sit on the holders (the angel and the demon hold them up), the glass over them
+    Roam__DrawGlobe(roam, 0, 30, 507, (float)roam->player.hp, (float)roam->player.max_hp);
+    Roam__DrawGlobe(roam, 1, 690, 508, roam->mana, (float)Character_MaxMana(character));
     Sprite_Draw(roam->ctrl_overlap, 0, 28, 595);
     Sprite_Draw(roam->ctrl_overlap, 1, 691, 592);
-    // Skills: attack on both sides until there are skills
-    Sprite_Draw(roam->ctrl_skill, 0, CTRL_SKILL_LEFT, 600);
-    Sprite_Draw(roam->ctrl_skill, 0, CTRL_SKILL_RIGHT, 600);
+    // Skills: Attack on both sides until there are skills
+    Sprite_Draw(roam->ctrl_skill, 2, CTRL_SKILL_LEFT, 600);
+    Sprite_Draw(roam->ctrl_skill, 2, CTRL_SKILL_RIGHT, 600);
 
     // Stamina (red when you've run yourself out) and experience through this level
     const int      max_stamina = Character_MaxStamina(character);
@@ -2149,7 +2149,7 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
     if (roam->exhausted || stamina < 0.25f) {
         SDL_SetRenderDrawColor(sdl_renderer, 0xC8, 0x20, 0x10, 0xC8);
     } else {
-        SDL_SetRenderDrawColor(sdl_renderer, 0xAF, 0x88, 0x48, 0xC8);
+        SDL_SetRenderDrawColor(sdl_renderer, 0xE8, 0xC8, 0x58, 0xE0); // the game's yellow
     }
     SDL_RenderFillRect(sdl_renderer, &stamina_bar);
     const uint32_t low  = Character_ExperienceFor(character->level);
