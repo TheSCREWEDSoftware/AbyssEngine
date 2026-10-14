@@ -21,10 +21,11 @@ typedef struct TextureEntry {
 #define LIGHT_TEXTURE_W 256
 #define LIGHT_TEXTURE_H 128 // an isometric ellipse, like the ground
 
-#define ROOF_FADE_MS      250    // roofs fade out when you walk in, and back in when you leave
-#define FRONT_WALL_FADE   150.0f // and the building's walls between you and the camera go this see-through (of 255)
-#define SEE_THROUGH_ALPHA 100    // "See through obstructions": what's left of a wall or tree hiding you
-#define WALL_FADE_MS      200    // how long a wall takes to fade out or back in (no popping as you walk)
+#define ROOF_FADE_MS       250    // roofs fade out when you walk in, and back in when you leave
+#define FRONT_WALL_FADE    150.0f // and the building's walls between you and the camera go this see-through (of 255)
+#define SEE_THROUGH_ALPHA  70     // "See through obstructions": what's left of a wall or tree hiding you (in the hole)
+#define SEE_THROUGH_RADIUS 64     // the hole's radius, screen pixels at zoom 1 (with a soft ring a quarter as wide)
+#define WALL_FADE_MS       200    // how long a wall takes to fade out or back in (no popping as you walk)
 
 struct MapRenderer {
     bool see_through; // walls and trees hiding the viewer fade (MapRenderer_SetSeeThrough)
@@ -51,6 +52,10 @@ struct MapRenderer {
     uint8_t   *structure_fade; // per structure, this frame: 0 = drawn, else the alpha to fade to
     uint8_t   *wall_alpha;     // per tile: the alpha it's drawn with now, easing towards where it's going
     uint8_t   *cover;          // per tile, this frame: its picture covers the viewer (see through obstructions)
+    bool       cut;            // see through obstructions: a round hole around the viewer, centre and radius on screen
+    int        cut_x;
+    int        cut_y;
+    int        cut_radius;
     uint64_t   wall_tick;
 
     SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
@@ -249,6 +254,69 @@ static void MapRenderer__DrawTileAlpha(MapRenderer *renderer, const Map *map, co
 static void MapRenderer__DrawTile(MapRenderer *renderer, const Map *map, const MapCamera *camera, const SDL_Rect *view,
                                   const DT1Tile *tile, const int tx, const int ty) {
     MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, 255);
+}
+
+// One clipped part of a tile (the clip within the view)
+static void MapRenderer__DrawTileClipped(MapRenderer *renderer, const Map *map, const MapCamera *camera,
+                                         const SDL_Rect *view, const DT1Tile *tile, const int tx, const int ty,
+                                         const uint8_t alpha, const SDL_Rect *clip) {
+    SDL_Rect part;
+    if (clip->w <= 0 || clip->h <= 0 || !SDL_IntersectRect(clip, view, &part)) {
+        return;
+    }
+    SDL_RenderSetClipRect(sdl_renderer, &part);
+    MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
+}
+
+// A tile with a round hole where it covers the viewer: "inside" alpha in the circle, "outside" beyond it, half way
+// between in a ring round its edge (drawn in thin bands, each clipped to the parts of the circle it crosses)
+static void MapRenderer__DrawTileCut(MapRenderer *renderer, const Map *map, const MapCamera *camera,
+                                     const SDL_Rect *view, const DT1Tile *tile, const int tx, const int ty,
+                                     const uint8_t inside, const uint8_t outside) {
+    if (tile == NULL) {
+        return;
+    }
+    if (inside >= outside || !renderer->cut) {
+        MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, inside < outside ? inside : outside);
+        return;
+    }
+    float wx;
+    float wy;
+    MapRenderer__TileOrigin(tile, tx, ty, &wx, &wy);
+    int sx;
+    int sy;
+    MapView_WorldToScreen(camera, view, wx, wy, &sx, &sy);
+    const int     w      = (int)ceilf((float)tile->image_width * camera->zoom);
+    const int     h      = (int)ceilf((float)tile->image_height * camera->zoom);
+    const int     cx     = renderer->cut_x;
+    const int     cy     = renderer->cut_y;
+    const int     inner  = renderer->cut_radius;
+    const int     outer  = inner + (inner / 4); // the soft ring
+    const uint8_t ring   = (uint8_t)((inside + outside) / 2);
+    const int     top    = cy - outer;
+    const int     bottom = cy + outer;
+    // Above and below the circle: as it is
+    const SDL_Rect above = {sx, sy, w, top - sy};
+    const SDL_Rect below = {sx, bottom, w, sy + h - bottom};
+    MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, outside, &above);
+    MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, outside, &below);
+    const int band = 4;
+    for (int y = (top > sy ? top : sy); y < bottom && y < sy + h; y += band) {
+        const float    dy    = (float)(y + (band / 2) - cy);
+        const int      ro    = (float)(outer * outer) > dy * dy ? (int)sqrtf((float)(outer * outer) - (dy * dy)) : 0;
+        const int      ri    = (float)(inner * inner) > dy * dy ? (int)sqrtf((float)(inner * inner) - (dy * dy)) : 0;
+        const SDL_Rect left  = {sx, y, (cx - ro) - sx, band};
+        const SDL_Rect right = {cx + ro, y, (sx + w) - (cx + ro), band};
+        const SDL_Rect ring_left  = {cx - ro, y, ro - ri, band};
+        const SDL_Rect ring_right = {cx + ri, y, ro - ri, band};
+        const SDL_Rect middle     = {cx - ri, y, 2 * ri, band};
+        MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, outside, &left);
+        MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, outside, &right);
+        MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, ring, &ring_left);
+        MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, ring, &ring_right);
+        MapRenderer__DrawTileClipped(renderer, map, camera, view, tile, tx, ty, inside, &middle);
+    }
+    SDL_RenderSetClipRect(sdl_renderer, view);
 }
 
 static void MapRenderer__DrawTileAlpha(MapRenderer *renderer, const Map *map, const MapCamera *camera,
@@ -773,8 +841,12 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                      : 0;
     float viewer_wx = 0.0f;
     float viewer_wy = 0.0f;
+    renderer->cut   = see_through;
     if (see_through) {
         MapView_SubtileToWorld(renderer->viewer_x, renderer->viewer_y, &viewer_wx, &viewer_wy);
+        // The hole: round the viewer's body (half way up a character), on screen
+        MapView_WorldToScreen(camera, view, viewer_wx, viewer_wy - 45.0f, &renderer->cut_x, &renderer->cut_y);
+        renderer->cut_radius = (int)(SEE_THROUGH_RADIUS * camera->zoom);
     }
 
     // What fades this frame: the building you're in (its walls in front of you, as one), and with "see through
@@ -837,6 +909,7 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                 if (k >= 0 && (renderer->structure_fade[k] & FADE_BUILDING) && sum > viewer_sum) {
                     target = front_alpha;
                 }
+                const uint8_t base = target; // without see through: outside the hole
                 if (k >= 0 && see_through) {
                     bool             covered    = renderer->cover[c] != 0;
                     static const int next[4][2] = {
@@ -865,8 +938,10 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                         (MapRenderer__IsSpecial(tile->orientation) && !(flags & MAP_DRAW_SPECIAL))) {
                         continue;
                     }
-                    MapRenderer__DrawTileAlpha(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty, alpha);
-                    MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
+                    // See through obstructions: a round hole around the viewer (it opens and closes with the easing)
+                    MapRenderer__DrawTileCut(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty, alpha,
+                                             base);
+                    MapRenderer__DrawTileCut(renderer, map, camera, view, tile, tx, ty, alpha, base);
                 }
             }
         }
@@ -915,8 +990,8 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                         const bool hidden = renderer->roof_tile_x >= 0 && renderer->roof_hidden[c] != 0;
                         uint8_t    alpha  = hidden ? hidden_alpha : 255;
                         // As faded as the rest of its structure (a tent covering you fades, roof and all)
-                        alpha = alpha < renderer->wall_alpha[c] ? alpha : renderer->wall_alpha[c];
-                        MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
+                        const uint8_t eased = alpha < renderer->wall_alpha[c] ? alpha : renderer->wall_alpha[c];
+                        MapRenderer__DrawTileCut(renderer, map, camera, view, tile, tx, ty, eased, alpha);
                     }
                 }
             }

@@ -134,6 +134,7 @@ void AudioManager_InitSingleton(void) {
     AudioManager_SetVolume(AUDIO_SET_VOLUME_TYPE_MUSIC, AbyssConfiguration_GetMusicVolume());
     AudioManager_SetVolume(AUDIO_SET_VOLUME_TYPE_SFX, AbyssConfiguration_GetSfxVolume());
     AudioManager_SetVolume(AUDIO_SET_VOLUME_TYPE_UI, AbyssConfiguration_GetUiVolume());
+    AudioManager_SetVolume(AUDIO_SET_VOLUME_TYPE_SPEECH, AbyssConfiguration_GetSpeechVolume());
 
     av_channel_layout_default(&audio_manager->channel_layout, audio_manager->audio_spec.channels);
     SDL_PauseAudioDevice(audio_manager->audio_device_id, SDL_FALSE);

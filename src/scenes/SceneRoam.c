@@ -237,6 +237,7 @@ typedef struct SceneRoam {
     Label    *title_label;
     Label    *status_label;
     Label    *help_label;
+    char      help_text[400]; // what it says now
     Label    *life_label;
     Label    *target_label;
     bool      prev_left;
@@ -1242,6 +1243,56 @@ static bool Roam__NearWaypoint(const SceneRoam *roam) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Lifetime
 
+// The help line under the view, from what's bound now: "Mouse Left walk/attack  R run  C character ..."
+static void Roam__UpdateHelp(SceneRoam *roam) {
+    static const struct {
+        ControlAction action;
+        const char   *what;
+        int           modes; // 1 Single Player, 2 Free Roam, 4 Testing Grounds
+    } entries[] = {
+        {ACTION_MOVE_ATTACK, "walk/attack", 7},
+        {ACTION_RIGHT_SKILL, "drop",        6},
+        {ACTION_RUN_TOGGLE,  "run",         7},
+        {ACTION_CHARACTER,   "character",   1},
+        {ACTION_COMBAT,      "combat",      6},
+        {ACTION_WAYPOINT,    "waypoint",    1},
+        {ACTION_TOWN,        "town",        1},
+        {ACTION_PREVIEW,     "preview",     4},
+        {ACTION_LIGHT,       "light",       7},
+        {ACTION_COLLISION,   "collision",   6},
+        {ACTION_AUTOMAP,     "map",         3},
+        {ACTION_NEW_WORLD,   "new world",   2},
+    };
+    const int mode    = roam->game ? 1 : (roam->free_roam ? 2 : 4);
+    const int profile = Roam__Profile(roam);
+    char      text[400];
+    text[0] = '\0';
+    for (size_t e = 0; e < sizeof(entries) / sizeof(entries[0]); e++) {
+        if (!(entries[e].modes & mode)) {
+            continue;
+        }
+        const ControlBindings *list = Controls_GetBindings(profile, entries[e].action);
+        if (list->count == 0) {
+            continue;
+        }
+        char name[64];
+        Controls_InputName(&list->inputs[0], name, sizeof(name));
+        const char  *shown = strncmp(name, "Mouse ", 6) == 0 ? name + 6 : name; // "Left walk/attack"
+        const size_t used  = strlen(text);
+        snprintf(text + used, sizeof(text) - used, "%s%s %s", used > 0 ? "  " : "", shown, entries[e].what);
+        if (entries[e].action == ACTION_RIGHT_SKILL && mode != 1) {
+            const size_t more = strlen(text);
+            snprintf(text + more, sizeof(text) - more, "  Shift+%s remove", shown);
+        }
+    }
+    const size_t used = strlen(text);
+    snprintf(text + used, sizeof(text) - used, "%sEsc menu", used > 0 ? "  " : "");
+    if (strcmp(text, roam->help_text) != 0) {
+        snprintf(roam->help_text, sizeof(roam->help_text), "%s", text);
+        Label_SetText(roam->help_label, text);
+    }
+}
+
 static void *Roam__Create(const bool free_roam, const bool game) {
     Cursor_SetVisible(true);
 
@@ -1269,13 +1320,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Label_SetText(roam->help_label, game ? "Left: walk / attack / open   R run   C character   V waypoint (near one)   "
-                                           "Home town   Tab map   L light   Esc menu"
-                                    : free_roam
-                                        ? "Left walk/attack  Right drop  Shift+Right remove  R run  C combat  "
-                                          "L light  B collision  Tab map  N new world  Esc menu"
-                                        : "Left: walk/attack  Right: drop  Shift+Right: remove  R run  C combat  "
-                                          "P preview  L light  B blocked  Esc menu");
+    Roam__UpdateHelp(roam); // from the bindings (Options › Controls), made again when they change
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -2128,21 +2173,19 @@ static void Roam__Update(SceneRoam *roam) {
     roam->key_dy = 0.0f;
     if (gameplay->movement != MOVEMENT_CLASSIC) {
         // On screen, up is towards lower x and y in sub-tiles, right towards higher x and lower y
-        float sx = (Controls_Held(ACTION_MOVE_RIGHT) ? 1.0f : 0.0f) - (Controls_Held(ACTION_MOVE_LEFT) ? 1.0f : 0.0f);
-        float sy = (Controls_Held(ACTION_MOVE_DOWN) ? 1.0f : 0.0f) - (Controls_Held(ACTION_MOVE_UP) ? 1.0f : 0.0f);
-        const float stick_x = InputManager_GetPadAxis(SDL_CONTROLLER_AXIS_LEFTX);
-        const float stick_y = InputManager_GetPadAxis(SDL_CONTROLLER_AXIS_LEFTY);
-        if (fabsf(stick_x) > 0.25f || fabsf(stick_y) > 0.25f) {
-            sx = stick_x;
-            sy = stick_y;
-        }
+        // As far as each is pushed: keys all the way, a stick (or anything analog bound there) part way
+        const float sx     = Controls_Amount(ACTION_MOVE_RIGHT) - Controls_Amount(ACTION_MOVE_LEFT);
+        const float sy     = Controls_Amount(ACTION_MOVE_DOWN) - Controls_Amount(ACTION_MOVE_UP);
+        const float pushed = fminf(sqrtf((sx * sx) + (sy * sy)), 1.0f);
         // Screen directions to sub-tiles (the screen is squashed 2:1, so a step right is half a step in y)
         const float dx     = sx + (sy * 2.0f);
         const float dy     = (sy * 2.0f) - sx;
         const float length = sqrtf((dx * dx) + (dy * dy));
-        if (length > 0.01f) {
-            roam->key_dx = dx / length;
-            roam->key_dy = dy / length;
+        if (length > 0.01f && pushed > 0.05f) {
+            // A stick pushed part way walks slower (down to a third of the speed)
+            const float speed = 0.35f + (0.65f * pushed);
+            roam->key_dx      = speed * dx / length;
+            roam->key_dy      = speed * dy / length;
         }
     }
 
@@ -2712,6 +2755,7 @@ static void Roam__Render(SceneRoam *roam) {
     const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};
     SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
     SDL_RenderFillRect(sdl_renderer, &help_bar);
+    Roam__UpdateHelp(roam);
     Label_Draw(roam->help_label, 4, VIEW_H - 12);
 
     // Life

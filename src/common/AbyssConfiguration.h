@@ -20,6 +20,8 @@ float       AbyssConfiguration_GetMasterVolume(void);
 float       AbyssConfiguration_GetMusicVolume(void);
 float       AbyssConfiguration_GetSfxVolume(void);
 float       AbyssConfiguration_GetUiVolume(void);
+float       AbyssConfiguration_GetSpeechVolume(void); // NPCs and quests, once speech plays
+void        AbyssConfiguration_SetSpeechVolume(float volume);
 bool        AbyssConfiguration_GetSkipIntroMovies(void);
 const char *AbyssConfiguration_GetConfigFolder(void); // folder holding abyss.ini (no trailing separator)
 

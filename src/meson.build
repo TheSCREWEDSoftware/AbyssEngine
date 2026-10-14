@@ -58,6 +58,7 @@ sources = [
 
     'game/Character.c',
     'game/Controls.c',
+    'game/ControlPresets.c',
     'game/ControlsExport.c',
     'game/Settings.c',
 

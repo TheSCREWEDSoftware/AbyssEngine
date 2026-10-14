@@ -9,6 +9,8 @@
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "drawing/LoadingScreen.h"
+#include "game/Controls.h"
+#include "game/ControlsExport.h"
 #include "game/Settings.h"
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
@@ -17,18 +19,77 @@
 #include "map/MapSession.h"
 #include "scenes/Scene.h"
 #include "scenes/SceneIntroVideos.h"
+#include "scenes/SceneOptions.h"
 #include "types/Palette.h"
 #include "util/Crypto.h"
 #include <libavutil/log.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
 #endif
 
+static void Main__Usage(void) {
+    printf("Abyss Engine\n\n"
+           "  AbyssEngine                          play\n"
+           "  AbyssEngine --settings               just the Options screen (video, audio, gameplay, controls)\n"
+           "  AbyssEngine --export-controls DIR    write controls.md, the keyboard and gamepad pictures and the\n"
+           "                                       Single Player / Free Roam key tables into DIR (your bindings)\n"
+           "  AbyssEngine --export-controls DIR --defaults   the same with the default bindings\n");
+}
+
+// --export-controls: the controls for reading outside the game, without opening a window
+static int Main__ExportControls(const char *folder, const bool defaults) {
+    if (defaults) {
+        Controls_Reset();
+    }
+    static const char *pictures[4] = {"controls-keyboard.svg", "controls-keyboard-dark.svg", "controls-gamepad.svg",
+                                      "controls-gamepad-dark.svg"};
+    char               path[4200];
+    bool               ok = true;
+    for (int n = 0; n < 4; n++) {
+        snprintf(path, sizeof(path), "%s/%s", folder, pictures[n]);
+        ok = ok && (n < 2 ? ControlsExport_Svg(0, path, n == 1) : ControlsExport_PadSvg(0, path, n == 3));
+    }
+    snprintf(path, sizeof(path), "%s/controls.md", folder);
+    ok = ok && ControlsExport_Markdown(0, path, true);
+    static const struct {
+        const char *file;
+        unsigned    context;
+    } modes[2] = {
+        {"keys-single-player.md", CONTROL_CONTEXT_GAME },
+        {"keys-free-roam.md",     CONTROL_CONTEXT_DEBUG}
+    };
+    for (int m = 0; m < 2 && ok; m++) {
+        snprintf(path, sizeof(path), "%s/%s", folder, modes[m].file);
+        FILE *file = fopen(path, "w");
+        ok         = file != NULL;
+        if (file != NULL) {
+            ControlsExport_ModeTable(file, 0, modes[m].context);
+            fclose(file);
+        }
+    }
+    printf(ok ? "Wrote the controls to %s\n" : "Could not write the controls to %s\n", folder);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
-    (void)(argc);
-    (void)(argv);
+    bool        settings_only  = false;
+    const char *export_folder  = NULL;
+    bool        export_default = false;
+    for (int a = 1; a < argc; a++) {
+        if (strcmp(argv[a], "--settings") == 0) {
+            settings_only = true;
+        } else if (strcmp(argv[a], "--export-controls") == 0 && a + 1 < argc) {
+            export_folder = argv[++a];
+        } else if (strcmp(argv[a], "--defaults") == 0) {
+            export_default = true;
+        } else if (strcmp(argv[a], "--help") == 0 || strcmp(argv[a], "-h") == 0) {
+            Main__Usage();
+            return 0;
+        }
+    }
 
     Log_SetLevel(LOG_LEVEL_EVERYTHING);
     av_log_set_level(AV_LOG_FATAL);
@@ -93,6 +154,9 @@ int main(int argc, char **argv) {
         LOG_INFO("Configuration: %s", config_path);
     }
     Settings_Load(); // gameplay and controls (options.ini)
+    if (export_folder != NULL) {
+        return Main__ExportControls(export_folder, export_default);
+    }
 
     LOG_DEBUG("Initializing file manager...");
     FileManager_CreateSingleton();
@@ -141,7 +205,12 @@ int main(int argc, char **argv) {
     Cursor_CreateSingleton();
     Scene_InitializeManager();
     Cursor_SetType(CURSOR_STANDARD);
-    Scene_Set(SCENE_REF(IntroVideos));
+    if (settings_only) {
+        options_standalone = true;
+        Scene_Set(SCENE_REF(Options)); // AbyssEngine --settings
+    } else {
+        Scene_Set(SCENE_REF(IntroVideos));
+    }
     Label_InitializeCaches();
     VideoManager_InitializeSingleton(); // before the audio starts: its thread asks whether a video is playing
     InputManager_InitializeSingleton();

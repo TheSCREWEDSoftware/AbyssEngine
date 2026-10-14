@@ -30,6 +30,7 @@ typedef struct AbyssConfiguration {
         float music_volume;
         float sfx_volume;
         float ui_volume;
+        float speech_volume; // NPCs, quests (used once speech plays)
     } audio;
 } AbyssConfiguration;
 
@@ -241,6 +242,9 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
                 LOG_FATAL("Invalid value '%s' for key '%s' in the configuration file!", value, key);
             }
             LOG_DEBUG("Setting sfx volume to '%f'", abyss_configuration.audio.sfx_volume);
+        } else if (IS_STR_EQUAL(key, "speechvolume")) {
+            const float volume                      = strtof(value, NULL);
+            abyss_configuration.audio.speech_volume = volume < 0.0f ? 0.0f : (volume > 1.0f ? 1.0f : volume);
         } else if (IS_STR_EQUAL(key, "uivolume")) {
             abyss_configuration.audio.ui_volume = strtof(value, NULL);
             if (abyss_configuration.audio.ui_volume < 0.0f || abyss_configuration.audio.ui_volume > 1.0f) {
@@ -411,6 +415,10 @@ float AbyssConfiguration_GetSfxVolume(void) { return abyss_configuration.audio.s
 
 float AbyssConfiguration_GetUiVolume(void) { return abyss_configuration.audio.ui_volume; }
 
+float AbyssConfiguration_GetSpeechVolume(void) { return abyss_configuration.audio.speech_volume; }
+
+void AbyssConfiguration_SetSpeechVolume(const float volume) { abyss_configuration.audio.speech_volume = volume; }
+
 bool AbyssConfiguration_GetSkipIntroMovies(void) { return abyss_configuration.skip_intro_movies; }
 
 void AbyssConfiguration__SetSaneDefaults(void) {
@@ -436,6 +444,7 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.audio.music_volume  = 1.0f;
     abyss_configuration.audio.sfx_volume    = 1.0f;
     abyss_configuration.audio.ui_volume     = 1.0f;
+    abyss_configuration.audio.speech_volume = 1.0f;
 
     SET_PARAM_STR(abyss_configuration.locale, "latin");
 }
@@ -483,6 +492,7 @@ bool AbyssConfiguration_Save(void) {
         {"audio",    "MusicVolume",  "", false, false},
         {"audio",    "SfxVolume",    "", false, false},
         {"audio",    "UIVolume",     "", false, false},
+        {"audio",    "SpeechVolume", "", false, false},
     };
     const int count = (int)(sizeof(settings) / sizeof(settings[0]));
     snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
@@ -498,6 +508,7 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[4].value, 64, "%.2f", abyss_configuration.audio.music_volume);
     snprintf(settings[5].value, 64, "%.2f", abyss_configuration.audio.sfx_volume);
     snprintf(settings[6].value, 64, "%.2f", abyss_configuration.audio.ui_volume);
+    snprintf(settings[7].value, 64, "%.2f", abyss_configuration.audio.speech_volume);
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

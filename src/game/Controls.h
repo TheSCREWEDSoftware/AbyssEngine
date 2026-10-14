@@ -139,17 +139,19 @@ bool Controls_SameInput(const ControlInput *a, const ControlInput *b);
 const ControlBindings *Controls_GetBindings(int profile, ControlAction action);
 void                   Controls_SetBindings(int profile, ControlAction action, const ControlBindings *bindings);
 void                   Controls_GetDefaults(ControlAction action, ControlBindings *bindings);
-bool                   Controls_HasOwnProfile(int profile);           // a class with its own controls
+bool                   Controls_HasOwnProfile(int profile);    // a class with its own controls
+void                   Controls_CopyProfile(int from, int to); // a class gets a copy of another's (or all classes')
 void                   Controls_SetOwnProfile(int profile, bool own); // own: starts as a copy of all classes'
 ControlConflict        Controls_Conflict(int profile, ControlAction action, const ControlInput *input);
 
 // While playing: which profile is in use, and what's active
-void Controls_SetProfile(int profile);
-void Controls_SetContext(unsigned context);
-void Controls_AllowAnywhere(ControlAction action, bool allowed); // works whatever the context (a debug setting)
-void Controls_Update(void);                                      // once a frame, before asking
-bool Controls_Pressed(ControlAction action);                     // fired this frame
-bool Controls_Held(ControlAction action);                        // any of its bindings held down now
+void  Controls_SetProfile(int profile);
+void  Controls_SetContext(unsigned context);
+void  Controls_AllowAnywhere(ControlAction action, bool allowed); // works whatever the context (a debug setting)
+void  Controls_Update(void);                                      // once a frame, before asking
+bool  Controls_Pressed(ControlAction action);                     // fired this frame
+bool  Controls_Held(ControlAction action);                        // any of its bindings held down now
+float Controls_Amount(ControlAction action); // 0..1: a stick part way, the mouse moving slowly; 1 when held
 
 // Loading and saving: options.ini's [Controls] and [Controls.<Class>] sections (see Settings)
 void Controls_Reset(void); // everything back to the defaults, no class profiles

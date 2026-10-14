@@ -7,8 +7,8 @@
 | | Windows | Linux | macOS |
 |---|---|---|---|
 | **Compiler** | Visual Studio 2022 (Community is fine), workload *Desktop development with C++* | GCC or Clang | Xcode command line tools |
-| **CMake** | 3.20 or newer (comes with Visual Studio, or [cmake.org](https://cmake.org/download/)) | 3.20+ (`apt install cmake`) | 3.20+ (`brew install cmake`) |
-| **Git** | [git-scm.com](https://git-scm.com/download/win) | `apt install git` | included with Xcode tools |
+| **CMake** | 3.20 or newer (comes with Visual Studio, or [cmake.org](https://cmake.org/download/)) | 3.20+ (your package manager) | 3.20+ (`brew install cmake`) |
+| **Git** | [git-scm.com](https://git-scm.com/download/win) | your package manager | included with Xcode tools |
 | **Libraries** | vcpkg (installs them for you) | SDL2, FFmpeg, zlib, libarchive from your package manager | vcpkg or Homebrew |
 | **Game files** | Your own Diablo II + Lord of Destruction MPQs | same | same |
 
@@ -32,16 +32,42 @@ git clone https://github.com/microsoft/vcpkg C:\vcpkg
 C:\vcpkg\bootstrap-vcpkg.bat
 ```
 
-## Linux (Debian / Ubuntu)
+## Linux
+
+Pick the family your distribution belongs to. Each needs a compiler, CMake, Git, pkg-config and the development
+packages for SDL2, FFmpeg, libarchive and zlib.
+
+### Debian based (Debian, Ubuntu, Linux Mint, Pop!_OS, ...)
+
+Example: **Ubuntu**
 
 ```bash
-sudo apt install build-essential cmake git pkg-config \
+sudo apt install build-essential cmake git pkg-config ninja-build \
     libsdl2-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
     zlib1g-dev libbz2-dev libarchive-dev
 ```
 
-Fedora: `sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel`.
-Arch: `sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib`.
+### RPM based (Fedora, RHEL, Rocky / Alma Linux, openSUSE, ...)
+
+Example: **Fedora**
+
+```bash
+sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel
+```
+
+On RHEL, Rocky or Alma, turn on EPEL and RPM Fusion first for SDL2 and FFmpeg (and use `ffmpeg-devel` from RPM
+Fusion). On openSUSE use `zypper install` with `SDL2-devel`, `ffmpeg-devel` (Packman), `libarchive-devel`,
+`zlib-devel`.
+
+### Arch based (Arch Linux, Manjaro, EndeavourOS, ...)
+
+Example: **Arch Linux**
+
+```bash
+sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib
+```
+
+### Any of them
 
 Optional: `meson` and `ninja-build` if you prefer Meson to CMake, `clang-format` if you'll contribute.
 

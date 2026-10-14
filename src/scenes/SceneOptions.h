@@ -8,6 +8,8 @@
 // gameplay and controls in options.ini (see game/Settings.h). OK saves, Cancel puts everything back.
 DESCRIBE_SCENE_CALLBACKS(Options);
 
+extern bool options_standalone; // AbyssEngine --settings: Options only, and OK / Cancel close the program
+
 void *Options_Create(void);
 void  Options_Render(void *scene_ref);
 void  Options_Update(void *scene_ref, uint64_t delta);

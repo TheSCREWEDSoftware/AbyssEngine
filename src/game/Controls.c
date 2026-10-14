@@ -167,7 +167,8 @@ const char  *Controls_GroupName(const ControlGroup group) { return group_names[g
 // ---------------------------------------------------------------------------------------------------------------------
 // Inputs as text
 
-static const char *mouse_names[] = {"", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5"};
+static const char *mouse_move_names[4] = {"Mouse Move Left", "Mouse Move Right", "Mouse Move Up", "Mouse Move Down"};
+static const char *mouse_names[]       = {"", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5"};
 
 // Gamepad inputs carry Windows' button numbers (what the system's game controller settings show, the same for any
 // pad) with where the button is: the four on the right are a second D-pad, "Pad Button 4 (Up)" is the top one.
@@ -271,6 +272,9 @@ void Controls_InputName(const ControlInput *input, char *text, const int size) {
     case INPUT_PAD_AXIS:
         snprintf(base, sizeof(base), "%s", Controls__AxisName(input->value));
         break;
+    case INPUT_MOUSE_MOVE:
+        snprintf(base, sizeof(base), "%s", input->value >= 0 && input->value < 4 ? mouse_move_names[input->value] : "");
+        break;
     default:
         break;
     }
@@ -313,6 +317,13 @@ bool Controls_ParseInput(const char *text, ControlInput *input) {
         if (strcmp(name, mouse_names[b]) == 0) {
             input->kind  = INPUT_MOUSE_BUTTON;
             input->value = b;
+            return true;
+        }
+    }
+    for (int d = 0; d < 4; d++) {
+        if (strcmp(name, mouse_move_names[d]) == 0) {
+            input->kind  = INPUT_MOUSE_MOVE;
+            input->value = d;
             return true;
         }
     }
@@ -401,6 +412,15 @@ void Controls_SetBindings(const int profile, const ControlAction action, const C
 bool Controls_HasOwnProfile(const int profile) {
     Controls__Ensure();
     return profile > 0 && profile < CONTROL_PROFILES && own_profile[profile];
+}
+
+void Controls_CopyProfile(const int from, const int to) {
+    Controls__Ensure();
+    if (from < 0 || to <= 0 || from >= CONTROL_PROFILES || to >= CONTROL_PROFILES || from == to) {
+        return;
+    }
+    memcpy(bindings[to], bindings[Controls__Profile(from)], sizeof(bindings[0]));
+    own_profile[to] = true;
 }
 
 void Controls_SetOwnProfile(const int profile, const bool own) {
@@ -498,6 +518,24 @@ void Controls_Update(void) {
 }
 
 bool Controls_Pressed(const ControlAction action) { return pressed[action]; }
+
+float Controls_Amount(const ControlAction action) {
+    Controls__Ensure();
+    if ((actions[action].contexts & current_context) == 0 && !allowed_anywhere[action]) {
+        return 0.0f;
+    }
+    const ControlBindings *list   = &bindings[Controls__Profile(current_profile)][action];
+    const uint16_t         mods   = InputManager_GetMods();
+    float                  amount = 0.0f;
+    for (int b = 0; b < list->count; b++) {
+        const ControlInput *input = &list->inputs[b];
+        if (!input->twice && Controls__ModsMatch(input, mods)) {
+            const float a = InputManager_GetAmount(input->kind, input->value);
+            amount        = a > amount ? a : amount;
+        }
+    }
+    return amount;
+}
 
 bool Controls_Held(const ControlAction action) {
     Controls__Ensure();

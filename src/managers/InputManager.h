@@ -13,6 +13,7 @@ typedef enum InputKind {
     INPUT_MOUSE_WHEEL,  // value: +1 up, -1 down
     INPUT_PAD_BUTTON,   // value: SDL_GameControllerButton
     INPUT_PAD_AXIS,     // value: axis * 2 + 1 for the positive direction, + 0 for the negative
+    INPUT_MOUSE_MOVE,   // value: 0 left, 1 right, 2 up, 3 down (moving the mouse that way)
 } InputKind;
 
 typedef struct InputPress {
@@ -22,7 +23,8 @@ typedef struct InputPress {
     uint64_t  time; // ms
 } InputPress;
 
-#define INPUT_PAD_AXIS_THRESHOLD 0.5f // a stick or trigger counts as pressed past half way
+#define INPUT_PAD_AXIS_THRESHOLD 0.5f  // a stick or trigger counts as pressed past half way
+#define INPUT_PAD_DEAD_ZONE      0.15f // and not at all this close to the middle
 
 void        InputManager_InitializeSingleton(void);
 void        InputManager_DestroySingleton(void);
@@ -42,6 +44,8 @@ int         InputManager_ConsumeMouseWheel(void);                // wheel steps 
 bool     InputManager_PollPress(InputPress *press); // false when there are no more
 void     InputManager_ClearPresses(void);
 bool     InputManager_IsDown(InputKind kind, int value); // held now (wheel steps never are)
+float    InputManager_GetAmount(InputKind kind,
+                                int       value); // 0..1: how far a stick is pushed, how fast the mouse moves; 1 held
 uint16_t InputManager_GetMods(void);
 float    InputManager_GetPadAxis(SDL_GameControllerAxis axis); // -1..1, the strongest of the connected pads
 

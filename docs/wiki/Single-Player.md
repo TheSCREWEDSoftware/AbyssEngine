@@ -50,6 +50,32 @@ gamepad's left stick) walk and **E** attacks.
 | **Esc** | Close the open panel; with none open, the game menu: **Options**, **Save and Exit Game**, **Return to Game** (the world waits while it's open) |
 | Exit Game button | Save and go back to the character list |
 
+### Every key, from the engine
+
+<!-- keys:begin (generated: AbyssEngine --export-controls DIR --defaults, then keys-single-player.md) -->
+| Action | Mouse | Keyboard | Controller | What it does |
+|---|---|---|---|---|
+| Move / attack / use | `Mouse Left` | - | - | Classic: walk where you click, attack what you click, open what you click |
+| Move up | - | `Up` | `Pad Left Stick Up` | Modern and Combined movement: walk towards the top of the screen |
+| Move down | - | `Down` | `Pad Left Stick Down` | Modern and Combined movement |
+| Move left | - | `Left` | `Pad Left Stick Left` | Modern and Combined movement |
+| Move right | - | `Right` | `Pad Left Stick Right` | Modern and Combined movement |
+| Run / walk | - | `R` | - | Switch between running and walking |
+| Run (hold) | - | `Left Ctrl` | - | Run (or walk, when running is on) while held |
+| Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
+| Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
+| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster (the game: use the right skill) |
+| Character screen | - | `A`, `C` | - | (null) |
+| Clear screen | - | `Space` | - | Close the open screens and panels |
+| Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
+| Back to town | - | `Home` | - | Single Player: back to the act's town |
+| Automap | - | `Tab` | - | (null) |
+| Zoom in | `Wheel Up` | - | - | (null) |
+| Zoom out | `Wheel Down` | - | - | (null) |
+| Day / dusk / night | - | `L` | - | Cycle the light (debug) |
+| Screenshot | - | `PrintScreen` | - | Saves a picture in the screenshots folder next to abyss.ini |
+<!-- keys:end -->
+
 - **Combat** is always on. Town folk (Akara, Charsi, Gheed, ...) never fight and can't be attacked. Hits can miss:
   the game's chance to hit uses the attacker's attack rating and level against the defender's defense and level (5% to
   95%), both ways.

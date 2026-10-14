@@ -27,9 +27,18 @@ typedef struct InputManager {
     SDL_GameController *pads[MAX_PADS];
     bool                pad_buttons[SDL_CONTROLLER_BUTTON_MAX];
     float               pad_axes[MAX_PADS][SDL_CONTROLLER_AXIS_MAX];
+    uint64_t            move_time[4];  // mouse movement by direction (left, right, up, down): when it last moved
+    float               move_speed[4]; // and how far (pixels in one event)
+    uint64_t            move_press[4]; // the last press it made (one every MOVE_PRESS_MS while it keeps moving)
 } InputManager;
 
 InputManager *input_manager;
+
+#define MOVE_MIN      2     // pixels in one motion event to count as moving that way
+#define MOVE_PRESS    6     // and to count as a press (a flick)
+#define MOVE_PRESS_MS 200   // at most one press each way this often
+#define MOVE_HOLD_MS  60    // held while it moved that way this recently
+#define MOVE_FULL     12.0f // pixels in one event for the full amount
 
 static void InputManager__Press(const InputKind kind, const int value) {
     InputPress *press = &input_manager->presses[(input_manager->press_head + input_manager->press_count) % MAX_PRESSES];
@@ -68,10 +77,25 @@ void InputManager_DestroySingleton(void) {
 
 bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
     switch (sdl_event->type) {
-    case SDL_MOUSEMOTION:
+    case SDL_MOUSEMOTION: {
         input_manager->mouse_x = sdl_event->motion.x;
         input_manager->mouse_y = sdl_event->motion.y;
+        // Mouse movement as an input (Mouse Move Left / Right / Up / Down)
+        const uint64_t now      = SDL_GetTicks64();
+        const int      moved[4] = {-sdl_event->motion.xrel, sdl_event->motion.xrel, -sdl_event->motion.yrel,
+                                   sdl_event->motion.yrel};
+        for (int d = 0; d < 4; d++) {
+            if (moved[d] >= MOVE_MIN) {
+                input_manager->move_time[d]  = now;
+                input_manager->move_speed[d] = (float)moved[d];
+                if (moved[d] >= MOVE_PRESS && now - input_manager->move_press[d] >= MOVE_PRESS_MS) {
+                    input_manager->move_press[d] = now;
+                    InputManager__Press(INPUT_MOUSE_MOVE, d);
+                }
+            }
+        }
         return true;
+    }
     case SDL_MOUSEBUTTONDOWN:
         input_manager->mouse_x        = sdl_event->button.x;
         input_manager->mouse_y        = sdl_event->button.y;
@@ -271,8 +295,28 @@ bool InputManager_IsDown(const InputKind kind, const int value) {
         const float v = InputManager_GetPadAxis((SDL_GameControllerAxis)(value / 2));
         return (value % 2 == 1) ? v >= INPUT_PAD_AXIS_THRESHOLD : v <= -INPUT_PAD_AXIS_THRESHOLD;
     }
+    case INPUT_MOUSE_MOVE:
+        return value >= 0 && value < 4 && SDL_GetTicks64() - input_manager->move_time[value] <= MOVE_HOLD_MS;
     default:
         return false;
+    }
+}
+
+float InputManager_GetAmount(const InputKind kind, const int value) {
+    switch (kind) {
+    case INPUT_PAD_AXIS: {
+        // A stick or trigger, as far as it's pushed that way (a little dead zone in the middle)
+        const float v      = InputManager_GetPadAxis((SDL_GameControllerAxis)(value / 2));
+        const float amount = (value % 2 == 1) ? v : -v;
+        return amount <= INPUT_PAD_DEAD_ZONE ? 0.0f : (amount - INPUT_PAD_DEAD_ZONE) / (1.0f - INPUT_PAD_DEAD_ZONE);
+    }
+    case INPUT_MOUSE_MOVE:
+        if (!InputManager_IsDown(kind, value)) {
+            return 0.0f;
+        }
+        return input_manager->move_speed[value] >= MOVE_FULL ? 1.0f : input_manager->move_speed[value] / MOVE_FULL;
+    default:
+        return InputManager_IsDown(kind, value) ? 1.0f : 0.0f;
     }
 }
 

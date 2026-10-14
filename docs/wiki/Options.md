@@ -7,12 +7,16 @@ Video and audio are saved in `abyss.ini` (only those lines change: the rest of t
 wrote it); gameplay settings and controls in **`options.ini`** next to it. Both are plain text with a comment on every
 setting, so they can be edited outside the game too.
 
+**Before starting the game:** `AbyssEngine --settings` opens just the Options screen (OK or Cancel closes the
+program), for setting the resolution, volumes and controls first. `AbyssEngine --export-controls DIR` writes the
+controls files below into a folder without opening a window (add `--defaults` for the default bindings).
+
 ## The Options screen
 
 | Tab | |
 |---|---|
 | **Video** | Window size (800x600 up to 4K, or "Follow InitialScale"), full screen, scaling (sharp pixels / smooth; from the next start). The game keeps its 4:3 shape: wider windows get black bars |
-| **Audio** | Master, music, sound effects and interface volume: drag the slider or type a number from 0 to 100; you hear it right away |
+| **Audio** | Master, music, sound effects, interface and speech volume: drag the slider or type a number from 0 to 100; you hear it right away (speech is kept for NPCs and quests, once the engine plays them; `SpeechVolume` in `abyss.ini`) |
 | **Gameplay** | Settings for all classes or one class (tick "Own settings" to give a class its own), type of movement, see-through obstructions |
 | **Controls** | Every action and what it's bound to (see below) |
 
@@ -35,6 +39,11 @@ setting, so they can be edited outside the game too.
   with the actions on each key (`controls-keyboard.svg`), and a gamepad (a generic pad) with what
   each trigger, bumper, stick direction, D-pad direction and button does (`controls-gamepad.svg`), each also in a dark version (`-dark.svg`). The
   defaults are on the [Controls](Controls.md) page.
+- **Presets** saves the controls you're setting up under a name, loads one back, or deletes one. Each preset is a file
+  in the `presets` folder next to `abyss.ini`, in the same `action = inputs` lines as `options.ini`, so they can be
+  shared or edited by hand.
+- **Copy to** gives a class a copy of the controls you're looking at (all classes', or another class's), as its own.
+- The help line under the game view is built from your bindings, so it always shows your keys.
 
 ## Gameplay
 
@@ -43,7 +52,7 @@ setting, so they can be edited outside the game too.
 | `Movement` | `Classic` | Diablo II: click to walk, click a monster to attack it, click a chest or door to open it |
 | | `Modern` | Movement keys (arrows by default, or a gamepad's left stick) walk; the mouse attacks and opens what's in reach without walking; the attack key (**E**) hits what's under the mouse or the nearest monster in reach. Like Diablo III / IV |
 | | `Combined` | Both: movement keys or clicks walk, clicks or the attack key attack |
-| `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera fade where they really cover you (their pixels, not their box), with the tiles around them so it's a window rather than a hole; walls behind you never fade. Fading eases in and out |
+| `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera get a round, soft-edged see-through hole around you where they really cover you (their pixels, not their box); walls behind you never fade. It opens and closes smoothly |
 | `ConfirmEntrances` | `true` / `false` | Ask before going through a cave mouth, tomb door or stairs ("To The Den of Evil?": Go in / Stay). Off by default |
 
 **Debug** (the bottom of the Gameplay tab, `[Debug]` in `options.ini`; the same for every class):
@@ -66,8 +75,11 @@ Every action of the game, with its default keys, and ours. Bindings work the way
   `6 (Right Bumper)`, `7 (Left Trigger)`, `8 (Right Trigger)`, `9 (Select)`, `10 (Start)`, `11 (Left Stick Press)`,
   `12 (Right Stick Press)`, `13 (Home)`, `14 (Touchpad)`, and `Pad D-pad Up` ..., `Pad Left Stick Up` ... (older names
   in an `options.ini`, `Pad A`, `Pad X`, `Pad Left Shoulder`, ..., still work);
-- an input is a keyboard key, a mouse button, a wheel step, a gamepad button or stick direction, with modifiers held
+- an input is a keyboard key, a mouse button, a wheel step, **moving the mouse** (`Mouse Move Left` / `Right` / `Up` /
+  `Down`), a gamepad button or stick direction, with modifiers held
   (`Ctrl+X`, `Shift+Mouse Left`) or **tapped twice** (`2x K`);
+- sticks are analog: pushing the left stick part way walks slower (down to about a third of the speed); moving the
+  mouse counts as held while it moves, and a quick flick as a press;
 - an input on two actions that are active at the same time **clashes**: only the first in the list fires (shown
   **red**). On two actions that are never active together, like Single Player's **C** (character screen) and Free
   Roam's **C** (combat), it's fine (shown **orange**).

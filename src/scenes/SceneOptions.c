@@ -14,6 +14,7 @@
 #include "../drawing/Sprite.h"
 #include "../drawing/TabBar.h"
 #include "../drawing/TextBox.h"
+#include "../game/ControlPresets.h"
 #include "../game/Controls.h"
 #include "../game/ControlsExport.h"
 #include "../game/Settings.h"
@@ -77,8 +78,8 @@ static const struct {
 static const char *scale_qualities[]     = {"nearest", "linear", "best"};
 static const char *scale_quality_names[] = {"Sharp pixels (nearest)", "Smooth (linear)", "Smoothest (best)"};
 
-#define VOLUME_COUNT 4
-static const char *volume_names[VOLUME_COUNT] = {"Master", "Music", "Sound effects", "Interface"};
+#define VOLUME_COUNT 5
+static const char *volume_names[VOLUME_COUNT] = {"Master", "Music", "Sound effects", "Interface", "Speech"};
 
 static const char *movement_choices[MOVEMENT_TYPE_COUNT] = {
     "Classic: click to walk and attack",
@@ -103,14 +104,16 @@ static const uint8_t group_colors[GROUP_COUNT][3] = {
     {240, 170, 90 }, // debug
 };
 
-// Inputs you can't press while the dialog has the mouse: pick them from a list. Keys, combinations ("Shift+Alt+A")
+// Inputs you can't press while the dialog has the mouse: pick them from a list (mouse movement too: moving the mouse
+// to the list would bind it). Keys, combinations ("Shift+Alt+A")
 // and gamepad buttons and sticks are captured by pressing them.
 static const char *extra_inputs[] = {
     "Mouse Left",         "Mouse Right",       "Mouse Middle",      "Mouse 4",          "Mouse 5",
     "Wheel Up",           "Wheel Down",        "2x Mouse Left",     "2x Mouse Right",   "Shift+Mouse Left",
     "Ctrl+Mouse Left",    "Alt+Mouse Left",    "Shift+Mouse Right", "Ctrl+Mouse Right", "Alt+Mouse Right",
     "Shift+Mouse Middle", "Ctrl+Mouse Middle", "Alt+Mouse Middle",  "Shift+Wheel Up",   "Shift+Wheel Down",
-    "Ctrl+Wheel Up",      "Ctrl+Wheel Down",   "Alt+Wheel Up",      "Alt+Wheel Down",
+    "Ctrl+Wheel Up",      "Ctrl+Wheel Down",   "Alt+Wheel Up",      "Alt+Wheel Down",   "Mouse Move Left",
+    "Mouse Move Right",   "Mouse Move Up",     "Mouse Move Down",
 };
 #define EXTRA_INPUT_COUNT (int)(sizeof(extra_inputs) / sizeof(extra_inputs[0]))
 
@@ -160,6 +163,21 @@ typedef struct SceneOptions {
     uint64_t      last_click_time;
     bool          prev_left;
     Button       *export_button;
+    Button       *presets_button;
+    Dropdown     *copy_to; // "Copy to": the class to give this profile's controls to
+    Button       *copy_button;
+
+    // Presets window
+    bool     presets;
+    ListBox *preset_list;
+    char     preset_names[64][CONTROL_PRESET_NAME_MAX];
+    char    *preset_items[64];
+    int      preset_count;
+    TextBox *preset_name;
+    Button  *preset_save;
+    Button  *preset_load;
+    Button  *preset_delete;
+    Button  *preset_close;
 
     // Configure dialog
     bool            dialog;
@@ -216,7 +234,8 @@ static void Options__Frame(const int x, const int y, const int w, const int h) {
 static bool Options__AnyDropdownOpen(const SceneOptions *options) {
     return Dropdown_IsOpen(options->window_size) || Dropdown_IsOpen(options->scale_quality) ||
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
-           Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->group_filter);
+           Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
+           Dropdown_IsOpen(options->group_filter);
 }
 
 // The widgets showing what's set now
@@ -244,8 +263,9 @@ static void Options__SetVolumeBox(SceneOptions *options, const int v) {
 }
 
 static void Options__ApplyVolumes(const SceneOptions *options) {
-    static const enum AudioSetVolumeType types[VOLUME_COUNT] = {
-        AUDIO_SET_VOLUME_TYPE_MASTER, AUDIO_SET_VOLUME_TYPE_MUSIC, AUDIO_SET_VOLUME_TYPE_SFX, AUDIO_SET_VOLUME_TYPE_UI};
+    static const enum AudioSetVolumeType types[VOLUME_COUNT] = {AUDIO_SET_VOLUME_TYPE_MASTER,
+                                                                AUDIO_SET_VOLUME_TYPE_MUSIC, AUDIO_SET_VOLUME_TYPE_SFX,
+                                                                AUDIO_SET_VOLUME_TYPE_UI, AUDIO_SET_VOLUME_TYPE_SPEECH};
     for (int v = 0; v < VOLUME_COUNT; v++) {
         AudioManager_SetVolume(types[v], (float)Slider_GetValue(options->volumes[v]) / 100.0f);
     }
@@ -348,7 +368,8 @@ OptionsPanel *OptionsPanel_Create(void) {
 
     // Audio
     const float volumes[VOLUME_COUNT] = {AbyssConfiguration_GetMasterVolume(), AbyssConfiguration_GetMusicVolume(),
-                                         AbyssConfiguration_GetSfxVolume(), AbyssConfiguration_GetUiVolume()};
+                                         AbyssConfiguration_GetSfxVolume(), AbyssConfiguration_GetUiVolume(),
+                                         AbyssConfiguration_GetSpeechVolume()};
     for (int v = 0; v < VOLUME_COUNT; v++) {
         options->volumes_before[v] = volumes[v];
         options->volumes[v]        = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (v * ROW_H), 300, 0, 100);
@@ -388,8 +409,30 @@ OptionsPanel *OptionsPanel_Create(void) {
     }
     options->group_filter = Dropdown_Create(CONTENT_X + 480, CONTENT_Y + 27, 180, groups, GROUP_COUNT + 1);
     Options__BuildRows(options);
-    options->export_button = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
+    options->export_button  = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
+    options->presets_button = Button_Create(BUTTON_TYPE_MEDIUM, "Presets");
+    options->copy_button    = Button_Create(BUTTON_TYPE_CANCEL, "Copy");
     Button_SetPosition(options->export_button, CONTENT_X, CONTROLS_BTN_Y);
+    Button_SetPosition(options->presets_button, CONTENT_X + 140, CONTROLS_BTN_Y);
+    const char *copy_targets[CONTROL_PROFILES];
+    for (int p = 0; p < CONTROL_PROFILES; p++) {
+        copy_targets[p] = Settings_ProfileName(p);
+    }
+    options->copy_to = Dropdown_Create(CONTENT_X + 380, CONTROLS_BTN_Y + 7, 160, copy_targets, CONTROL_PROFILES);
+    Dropdown_SetSelected(options->copy_to, 1);
+    Button_SetPosition(options->copy_button, CONTENT_X + 548, CONTROLS_BTN_Y + 1);
+
+    // Presets window (over the Controls tab, the same place as the configure window)
+    options->preset_list   = ListBox_Create(FONTS_FONT16, DIALOG_X + 16, DIALOG_Y + 70, 300, 14, 20);
+    options->preset_name   = TextBox_Create(FONTS_FONT16, DIALOG_X + 340, DIALOG_Y + 90, 260, 24, "Preset name");
+    options->preset_save   = Button_Create(BUTTON_TYPE_CANCEL, "Save");
+    options->preset_load   = Button_Create(BUTTON_TYPE_CANCEL, "Load");
+    options->preset_delete = Button_Create(BUTTON_TYPE_CANCEL, "Delete");
+    options->preset_close  = Button_Create(BUTTON_TYPE_CANCEL, "Close");
+    Button_SetPosition(options->preset_save, DIALOG_X + 340, DIALOG_Y + 130);
+    Button_SetPosition(options->preset_load, DIALOG_X + 340, DIALOG_Y + 200);
+    Button_SetPosition(options->preset_delete, DIALOG_X + 450, DIALOG_Y + 200);
+    Button_SetPosition(options->preset_close, DIALOG_X + DIALOG_W - 112, DIALOG_Y + DIALOG_H - 44);
 
     // Configure dialog
     options->extras_list = ListBox_Create(FONTS_FONT16, DIALOG_X + 330, DIALOG_Y + 110, 270, 14, 20);
@@ -423,9 +466,11 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Label_Destroy(&options->text_label);
     Label_Destroy(&options->small_label);
     Button *buttons[] = {
-        options->ok_button,       options->cancel_button,        options->defaults_button, options->export_button,
-        options->previous_button, options->next_button,          options->default_button,  options->delete_button,
-        options->undo_button,     options->dialog_cancel_button, options->dialog_ok_button};
+        options->ok_button,       options->cancel_button, options->defaults_button, options->export_button,
+        options->presets_button,  options->copy_button,   options->preset_save,     options->preset_load,
+        options->preset_delete,   options->preset_close,  options->previous_button, options->next_button,
+        options->default_button,  options->delete_button, options->undo_button,     options->dialog_cancel_button,
+        options->dialog_ok_button};
     for (size_t b = 0; b < sizeof(buttons) / sizeof(buttons[0]); b++) {
         Button_Destroy(&buttons[b]);
     }
@@ -434,6 +479,9 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Dropdown_Destroy(&options->profile_dropdown);
     Dropdown_Destroy(&options->movement);
     Dropdown_Destroy(&options->autosave);
+    Dropdown_Destroy(&options->copy_to);
+    ListBox_Destroy(&options->preset_list);
+    TextBox_Destroy(&options->preset_name);
     Checkbox_Destroy(&options->keep_changes);
     Checkbox_Destroy(&options->collision_in_game);
     Checkbox_Destroy(&options->confirm_new_seed);
@@ -477,14 +525,16 @@ static void Options__Save(SceneOptions *options) {
     AbyssConfiguration_SetVolumes(
         (float)Slider_GetValue(options->volumes[0]) / 100.0f, (float)Slider_GetValue(options->volumes[1]) / 100.0f,
         (float)Slider_GetValue(options->volumes[2]) / 100.0f, (float)Slider_GetValue(options->volumes[3]) / 100.0f);
+    AbyssConfiguration_SetSpeechVolume((float)Slider_GetValue(options->volumes[4]) / 100.0f);
     AbyssConfiguration_Save();
     // Gameplay and controls
     Settings_Save();
 }
 
 static void Options__Cancel(SceneOptions *options) {
-    static const enum AudioSetVolumeType types[VOLUME_COUNT] = {
-        AUDIO_SET_VOLUME_TYPE_MASTER, AUDIO_SET_VOLUME_TYPE_MUSIC, AUDIO_SET_VOLUME_TYPE_SFX, AUDIO_SET_VOLUME_TYPE_UI};
+    static const enum AudioSetVolumeType types[VOLUME_COUNT] = {AUDIO_SET_VOLUME_TYPE_MASTER,
+                                                                AUDIO_SET_VOLUME_TYPE_MUSIC, AUDIO_SET_VOLUME_TYPE_SFX,
+                                                                AUDIO_SET_VOLUME_TYPE_UI, AUDIO_SET_VOLUME_TYPE_SPEECH};
     for (int v = 0; v < VOLUME_COUNT; v++) {
         AudioManager_SetVolume(types[v], options->volumes_before[v]);
     }
@@ -499,7 +549,7 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         Dropdown_SetSelected(options->scale_quality, 0);
         break;
     case TAB_AUDIO: {
-        static const int defaults[VOLUME_COUNT] = {80, 100, 100, 100};
+        static const int defaults[VOLUME_COUNT] = {80, 100, 100, 100, 100};
         for (int v = 0; v < VOLUME_COUNT; v++) {
             Slider_SetValue(options->volumes[v], defaults[v]);
             Options__SetVolumeBox(options, v);
@@ -690,12 +740,116 @@ static void Options__Export(SceneOptions *options) {
     Options__Message(options, "Saved controls.md and the keyboard and gamepad pictures (next to abyss.ini).");
 }
 
+// Presets: saved sets of bindings (presets/<name>.ini next to abyss.ini)
+static void Options__RefreshPresets(SceneOptions *options) {
+    options->preset_count = ControlPresets_List(options->preset_names, 64);
+    for (int p = 0; p < options->preset_count; p++) {
+        options->preset_items[p] = options->preset_names[p];
+    }
+    ListBox_SetItems(options->preset_list, (const char *const *)options->preset_items, options->preset_count);
+    ListBox_SetSelectedIndex(options->preset_list, -1);
+}
+
+static void Options__OpenPresets(SceneOptions *options) {
+    options->presets = true;
+    Options__RefreshPresets(options);
+    TextBox_Clear(options->preset_name);
+}
+
+static void Options__UpdatePresets(SceneOptions *options) {
+    if (ListBox_Update(options->preset_list)) {
+        const int pick = ListBox_GetSelectedIndex(options->preset_list);
+        if (pick >= 0 && pick < options->preset_count) {
+            TextBox_SetText(options->preset_name, options->preset_names[pick]);
+        }
+    }
+    TextBox_Update(options->preset_name);
+    const char *name = TextBox_GetText(options->preset_name);
+    char        text[160];
+    if (Button_Update(options->preset_save)) {
+        if (name[0] == '\0') {
+            Options__Message(options, "Type a name for the preset first.");
+        } else if (ControlPresets_Save(options->profile, name)) {
+            snprintf(text, sizeof(text), "Saved \"%s\".", name);
+            Options__Message(options, text);
+            Options__RefreshPresets(options);
+        }
+    }
+    if (Button_Update(options->preset_load) && name[0] != '\0') {
+        if (ControlPresets_Load(options->profile, name)) {
+            snprintf(text, sizeof(text), "Loaded \"%s\" into %s (OK to keep).", name,
+                     Settings_ProfileName(options->profile));
+        } else {
+            snprintf(text, sizeof(text), "There's no preset called \"%s\".", name);
+        }
+        Options__Message(options, text);
+    }
+    if (Button_Update(options->preset_delete) && name[0] != '\0') {
+        snprintf(text, sizeof(text), ControlPresets_Delete(name) ? "Deleted \"%s\"." : "Could not delete \"%s\".",
+                 name);
+        Options__Message(options, text);
+        TextBox_Clear(options->preset_name);
+        Options__RefreshPresets(options);
+    }
+    if (Button_Update(options->preset_close) ||
+        (!TextBox_IsFocused(options->preset_name) && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
+        options->presets = false;
+    }
+}
+
+static void Options__DrawPresets(SceneOptions *options) {
+    Options__Fill(0, 0, 800, 600, 0, 0, 0, 140);
+    Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H, 18, 16, 14, 245);
+    Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, 26, 160, 110, 40, 255);
+    Options__Frame(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H);
+    Options__Text(options, options->text_label, "PRESETS", DIALOG_X + 10, DIALOG_Y + 13, 0xFF, 0xFF, 0xFF);
+    Options__Text(options, options->small_label, "Saved presets:", DIALOG_X + 16, DIALOG_Y + 58, 0xC7, 0xB3, 0x77);
+    ListBox_Draw(options->preset_list);
+    if (options->preset_count == 0) {
+        Options__Text(options, options->small_label, "None yet: name one and Save.", DIALOG_X + 24, DIALOG_Y + 82, 0x90,
+                      0x90, 0x90);
+    }
+    Options__Text(options, options->small_label, "Name:", DIALOG_X + 340, DIALOG_Y + 78, 0xC7, 0xB3, 0x77);
+    TextBox_Draw(options->preset_name);
+    char text[160];
+    snprintf(text, sizeof(text), "Save: these controls (%s) under this name.", Settings_ProfileName(options->profile));
+    Options__Wrapped(options, text, DIALOG_X + 440, DIALOG_Y + 140, DIALOG_X + DIALOG_W - 16);
+    Options__Wrapped(options, "Load: the named preset into the controls you're setting up. Delete: remove it.",
+                     DIALOG_X + 340, DIALOG_Y + 244, DIALOG_X + DIALOG_W - 16);
+    Options__Wrapped(options,
+                     "Presets are kept in the presets folder next to abyss.ini, one file each, in the same lines as "
+                     "options.ini: share them, or edit them by hand.",
+                     DIALOG_X + 340, DIALOG_Y + 290, DIALOG_X + DIALOG_W - 16);
+    Button_Draw(options->preset_save);
+    Button_Draw(options->preset_load);
+    Button_Draw(options->preset_delete);
+    Button_Draw(options->preset_close);
+}
+
 static void Options__UpdateControls(SceneOptions *options, const int mouse_x, const int mouse_y, const bool clicked) {
     if (Dropdown_Update(options->group_filter)) {
         Options__BuildRows(options);
     }
     if (Button_Update(options->export_button)) {
         Options__Export(options);
+    }
+    if (Button_Update(options->presets_button)) {
+        Options__OpenPresets(options);
+        return;
+    }
+    Dropdown_Update(options->copy_to);
+    if (Button_Update(options->copy_button)) {
+        const int to = Dropdown_GetSelected(options->copy_to);
+        char      text[160];
+        if (to == 0 || to == options->profile) {
+            snprintf(text, sizeof(text),
+                     "Pick a class to copy to (all classes' controls are the defaults for the rest).");
+        } else {
+            Controls_CopyProfile(options->profile, to);
+            snprintf(text, sizeof(text), "%s now has its own copy of these controls (OK to keep).",
+                     Settings_ProfileName(to));
+        }
+        Options__Message(options, text);
     }
     const int wheel = InputManager_ConsumeMouseWheel();
     const int most  = options->row_count > TABLE_ROWS ? options->row_count - TABLE_ROWS : 0;
@@ -868,6 +1022,10 @@ static void OptionsPanel__Update(SceneOptions *options) {
         Options__UpdateDialog(options, mouse_x, mouse_y, clicked);
         return;
     }
+    if (options->presets) {
+        Options__UpdatePresets(options);
+        return;
+    }
     InputManager_ClearPresses(); // presses are only read by the dialog
 
     const OptionsTab tab = (OptionsTab)TabBar_GetSelected(options->tabs);
@@ -893,6 +1051,8 @@ static void OptionsPanel__Update(SceneOptions *options) {
             if (Dropdown_Update(options->group_filter)) {
                 Options__BuildRows(options);
             }
+        } else if (Dropdown_IsOpen(options->copy_to)) {
+            Dropdown_Update(options->copy_to);
         } else if (Dropdown_IsOpen(options->autosave)) {
             if (Dropdown_Update(options->autosave)) {
                 Options__StoreDebug(options);
@@ -1043,8 +1203,11 @@ void OptionsPanel_Draw(OptionsPanel *options) {
             Options__Text(options, options->text_label, "%", CONTENT_X + LABEL_W + 382, CONTENT_Y + (v * ROW_H) + 8,
                           0xFF, 0xFF, 0xFF);
         }
-        Options__Describe(options, "Drag a slider or type a number from 0 to 100. You hear the change right away.",
-                          CONTENT_Y + (VOLUME_COUNT * ROW_H) - 20);
+        Options__Describe(
+            options,
+            "Drag a slider or type a number from 0 to 100; you hear the change right away. Speech is for NPCs and "
+            "quests, once the engine plays them.",
+            CONTENT_Y + (VOLUME_COUNT * ROW_H) - 20);
         break;
     case TAB_GAMEPLAY: {
         Options__Name(options, "Settings for", CONTENT_Y);
@@ -1091,6 +1254,11 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         }
         if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
             Button_Draw(options->export_button);
+            Button_Draw(options->presets_button);
+            Options__Text(options, options->text_label, "Copy to:", CONTENT_X + 300, CONTROLS_BTN_Y + 17, 0xC7, 0xB3,
+                          0x77);
+            Dropdown_Draw(options->copy_to);
+            Button_Draw(options->copy_button);
             Options__DrawControls(options);
         } else {
             Options__Text(options, options->text_label,
@@ -1118,9 +1286,14 @@ void OptionsPanel_Draw(OptionsPanel *options) {
     Dropdown_DrawList(options->profile_dropdown);
     Dropdown_DrawList(options->movement);
     Dropdown_DrawList(options->group_filter);
+    Dropdown_DrawList(options->autosave);
+    Dropdown_DrawList(options->copy_to);
 
     if (options->dialog) {
         Options__DrawDialog(options);
+    }
+    if (options->presets) {
+        Options__DrawPresets(options);
     }
 }
 
@@ -1150,11 +1323,17 @@ void *Options_Create(void) {
     return scene;
 }
 
+bool options_standalone = false;
+
 void Options_Update(void *scene_ref, const uint64_t delta) {
     (void)delta;
     OptionsScene *scene = scene_ref;
     if (!OptionsPanel_Update(scene->panel)) {
-        Scene_Set(SCENE_REF(MainMenu));
+        if (options_standalone) {
+            running = false; // AbyssEngine --settings: closing Options closes the program
+        } else {
+            Scene_Set(SCENE_REF(MainMenu));
+        }
     }
 }
 

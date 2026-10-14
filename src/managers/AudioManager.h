@@ -11,6 +11,7 @@ enum AudioSetVolumeType {
     AUDIO_SET_VOLUME_TYPE_MUSIC,
     AUDIO_SET_VOLUME_TYPE_SFX,
     AUDIO_SET_VOLUME_TYPE_UI,
+    AUDIO_SET_VOLUME_TYPE_SPEECH, // kept for when speech plays (NPC greetings, quest dialogue)
     AUDIO_SET_VOLUME_TYPE_MAX
 };
 

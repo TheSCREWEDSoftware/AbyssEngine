@@ -175,6 +175,47 @@ static bool ControlsExport__MakeDark(const char *path) {
     return true;
 }
 
+// An action's inputs as Markdown code, by kind: [0] mouse and wheel, [1] keyboard, [2] controller; and a note on the
+// first clash
+static void ControlsExport__Columns(const int profile, const ControlAction action, char columns[3][384],
+                                    char notes[256]) {
+    const ControlBindings *list = Controls_GetBindings(profile, action);
+    columns[0][0] = columns[1][0] = columns[2][0] = '\0';
+    notes[0]                                      = '\0';
+    for (int b = 0; b < list->count; b++) {
+        const ControlInput *input = &list->inputs[b];
+        char                name[64];
+        Controls_InputName(input, name, sizeof(name));
+        const int    column = input->kind == INPUT_KEY                                             ? 1
+                              : (input->kind == INPUT_PAD_BUTTON || input->kind == INPUT_PAD_AXIS) ? 2
+                                                                                                   : 0;
+        const size_t used   = strlen(columns[column]);
+        // A backtick key needs a longer fence to show as code
+        const bool tick = strchr(name, '`') != NULL;
+        snprintf(columns[column] + used, 384 - used, "%s%s%s%s", used > 0 ? ", " : "", tick ? "`` " : "`", name,
+                 tick ? " ``" : "`");
+        const ControlConflict conflict = Controls_Conflict(profile, action, input);
+        if (conflict != CONFLICT_NONE && notes[0] == '\0') {
+            snprintf(notes, 256, "`%s` %s", name, ControlsExport__Conflict(conflict));
+        }
+    }
+}
+
+void ControlsExport_ModeTable(FILE *file, const int profile, const unsigned contexts) {
+    fprintf(file, "| Action | Mouse | Keyboard | Controller | What it does |\n|---|---|---|---|---|\n");
+    for (int a = 0; a < ACTION_COUNT; a++) {
+        if (!Controls_ActionWorks((ControlAction)a) || !(Controls_ActionContexts((ControlAction)a) & contexts)) {
+            continue;
+        }
+        char columns[3][384];
+        char notes[256];
+        ControlsExport__Columns(profile, (ControlAction)a, columns, notes);
+        fprintf(file, "| %s | %s | %s | %s | %s |\n", Controls_ActionName((ControlAction)a),
+                columns[0][0] != '\0' ? columns[0] : "-", columns[1][0] != '\0' ? columns[1] : "-",
+                columns[2][0] != '\0' ? columns[2] : "-", Controls_ActionHelp((ControlAction)a));
+    }
+}
+
 bool ControlsExport_Markdown(const int profile, const char *path, const bool pictures) {
     FILE *file = fopen(path, "w");
     if (file == NULL) {
@@ -202,27 +243,9 @@ bool ControlsExport_Markdown(const int profile, const char *path, const bool pic
             if ((int)Controls_ActionGroup((ControlAction)a) != g) {
                 continue;
             }
-            const ControlBindings *list = Controls_GetBindings(profile, (ControlAction)a);
-            char                   columns[3][384]; // mouse (and wheel), keyboard, controller
-            char                   notes[256] = "";
-            columns[0][0] = columns[1][0] = columns[2][0] = '\0';
-            for (int b = 0; b < list->count; b++) {
-                const ControlInput *input = &list->inputs[b];
-                char                name[64];
-                Controls_InputName(input, name, sizeof(name));
-                const int    column = input->kind == INPUT_KEY                                             ? 1
-                                      : (input->kind == INPUT_PAD_BUTTON || input->kind == INPUT_PAD_AXIS) ? 2
-                                                                                                           : 0;
-                const size_t used   = strlen(columns[column]);
-                // A backtick key needs a longer fence to show as code
-                const bool tick = strchr(name, '`') != NULL;
-                snprintf(columns[column] + used, sizeof(columns[column]) - used, "%s%s%s%s", used > 0 ? ", " : "",
-                         tick ? "`` " : "`", name, tick ? " ``" : "`");
-                const ControlConflict conflict = Controls_Conflict(profile, (ControlAction)a, input);
-                if (conflict != CONFLICT_NONE && notes[0] == '\0') {
-                    snprintf(notes, sizeof(notes), "`%s` %s", name, ControlsExport__Conflict(conflict));
-                }
-            }
+            char columns[3][384]; // mouse (and wheel), keyboard, controller
+            char notes[256];
+            ControlsExport__Columns(profile, (ControlAction)a, columns, notes);
             const bool works = Controls_ActionWorks((ControlAction)a);
             if (!works) {
                 const size_t used = strlen(missing);

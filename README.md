@@ -42,16 +42,19 @@ libavutil, libswscale, libswresample), **libarchive** and **zlib**.
 **Windows**: Visual Studio 2022 with *Desktop development with C++*, the *C++ CMake tools* and the *vcpkg package
 manager*. vcpkg downloads and builds the libraries the first time you configure (this takes a while).
 
-**Linux** (Debian / Ubuntu):
+**Linux**, by family (the [Requirements](docs/wiki/01-Requirements.md) page has more distributions):
 
-```bash
-sudo apt install build-essential cmake git pkg-config ninja-build \
-    libsdl2-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
-    libarchive-dev zlib1g-dev
-```
+- **Debian based** (e.g. Ubuntu):
 
-Fedora: `sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel`.
-Arch: `sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib`.
+  ```bash
+  sudo apt install build-essential cmake git pkg-config ninja-build \
+      libsdl2-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+      libarchive-dev zlib1g-dev
+  ```
+
+- **RPM based** (e.g. Fedora):
+  `sudo dnf install gcc cmake git pkgconf ninja-build SDL2-devel ffmpeg-free-devel libarchive-devel zlib-devel`
+- **Arch based** (e.g. Arch Linux): `sudo pacman -S base-devel cmake git ninja sdl2 ffmpeg libarchive zlib`
 
 Building from source links against your system's own libraries, so it works on whatever glibc your distribution has.
 
