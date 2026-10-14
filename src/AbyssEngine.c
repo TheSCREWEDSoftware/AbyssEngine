@@ -9,6 +9,7 @@
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "drawing/LoadingScreen.h"
+#include "drawing/Picture.h"
 #include "game/Controls.h"
 #include "game/ControlsExport.h"
 #include "game/Settings.h"
@@ -216,9 +217,15 @@ int main(int argc, char **argv) {
     InputManager_InitializeSingleton();
     AudioManager_InitSingleton();
 
+    Picture_Initialize();
+
     SDL_Event sdl_event;
     running             = true;
     uint64_t last_ticks = SDL_GetTicks64();
+    // The frame limiter: each frame waits out the rest of its share of a second (the game itself always ran at 25)
+    const uint64_t counter_rate = SDL_GetPerformanceFrequency();
+    uint64_t       frame_start  = SDL_GetPerformanceCounter();
+    int            vsync_rate   = -1;
 
     while (running) {
         while (SDL_PollEvent(&sdl_event)) {
@@ -252,6 +259,7 @@ int main(int argc, char **argv) {
         VideoManager_IsPlayingVideo() ? VideoManager_Update(tick_delta) : Scene_UpdateCurrentScene(tick_delta);
         AudioManager_Update();
 
+        Picture_BeginFrame();
         SDL_RenderClear(sdl_renderer);
         if (VideoManager_IsPlayingVideo()) {
             VideoManager_Render();
@@ -259,9 +267,31 @@ int main(int argc, char **argv) {
             Scene_RenderCurrentScene();
             Cursor_Draw();
         }
+        Picture_EndFrame();
         SDL_RenderPresent(sdl_renderer);
+
+        const int rate = AbyssConfiguration_GetFrameRate(AbyssConfiguration_IsOnline());
+        if (rate != vsync_rate) { // the screen's own refresh would cap "Unlimited", so it only syncs with a limit
+            SDL_RenderSetVSync(sdl_renderer, rate == 0 ? 0 : 1);
+            vsync_rate = rate;
+        }
+        if (rate > 0) {
+            const uint64_t frame_length = counter_rate / (uint64_t)rate;
+            const uint64_t spent        = SDL_GetPerformanceCounter() - frame_start;
+            if (spent < frame_length) {
+                const uint32_t wait_ms = (uint32_t)((frame_length - spent) * 1000 / counter_rate);
+                if (wait_ms > 0) {
+                    SDL_Delay(wait_ms);
+                }
+                while (SDL_GetPerformanceCounter() - frame_start < frame_length) {
+                    // the last part of a millisecond
+                }
+            }
+        }
+        frame_start = SDL_GetPerformanceCounter();
     }
 
+    Picture_Finalize();
     AudioManager_DestroySingleton(); // Destroy this first as it reaches into things via threads
     VideoManager_DestroySingleton();
     InputManager_DestroySingleton();

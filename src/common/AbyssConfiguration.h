@@ -31,4 +31,17 @@ void AbyssConfiguration_SetScaleQuality(const char *quality); // nearest, linear
 void AbyssConfiguration_SetVolumes(float master, float music, float sfx, float ui);
 bool AbyssConfiguration_Save(void);
 
+// Frames drawn a second at most (0: no limit; 25: the game's own). Multiplayer never goes above 60.
+int  AbyssConfiguration_GetFrameRate(bool multiplayer);
+void AbyssConfiguration_SetFrameRate(int rate);
+// Set while playing with others (Multiplayer), which keeps the frame rate at 60 or below
+void AbyssConfiguration_SetOnline(bool online);
+bool AbyssConfiguration_IsOnline(void);
+// The picture: 0..100 each, 50 = the game's own (applied to each frame, see drawing/Picture.h)
+void AbyssConfiguration_GetPicture(int *brightness, int *contrast, int *gamma);
+void AbyssConfiguration_SetPicture(int brightness, int contrast, int gamma);
+// The mouse: pointer speed in percent across and up/down (one speed when match_axes), and the wheel's speed
+void AbyssConfiguration_GetMouse(int *speed_x, int *speed_y, bool *match_axes, int *wheel_speed);
+void AbyssConfiguration_SetMouse(int speed_x, int speed_y, bool match_axes, int wheel_speed);
+
 #endif // ABYSS_CONFIG_H

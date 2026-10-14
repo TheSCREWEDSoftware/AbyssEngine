@@ -26,8 +26,10 @@ typedef struct InputPress {
 #define INPUT_PAD_AXIS_THRESHOLD 0.5f  // a stick or trigger counts as pressed past half way
 #define INPUT_PAD_DEAD_ZONE      0.15f // and not at all this close to the middle
 
-void        InputManager_InitializeSingleton(void);
-void        InputManager_DestroySingleton(void);
+void InputManager_InitializeSingleton(void);
+void InputManager_DestroySingleton(void);
+// Reads the mouse's speed (across, up/down) and the wheel's speed from the settings
+void        InputManager_ApplyMouseSettings(void);
 bool        InputManager_ProcessSdlEvent(SDL_Event *sdl_event);
 void        InputManager_StartTextInput(void);
 void        InputManager_StopTextInput(void);

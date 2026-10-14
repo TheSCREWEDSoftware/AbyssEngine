@@ -124,8 +124,9 @@
 <text x="1268" y="212" font-size="13" font-weight="bold">Del</text>
 <rect x="1342" y="196" width="76" height="62" rx="6" fill="#2c2c31" stroke="#7a7a80" stroke-width="1"/>
 <text x="1348" y="212" font-size="13" font-weight="bold">PgDn</text>
-<rect x="22" y="264" width="136" height="62" rx="6" fill="#2c2c31" stroke="#7a7a80" stroke-width="1"/>
+<rect x="22" y="264" width="136" height="62" rx="6" fill="#95602a" stroke="#7a7a80" stroke-width="1"/>
 <text x="28" y="280" font-size="13" font-weight="bold">Caps</text>
+<text x="28" y="295" font-size="9.5">Sprint</text>
 <rect x="162" y="264" width="76" height="62" rx="6" fill="#3b7a47" stroke="#7a7a80" stroke-width="1"/>
 <text x="168" y="280" font-size="13" font-weight="bold">A</text>
 <text x="168" y="295" font-size="9.5">Character sc.</text>

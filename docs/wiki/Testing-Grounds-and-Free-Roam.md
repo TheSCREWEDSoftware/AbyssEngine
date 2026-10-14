@@ -4,8 +4,9 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 
 | | Testing Grounds | Free Roam |
 |---|---|---|
-| **Map** | Your `testing_grounds` map, or the built-in arena (grass with a dirt square and four training monsters), or the map from the editor's **Play** button | Starts in the **Rogue Encampment**; teleport to the towns, fixed areas, wilderness and dungeons |
-| **Bottom buttons** | Back · Class · Walk · Monsters · Clear · Combat | Back · Class · Walk · Places · Monsters · Combat |
+| **Map** | `maps/testing_grounds.abm`, made from the built-in arena (grass with a dirt square and four training monsters) the first time. Edit it in the Map Editor like any other map; the arena itself is kept in the program, and **Reset TG** in the editor's **Open** window puts it back. Or the map from the editor's **Play** button | Starts in the **Rogue Encampment**; teleport to the towns, fixed areas, wilderness and dungeons |
+| **Bottom buttons** | Back · Class · Walk · Monsters · Clear · Combat | Back · Class · Walk / Run / Sprint · Places · Monsters · Combat |
+| **Speed** | The status line shows how fast you're going: sub-tiles a second over the ground, and pixels a second on screen | The same |
 
 ## Controls
 
@@ -14,7 +15,8 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **Left click** | Walk there, around walls and objects (hold to keep following the mouse). If the spot can't be reached you walk to the closest point you can. With combat on, clicking a monster or NPC walks up and attacks it. Clicking a chest, door, shrine or waypoint walks over and opens / activates it. |
 | **Right click** | Drop the monster selected in the **Monsters** list |
 | **Shift + right click** | Remove the unit under the mouse |
-| **R** / Walk button | Walk or run |
+| **R** / Walk button | Walk or run. In Free Roam the button goes Walk › Run › Sprint |
+| **CapsLock** | Free Roam: sprint on or off: twice as fast as running (18 sub-tiles a second), and it doesn't use stamina |
 | **C** / Combat button | Combat on or off |
 | **P** / Preview button | Placement preview on or off |
 | **L** | Lighting: day (full brightness), dusk, night (a pool of light around you) |
@@ -44,15 +46,16 @@ These are the default keys; they can all be changed in **Options › Controls** 
 | Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster (the game: use the right skill) |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
-| Automap | - | `Tab` | - | (null) |
-| Zoom in | `Wheel Up` | - | - | (null) |
-| Zoom out | `Wheel Down` | - | - | (null) |
+| Automap | - | `Tab` | - | Show or hide the map of the explored area |
+| Zoom in | `Wheel Up` | - | - | Closer (the automap, and the view in Free Roam and the Map Editor) |
+| Zoom out | `Wheel Down` | - | - | Further out |
 | Day / dusk / night | - | `L` | - | Cycle the light (debug) |
 | Screenshot | - | `PrintScreen` | - | Saves a picture in the screenshots folder next to abyss.ini |
-| Combat on / off | - | `C` | - | (null) |
-| Collision view | - | `B` | - | (null) |
-| Placement preview | - | `P` | - | (null) |
+| Combat on / off | - | `C` | - | Free Roam and Testing Grounds: monsters fight back, or not |
+| Collision view | - | `B` | - | Show where you can and can't walk |
+| Placement preview | - | `P` | - | Show where a dropped monster would go |
 | New world | - | `N` | - | Free Roam: a new random world seed |
+| Sprint | - | `CapsLock` | - | Free Roam: sprint on or off (twice as fast as running, no stamina) |
 <!-- keys:end -->
 | **Esc** | The menu: **Options**, **Leave** (asks first; back to the editor if you came from **Play**), **Back to Free Roam** |
 | Back | Leave: asks first ("Are you sure you wish to return to the main menu?"; play-testing: "go back to the editor?") |

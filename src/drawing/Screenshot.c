@@ -29,9 +29,12 @@ bool Screenshot_Save(char *saved_path, const int size) {
     snprintf(path, sizeof(path), "%s/Abyss_%04d-%02d-%02d_%02d-%02d-%02d.bmp", folder, local.tm_year + 1900,
              local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
 
-    int width;
-    int height;
-    if (SDL_GetRendererOutputSize(sdl_renderer, &width, &height) != 0) {
+    int          width;
+    int          height;
+    SDL_Texture *target = SDL_GetRenderTarget(sdl_renderer); // the frame's 800x600 picture (see Picture.h), if any
+    if (target != NULL) {
+        SDL_QueryTexture(target, NULL, NULL, &width, &height);
+    } else if (SDL_GetRendererOutputSize(sdl_renderer, &width, &height) != 0) {
         return false;
     }
     SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_ARGB8888);
@@ -42,10 +45,14 @@ bool Screenshot_Save(char *saved_path, const int size) {
     int logical_w;
     int logical_h;
     SDL_RenderGetLogicalSize(sdl_renderer, &logical_w, &logical_h);
-    SDL_RenderSetLogicalSize(sdl_renderer, 0, 0);
+    if (target == NULL) {
+        SDL_RenderSetLogicalSize(sdl_renderer, 0, 0);
+    }
     const bool read =
         SDL_RenderReadPixels(sdl_renderer, NULL, SDL_PIXELFORMAT_ARGB8888, surface->pixels, surface->pitch) == 0;
-    SDL_RenderSetLogicalSize(sdl_renderer, logical_w, logical_h);
+    if (target == NULL) {
+        SDL_RenderSetLogicalSize(sdl_renderer, logical_w, logical_h);
+    }
     const bool saved = read && SDL_SaveBMP(surface, path) == 0;
     SDL_FreeSurface(surface);
     if (saved) {

@@ -80,6 +80,7 @@ typedef enum ControlAction {
     ACTION_COLLISION,
     ACTION_PREVIEW,
     ACTION_NEW_WORLD,
+    ACTION_SPRINT,
     ACTION_COUNT
 } ControlAction;
 

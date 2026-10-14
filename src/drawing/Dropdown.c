@@ -15,17 +15,44 @@
 #define DROPDOWN_TEXT_MAX 48
 
 struct Dropdown {
-    int    x;
-    int    y;
-    int    width;
-    char   choices[DROPDOWN_MAX][DROPDOWN_TEXT_MAX];
-    int    count;
-    int    selected;
-    int    hovered; // in the open list, -1 = none
-    bool   open;
-    bool   prev_left;
-    Label *label;
+    int     x;
+    int     y;
+    int     width;
+    char    choices[DROPDOWN_MAX][DROPDOWN_TEXT_MAX];
+    int     count;
+    int     selected;
+    int     hovered; // in the open list, -1 = none
+    bool    open;
+    bool    prev_left;
+    Label  *label;
+    uint8_t marks[DROPDOWN_MAX][4]; // a colour stripe before each choice (the 4th byte: has one)
+    bool    marked;
 };
+
+void Dropdown_SetMark(Dropdown *dropdown, const int index, const uint8_t r, const uint8_t g, const uint8_t b) {
+    if (index < 0 || index >= DROPDOWN_MAX) {
+        return;
+    }
+    dropdown->marks[index][0] = r;
+    dropdown->marks[index][1] = g;
+    dropdown->marks[index][2] = b;
+    dropdown->marks[index][3] = 1;
+    dropdown->marked          = true;
+}
+
+// The choice's colour stripe, if it has one; returns where its text starts
+static int Dropdown__Mark(const Dropdown *dropdown, const int index, const int y, const int h) {
+    if (!dropdown->marked) {
+        return dropdown->x + 6;
+    }
+    if (dropdown->marks[index][3] != 0) {
+        const SDL_Rect stripe = {dropdown->x + 4, y + 4, 5, h - 8};
+        SDL_SetRenderDrawColor(sdl_renderer, dropdown->marks[index][0], dropdown->marks[index][1],
+                               dropdown->marks[index][2], 255);
+        SDL_RenderFillRect(sdl_renderer, &stripe);
+    }
+    return dropdown->x + 14;
+}
 
 Dropdown *Dropdown_Create(const int x, const int y, const int width, const char *const *choices, const int count) {
     Dropdown *dropdown = calloc(1, sizeof(Dropdown));
@@ -122,9 +149,10 @@ void Dropdown_Draw(const Dropdown *dropdown) {
         SDL_RenderDrawLine(sdl_renderer, ax + i, ay + i, ax + 8 - i, ay + i);
     }
     if (dropdown->count > 0) {
+        const int text_x = Dropdown__Mark(dropdown, dropdown->selected, dropdown->y, DROPDOWN_HEIGHT);
         Label_SetText(dropdown->label, dropdown->choices[dropdown->selected]);
         Label_SetColor(dropdown->label, 0xFF, 0xFF, 0xFF, 0xFF);
-        Label_Draw(dropdown->label, dropdown->x + 6, dropdown->y + (DROPDOWN_HEIGHT / 2));
+        Label_Draw(dropdown->label, text_x, dropdown->y + (DROPDOWN_HEIGHT / 2));
     }
 }
 
@@ -135,10 +163,11 @@ void Dropdown_DrawList(const Dropdown *dropdown) {
     const int list_y = dropdown->y + DROPDOWN_HEIGHT;
     for (int i = 0; i < dropdown->count; i++) {
         Dropdown__Box(dropdown->x, list_y + (i * DROPDOWN_ROW), dropdown->width, DROPDOWN_ROW, i == dropdown->hovered);
+        const int text_x = Dropdown__Mark(dropdown, i, list_y + (i * DROPDOWN_ROW), DROPDOWN_ROW);
         Label_SetText(dropdown->label, dropdown->choices[i]);
         const bool chosen = i == dropdown->selected;
         Label_SetColor(dropdown->label, chosen ? 0xFF : 0xE0, chosen ? 0xE8 : 0xE0, chosen ? 0x90 : 0xE0, 0xFF);
-        Label_Draw(dropdown->label, dropdown->x + 6, list_y + (i * DROPDOWN_ROW) + (DROPDOWN_ROW / 2));
+        Label_Draw(dropdown->label, text_x, list_y + (i * DROPDOWN_ROW) + (DROPDOWN_ROW / 2));
     }
     const SDL_Rect frame = {dropdown->x, list_y, dropdown->width, dropdown->count * DROPDOWN_ROW};
     SDL_SetRenderDrawColor(sdl_renderer, 150, 125, 70, 255);

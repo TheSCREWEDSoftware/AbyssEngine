@@ -1,9 +1,13 @@
 # Options
 
-**Options** on the main menu (or in the game: **Esc** › Options) has four tabs: Video, Audio, Gameplay and Controls. **OK** saves, **Cancel** (or **Esc**)
-puts everything back as it was, **Defaults** resets the tab you're on.
+**Options** on the main menu (or in the game: **Esc** › Options) has five tabs: Video, Audio, Gameplay, Controls and Debug. **OK** saves, **Cancel** (or **Esc**)
+puts everything back as it was, **Defaults** resets the tab you're on. Everything except the window size shows
+straight away, in the game too (Esc › Options while playing), so you can see or feel a change before keeping it.
 
-Video and audio are saved in `abyss.ini` (only those lines change: the rest of the file, comments too, stays as you
+Every slider shows its lowest and highest value under its ends and has a box beside it to type the value in (Esc in
+the box clears it rather than closing Options).
+
+Video, audio and the mouse are saved in `abyss.ini` (only those lines change: the rest of the file, comments too, stays as you
 wrote it); gameplay settings and controls in **`options.ini`** next to it. Both are plain text with a comment on every
 setting, so they can be edited outside the game too.
 
@@ -15,15 +19,32 @@ controls files below into a folder without opening a window (add `--defaults` fo
 
 | Tab | |
 |---|---|
-| **Video** | Window size (800x600 up to 4K, or "Follow InitialScale"), full screen, scaling (sharp pixels / smooth; from the next start). The game keeps its 4:3 shape: wider windows get black bars |
-| **Audio** | Master, music, sound effects, interface and speech volume: drag the slider or type a number from 0 to 100; you hear it right away (speech is kept for NPCs and quests, once the engine plays them; `SpeechVolume` in `abyss.ini`) |
-| **Gameplay** | Settings for all classes or one class (tick "Own settings" to give a class its own), type of movement, see-through obstructions |
-| **Controls** | Every action and what it's bound to (see below) |
+| **Video** | Window size (800x600 up to 4K, or "Follow InitialScale"), full screen, scaling (sharp pixels / smooth), frame rate, brightness, contrast and gamma (below). The game keeps its 4:3 shape: wider windows get black bars |
+| **Audio** | Master, music, sound effects, interface and speech volume, 0 to 100; you hear it right away (speech is kept for NPCs and quests, once the engine plays them; `SpeechVolume` in `abyss.ini`) |
+| **Gameplay** | Settings for all classes or one class (the highlighted **Settings for** band at the top; tick "Own settings" to give a class its own), type of movement, entrances, see-through obstructions, even walking speed on screen |
+| **Controls** | Every action and what it's bound to (see below), and the **Mouse** window |
+| **Debug** | The developer tools, the same for every class (below) |
+
+**Video** (`[Graphics]` in `abyss.ini`):
+
+| Setting | Values | |
+|---|---|---|
+| `FrameRate` | **Classic**: `25` (the game's own) · **Modern**: `60` (the default) · or the slider: Slowest `10`, Slower `15`, Slow `20`, Medium `30`, Fast `45`, Faster `60`, Fastest `unlimited` | Frames drawn a second at most. The game runs at the same speed whatever you pick; only how smooth it looks changes. Multiplayer never goes above 60 |
+| `Brightness`, `Contrast`, `Gamma` | `0` to `100`, `50` = the picture as the game made it | Each frame is drawn to an 800x600 picture first and adjusted on the graphics card as it goes on the window (scaling happens there too), so changes show straight away. Gamma brightens or darkens the dark and middle shades and leaves black and white alone |
+
+**Mouse** (Controls › **Mouse**, `[Input]` in `abyss.ini`):
+
+| Setting | Values | |
+|---|---|---|
+| `MatchAxes` | `true` / `false` | One pointer speed for both directions (one slider), or across and up/down apart (default on) |
+| `MouseSpeedX`, `MouseSpeedY` | `25` to `300` (shown as `0.25x` to `3.00x`) | Pointer speed, `100` (`1.00x`) = the system's own. At any other speed the game moves its own pointer from the mouse's movement, so the mouse stays in the window while it has the focus (Alt+Tab to leave) |
+| `WheelSpeed` | `25` to `400` (`0.25x` to `4.00x`) | How far each wheel notch scrolls lists and zooms the Map Editor; fine-stepping wheels and touchpads add up their part steps |
 
 **Controls tab**, the ArmA way:
 
-- **Show:** picks a group (Movement, Combat and skills, Belt, Screens, Automap, View, Chat, Free Roam). A coloured bar
-  on each row is its group; actions marked `*` aren't in the engine yet.
+- **Show:** picks a group (Movement, Combat and skills, Belt, Screens, Automap, View, Chat, Free Roam), each with its
+  colour in the list. A coloured bar on each row is its group; with **Everything** each group starts under a heading
+  in its colour. Actions marked `*` aren't in the engine yet. Scroll with the wheel, or click or drag the scrollbar.
 - Inputs are white, **orange** when the same input is also on an action that's never active at the same time (fine),
   **red** when it clashes with one that is (only the first in the list fires). Point at an action to see what it does.
 - **Double click** an action (or click its inputs) to change them, in the **Configure action** window: press any key
@@ -54,8 +75,9 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | | `Combined` | Both: movement keys or clicks walk, clicks or the attack key attack |
 | `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera get a round, soft-edged see-through hole around you where they really cover you (their pixels, not their box); walls behind you never fade. It opens and closes smoothly |
 | `ConfirmEntrances` | `true` / `false` | Ask before going through a cave mouth, tomb door or stairs ("To The Den of Evil?": Go in / Stay). Off by default |
+| `EvenScreenSpeed` | `true` / `false` | The game covers the same ground in every direction, which on its slanted view looks twice as fast across the screen as up and down (running: about 210 pixels a second across, 110 up and down). On, you move the same number of pixels a second whichever way you go. Off by default, like the game |
 
-**Debug** (the bottom of the Gameplay tab, `[Debug]` in `options.ini`; the same for every class):
+**Debug** (the Debug tab, `[Debug]` in `options.ini`; the same for every class):
 
 | Setting | Values | |
 |---|---|---|

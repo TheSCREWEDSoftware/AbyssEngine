@@ -19,6 +19,7 @@ typedef struct GameplaySettings {
     MovementType movement;
     bool         see_through; // walls and trees between you and the camera fade, so you can see where you're going
     bool         confirm_entrances; // ask before going through a cave mouth, tomb door or stairs
+    bool         even_screen_speed; // the same speed on screen in every direction (the game: the same over the ground)
 } GameplaySettings;
 
 // Debug (Options › Gameplay › Debug): for the developer tools, the same for every class

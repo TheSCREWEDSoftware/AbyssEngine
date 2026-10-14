@@ -98,6 +98,7 @@ void Settings_Load(void) {
         gameplay[p].movement          = MOVEMENT_CLASSIC;
         gameplay[p].see_through       = true;
         gameplay[p].confirm_entrances = false;
+        gameplay[p].even_screen_speed = false;
         own_gameplay[p]               = p == 0;
     }
     Controls_Reset();
@@ -163,6 +164,8 @@ void Settings_Load(void) {
             gameplay[profile].see_through = strcmp(value, "true") == 0;
         } else if (strcmp(key, "ConfirmEntrances") == 0) {
             gameplay[profile].confirm_entrances = strcmp(value, "true") == 0;
+        } else if (strcmp(key, "EvenScreenSpeed") == 0) {
+            gameplay[profile].even_screen_speed = strcmp(value, "true") == 0;
         }
     }
     fclose(file);
@@ -200,7 +203,12 @@ void Settings_Save(void) {
         if (p == 0) {
             fprintf(file, "# true: ask before going through a cave mouth, tomb door or stairs\n");
         }
-        fprintf(file, "ConfirmEntrances = %s\n\n", gameplay[p].confirm_entrances ? "true" : "false");
+        fprintf(file, "ConfirmEntrances = %s\n", gameplay[p].confirm_entrances ? "true" : "false");
+        if (p == 0) {
+            fprintf(file, "# false: like the game, the same speed over the ground in every direction (so on screen,\n"
+                          "# sideways looks twice as fast as up and down); true: the same speed on screen\n");
+        }
+        fprintf(file, "EvenScreenSpeed = %s\n\n", gameplay[p].even_screen_speed ? "true" : "false");
     }
     fprintf(file,
             "[Debug]\n"

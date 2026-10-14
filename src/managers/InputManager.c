@@ -30,6 +30,16 @@ typedef struct InputManager {
     uint64_t            move_time[4];  // mouse movement by direction (left, right, up, down): when it last moved
     float               move_speed[4]; // and how far (pixels in one event)
     uint64_t            move_press[4]; // the last press it made (one every MOVE_PRESS_MS while it keeps moving)
+
+    // Mouse sensitivity (Options › Controls › Mouse). At 100% across and up/down the system pointer is used as it is;
+    // otherwise the window takes the mouse's raw movement and moves its own pointer by that much times the speed.
+    float pointer_speed_x;
+    float pointer_speed_y;
+    bool  own_pointer;
+    float pointer_x;
+    float pointer_y;
+    float wheel_speed;
+    float wheel_rest; // part of a wheel step not passed on yet
 } InputManager;
 
 InputManager *input_manager;
@@ -67,6 +77,29 @@ void InputManager_InitializeSingleton(void) {
     // SDL starts with text input on (on Windows and macOS). It's only wanted while a text box has the focus: left on,
     // it opens on-screen keyboards / IME windows, and "is the player typing?" checks would always say yes.
     SDL_StopTextInput();
+    InputManager_ApplyMouseSettings();
+}
+
+void InputManager_ApplyMouseSettings(void) {
+    int  speed_x;
+    int  speed_y;
+    bool match_axes;
+    int  wheel;
+    AbyssConfiguration_GetMouse(&speed_x, &speed_y, &match_axes, &wheel);
+    if (match_axes) {
+        speed_y = speed_x;
+    }
+    input_manager->pointer_speed_x = (float)speed_x / 100.0f;
+    input_manager->pointer_speed_y = (float)speed_y / 100.0f;
+    input_manager->wheel_speed     = (float)wheel / 100.0f;
+    input_manager->wheel_rest      = 0.0f;
+    const bool own                 = speed_x != 100 || speed_y != 100;
+    if (own != input_manager->own_pointer) {
+        input_manager->own_pointer = own;
+        input_manager->pointer_x   = (float)input_manager->mouse_x;
+        input_manager->pointer_y   = (float)input_manager->mouse_y;
+        SDL_SetRelativeMouseMode(own ? SDL_TRUE : SDL_FALSE);
+    }
 }
 
 void InputManager_DestroySingleton(void) {
@@ -78,8 +111,19 @@ void InputManager_DestroySingleton(void) {
 bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
     switch (sdl_event->type) {
     case SDL_MOUSEMOTION: {
-        input_manager->mouse_x = sdl_event->motion.x;
-        input_manager->mouse_y = sdl_event->motion.y;
+        if (input_manager->own_pointer) {
+            float x = input_manager->pointer_x + (float)sdl_event->motion.xrel * input_manager->pointer_speed_x;
+            float y = input_manager->pointer_y + (float)sdl_event->motion.yrel * input_manager->pointer_speed_y;
+            x       = x < 0.0f ? 0.0f : (x > 799.0f ? 799.0f : x);
+            y       = y < 0.0f ? 0.0f : (y > 599.0f ? 599.0f : y);
+            input_manager->pointer_x = x;
+            input_manager->pointer_y = y;
+            input_manager->mouse_x   = (int)x;
+            input_manager->mouse_y   = (int)y;
+        } else {
+            input_manager->mouse_x = sdl_event->motion.x;
+            input_manager->mouse_y = sdl_event->motion.y;
+        }
         // Mouse movement as an input (Mouse Move Left / Right / Up / Down)
         const uint64_t now      = SDL_GetTicks64();
         const int      moved[4] = {-sdl_event->motion.xrel, sdl_event->motion.xrel, -sdl_event->motion.yrel,
@@ -97,19 +141,29 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         return true;
     }
     case SDL_MOUSEBUTTONDOWN:
-        input_manager->mouse_x        = sdl_event->button.x;
-        input_manager->mouse_y        = sdl_event->button.y;
+        if (!input_manager->own_pointer) {
+            input_manager->mouse_x = sdl_event->button.x;
+            input_manager->mouse_y = sdl_event->button.y;
+        }
         input_manager->mouse_buttons |= SDL_BUTTON(sdl_event->button.button);
         InputManager__Press(INPUT_MOUSE_BUTTON, sdl_event->button.button);
         return true;
     case SDL_MOUSEBUTTONUP:
-        input_manager->mouse_x        = sdl_event->button.x;
-        input_manager->mouse_y        = sdl_event->button.y;
+        if (!input_manager->own_pointer) {
+            input_manager->mouse_x = sdl_event->button.x;
+            input_manager->mouse_y = sdl_event->button.y;
+        }
         input_manager->mouse_buttons &= ~SDL_BUTTON(sdl_event->button.button);
         return true;
     case SDL_MOUSEWHEEL: {
-        const int steps =
-            (sdl_event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -sdl_event->wheel.y : sdl_event->wheel.y;
+        // The wheel's speed: fine-stepping wheels and touchpads send parts of a step, which add up here
+        const float sign           = sdl_event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+        input_manager->wheel_rest += sign * sdl_event->wheel.preciseY * input_manager->wheel_speed;
+        const int steps            = (int)input_manager->wheel_rest;
+        input_manager->wheel_rest -= (float)steps;
+        if (steps == 0) {
+            return true;
+        }
         input_manager->mouse_wheel_y += steps;
         for (int s = 0; s < abs(steps) && s < 4; s++) {
             InputManager__Press(INPUT_MOUSE_WHEEL, steps > 0 ? 1 : -1);

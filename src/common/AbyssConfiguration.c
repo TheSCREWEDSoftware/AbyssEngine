@@ -24,7 +24,17 @@ typedef struct AbyssConfiguration {
         bool  fullscreen;
         int   window_width; // 0 = use initial_scale
         int   window_height;
+        int   frame_rate; // frames drawn a second at most (0 = no limit); 25 = the game's own
+        int   brightness; // 0..100, 50 = the game's picture
+        int   contrast;
+        int   gamma;
     } graphics;
+    struct {
+        int  mouse_speed_x; // percent (100 = as the system moves it)
+        int  mouse_speed_y;
+        bool match_axes;  // one speed for both
+        int  wheel_speed; // percent of the wheel's steps
+    } input;
     struct {
         float master_volume;
         float music_volume;
@@ -58,7 +68,7 @@ static const char *default_mpqs[] = {"Patch_D2.mpq", "d2exp.MPQ",   "d2xmusic.MP
     memset(X, 0, sizeof(char) * (strlen(Y) + 1));                                                                      \
     strcat(X, Y)
 
-static const char *valid_categories[] = {"general", "mpqs", "graphics", "audio", NULL};
+static const char *valid_categories[] = {"general", "mpqs", "graphics", "audio", "input", NULL};
 
 char *trim_str(char *str) {
     size_t       len   = strlen(str);
@@ -211,6 +221,15 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             abyss_configuration.graphics.window_width  = width;
             abyss_configuration.graphics.window_height = height;
             LOG_DEBUG("Setting resolution to %dx%d", width, height);
+        } else if (IS_STR_EQUAL(key, "framerate")) {
+            abyss_configuration.graphics.frame_rate =
+                IS_STR_EQUAL(value, "unlimited") ? 0 : (IS_STR_EQUAL(value, "classic") ? 25 : atoi(value));
+        } else if (IS_STR_EQUAL(key, "brightness") || IS_STR_EQUAL(key, "contrast") || IS_STR_EQUAL(key, "gamma")) {
+            int v                                                                    = atoi(value);
+            v                                                                        = v < 0 ? 0 : (v > 100 ? 100 : v);
+            *(IS_STR_EQUAL(key, "brightness") ? &abyss_configuration.graphics.brightness
+              : IS_STR_EQUAL(key, "contrast") ? &abyss_configuration.graphics.contrast
+                                              : &abyss_configuration.graphics.gamma) = v;
         } else if (IS_STR_EQUAL(key, "fullscreen")) {
             if (IS_STR_EQUAL(value, "true")) {
                 abyss_configuration.graphics.fullscreen = true;
@@ -253,6 +272,18 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             LOG_DEBUG("Setting ui volume to '%f'", abyss_configuration.audio.ui_volume);
         } else {
             LOG_FATAL("Invalid key '%s' in the configuration file!", key);
+        }
+    } else if (IS_STR_EQUAL(category, "input")) {
+        int v = atoi(value);
+        v     = v < 10 ? 10 : (v > 400 ? 400 : v);
+        if (IS_STR_EQUAL(key, "mousespeedx")) {
+            abyss_configuration.input.mouse_speed_x = v;
+        } else if (IS_STR_EQUAL(key, "mousespeedy")) {
+            abyss_configuration.input.mouse_speed_y = v;
+        } else if (IS_STR_EQUAL(key, "matchaxes")) {
+            abyss_configuration.input.match_axes = IS_STR_EQUAL(value, "true");
+        } else if (IS_STR_EQUAL(key, "wheelspeed")) {
+            abyss_configuration.input.wheel_speed = v;
         }
     } else if (IS_STR_EQUAL(category, "mpqs")) {
         if (strlen(key) != 0) {
@@ -439,6 +470,14 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     SET_PARAM_STR(abyss_configuration.graphics.scale_quality, "nearest");
     abyss_configuration.graphics.initial_scale = 1.0f;
     abyss_configuration.graphics.fullscreen    = false;
+    abyss_configuration.graphics.frame_rate    = 60;
+    abyss_configuration.graphics.brightness    = 50;
+    abyss_configuration.graphics.contrast      = 50;
+    abyss_configuration.graphics.gamma         = 50;
+    abyss_configuration.input.mouse_speed_x    = 100;
+    abyss_configuration.input.mouse_speed_y    = 100;
+    abyss_configuration.input.match_axes       = true;
+    abyss_configuration.input.wheel_speed      = 100;
 
     abyss_configuration.audio.master_volume = 0.8f;
     abyss_configuration.audio.music_volume  = 1.0f;
@@ -452,6 +491,40 @@ void AbyssConfiguration__SetSaneDefaults(void) {
 void AbyssConfiguration_SetWindowSize(const int width, const int height) {
     abyss_configuration.graphics.window_width  = width;
     abyss_configuration.graphics.window_height = height;
+}
+
+static bool playing_online = false;
+void        AbyssConfiguration_SetOnline(const bool online) { playing_online = online; }
+bool        AbyssConfiguration_IsOnline(void) { return playing_online; }
+
+int AbyssConfiguration_GetFrameRate(const bool multiplayer) {
+    const int rate = abyss_configuration.graphics.frame_rate;
+    return multiplayer && (rate == 0 || rate > 60) ? 60 : rate; // never above 60 with other players
+}
+void AbyssConfiguration_SetFrameRate(const int rate) { abyss_configuration.graphics.frame_rate = rate; }
+
+void AbyssConfiguration_GetPicture(int *brightness, int *contrast, int *gamma) {
+    *brightness = abyss_configuration.graphics.brightness;
+    *contrast   = abyss_configuration.graphics.contrast;
+    *gamma      = abyss_configuration.graphics.gamma;
+}
+void AbyssConfiguration_SetPicture(const int brightness, const int contrast, const int gamma) {
+    abyss_configuration.graphics.brightness = brightness;
+    abyss_configuration.graphics.contrast   = contrast;
+    abyss_configuration.graphics.gamma      = gamma;
+}
+
+void AbyssConfiguration_GetMouse(int *speed_x, int *speed_y, bool *match_axes, int *wheel_speed) {
+    *speed_x     = abyss_configuration.input.mouse_speed_x;
+    *speed_y     = abyss_configuration.input.mouse_speed_y;
+    *match_axes  = abyss_configuration.input.match_axes;
+    *wheel_speed = abyss_configuration.input.wheel_speed;
+}
+void AbyssConfiguration_SetMouse(const int speed_x, const int speed_y, const bool match_axes, const int wheel_speed) {
+    abyss_configuration.input.mouse_speed_x = speed_x;
+    abyss_configuration.input.mouse_speed_y = match_axes ? speed_x : speed_y;
+    abyss_configuration.input.match_axes    = match_axes;
+    abyss_configuration.input.wheel_speed   = wheel_speed;
 }
 
 void AbyssConfiguration_SetScaleQuality(const char *quality) {
@@ -493,6 +566,14 @@ bool AbyssConfiguration_Save(void) {
         {"audio",    "SfxVolume",    "", false, false},
         {"audio",    "UIVolume",     "", false, false},
         {"audio",    "SpeechVolume", "", false, false},
+        {"graphics", "FrameRate",    "", false, false},
+        {"graphics", "Brightness",   "", false, false},
+        {"graphics", "Contrast",     "", false, false},
+        {"graphics", "Gamma",        "", false, false},
+        {"input",    "MouseSpeedX",  "", false, false},
+        {"input",    "MouseSpeedY",  "", false, false},
+        {"input",    "MatchAxes",    "", false, false},
+        {"input",    "WheelSpeed",   "", false, false},
     };
     const int count = (int)(sizeof(settings) / sizeof(settings[0]));
     snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
@@ -509,6 +590,18 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[5].value, 64, "%.2f", abyss_configuration.audio.sfx_volume);
     snprintf(settings[6].value, 64, "%.2f", abyss_configuration.audio.ui_volume);
     snprintf(settings[7].value, 64, "%.2f", abyss_configuration.audio.speech_volume);
+    if (abyss_configuration.graphics.frame_rate == 0) {
+        snprintf(settings[8].value, 64, "unlimited");
+    } else {
+        snprintf(settings[8].value, 64, "%d", abyss_configuration.graphics.frame_rate);
+    }
+    snprintf(settings[9].value, 64, "%d", abyss_configuration.graphics.brightness);
+    snprintf(settings[10].value, 64, "%d", abyss_configuration.graphics.contrast);
+    snprintf(settings[11].value, 64, "%d", abyss_configuration.graphics.gamma);
+    snprintf(settings[12].value, 64, "%d", abyss_configuration.input.mouse_speed_x);
+    snprintf(settings[13].value, 64, "%d", abyss_configuration.input.mouse_speed_y);
+    snprintf(settings[14].value, 64, "%s", abyss_configuration.input.match_axes ? "true" : "false");
+    snprintf(settings[15].value, 64, "%d", abyss_configuration.input.wheel_speed);
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

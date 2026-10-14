@@ -143,4 +143,5 @@ own bindings, next to `abyss.ini`.
 | Collision view | - | `B` | - | `B` also on an action that's never active at the same time |
 | Placement preview | - | `P` | - | `P` also on an action that's never active at the same time |
 | New world | - | `N` | - | `N` also on an action that's never active at the same time |
+| Sprint | - | `CapsLock` | - |  |
 

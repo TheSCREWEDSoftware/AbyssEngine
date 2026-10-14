@@ -12,6 +12,7 @@ target_sources(${PROJECT_NAME}
         Figure.c Figure.h
         Label.c Label.h
         Screenshot.c Screenshot.h
+        Picture.c Picture.h
         Slider.c Slider.h
         Sprite.c Sprite.h
 )

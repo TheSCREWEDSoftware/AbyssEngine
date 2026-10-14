@@ -68,7 +68,7 @@ static const char *open_source_names[OPEN_SOURCE_COUNT] = {"My Maps", "Game Area
 #define DIALOG_H 440
 
 // What the editor asks about with its confirm dialog
-typedef enum EditorQuestion { QUESTION_NONE, QUESTION_LEAVE, QUESTION_RESTORE } EditorQuestion;
+typedef enum EditorQuestion { QUESTION_NONE, QUESTION_LEAVE, QUESTION_RESTORE, QUESTION_RESET_TESTING } EditorQuestion;
 
 typedef struct SceneMapEditor {
     Map           *map;
@@ -625,6 +625,8 @@ static void Editor__OpenDialog(SceneMapEditor *editor, const EditorDialog dialog
     case DIALOG_OPEN:
         Label_SetText(editor->dialog_title, "Open Map");
         Button_SetText(editor->dialog_ok, "Open");
+        Button_SetText(editor->dialog_extra, "Reset TG");
+        TestingGrounds_EnsureMapFile(); // the Testing Grounds map is one of yours
         Map_FreeNames(editor->saved_names, editor->saved_count);
         editor->saved_count = Map_ListSavedMaps(&editor->saved_names);
         TextBox_Clear(editor->search_box);
@@ -711,6 +713,14 @@ static void Editor__UpdateDialog(SceneMapEditor *editor) {
             Editor__RefreshOpenList(editor);
         }
         ListBox_Update(editor->dialog_list);
+        if (TabBar_GetSelected(editor->open_tabs) == OPEN_MY_MAPS && Button_Update(editor->dialog_extra)) {
+            editor->question = QUESTION_RESET_TESTING;
+            ConfirmDialog_Open(editor->confirm, "Reset Testing Grounds",
+                               "Put the Testing Grounds map (testing_grounds) back to the original? Your changes to it "
+                               "will be lost.",
+                               "Reset", "Cancel", NULL);
+            return;
+        }
         ok            = ok || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
         const int row = ListBox_GetSelectedIndex(editor->dialog_list);
         if (ok && row >= 0 && row < editor->dialog_visible_count) {
@@ -803,6 +813,9 @@ static void Editor__DrawDialog(const SceneMapEditor *editor) {
         ListBox_Draw(editor->dialog_list);
         Label_Draw(editor->dialog_labels[0], DIALOG_X + 20, DIALOG_Y + 92 + (15 * LIST_ROW_H) + 6);
         Button_Draw(editor->dialog_ok);
+        if (TabBar_GetSelected(editor->open_tabs) == OPEN_MY_MAPS) {
+            Button_Draw(editor->dialog_extra); // Reset TG: the Testing Grounds map back to the original
+        }
         break;
     case DIALOG_NEW:
         Label_Draw(editor->dialog_labels[0], DIALOG_X + 40, DIALOG_Y + 90);
@@ -1034,6 +1047,24 @@ static void Editor__UpdateQuestion(SceneMapEditor *editor) {
     }
     const EditorQuestion question = editor->question;
     editor->question              = QUESTION_NONE;
+    if (question == QUESTION_RESET_TESTING) {
+        if (answer == CONFIRM_FIRST) {
+            char path[4200];
+            TestingGrounds_MapPath(path, sizeof(path));
+            if (!TestingGrounds_ResetMapFile()) {
+                Editor__Message(editor, "Could not reset the Testing Grounds map");
+                return;
+            }
+            if (strcmp(editor->file_path, path) == 0) { // it's the one open: open the original
+                Map *map = Map_LoadFile(path);
+                if (map != NULL) {
+                    Editor__SetMap(editor, map, path);
+                }
+            }
+            Editor__Message(editor, "Testing Grounds map reset to the original");
+        }
+        return;
+    }
     if (question == QUESTION_RESTORE) {
         char path[4200];
         Editor__RecoveryPath(path, sizeof(path));

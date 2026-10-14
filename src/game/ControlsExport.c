@@ -212,7 +212,8 @@ void ControlsExport_ModeTable(FILE *file, const int profile, const unsigned cont
         ControlsExport__Columns(profile, (ControlAction)a, columns, notes);
         fprintf(file, "| %s | %s | %s | %s | %s |\n", Controls_ActionName((ControlAction)a),
                 columns[0][0] != '\0' ? columns[0] : "-", columns[1][0] != '\0' ? columns[1] : "-",
-                columns[2][0] != '\0' ? columns[2] : "-", Controls_ActionHelp((ControlAction)a));
+                columns[2][0] != '\0' ? columns[2] : "-",
+                Controls_ActionHelp((ControlAction)a) != NULL ? Controls_ActionHelp((ControlAction)a) : "-");
     }
 }
 

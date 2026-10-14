@@ -21,6 +21,7 @@
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
 #include "SceneMainMenu.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,9 +55,9 @@
 #define DIALOG_W 620
 #define DIALOG_H 480
 
-typedef enum OptionsTab { TAB_VIDEO, TAB_AUDIO, TAB_GAMEPLAY, TAB_CONTROLS, TAB_COUNT } OptionsTab;
+typedef enum OptionsTab { TAB_VIDEO, TAB_AUDIO, TAB_GAMEPLAY, TAB_CONTROLS, TAB_DEBUG, TAB_COUNT } OptionsTab;
 
-static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls"};
+static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls", "Debug"};
 
 static const struct {
     const char *name;
@@ -77,6 +78,24 @@ static const struct {
 
 static const char *scale_qualities[]     = {"nearest", "linear", "best"};
 static const char *scale_quality_names[] = {"Sharp pixels (nearest)", "Smooth (linear)", "Smoothest (best)"};
+
+// Frame rate: the slider's steps (frames a second; 0 = no limit), and the two presets beside it
+#define FRAME_STEPS 7
+static const int   frame_steps[FRAME_STEPS]      = {10, 15, 20, 30, 45, 60, 0};
+static const char *frame_step_names[FRAME_STEPS] = {"Slowest", "Slower", "Slow", "Medium", "Fast", "Faster", "Fastest"};
+static const char *frame_modes[]                 = {"Classic: 25 a second (the game's)", "Modern: 60 a second",
+                                                    "Your own (the slider)"};
+#define FRAME_CLASSIC 25
+#define FRAME_MODERN  60
+
+#define PICTURE_COUNT 3
+static const char *picture_names[PICTURE_COUNT] = {"Brightness", "Contrast", "Gamma"};
+
+// Mouse window: pointer speed and wheel speed (percent)
+#define MOUSE_MIN 25
+#define MOUSE_MAX 300
+#define WHEEL_MIN 25
+#define WHEEL_MAX 400
 
 #define VOLUME_COUNT 5
 static const char *volume_names[VOLUME_COUNT] = {"Master", "Music", "Sound effects", "Interface", "Speech"};
@@ -133,11 +152,16 @@ typedef struct SceneOptions {
     Dropdown *window_size;
     Checkbox *fullscreen;
     Dropdown *scale_quality;
+    Dropdown *frame_mode;
+    Slider   *frame_slider;
+    int       frame_before; // to put back on Cancel
+    Slider   *picture[PICTURE_COUNT];
+    int       picture_before[PICTURE_COUNT]; // these, and the scaling, show straight away: put back on Cancel
+    char      scale_before[16];
 
     // Audio
-    Slider  *volumes[VOLUME_COUNT];
-    TextBox *volume_boxes[VOLUME_COUNT];
-    float    volumes_before[VOLUME_COUNT]; // to put back on Cancel
+    Slider *volumes[VOLUME_COUNT];
+    float   volumes_before[VOLUME_COUNT]; // to put back on Cancel
 
     // Gameplay and Controls: whose settings (0 = all classes)
     int       profile;
@@ -146,26 +170,28 @@ typedef struct SceneOptions {
     Dropdown *movement;
     Checkbox *see_through;
     Checkbox *confirm_entrances;
+    Checkbox *even_speed;
 
-    // Gameplay › Debug (every class)
+    // Debug (every class)
     Dropdown *autosave;
     Checkbox *keep_changes;
     Checkbox *collision_in_game;
     Checkbox *confirm_new_seed;
 
     // Controls
-    Dropdown     *group_filter; // "Show:"
-    ControlAction rows[ACTION_COUNT];
-    int           row_count;
-    int           scroll;
-    int           hovered_row; // -1 = none
-    int           last_click_row;
-    uint64_t      last_click_time;
-    bool          prev_left;
-    Button       *export_button;
-    Button       *presets_button;
-    Dropdown     *copy_to; // "Copy to": the class to give this profile's controls to
-    Button       *copy_button;
+    Dropdown *group_filter;                     // "Show:"
+    int       rows[ACTION_COUNT + GROUP_COUNT]; // an action, or a group's heading (-1 - group)
+    int       row_count;
+    int       scroll;
+    int       hovered_row; // -1 = none
+    int       last_click_row;
+    uint64_t  last_click_time;
+    bool      prev_left;
+    Button   *export_button;
+    Button   *presets_button;
+    Button   *mouse_button;
+    Dropdown *copy_to; // "Copy to": the class to give this profile's controls to
+    Button   *copy_button;
 
     // Presets window
     bool     presets;
@@ -178,6 +204,18 @@ typedef struct SceneOptions {
     Button  *preset_load;
     Button  *preset_delete;
     Button  *preset_close;
+
+    // Mouse window
+    bool      mouse;
+    Checkbox *match_axes;
+    Slider   *mouse_x;
+    Slider   *mouse_y;
+    Slider   *mouse_both;
+    Slider   *wheel;
+    Button   *mouse_default;
+    Button   *mouse_close;
+    int       mouse_before[4]; // across, up/down, match, wheel: to put back on Cancel
+    bool      scroll_drag;     // dragging the controls table's scrollbar
 
     // Configure dialog
     bool            dialog;
@@ -235,7 +273,7 @@ static bool Options__AnyDropdownOpen(const SceneOptions *options) {
     return Dropdown_IsOpen(options->window_size) || Dropdown_IsOpen(options->scale_quality) ||
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
            Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
-           Dropdown_IsOpen(options->group_filter);
+           Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode);
 }
 
 // The widgets showing what's set now
@@ -254,12 +292,52 @@ static void Options__LoadVideo(SceneOptions *options) {
             Dropdown_SetSelected(options->scale_quality, q);
         }
     }
+    const int rate = AbyssConfiguration_GetFrameRate(false);
+    int       step = FRAME_STEPS - 1; // no limit, unless it's one of the steps (or the nearest above it)
+    for (int i = FRAME_STEPS - 2; i >= 0; i--) {
+        step = rate != 0 && frame_steps[i] >= rate ? i : step;
+    }
+    Slider_SetValue(options->frame_slider, step);
+    Dropdown_SetSelected(options->frame_mode, rate == FRAME_CLASSIC ? 0 : (rate == FRAME_MODERN ? 1 : 2));
+    int picture[PICTURE_COUNT];
+    AbyssConfiguration_GetPicture(&picture[0], &picture[1], &picture[2]);
+    for (int i = 0; i < PICTURE_COUNT; i++) {
+        Slider_SetValue(options->picture[i], picture[i]);
+    }
 }
 
-static void Options__SetVolumeBox(SceneOptions *options, const int v) {
-    char text[8];
-    snprintf(text, sizeof(text), "%d", Slider_GetValue(options->volumes[v]));
-    TextBox_SetText(options->volume_boxes[v], text);
+// The frame rate the Video tab shows; it's used straight away, so you see the difference
+static int Options__FrameRate(const SceneOptions *options) {
+    switch (Dropdown_GetSelected(options->frame_mode)) {
+    case 0:
+        return FRAME_CLASSIC;
+    case 1:
+        return FRAME_MODERN;
+    default:
+        return frame_steps[Slider_GetValue(options->frame_slider)];
+    }
+}
+
+// Mouse window: the sliders showing what's set, and the settings from them (used straight away)
+static void Options__LoadMouse(SceneOptions *options) {
+    int  x;
+    int  y;
+    bool match;
+    int  wheel;
+    AbyssConfiguration_GetMouse(&x, &y, &match, &wheel);
+    Checkbox_SetChecked(options->match_axes, match);
+    Slider_SetValue(options->mouse_x, x);
+    Slider_SetValue(options->mouse_y, y);
+    Slider_SetValue(options->mouse_both, x);
+    Slider_SetValue(options->wheel, wheel);
+}
+
+static void Options__ApplyMouse(const SceneOptions *options) {
+    const bool match = Checkbox_IsChecked(options->match_axes);
+    const int  x     = Slider_GetValue(match ? options->mouse_both : options->mouse_x);
+    AbyssConfiguration_SetMouse(x, match ? x : Slider_GetValue(options->mouse_y), match,
+                                Slider_GetValue(options->wheel));
+    InputManager_ApplyMouseSettings();
 }
 
 static void Options__ApplyVolumes(const SceneOptions *options) {
@@ -276,6 +354,7 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Dropdown_SetSelected(options->movement, settings->movement);
     Checkbox_SetChecked(options->see_through, settings->see_through);
     Checkbox_SetChecked(options->confirm_entrances, settings->confirm_entrances);
+    Checkbox_SetChecked(options->even_speed, settings->even_screen_speed);
     char text[64];
     snprintf(text, sizeof(text), "Own settings for the %s", Settings_ProfileName(options->profile));
     Checkbox_Destroy(&options->own_profile);
@@ -285,7 +364,7 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Checkbox_SetEnabled(options->own_profile, options->profile != 0);
 }
 
-// Gameplay › Debug: the editor's auto-save choices (minutes)
+// Debug: the editor's auto-save choices (minutes)
 static const int   autosave_minutes[] = {0, 1, 2, 5, 10, 15, 30};
 static const char *autosave_names[]   = {"Off",
                                          "Every minute",
@@ -295,7 +374,7 @@ static const char *autosave_names[]   = {"Off",
                                          "Every 15 minutes",
                                          "Every 30 minutes"};
 #define AUTOSAVE_CHOICES (int)(sizeof(autosave_minutes) / sizeof(autosave_minutes[0]))
-#define DEBUG_Y          (CONTENT_Y + (5 * ROW_H) + 14)
+#define DEBUG_Y          CONTENT_Y
 
 static void Options__LoadDebug(SceneOptions *options) {
     const DebugSettings *debug = Settings_GetDebug();
@@ -322,13 +401,27 @@ static void Options__StoreDebug(const SceneOptions *options) {
 static void Options__BuildRows(SceneOptions *options) {
     const int group    = Dropdown_GetSelected(options->group_filter) - 1; // 0 = all
     options->row_count = 0;
-    for (int a = 0; a < ACTION_COUNT; a++) {
-        if (group < 0 || (int)Controls_ActionGroup((ControlAction)a) == group) {
-            options->rows[options->row_count++] = (ControlAction)a;
+    if (group >= 0) {
+        for (int a = 0; a < ACTION_COUNT; a++) {
+            if ((int)Controls_ActionGroup((ControlAction)a) == group) {
+                options->rows[options->row_count++] = a;
+            }
+        }
+    } else {
+        // Everything: group by group, each under its heading
+        for (int g = 0; g < GROUP_COUNT; g++) {
+            options->rows[options->row_count++] = -1 - g;
+            for (int a = 0; a < ACTION_COUNT; a++) {
+                if ((int)Controls_ActionGroup((ControlAction)a) == g) {
+                    options->rows[options->row_count++] = a;
+                }
+            }
         }
     }
     options->scroll = 0;
 }
+
+static bool Options__IsHeading(const SceneOptions *options, const int row) { return options->rows[row] < 0; }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Create / free
@@ -364,7 +457,18 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->window_size   = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y, 260, size_names, WINDOW_SIZE_COUNT);
     options->fullscreen    = Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + ROW_H + 3, "Full screen (Alt+Enter)");
     options->scale_quality = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (2 * ROW_H), 260, scale_quality_names, 3);
+    options->frame_mode    = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H), 260, frame_modes, 3);
+    options->frame_slider  = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) + 6, 300, 0, FRAME_STEPS - 1);
+    Slider_SetEndNames(options->frame_slider, frame_step_names[0], frame_step_names[FRAME_STEPS - 1]);
+    Slider_SetTypable(options->frame_slider, false);
+    for (int i = 0; i < PICTURE_COUNT; i++) {
+        options->picture[i] = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + ((5 + i) * ROW_H) + 6, 300, 0, 100);
+    }
     Options__LoadVideo(options);
+    options->frame_before = AbyssConfiguration_GetFrameRate(false);
+    AbyssConfiguration_GetPicture(&options->picture_before[0], &options->picture_before[1],
+                                  &options->picture_before[2]);
+    snprintf(options->scale_before, sizeof(options->scale_before), "%s", AbyssConfiguration_GetScaleQuality());
 
     // Audio
     const float volumes[VOLUME_COUNT] = {AbyssConfiguration_GetMasterVolume(), AbyssConfiguration_GetMusicVolume(),
@@ -374,9 +478,7 @@ OptionsPanel *OptionsPanel_Create(void) {
         options->volumes_before[v] = volumes[v];
         options->volumes[v]        = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (v * ROW_H), 300, 0, 100);
         Slider_SetValue(options->volumes[v], (int)((volumes[v] * 100.0f) + 0.5f));
-        options->volume_boxes[v] =
-            TextBox_Create(FONTS_FONT16, CONTENT_X + LABEL_W + 320, CONTENT_Y + (v * ROW_H) - 3, 56, 22, "0-100");
-        Options__SetVolumeBox(options, v);
+        Slider_SetFormat(options->volumes[v], 1, 0, "%");
     }
 
     // Gameplay
@@ -391,6 +493,8 @@ OptionsPanel *OptionsPanel_Create(void) {
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) + 3, "See through obstructions");
     options->confirm_entrances =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H) + 6, "Ask before going through an entrance");
+    options->even_speed =
+        Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (5 * ROW_H) + 20, "Same speed on screen in every direction");
     Options__LoadGameplay(options);
     options->autosave = Dropdown_Create(CONTENT_X + LABEL_W, DEBUG_Y, 220, autosave_names, AUTOSAVE_CHOICES);
     options->keep_changes =
@@ -408,19 +512,24 @@ OptionsPanel *OptionsPanel_Create(void) {
         groups[g + 1] = Controls_GroupName((ControlGroup)g);
     }
     options->group_filter = Dropdown_Create(CONTENT_X + 480, CONTENT_Y + 27, 180, groups, GROUP_COUNT + 1);
+    for (int g = 0; g < GROUP_COUNT; g++) {
+        Dropdown_SetMark(options->group_filter, g + 1, group_colors[g][0], group_colors[g][1], group_colors[g][2]);
+    }
     Options__BuildRows(options);
     options->export_button  = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
     options->presets_button = Button_Create(BUTTON_TYPE_MEDIUM, "Presets");
+    options->mouse_button   = Button_Create(BUTTON_TYPE_CANCEL, "Mouse");
     options->copy_button    = Button_Create(BUTTON_TYPE_CANCEL, "Copy");
     Button_SetPosition(options->export_button, CONTENT_X, CONTROLS_BTN_Y);
-    Button_SetPosition(options->presets_button, CONTENT_X + 140, CONTROLS_BTN_Y);
+    Button_SetPosition(options->presets_button, CONTENT_X + 136, CONTROLS_BTN_Y);
+    Button_SetPosition(options->mouse_button, CONTENT_X + 272, CONTROLS_BTN_Y + 1);
     const char *copy_targets[CONTROL_PROFILES];
     for (int p = 0; p < CONTROL_PROFILES; p++) {
         copy_targets[p] = Settings_ProfileName(p);
     }
-    options->copy_to = Dropdown_Create(CONTENT_X + 380, CONTROLS_BTN_Y + 7, 160, copy_targets, CONTROL_PROFILES);
+    options->copy_to = Dropdown_Create(CONTENT_X + 440, CONTROLS_BTN_Y + 7, 120, copy_targets, CONTROL_PROFILES);
     Dropdown_SetSelected(options->copy_to, 1);
-    Button_SetPosition(options->copy_button, CONTENT_X + 548, CONTROLS_BTN_Y + 1);
+    Button_SetPosition(options->copy_button, CONTENT_X + 568, CONTROLS_BTN_Y + 1);
 
     // Presets window (over the Controls tab, the same place as the configure window)
     options->preset_list   = ListBox_Create(FONTS_FONT16, DIALOG_X + 16, DIALOG_Y + 70, 300, 14, 20);
@@ -433,6 +542,28 @@ OptionsPanel *OptionsPanel_Create(void) {
     Button_SetPosition(options->preset_load, DIALOG_X + 340, DIALOG_Y + 200);
     Button_SetPosition(options->preset_delete, DIALOG_X + 450, DIALOG_Y + 200);
     Button_SetPosition(options->preset_close, DIALOG_X + DIALOG_W - 112, DIALOG_Y + DIALOG_H - 44);
+
+    // Mouse window
+    options->match_axes = Checkbox_Create(DIALOG_X + 16, DIALOG_Y + 48, "Match axes: one speed across and up/down");
+    options->mouse_x    = Slider_Create(DIALOG_X + 200, DIALOG_Y + 100, 300, MOUSE_MIN, MOUSE_MAX);
+    options->mouse_y    = Slider_Create(DIALOG_X + 200, DIALOG_Y + 146, 300, MOUSE_MIN, MOUSE_MAX);
+    options->mouse_both = Slider_Create(DIALOG_X + 200, DIALOG_Y + 100, 300, MOUSE_MIN, MOUSE_MAX);
+    options->wheel      = Slider_Create(DIALOG_X + 200, DIALOG_Y + 210, 300, WHEEL_MIN, WHEEL_MAX);
+    Slider *speeds[4]   = {options->mouse_x, options->mouse_y, options->mouse_both, options->wheel};
+    for (int i = 0; i < 4; i++) {
+        Slider_SetFormat(speeds[i], 100, 2, "x");
+    }
+    options->mouse_default = Button_Create(BUTTON_TYPE_CANCEL, "Default");
+    options->mouse_close   = Button_Create(BUTTON_TYPE_CANCEL, "Close");
+    Button_SetPosition(options->mouse_default, DIALOG_X + 16, DIALOG_Y + DIALOG_H - 44);
+    Button_SetPosition(options->mouse_close, DIALOG_X + DIALOG_W - 112, DIALOG_Y + DIALOG_H - 44);
+    Options__LoadMouse(options);
+    {
+        bool match;
+        AbyssConfiguration_GetMouse(&options->mouse_before[0], &options->mouse_before[1], &match,
+                                    &options->mouse_before[3]);
+        options->mouse_before[2] = match;
+    }
 
     // Configure dialog
     options->extras_list = ListBox_Create(FONTS_FONT16, DIALOG_X + 330, DIALOG_Y + 110, 270, 14, 20);
@@ -466,16 +597,27 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Label_Destroy(&options->text_label);
     Label_Destroy(&options->small_label);
     Button *buttons[] = {
-        options->ok_button,       options->cancel_button, options->defaults_button, options->export_button,
-        options->presets_button,  options->copy_button,   options->preset_save,     options->preset_load,
-        options->preset_delete,   options->preset_close,  options->previous_button, options->next_button,
-        options->default_button,  options->delete_button, options->undo_button,     options->dialog_cancel_button,
-        options->dialog_ok_button};
+        options->ok_button,        options->cancel_button, options->defaults_button, options->export_button,
+        options->presets_button,   options->copy_button,   options->preset_save,     options->preset_load,
+        options->preset_delete,    options->preset_close,  options->previous_button, options->next_button,
+        options->default_button,   options->delete_button, options->undo_button,     options->dialog_cancel_button,
+        options->dialog_ok_button, options->mouse_button,  options->mouse_default,   options->mouse_close};
     for (size_t b = 0; b < sizeof(buttons) / sizeof(buttons[0]); b++) {
         Button_Destroy(&buttons[b]);
     }
     Dropdown_Destroy(&options->window_size);
     Dropdown_Destroy(&options->scale_quality);
+    Dropdown_Destroy(&options->frame_mode);
+    Slider_Destroy(&options->frame_slider);
+    for (int i = 0; i < PICTURE_COUNT; i++) {
+        Slider_Destroy(&options->picture[i]);
+    }
+    Checkbox_Destroy(&options->even_speed);
+    Checkbox_Destroy(&options->match_axes);
+    Slider_Destroy(&options->mouse_x);
+    Slider_Destroy(&options->mouse_y);
+    Slider_Destroy(&options->mouse_both);
+    Slider_Destroy(&options->wheel);
     Dropdown_Destroy(&options->profile_dropdown);
     Dropdown_Destroy(&options->movement);
     Dropdown_Destroy(&options->autosave);
@@ -492,7 +634,6 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Checkbox_Destroy(&options->confirm_entrances);
     for (int v = 0; v < VOLUME_COUNT; v++) {
         Slider_Destroy(&options->volumes[v]);
-        TextBox_Destroy(&options->volume_boxes[v]);
     }
     ListBox_Destroy(&options->extras_list);
     free(options);
@@ -521,6 +662,10 @@ static void Options__Save(SceneOptions *options) {
         SDL_SetWindowSize(sdl_window, width, height);
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, AbyssConfiguration_GetScaleQuality()); // new pictures from now on
+    AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
+    AbyssConfiguration_SetPicture(Slider_GetValue(options->picture[0]), Slider_GetValue(options->picture[1]),
+                                  Slider_GetValue(options->picture[2]));
+    Options__ApplyMouse(options);
     // Audio
     AbyssConfiguration_SetVolumes(
         (float)Slider_GetValue(options->volumes[0]) / 100.0f, (float)Slider_GetValue(options->volumes[1]) / 100.0f,
@@ -539,6 +684,12 @@ static void Options__Cancel(SceneOptions *options) {
         AudioManager_SetVolume(types[v], options->volumes_before[v]);
     }
     Settings_Load(); // gameplay and controls as they were saved
+    AbyssConfiguration_SetFrameRate(options->frame_before);
+    AbyssConfiguration_SetPicture(options->picture_before[0], options->picture_before[1], options->picture_before[2]);
+    AbyssConfiguration_SetScaleQuality(options->scale_before);
+    AbyssConfiguration_SetMouse(options->mouse_before[0], options->mouse_before[1], options->mouse_before[2] != 0,
+                                options->mouse_before[3]);
+    InputManager_ApplyMouseSettings();
 }
 
 static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
@@ -547,20 +698,30 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         Dropdown_SetSelected(options->window_size, 0);
         Checkbox_SetChecked(options->fullscreen, false);
         Dropdown_SetSelected(options->scale_quality, 0);
+        Dropdown_SetSelected(options->frame_mode, 1);
+        Slider_SetValue(options->frame_slider, 5);
+        AbyssConfiguration_SetFrameRate(FRAME_MODERN);
+        for (int i = 0; i < PICTURE_COUNT; i++) {
+            Slider_SetValue(options->picture[i], 50);
+        }
+        AbyssConfiguration_SetPicture(50, 50, 50);
+        AbyssConfiguration_SetScaleQuality(scale_qualities[0]);
         break;
     case TAB_AUDIO: {
         static const int defaults[VOLUME_COUNT] = {80, 100, 100, 100, 100};
         for (int v = 0; v < VOLUME_COUNT; v++) {
             Slider_SetValue(options->volumes[v], defaults[v]);
-            Options__SetVolumeBox(options, v);
         }
         Options__ApplyVolumes(options);
         break;
     }
     case TAB_GAMEPLAY: {
-        const GameplaySettings defaults = {MOVEMENT_CLASSIC, true, false};
+        const GameplaySettings defaults = {MOVEMENT_CLASSIC, true, false, false};
         Settings_SetGameplay(options->profile, &defaults);
         Options__LoadGameplay(options);
+        break;
+    }
+    case TAB_DEBUG: {
         const DebugSettings debug_defaults = {5, true, false, true};
         Settings_SetDebug(&debug_defaults);
         Options__LoadDebug(options);
@@ -587,7 +748,7 @@ static void Options__OpenDialog(SceneOptions *options, const int row) {
     options->dialog_row       = row;
     options->dialog_selected  = -1;
     options->dialog_armed     = false;
-    options->dialog_bindings  = *Controls_GetBindings(options->profile, options->rows[row]);
+    options->dialog_bindings  = *Controls_GetBindings(options->profile, (ControlAction)options->rows[row]);
     options->dialog_original  = options->dialog_bindings;
     options->pending_modifier = -1;
     InputManager_ClearPresses();
@@ -595,7 +756,8 @@ static void Options__OpenDialog(SceneOptions *options, const int row) {
 }
 
 static void Options__CommitDialog(SceneOptions *options) {
-    Controls_SetBindings(options->profile, options->rows[options->dialog_row], &options->dialog_bindings);
+    Controls_SetBindings(options->profile, (ControlAction)options->rows[options->dialog_row],
+                         &options->dialog_bindings);
 }
 
 static void Options__Bind(SceneOptions *options, const ControlInput *input) {
@@ -692,10 +854,14 @@ static void Options__UpdateDialog(SceneOptions *options, const int mouse_x, cons
     const bool next     = Button_Update(options->next_button);
     if (previous || next) {
         Options__CommitDialog(options);
-        Options__OpenDialog(options, (options->dialog_row + (next ? 1 : options->row_count - 1)) % options->row_count);
+        int row = options->dialog_row;
+        do { // the next action, past the headings
+            row = (row + (next ? 1 : options->row_count - 1)) % options->row_count;
+        } while (Options__IsHeading(options, row));
+        Options__OpenDialog(options, row);
     }
     if (Button_Update(options->default_button)) {
-        Controls_GetDefaults(options->rows[options->dialog_row], &options->dialog_bindings);
+        Controls_GetDefaults((ControlAction)options->rows[options->dialog_row], &options->dialog_bindings);
         options->dialog_selected = -1;
     }
     if (Button_Update(options->delete_button) && options->dialog_selected >= 0) {
@@ -826,6 +992,86 @@ static void Options__DrawPresets(SceneOptions *options) {
     Button_Draw(options->preset_close);
 }
 
+static void Options__UpdateMouse(SceneOptions *options) {
+    const bool match   = Checkbox_IsChecked(options->match_axes);
+    bool       changed = false;
+    if (Checkbox_Update(options->match_axes)) {
+        if (Checkbox_IsChecked(options->match_axes)) {
+            Slider_SetValue(options->mouse_both, Slider_GetValue(options->mouse_x));
+        } else {
+            Slider_SetValue(options->mouse_x, Slider_GetValue(options->mouse_both));
+            Slider_SetValue(options->mouse_y, Slider_GetValue(options->mouse_both));
+        }
+        changed = true;
+    } else if (match) {
+        changed = Slider_Update(options->mouse_both);
+    } else {
+        changed = Slider_Update(options->mouse_x) | Slider_Update(options->mouse_y);
+    }
+    changed = Slider_Update(options->wheel) || changed;
+    if (Button_Update(options->mouse_default)) {
+        Checkbox_SetChecked(options->match_axes, true);
+        Slider_SetValue(options->mouse_x, 100);
+        Slider_SetValue(options->mouse_y, 100);
+        Slider_SetValue(options->mouse_both, 100);
+        Slider_SetValue(options->wheel, 100);
+        changed = true;
+    }
+    if (changed) {
+        Options__ApplyMouse(options);
+    }
+    const bool typing = Slider_IsTyping(options->mouse_x) || Slider_IsTyping(options->mouse_y) ||
+                        Slider_IsTyping(options->mouse_both) || Slider_IsTyping(options->wheel);
+    if (Button_Update(options->mouse_close) || (!typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
+        options->mouse = false;
+    }
+}
+
+static void Options__SliderRow(SceneOptions *options, const char *name, const Slider *slider, const int y) {
+    Options__Text(options, options->text_label, name, DIALOG_X + 16, y + 6, 0xC7, 0xB3, 0x77);
+    Slider_Draw(slider);
+}
+
+static void Options__DrawMouse(SceneOptions *options) {
+    Options__Fill(0, 0, 800, 600, 0, 0, 0, 140);
+    Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H, 18, 16, 14, 245);
+    Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, 26, 160, 110, 40, 255);
+    Options__Frame(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H);
+    Options__Text(options, options->text_label, "MOUSE", DIALOG_X + 10, DIALOG_Y + 13, 0xFF, 0xFF, 0xFF);
+    Checkbox_Draw(options->match_axes);
+    if (Checkbox_IsChecked(options->match_axes)) {
+        Options__SliderRow(options, "Pointer speed", options->mouse_both, DIALOG_Y + 100);
+    } else {
+        Options__SliderRow(options, "Across (X)", options->mouse_x, DIALOG_Y + 100);
+        Options__SliderRow(options, "Up and down (Y)", options->mouse_y, DIALOG_Y + 146);
+    }
+    Options__SliderRow(options, "Wheel", options->wheel, DIALOG_Y + 210);
+    Options__Wrapped(options,
+                     "1.00x is the system's own pointer speed (drag, or type a number from 0.25 to 3.00). At any other "
+                     "speed the game moves its own pointer, "
+                     "so the mouse stays in the window while it has the focus (Alt+Tab to leave).",
+                     DIALOG_X + 16, DIALOG_Y + 260, DIALOG_X + DIALOG_W - 16);
+    Options__Wrapped(options,
+                     "Wheel: how far each notch scrolls lists and the Map Editor (fine-stepping wheels and touchpads "
+                     "add up their part steps). The changes work straight away; Options' Cancel puts them back.",
+                     DIALOG_X + 16, DIALOG_Y + 300, DIALOG_X + DIALOG_W - 16);
+    Button_Draw(options->mouse_default);
+    Button_Draw(options->mouse_close);
+}
+
+// The controls table's scrollbar: the track and thumb (wider than the old 4 pixels), and where to click
+#define SCROLLBAR_W 10
+#define SCROLLBAR_X (CONTENT_X + TABLE_W - SCROLLBAR_W - 1)
+
+static void Options__ScrollTo(SceneOptions *options, const int mouse_y) {
+    const int most  = options->row_count - TABLE_ROWS;
+    const int track = TABLE_ROWS * TABLE_ROW_H;
+    const int thumb = track * TABLE_ROWS / options->row_count;
+    const int at    = mouse_y - TABLE_Y - (thumb / 2);
+    int       pick  = track > thumb ? (at * most + ((track - thumb) / 2)) / (track - thumb) : 0;
+    options->scroll = pick < 0 ? 0 : (pick > most ? most : pick);
+}
+
 static void Options__UpdateControls(SceneOptions *options, const int mouse_x, const int mouse_y, const bool clicked) {
     if (Dropdown_Update(options->group_filter)) {
         Options__BuildRows(options);
@@ -835,6 +1081,11 @@ static void Options__UpdateControls(SceneOptions *options, const int mouse_x, co
     }
     if (Button_Update(options->presets_button)) {
         Options__OpenPresets(options);
+        return;
+    }
+    if (Button_Update(options->mouse_button)) {
+        Options__LoadMouse(options);
+        options->mouse = true;
         return;
     }
     Dropdown_Update(options->copy_to);
@@ -856,11 +1107,26 @@ static void Options__UpdateControls(SceneOptions *options, const int mouse_x, co
     options->scroll = options->scroll - (wheel * 3);
     options->scroll = options->scroll < 0 ? 0 : (options->scroll > most ? most : options->scroll);
 
+    // The scrollbar: click or drag along it
+    bool left;
+    InputManager_GetMouseButtons(&left, NULL, NULL);
+    const bool on_bar = most > 0 && mouse_x >= SCROLLBAR_X - 2 && mouse_x < CONTENT_X + TABLE_W && mouse_y >= TABLE_Y &&
+                        mouse_y < TABLE_Y + (TABLE_ROWS * TABLE_ROW_H);
+    if (clicked && on_bar) {
+        options->scroll_drag = true;
+    }
+    options->scroll_drag = options->scroll_drag && left;
+    if (options->scroll_drag) {
+        Options__ScrollTo(options, mouse_y);
+        options->hovered_row = -1;
+        return;
+    }
+
     options->hovered_row = -1;
-    if (mouse_x >= CONTENT_X && mouse_x < CONTENT_X + TABLE_W && mouse_y >= TABLE_Y &&
+    if (mouse_x >= CONTENT_X && mouse_x < SCROLLBAR_X - 2 && mouse_y >= TABLE_Y &&
         mouse_y < TABLE_Y + (TABLE_ROWS * TABLE_ROW_H)) {
         const int row        = options->scroll + ((mouse_y - TABLE_Y) / TABLE_ROW_H);
-        options->hovered_row = row < options->row_count ? row : -1;
+        options->hovered_row = row < options->row_count && !Options__IsHeading(options, row) ? row : -1;
     }
     if (clicked && options->hovered_row >= 0) {
         // Double click (or click the keys) to set it up
@@ -911,9 +1177,24 @@ static void Options__DrawControls(SceneOptions *options) {
                   0xFF);
     Options__Fill(CONTENT_X, TABLE_Y, TABLE_W, TABLE_ROWS * TABLE_ROW_H, 10, 10, 10, 200);
     for (int r = 0; r < TABLE_ROWS && options->scroll + r < options->row_count; r++) {
-        const int           row    = options->scroll + r;
-        const ControlAction action = options->rows[row];
-        const int           y      = TABLE_Y + (r * TABLE_ROW_H);
+        const int row = options->scroll + r;
+        const int y   = TABLE_Y + (r * TABLE_ROW_H);
+        if (Options__IsHeading(options, row)) {
+            // A group's heading: its colour, its name, a line across
+            const int      group = -1 - options->rows[row];
+            const uint8_t *gc    = group_colors[group];
+            Options__Fill(CONTENT_X, y, SCROLLBAR_X - CONTENT_X - 2, TABLE_ROW_H, 45, 38, 26, 230);
+            Options__Fill(CONTENT_X + 2, y + TABLE_ROW_H - 2, SCROLLBAR_X - CONTENT_X - 6, 1, gc[0], gc[1], gc[2], 200);
+            char heading[64];
+            snprintf(heading, sizeof(heading), "%s", Controls_GroupName((ControlGroup)group));
+            for (char *c = heading; *c != '\0'; c++) {
+                *c = (char)toupper((unsigned char)*c);
+            }
+            Options__Text(options, options->small_label, heading, CONTENT_X + 6, y + (TABLE_ROW_H / 2), gc[0], gc[1],
+                          gc[2]);
+            continue;
+        }
+        const ControlAction action = (ControlAction)options->rows[row];
         if (row == options->hovered_row) {
             Options__Fill(CONTENT_X, y, TABLE_W, TABLE_ROW_H, 80, 70, 50, 160);
         }
@@ -925,7 +1206,7 @@ static void Options__DrawControls(SceneOptions *options) {
         Options__Text(options, options->small_label, name, CONTENT_X + 12, y + (TABLE_ROW_H / 2), works ? 0xFF : 0x90,
                       works ? 0xFF : 0x90, works ? 0xFF : 0x90);
         Options__DrawInputs(options, action, Controls_GetBindings(options->profile, action), CONTENT_X + TABLE_KEYS_X,
-                            y + (TABLE_ROW_H / 2), CONTENT_X + TABLE_W - 6, -1);
+                            y + (TABLE_ROW_H / 2), SCROLLBAR_X - 6, -1);
     }
     Options__Frame(CONTENT_X, TABLE_Y, TABLE_W, TABLE_ROWS * TABLE_ROW_H);
     // Scrollbar
@@ -933,12 +1214,14 @@ static void Options__DrawControls(SceneOptions *options) {
         const int track = TABLE_ROWS * TABLE_ROW_H;
         const int thumb = track * TABLE_ROWS / options->row_count;
         const int at    = (track - thumb) * options->scroll / (options->row_count - TABLE_ROWS);
-        Options__Fill(CONTENT_X + TABLE_W - 5, TABLE_Y + at, 4, thumb, 150, 125, 70, 255);
+        Options__Fill(SCROLLBAR_X, TABLE_Y + 1, SCROLLBAR_W, track - 2, 35, 30, 22, 255);
+        Options__Fill(SCROLLBAR_X + 1, TABLE_Y + at + 1, SCROLLBAR_W - 2, thumb - 2, options->scroll_drag ? 200 : 150,
+                      options->scroll_drag ? 170 : 125, options->scroll_drag ? 95 : 70, 255);
     }
     // What the hovered action does (the tooltip), or how to use the table
     char help[200];
     if (options->hovered_row >= 0) {
-        const ControlAction action = options->rows[options->hovered_row];
+        const ControlAction action = (ControlAction)options->rows[options->hovered_row];
         const char         *text   = Controls_ActionHelp(action);
         snprintf(help, sizeof(help), "%s%s%s", text != NULL ? text : Controls_ActionName(action),
                  Controls_ActionWorks(action) ? "" : "  (* not in the engine yet)", "   - double click to change");
@@ -960,7 +1243,7 @@ static void Options__DrawDialog(SceneOptions *options) {
     Options__Text(options, options->text_label, Settings_ProfileName(options->profile), DIALOG_X + DIALOG_W - 10,
                   DIALOG_Y + 13, 0xFF, 0xFF, 0xFF);
     Label_SetAlignment(options->text_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
-    const ControlAction action = options->rows[options->dialog_row];
+    const ControlAction action = (ControlAction)options->rows[options->dialog_row];
     Options__Text(options, options->text_label, Controls_ActionName(action), DIALOG_X + (DIALOG_W / 2), DIALOG_Y + 58,
                   0xFF, 0xE8, 0xA0);
     Label_SetAlignment(options->text_label, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
@@ -1026,6 +1309,11 @@ static void OptionsPanel__Update(SceneOptions *options) {
         Options__UpdatePresets(options);
         return;
     }
+    if (options->mouse) {
+        Options__UpdateMouse(options);
+        InputManager_ClearPresses();
+        return;
+    }
     InputManager_ClearPresses(); // presses are only read by the dialog
 
     const OptionsTab tab = (OptionsTab)TabBar_GetSelected(options->tabs);
@@ -1035,7 +1323,9 @@ static void OptionsPanel__Update(SceneOptions *options) {
         if (Dropdown_IsOpen(options->window_size)) {
             Dropdown_Update(options->window_size);
         } else if (Dropdown_IsOpen(options->scale_quality)) {
-            Dropdown_Update(options->scale_quality);
+            if (Dropdown_Update(options->scale_quality)) {
+                AbyssConfiguration_SetScaleQuality(scale_qualities[Dropdown_GetSelected(options->scale_quality)]);
+            }
         } else if (Dropdown_IsOpen(options->profile_dropdown)) {
             if (Dropdown_Update(options->profile_dropdown)) {
                 options->profile = Dropdown_GetSelected(options->profile_dropdown);
@@ -1053,6 +1343,13 @@ static void OptionsPanel__Update(SceneOptions *options) {
             }
         } else if (Dropdown_IsOpen(options->copy_to)) {
             Dropdown_Update(options->copy_to);
+        } else if (Dropdown_IsOpen(options->frame_mode)) {
+            if (Dropdown_Update(options->frame_mode)) {
+                if (Dropdown_GetSelected(options->frame_mode) == 1) {
+                    Slider_SetValue(options->frame_slider, 5);
+                }
+                AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
+            }
         } else if (Dropdown_IsOpen(options->autosave)) {
             if (Dropdown_Update(options->autosave)) {
                 Options__StoreDebug(options);
@@ -1068,17 +1365,26 @@ static void OptionsPanel__Update(SceneOptions *options) {
     case TAB_VIDEO:
         Dropdown_Update(options->window_size);
         Checkbox_Update(options->fullscreen);
-        Dropdown_Update(options->scale_quality);
+        if (Dropdown_Update(options->scale_quality)) {
+            AbyssConfiguration_SetScaleQuality(scale_qualities[Dropdown_GetSelected(options->scale_quality)]);
+        }
+        Dropdown_Update(options->frame_mode);
+        if (Slider_Update(options->frame_slider)) {
+            Dropdown_SetSelected(options->frame_mode, Slider_GetValue(options->frame_slider) == 5 ? 1 : 2);
+            AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
+        }
+        bool picture_changed = false;
+        for (int i = 0; i < PICTURE_COUNT; i++) {
+            picture_changed = Slider_Update(options->picture[i]) || picture_changed;
+        }
+        if (picture_changed) {
+            AbyssConfiguration_SetPicture(Slider_GetValue(options->picture[0]), Slider_GetValue(options->picture[1]),
+                                          Slider_GetValue(options->picture[2]));
+        }
         break;
     case TAB_AUDIO:
         for (int v = 0; v < VOLUME_COUNT; v++) {
             if (Slider_Update(options->volumes[v])) {
-                Options__SetVolumeBox(options, v);
-                Options__ApplyVolumes(options);
-            }
-            if (TextBox_Update(options->volume_boxes[v])) {
-                const int typed = atoi(TextBox_GetText(options->volume_boxes[v]));
-                Slider_SetValue(options->volumes[v], typed);
                 Options__ApplyVolumes(options);
             }
         }
@@ -1112,14 +1418,21 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 settings.confirm_entrances = Checkbox_IsChecked(options->confirm_entrances);
                 Settings_SetGameplay(options->profile, &settings);
             }
-            if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
-                Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed)) {
-                Options__StoreDebug(options);
+            if (editable && Checkbox_Update(options->even_speed)) {
+                GameplaySettings settings  = *Settings_GetGameplay(options->profile);
+                settings.even_screen_speed = Checkbox_IsChecked(options->even_speed);
+                Settings_SetGameplay(options->profile, &settings);
             }
         } else if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
             Options__UpdateControls(options, mouse_x, mouse_y, clicked);
         } else if (clicked && mouse_y >= TABLE_Y && mouse_y < TABLE_Y + (TABLE_ROWS * TABLE_ROW_H)) {
             Options__Message(options, "Tick \"Own settings\" to give this class controls of its own.");
+        }
+        break;
+    case TAB_DEBUG:
+        if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
+            Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed)) {
+            Options__StoreDebug(options);
         }
         break;
     default:
@@ -1134,7 +1447,14 @@ static void OptionsPanel__Update(SceneOptions *options) {
         Options__Leave(options);
         return;
     }
-    if (Button_Update(options->cancel_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+    bool typing = false; // Esc in a slider's box clears the box, not the whole window
+    for (int v = 0; v < VOLUME_COUNT; v++) {
+        typing = typing || Slider_IsTyping(options->volumes[v]);
+    }
+    for (int i = 0; i < PICTURE_COUNT; i++) {
+        typing = typing || Slider_IsTyping(options->picture[i]);
+    }
+    if (Button_Update(options->cancel_button) || (!typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
         Options__Cancel(options);
         Options__Leave(options);
         return;
@@ -1176,6 +1496,15 @@ static void Options__Name(SceneOptions *options, const char *text, const int y) 
     Options__Text(options, options->text_label, text, CONTENT_X, y + 10, 0xC7, 0xB3, 0x77);
 }
 
+// "Settings for": whose settings these are, in a band of its own so it stands out (it changes the whole tab)
+static void Options__ClassBand(SceneOptions *options) {
+    Options__Fill(CONTENT_X - 10, CONTENT_Y - 8, PANEL_W - 40, 74, 48, 38, 20, 255);
+    const SDL_Rect band = {CONTENT_X - 10, CONTENT_Y - 8, PANEL_W - 40, 74};
+    SDL_SetRenderDrawColor(sdl_renderer, 199, 179, 119, 255);
+    SDL_RenderDrawRect(sdl_renderer, &band);
+    Options__Text(options, options->text_label, "Settings for", CONTENT_X, CONTENT_Y + 10, 0xFF, 0xE8, 0x90);
+}
+
 void OptionsPanel_Draw(OptionsPanel *options) {
     Options__Fill(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 8, 7, 6, 255);
     Options__Frame(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
@@ -1191,17 +1520,43 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Checkbox_Draw(options->fullscreen);
         Options__Name(options, "Scaling", CONTENT_Y + (2 * ROW_H));
         Dropdown_Draw(options->scale_quality);
-        Options__Describe(options, "How the 800x600 picture is stretched to the window (from the next start).",
-                          CONTENT_Y + (2 * ROW_H));
+        Options__Describe(options, "How the 800x600 picture is stretched to the window.", CONTENT_Y + (2 * ROW_H));
         Options__Describe(options, "The game keeps its 4:3 shape: wider windows get black bars.", CONTENT_Y);
+        Options__Name(options, "Frame rate", CONTENT_Y + (3 * ROW_H));
+        Dropdown_Draw(options->frame_mode);
+        Slider_Draw(options->frame_slider);
+        {
+            const int step = Slider_GetValue(options->frame_slider);
+            char      text[96];
+            const int rate = Options__FrameRate(options);
+            snprintf(text, sizeof(text), "%s%s",
+                     Dropdown_GetSelected(options->frame_mode) == 2 ? frame_step_names[step] : "",
+                     Dropdown_GetSelected(options->frame_mode) == 2 ? ": " : "");
+            if (rate == 0) {
+                snprintf(text + strlen(text), sizeof(text) - strlen(text), "no limit");
+            } else {
+                snprintf(text + strlen(text), sizeof(text) - strlen(text), "%d a second", rate);
+            }
+            Options__Text(options, options->small_label, text, CONTENT_X + LABEL_W + 316, CONTENT_Y + (4 * ROW_H) + 14,
+                          0xFF, 0xFF, 0xFF);
+            Options__Describe(options,
+                              "How smooth it looks; the game runs at the same speed whatever you pick. Multiplayer "
+                              "never goes above 60.",
+                              CONTENT_Y + (3 * ROW_H));
+        }
+        for (int i = 0; i < PICTURE_COUNT; i++) {
+            const int y = CONTENT_Y + ((5 + i) * ROW_H);
+            Options__Name(options, picture_names[i], y);
+            Slider_Draw(options->picture[i]);
+        }
+        Options__Describe(options,
+                          "50 is the picture as the game made it. Changes show straight away, also while playing.",
+                          CONTENT_Y + (7 * ROW_H) + 22);
         break;
     case TAB_AUDIO:
         for (int v = 0; v < VOLUME_COUNT; v++) {
             Options__Name(options, volume_names[v], CONTENT_Y + (v * ROW_H) - 2);
             Slider_Draw(options->volumes[v]);
-            TextBox_Draw(options->volume_boxes[v]);
-            Options__Text(options, options->text_label, "%", CONTENT_X + LABEL_W + 382, CONTENT_Y + (v * ROW_H) + 8,
-                          0xFF, 0xFF, 0xFF);
         }
         Options__Describe(
             options,
@@ -1210,7 +1565,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
             CONTENT_Y + (VOLUME_COUNT * ROW_H) - 20);
         break;
     case TAB_GAMEPLAY: {
-        Options__Name(options, "Settings for", CONTENT_Y);
+        Options__ClassBand(options);
         Dropdown_Draw(options->profile_dropdown);
         if (options->profile != 0) {
             Checkbox_Draw(options->own_profile);
@@ -1232,8 +1587,16 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           "Walls, trees, tents and roofs between you and the camera fade, so you can see "
                           "where you're walking.",
                           CONTENT_Y + (4 * ROW_H));
-        // Debug: the developer tools, the same for every class
-        Options__Fill(CONTENT_X, DEBUG_Y - 14, PANEL_W - 60, 1, 100, 85, 55, 255);
+        Options__Name(options, "Walking", CONTENT_Y + (5 * ROW_H) + 16);
+        Checkbox_Draw(options->even_speed);
+        Options__Describe(options,
+                          "In the game you cover the same ground in every direction, which on the slanted view looks "
+                          "twice as fast across as up and down. Tick it to keep the speed on screen the same instead.",
+                          CONTENT_Y + (5 * ROW_H) + 20);
+        break;
+    }
+    case TAB_DEBUG: {
+        // The developer tools, the same for every class
         Options__Name(options, "Map Editor auto-save", DEBUG_Y);
         Checkbox_Draw(options->keep_changes);
         Checkbox_Draw(options->collision_in_game);
@@ -1247,7 +1610,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         break;
     }
     case TAB_CONTROLS:
-        Options__Name(options, "Settings for", CONTENT_Y);
+        Options__ClassBand(options);
         Dropdown_Draw(options->profile_dropdown);
         if (options->profile != 0) {
             Checkbox_Draw(options->own_profile);
@@ -1255,7 +1618,8 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
             Button_Draw(options->export_button);
             Button_Draw(options->presets_button);
-            Options__Text(options, options->text_label, "Copy to:", CONTENT_X + 300, CONTROLS_BTN_Y + 17, 0xC7, 0xB3,
+            Button_Draw(options->mouse_button);
+            Options__Text(options, options->text_label, "Copy to:", CONTENT_X + 376, CONTROLS_BTN_Y + 17, 0xC7, 0xB3,
                           0x77);
             Dropdown_Draw(options->copy_to);
             Button_Draw(options->copy_button);
@@ -1283,6 +1647,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
     // Open lists on top
     Dropdown_DrawList(options->window_size);
     Dropdown_DrawList(options->scale_quality);
+    Dropdown_DrawList(options->frame_mode);
     Dropdown_DrawList(options->profile_dropdown);
     Dropdown_DrawList(options->movement);
     Dropdown_DrawList(options->group_filter);
@@ -1294,6 +1659,9 @@ void OptionsPanel_Draw(OptionsPanel *options) {
     }
     if (options->presets) {
         Options__DrawPresets(options);
+    }
+    if (options->mouse) {
+        Options__DrawMouse(options);
     }
 }
 

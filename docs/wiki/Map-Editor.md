@@ -44,8 +44,11 @@ The monsters, NPCs and players for **Units** are loaded when the editor opens (u
   - **My Maps**: maps you saved
   - **Game Areas (DS1)**: any of the game's 2,276 area presets (Rogue Encampment = `ACT1\TOWN\townN1`, Lut Gholein =
     `ACT2\Town\lutN`, ...). Type in the search box to find one.
+  - **Reset TG** (My Maps): puts `testing_grounds` back to the original arena, after asking. The original is kept in
+    the program, so it can't be lost; if that map is open, the editor opens the original.
 - **Save**: give the map a name; it's saved as `maps/<name>.abm` next to `abyss.ini`. **As Testing** saves it as
-  `testing_grounds.abm`, which the Testing Grounds then use instead of the default arena.
+  `testing_grounds.abm`, the map the Testing Grounds play (it's in **My Maps** from the start, made from the built-in
+  arena).
 - **Play**: try the map in the Testing Grounds right away. **Back** there returns to the editor with your map as you
   left it (its file and its undo history too).
 - **Back** (or **Esc**) asks first: with unsaved changes it offers **Save** (into the map's file, or asks for a name),

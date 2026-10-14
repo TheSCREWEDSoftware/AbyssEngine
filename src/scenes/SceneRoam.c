@@ -61,6 +61,7 @@
 #define MAX_UNITS        2048  // an act's outdoors joined into one map has many
 #define WALK_SPEED       5.0f  // sub-tiles per second
 #define ACTIVE_DISTANCE  90.0f // sub-tiles: units further from you than this wait (about two screens)
+#define SPRINT_SPEED     18.0f // Free Roam's sprint: twice as fast as running, no stamina
 #define LONG_WALK_LEGS   64    // a far click is walked in up to this many searches
 #define RUN_SPEED        9.0f
 #define ARRIVE_DISTANCE  0.15f
@@ -133,7 +134,8 @@ typedef struct Unit {
     const char *idle_mode;
     float       x; // sub-tiles
     float       y;
-    float       target_x; // walking towards
+    bool        even_speed; // the player with "the same speed on screen": steps scaled by Roam__ScreenSpeedFactor
+    float       target_x;   // walking towards
     float       target_y;
     int         turn;
     UnitState   state;
@@ -245,13 +247,20 @@ typedef struct SceneRoam {
     bool      prev_left;
     bool      prev_right;
 
-    TextBox       *seed_box; // Free Roam: world seed (in the Places panel)
-    Button        *seed_use_button;
-    Button        *seed_random_button;
-    Label         *seed_label;
-    int            long_walk_legs; // searches so far on the way to a far click
+    TextBox *seed_box; // Free Roam: world seed (in the Places panel)
+    Button  *seed_use_button;
+    Button  *seed_random_button;
+    Label   *seed_label;
+    int      long_walk_legs; // searches so far on the way to a far click
+    // Free Roam's speed readout: where you were half a second ago, and the speed then
+    float          speed_from_x;
+    float          speed_from_y;
+    uint64_t       speed_from_time;
+    float          speed;        // sub-tiles per second, over the ground
+    float          screen_speed; // pixels per second on screen (at zoom 1)
     float          key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
     float          key_dy;
+    bool           sprinting; // Free Roam: sprint (Caps Lock, or the Walk / Run / Sprint button)
     bool           menu_open; // the game menu (Esc): Options, leave, back to the game; the world waits
     Button        *menu_options_button;
     Button        *menu_leave_button;
@@ -340,10 +349,45 @@ static bool Roam__IsAlive(const Unit *unit) { return unit->state != UNIT_DYING &
 // Monsters and NPCs can fight; objects can't
 static bool Roam__IsCombatant(const Unit *unit) { return unit->max_hp > 0; }
 
-// Running (and not out of stamina)
 // Running: the Run / walk switch, flipped while the run key is held
 static bool Roam__IsRunning(const SceneRoam *roam) {
-    return (roam->running != Controls_Held(ACTION_RUN_HOLD)) && !roam->exhausted;
+    return roam->sprinting || ((roam->running != Controls_Held(ACTION_RUN_HOLD)) && !roam->exhausted);
+}
+
+// The player's speed: walking, running or (Free Roam) sprinting
+static float Roam__PlayerSpeed(const SceneRoam *roam) {
+    return roam->sprinting ? SPRINT_SPEED : (Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED);
+}
+
+// How fast you're going, over the last half second: over the ground (sub-tiles) and on screen (pixels)
+static void Roam__MeasureSpeed(SceneRoam *roam, const uint64_t now) {
+    if (roam->speed_from_time == 0 || now < roam->speed_from_time) {
+        roam->speed_from_time = now;
+        roam->speed_from_x    = roam->player.x;
+        roam->speed_from_y    = roam->player.y;
+        return;
+    }
+    const uint64_t elapsed = now - roam->speed_from_time;
+    if (elapsed < 500) {
+        return;
+    }
+    const float dx  = roam->player.x - roam->speed_from_x;
+    const float dy  = roam->player.y - roam->speed_from_y;
+    const float sec = (float)elapsed / 1000.0f;
+    float       wx0;
+    float       wy0;
+    float       wx1;
+    float       wy1;
+    MapView_SubtileToWorld(roam->speed_from_x, roam->speed_from_y, &wx0, &wy0);
+    MapView_SubtileToWorld(roam->player.x, roam->player.y, &wx1, &wy1);
+    const float distance = sqrtf((dx * dx) + (dy * dy));
+    // Teleports and area changes aren't walking
+    roam->speed = distance / sec > 40.0f ? 0.0f : distance / sec;
+    roam->screen_speed =
+        roam->speed == 0.0f ? 0.0f : sqrtf(((wx1 - wx0) * (wx1 - wx0)) + ((wy1 - wy0) * (wy1 - wy0))) / sec;
+    roam->speed_from_time = now;
+    roam->speed_from_x    = roam->player.x;
+    roam->speed_from_y    = roam->player.y;
 }
 
 // The settings for the class being played (or all classes')
@@ -523,6 +567,20 @@ static Unit *Roam__AddUnit(SceneRoam *roam, const char *base, const char *id, co
 }
 
 // One step towards (tx, ty); slides along walls. Returns false when blocked or arrived.
+// "The same speed on screen" (Options › Gameplay): how much faster or slower to go this way over the ground so it's
+// as fast on screen as going along a tile's edge. Isometric tiles are twice as wide as tall, so the same ground speed
+// looks twice as fast sideways as up and down; the game keeps the ground speed, which is the default here too.
+static float Roam__ScreenSpeedFactor(const float dx, const float dy) {
+    const float length = sqrtf((dx * dx) + (dy * dy));
+    if (length < 0.0001f) {
+        return 1.0f;
+    }
+    const float sx     = ((dx - dy) / length) * 16.0f; // screen pixels per sub-tile this way
+    const float sy     = ((dx + dy) / length) * 8.0f;
+    const float screen = sqrtf((sx * sx) + (sy * sy));
+    return screen > 0.0001f ? 17.888544f / screen : 1.0f; // 17.9: along a tile edge (16, 8)
+}
+
 static bool Roam__Step(const Map *map, Unit *unit, const float tx, const float ty, const float speed,
                        const float seconds) {
     const float dx       = tx - unit->x;
@@ -531,7 +589,7 @@ static bool Roam__Step(const Map *map, Unit *unit, const float tx, const float t
     if (distance < ARRIVE_DISTANCE) {
         return false;
     }
-    const float step   = speed * seconds;
+    const float step   = speed * seconds * (unit->even_speed ? Roam__ScreenSpeedFactor(dx, dy) : 1.0f);
     const float amount = step >= distance ? 1.0f : step / distance;
     const float next_x = unit->x + (dx * amount);
     const float next_y = unit->y + (dy * amount);
@@ -937,6 +995,33 @@ static void Roam__Populate(SceneRoam *roam) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Default map
 
+void TestingGrounds_MapPath(char *path, const size_t size) {
+    snprintf(path, size, "%s/%s.abm", Map_GetSaveFolder(), TESTING_GROUNDS_MAP);
+}
+
+bool TestingGrounds_ResetMapFile(void) {
+    char path[4200];
+    TestingGrounds_MapPath(path, sizeof(path));
+    Map *map = TestingGrounds_CreateDefaultMap();
+    if (map == NULL) {
+        return false;
+    }
+    const bool saved = Map_SaveFile(map, path);
+    Map_Destroy(&map);
+    return saved;
+}
+
+void TestingGrounds_EnsureMapFile(void) {
+    char path[4200];
+    TestingGrounds_MapPath(path, sizeof(path));
+    FILE *file = fopen(path, "rb");
+    if (file != NULL) {
+        fclose(file);
+        return;
+    }
+    TestingGrounds_ResetMapFile();
+}
+
 Map *TestingGrounds_CreateDefaultMap(void) {
     const int        type_index = LevelTypes_Find(DEFAULT_LEVEL_TYPE);
     const LevelType *type       = LevelTypes_Get(type_index >= 0 ? type_index : 0);
@@ -991,7 +1076,7 @@ Map *TestingGrounds_CreateDefaultMap(void) {
 // UI
 
 static void Roam__UpdateButtons(SceneRoam *roam) {
-    Button_SetText(roam->run_button, roam->running ? "Run" : "Walk");
+    Button_SetText(roam->run_button, roam->sprinting ? "Sprint" : (roam->running ? "Run" : "Walk"));
     Button_SetText(roam->preview_button, roam->preview ? "Preview On" : "Preview Off");
     Button_SetToggled(roam->preview_button, roam->preview);
     if (roam->game) {
@@ -1444,7 +1529,10 @@ static void *Roam__Create(const bool free_roam, const bool game) {
             roam->borrowed = true;
         } else {
             char path[4200];
-            snprintf(path, sizeof(path), "%s/%s.abm", Map_GetSaveFolder(), TESTING_GROUNDS_MAP);
+            if (!free_roam) {
+                TestingGrounds_EnsureMapFile();
+            }
+            TestingGrounds_MapPath(path, sizeof(path));
             roam->map = free_roam ? NULL : Map_LoadFile(path);
             if (roam->map == NULL) {
                 roam->map = TestingGrounds_CreateDefaultMap();
@@ -1672,9 +1760,10 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         roam->attack_target = -1;
         roam->moving        = false;
         Roam__ClearPath(player);
-        const float step = (Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED) * seconds;
-        const float nx   = player->x + (roam->key_dx * step);
-        const float ny   = player->y + (roam->key_dy * step);
+        const float step = Roam__PlayerSpeed(roam) * seconds *
+                           (player->even_speed ? Roam__ScreenSpeedFactor(roam->key_dx, roam->key_dy) : 1.0f);
+        const float nx = player->x + (roam->key_dx * step);
+        const float ny = player->y + (roam->key_dy * step);
         if (Map_IsWalkable(roam->map, (int)nx, (int)ny)) {
             player->x = nx;
             player->y = ny;
@@ -1719,14 +1808,14 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     if (!key_walking && roam->moving) {
         // Around walls, not through them
         Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
-        roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
+        roam->moving = Roam__FollowPath(roam->map, player, Roam__PlayerSpeed(roam), seconds);
         // A long walk: the search only looks so far at once, so carry on from where that leg ended
         if (!roam->moving && player->path.partial && roam->long_walk_legs < LONG_WALK_LEGS &&
             Roam__Distance(player->x, player->y, player->target_x, player->target_y) > ARRIVE_DISTANCE * 2.0f) {
             roam->long_walk_legs++;
             Roam__ClearPath(player);
             Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
-            roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
+            roam->moving = Roam__FollowPath(roam->map, player, Roam__PlayerSpeed(roam), seconds);
         }
         if (!roam->moving) {
             roam->long_walk_legs = 0;
@@ -2357,8 +2446,9 @@ static void Roam__Update(SceneRoam *roam) {
     }
     const uint64_t now     = SDL_GetTicks64();
     const float    seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
-    roam->last_tick        = now;
-    const SDL_Rect view    = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
+    Roam__MeasureSpeed(roam, now);
+    roam->last_tick     = now;
+    const SDL_Rect view = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
 
     // Controls: the class's own (or all classes'), the actions of this mode; nothing while typing a seed
     Controls_SetProfile(Roam__Profile(roam));
@@ -2369,6 +2459,7 @@ static void Roam__Update(SceneRoam *roam) {
     }
     Controls_Update();
     const GameplaySettings *gameplay = Roam__Gameplay(roam);
+    roam->player.even_speed          = gameplay->even_screen_speed;
 
     int  mouse_x;
     int  mouse_y;
@@ -2641,7 +2732,20 @@ static void Roam__Update(SceneRoam *roam) {
         Roam__UpdateButtons(roam);
     }
     if (Button_Update(roam->run_button)) {
-        roam->running = !roam->running;
+        // Free Roam: walk, run, sprint, walk...
+        if (roam->sprinting) {
+            roam->sprinting = false;
+            roam->running   = false;
+        } else if (roam->running && roam->free_roam && !roam->game) {
+            roam->sprinting = true;
+        } else {
+            roam->running = !roam->running;
+        }
+        Roam__UpdateButtons(roam);
+    }
+    if (!roam->game && Controls_Pressed(ACTION_SPRINT)) {
+        roam->sprinting = !roam->sprinting;
+        Roam__ShowMessage(roam, roam->sprinting ? "Sprint on" : "Sprint off");
         Roam__UpdateButtons(roam);
     }
     if (roam->monsters_button != NULL && Button_Update(roam->monsters_button)) {
@@ -2989,9 +3093,11 @@ static void Roam__Render(SceneRoam *roam) {
         if (roam->free_roam) {
             snprintf(seed, sizeof(seed), "   seed %u", World_GetSeed());
         }
-        snprintf(status, sizeof(status), "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s%s",
+        snprintf(status, sizeof(status),
+                 "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s%s   speed %.1f/s (%.0f px/s)",
                  Roam__AreaName(roam), roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
-                 roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name, seed);
+                 roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name, seed,
+                 (double)roam->speed, (double)roam->screen_speed);
     }
     Label_SetText(roam->status_label, status);
     Label_Draw(roam->status_label, 4, 2);

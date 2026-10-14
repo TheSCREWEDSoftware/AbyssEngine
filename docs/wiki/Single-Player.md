@@ -72,13 +72,13 @@ game menu (**Esc**).
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
 | Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster (the game: use the right skill) |
-| Character screen | - | `A`, `C` | - | (null) |
+| Character screen | - | `A`, `C` | - | - |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
 | Back to town | - | `Home` | - | Single Player: back to the act's town |
-| Automap | - | `Tab` | - | (null) |
-| Zoom in | `Wheel Up` | - | - | (null) |
-| Zoom out | `Wheel Down` | - | - | (null) |
+| Automap | - | `Tab` | - | Show or hide the map of the explored area |
+| Zoom in | `Wheel Up` | - | - | Closer (the automap, and the view in Free Roam and the Map Editor) |
+| Zoom out | `Wheel Down` | - | - | Further out |
 | Day / dusk / night | - | `L` | - | Cycle the light (debug) |
 | Screenshot | - | `PrintScreen` | - | Saves a picture in the screenshots folder next to abyss.ini |
 <!-- keys:end -->
