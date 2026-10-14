@@ -403,6 +403,19 @@ void *MpqStream__DecompressMulti(void *buffer, uint32_t to_read, uint32_t expect
         free(buffer);
         return wav_buffer;
     }
+    case COMPRESSION_TYPE_IMA_ADPCM_MONO:
+    case COMPRESSION_TYPE_IMA_ADPCM_STEREO: {
+        // ADPCM on its own, without Huffman first (some of the game's sounds: "paladin select.wav")
+        const int channels   = compression_type == COMPRESSION_TYPE_IMA_ADPCM_STEREO ? 2 : 1;
+        uint32_t  wav_size   = 0;
+        uint8_t  *wav_buffer = WAV_Decompress((uint8_t *)buffer + 1, to_read - 1, channels, &wav_size);
+        if (wav_size != expected_length) {
+            LOG_FATAL("Decompression failed: Expected WAV buffer of %d bytes, but got %d instead!", expected_length,
+                      wav_size);
+        }
+        free(buffer);
+        return wav_buffer;
+    }
     default:
         LOG_FATAL("Compression Type $%02X not supported!", compression_type);
     }
