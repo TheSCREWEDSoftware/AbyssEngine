@@ -26,8 +26,8 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
 
 These are the default keys; they can all be changed in **Options › Controls** ([Options](Options.md)).
-| **Esc** | The menu: **Options**, **Leave** (back to the editor if you came from **Play**), **Back to Free Roam** |
-| Back | Leave |
+| **Esc** | The menu: **Options**, **Leave** (asks first; back to the editor if you came from **Play**), **Back to Free Roam** |
+| Back | Leave: asks first ("Are you sure you wish to return to the main menu?"; play-testing: "go back to the editor?") |
 | Class button | Switch character on the spot (Amazon, Sorceress, Necromancer, Paladin, Barbarian, Druid, Assassin) |
 
 ## Places (Free Roam)
@@ -78,7 +78,8 @@ Areas are joined up like in the game, so you can walk from one into the next:
   crypt door to the Crypt, the mausoleum's to the Mausoleum), and you come out of the matching entrance on the other
   side. Dungeons lead down level by level (Cave Level 1 to Cave Level 2, Jail 1 to 2 to 3, ...) and back up.
 - An exit that leads somewhere not built yet says "That way isn't open yet".
-- Coming into an area shows the game's red caption, "Entering The Blood Moor", for a few seconds.
+- Walking into an area (over its edge or through an entrance) shows the game's red caption, "Entering The Blood Moor", for
+  a few seconds; not where you start, and not when you jump there from the Places list.
 
 ## Monsters list and placement preview
 

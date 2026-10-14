@@ -441,6 +441,10 @@ ControlConflict Controls_Conflict(const int profile, const ControlAction action,
 void Controls_SetProfile(const int profile) { current_profile = profile; }
 void Controls_SetContext(const unsigned context) { current_context = context; }
 
+static bool allowed_anywhere[ACTION_COUNT];
+
+void Controls_AllowAnywhere(const ControlAction action, const bool allowed) { allowed_anywhere[action] = allowed; }
+
 // Whether a binding's modifiers are held (and no others than it asks for: Ctrl+X isn't X)
 static bool Controls__ModsMatch(const ControlInput *input, const uint16_t mods) {
     const uint16_t held = (uint16_t)(((mods & KMOD_CTRL) ? KMOD_CTRL : 0) | ((mods & KMOD_SHIFT) ? KMOD_SHIFT : 0) |
@@ -474,8 +478,8 @@ void Controls_Update(void) {
         // The first action (in list order) for each way the press can be read: once, and as a double tap
         for (int pass = 0; pass < (twice ? 2 : 1); pass++) {
             for (int a = 0; a < ACTION_COUNT; a++) {
-                if ((actions[a].contexts & current_context) == 0) {
-                    continue;
+                if (((actions[a].contexts & current_context) == 0 && !allowed_anywhere[a]) || !actions[a].works) {
+                    continue; // not here, or not in the engine yet (so it doesn't take the key from one that is)
                 }
                 bool hit = false;
                 for (int b = 0; b < bindings[p][a].count && !hit; b++) {
@@ -497,7 +501,7 @@ bool Controls_Pressed(const ControlAction action) { return pressed[action]; }
 
 bool Controls_Held(const ControlAction action) {
     Controls__Ensure();
-    if ((actions[action].contexts & current_context) == 0) {
+    if ((actions[action].contexts & current_context) == 0 && !allowed_anywhere[action]) {
         return false;
     }
     const ControlBindings *list = &bindings[Controls__Profile(current_profile)][action];

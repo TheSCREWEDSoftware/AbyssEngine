@@ -146,9 +146,10 @@ ControlConflict        Controls_Conflict(int profile, ControlAction action, cons
 // While playing: which profile is in use, and what's active
 void Controls_SetProfile(int profile);
 void Controls_SetContext(unsigned context);
-void Controls_Update(void);                  // once a frame, before asking
-bool Controls_Pressed(ControlAction action); // fired this frame
-bool Controls_Held(ControlAction action);    // any of its bindings held down now
+void Controls_AllowAnywhere(ControlAction action, bool allowed); // works whatever the context (a debug setting)
+void Controls_Update(void);                                      // once a frame, before asking
+bool Controls_Pressed(ControlAction action);                     // fired this frame
+bool Controls_Held(ControlAction action);                        // any of its bindings held down now
 
 // Loading and saving: options.ini's [Controls] and [Controls.<Class>] sections (see Settings)
 void Controls_Reset(void); // everything back to the defaults, no class profiles

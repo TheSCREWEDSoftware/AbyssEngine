@@ -43,7 +43,15 @@ setting, so they can be edited outside the game too.
 | `Movement` | `Classic` | Diablo II: click to walk, click a monster to attack it, click a chest or door to open it |
 | | `Modern` | Movement keys (arrows by default, or a gamepad's left stick) walk; the mouse attacks and opens what's in reach without walking; the attack key (**E**) hits what's under the mouse or the nearest monster in reach. Like Diablo III / IV |
 | | `Combined` | Both: movement keys or clicks walk, clicks or the attack key attack |
-| `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera fade, so you can see where you're walking |
+| `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera fade, so you can see where you're walking. A tent, house or tree fades as a whole and eases in and out; long walls, tree lines and cliffs fade only where they hide you. Only what really covers you (its pixels, not its box) fades |
+
+**Debug** (the bottom of the Gameplay tab, `[Debug]` in `options.ini`; the same for every class):
+
+| Setting | Values | |
+|---|---|---|
+| `EditorAutoSaveMinutes` | `0` (off) to `120`; the screen offers 1, 2, 5, 10, 15, 30 | Map Editor: save the map every this many minutes (default 5); a map never saved goes to the recovery file |
+| `EditorKeepChanges` | `true` / `false` | Map Editor: write the map to `editor-recovery.abm` after every change, so nothing's lost if the game closes; the editor offers it back (default on) |
+| `CollisionInGame` | `true` / `false` | The collision view (**B**) works in Single Player too, not only Free Roam and Testing Grounds (default off). B is also Inventory there, but actions the engine doesn't do yet never take a key from one it does |
 
 ## Controls
 

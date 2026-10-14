@@ -143,6 +143,11 @@ typedef struct SceneOptions {
     Dropdown *movement;
     Checkbox *see_through;
 
+    // Gameplay › Debug (every class)
+    Dropdown *autosave;
+    Checkbox *keep_changes;
+    Checkbox *collision_in_game;
+
     // Controls
     Dropdown     *group_filter; // "Show:"
     ControlAction rows[ACTION_COUNT];
@@ -209,7 +214,7 @@ static void Options__Frame(const int x, const int y, const int w, const int h) {
 static bool Options__AnyDropdownOpen(const SceneOptions *options) {
     return Dropdown_IsOpen(options->window_size) || Dropdown_IsOpen(options->scale_quality) ||
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
-           Dropdown_IsOpen(options->group_filter);
+           Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->group_filter);
 }
 
 // The widgets showing what's set now
@@ -255,6 +260,37 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Checkbox_SetChecked(options->own_profile, options->profile == 0 || (Controls_HasOwnProfile(options->profile) ||
                                                                         Settings_HasOwnGameplay(options->profile)));
     Checkbox_SetEnabled(options->own_profile, options->profile != 0);
+}
+
+// Gameplay › Debug: the editor's auto-save choices (minutes)
+static const int   autosave_minutes[] = {0, 1, 2, 5, 10, 15, 30};
+static const char *autosave_names[]   = {"Off",
+                                         "Every minute",
+                                         "Every 2 minutes",
+                                         "Every 5 minutes",
+                                         "Every 10 minutes",
+                                         "Every 15 minutes",
+                                         "Every 30 minutes"};
+#define AUTOSAVE_CHOICES (int)(sizeof(autosave_minutes) / sizeof(autosave_minutes[0]))
+#define DEBUG_Y          (CONTENT_Y + (5 * ROW_H) + 14)
+
+static void Options__LoadDebug(SceneOptions *options) {
+    const DebugSettings *debug = Settings_GetDebug();
+    int                  pick  = 0;
+    for (int i = 0; i < AUTOSAVE_CHOICES; i++) {
+        pick = autosave_minutes[i] <= debug->editor_autosave_minutes ? i : pick;
+    }
+    Dropdown_SetSelected(options->autosave, pick);
+    Checkbox_SetChecked(options->keep_changes, debug->editor_keep_changes);
+    Checkbox_SetChecked(options->collision_in_game, debug->collision_in_game);
+}
+
+static void Options__StoreDebug(const SceneOptions *options) {
+    DebugSettings debug           = *Settings_GetDebug();
+    debug.editor_autosave_minutes = autosave_minutes[Dropdown_GetSelected(options->autosave)];
+    debug.editor_keep_changes     = Checkbox_IsChecked(options->keep_changes);
+    debug.collision_in_game       = Checkbox_IsChecked(options->collision_in_game);
+    Settings_SetDebug(&debug);
 }
 
 // The actions the "Show:" filter lets through
@@ -328,6 +364,12 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->see_through =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) + 3, "See through obstructions");
     Options__LoadGameplay(options);
+    options->autosave = Dropdown_Create(CONTENT_X + LABEL_W, DEBUG_Y, 220, autosave_names, AUTOSAVE_CHOICES);
+    options->keep_changes =
+        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 36, "Keep every change in a temporary file too");
+    options->collision_in_game =
+        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 62, "Collision view (B) in Single Player too");
+    Options__LoadDebug(options);
 
     // Controls
     const char *groups[GROUP_COUNT + 1];
@@ -382,6 +424,9 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Dropdown_Destroy(&options->scale_quality);
     Dropdown_Destroy(&options->profile_dropdown);
     Dropdown_Destroy(&options->movement);
+    Dropdown_Destroy(&options->autosave);
+    Checkbox_Destroy(&options->keep_changes);
+    Checkbox_Destroy(&options->collision_in_game);
     Dropdown_Destroy(&options->group_filter);
     Checkbox_Destroy(&options->fullscreen);
     Checkbox_Destroy(&options->own_profile);
@@ -455,6 +500,9 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         const GameplaySettings defaults = {MOVEMENT_CLASSIC, true};
         Settings_SetGameplay(options->profile, &defaults);
         Options__LoadGameplay(options);
+        const DebugSettings debug_defaults = {5, true, false};
+        Settings_SetDebug(&debug_defaults);
+        Options__LoadDebug(options);
         break;
     }
     case TAB_CONTROLS:
@@ -828,6 +876,9 @@ static void OptionsPanel__Update(SceneOptions *options) {
         if (Dropdown_Update(options->group_filter)) {
             Options__BuildRows(options);
         }
+        if (Dropdown_Update(options->autosave)) {
+            Options__StoreDebug(options);
+        }
         return;
     }
 
@@ -876,6 +927,10 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 GameplaySettings settings = *Settings_GetGameplay(options->profile);
                 settings.see_through      = Checkbox_IsChecked(options->see_through);
                 Settings_SetGameplay(options->profile, &settings);
+            }
+            if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
+                Checkbox_Update(options->collision_in_game)) {
+                Options__StoreDebug(options);
             }
         } else if (options->profile == 0 || Controls_HasOwnProfile(options->profile)) {
             Options__UpdateControls(options, mouse_x, mouse_y, clicked);
@@ -988,6 +1043,17 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           "Walls, trees, tents and roofs between you and the camera fade, so you can see "
                           "where you're walking.",
                           CONTENT_Y + (4 * ROW_H));
+        // Debug: the developer tools, the same for every class
+        Options__Fill(CONTENT_X, DEBUG_Y - 14, PANEL_W - 60, 1, 100, 85, 55, 255);
+        Options__Name(options, "Map Editor auto-save", DEBUG_Y);
+        Checkbox_Draw(options->keep_changes);
+        Checkbox_Draw(options->collision_in_game);
+        Options__Name(options, "Debug", DEBUG_Y + 50);
+        Options__Describe(options,
+                          "For the Map Editor and testing; the same for every class. A map never saved auto-saves "
+                          "to the temporary file, which the editor offers back if it closed with changes.",
+                          DEBUG_Y + 82);
+        Dropdown_Draw(options->autosave); // last: its list opens over the rest
         break;
     }
     case TAB_CONTROLS:

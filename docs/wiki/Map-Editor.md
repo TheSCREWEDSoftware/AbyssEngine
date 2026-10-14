@@ -47,7 +47,22 @@ The monsters, NPCs and players for **Units** are loaded when the editor opens (u
 - **Save**: give the map a name; it's saved as `maps/<name>.abm` next to `abyss.ini`. **As Testing** saves it as
   `testing_grounds.abm`, which the Testing Grounds then use instead of the default arena.
 - **Play**: try the map in the Testing Grounds right away. **Back** there returns to the editor with your map as you
-  left it.
+  left it (its file and its undo history too).
+- **Back** (or **Esc**) asks first: with unsaved changes it offers **Save** (into the map's file, or asks for a name),
+  **Leave** (lose them) or **Cancel**; otherwise "Return to the main menu?".
+
+## Undo, redo and not losing work
+
+- **Ctrl+Z** undoes the last change, **Ctrl+Y** (or **Ctrl+Shift+Z**) does it again. A change is one stroke of the
+  brush (press to release), one **Fill Floor**, one unit placed or removed. The panel shows where you are:
+  **Changes: 4 / 11** (four in effect, seven more you can redo). Making a new change after undoing drops the ones you
+  could have redone. Up to 1,000 changes are kept; opening or starting a map starts over.
+- **Keep every change in a temporary file** (Options › Gameplay › Debug, on by default): after every change the map
+  is written to `editor-recovery.abm` next to `abyss.ini`. If the editor closes with unsaved changes (a crash, closing
+  the window), it offers them back the next time it opens: **Restore** or **Discard**. Saving, or leaving on
+  purpose, removes the file.
+- **Auto-save** (Options › Gameplay › Debug: off, or every 1 to 30 minutes; 5 by default): a map with a file is saved
+  into it; one never saved goes to `editor-recovery.abm`.
 
 ## Coordinates
 
@@ -92,7 +107,6 @@ hidden (31).
 
 ## Not done yet
 
-- Undo / redo
 - Rotating placed units
 - Saving back into the game's DS1 format
 - The game's objects (chests, waypoints...) in opened areas

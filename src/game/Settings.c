@@ -4,6 +4,7 @@
 #include "Controls.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define OPTIONS_FILE "options.ini"
@@ -83,7 +84,15 @@ static int Settings__SectionProfile(const char *section, const char *prefix) {
     return -1;
 }
 
+static DebugSettings debug_settings = {5, true, false};
+
+const DebugSettings *Settings_GetDebug(void) { return &debug_settings; }
+void                 Settings_SetDebug(const DebugSettings *settings) { debug_settings = *settings; }
+
 void Settings_Load(void) {
+    debug_settings.editor_autosave_minutes = 5;
+    debug_settings.editor_keep_changes     = true;
+    debug_settings.collision_in_game       = false;
     for (int p = 0; p < CONTROL_PROFILES; p++) {
         gameplay[p].movement    = MOVEMENT_CLASSIC;
         gameplay[p].see_through = true;
@@ -123,6 +132,17 @@ void Settings_Load(void) {
         const int controls = Settings__SectionProfile(section, "Controls");
         if (controls >= 0) {
             Controls_ReadLine(controls, key, value);
+            continue;
+        }
+        if (strcmp(section, "Debug") == 0) {
+            if (strcmp(key, "EditorAutoSaveMinutes") == 0) {
+                const int minutes                      = atoi(value);
+                debug_settings.editor_autosave_minutes = minutes < 0 ? 0 : (minutes > 120 ? 120 : minutes);
+            } else if (strcmp(key, "EditorKeepChanges") == 0) {
+                debug_settings.editor_keep_changes = strcmp(value, "true") == 0;
+            } else if (strcmp(key, "CollisionInGame") == 0) {
+                debug_settings.collision_in_game = strcmp(value, "true") == 0;
+            }
             continue;
         }
         const int profile = Settings__SectionProfile(section, "Gameplay");
@@ -172,6 +192,18 @@ void Settings_Save(void) {
         }
         fprintf(file, "SeeThroughObstructions = %s\n\n", gameplay[p].see_through ? "true" : "false");
     }
+    fprintf(file,
+            "[Debug]\n"
+            "# Map Editor: save the map you're editing every this many minutes (0 = never). A map that was never\n"
+            "# saved goes to the temporary file below.\n"
+            "EditorAutoSaveMinutes = %d\n"
+            "# Map Editor: keep every change in a temporary file too (editor-recovery.abm next to this file), so\n"
+            "# nothing is lost if the game closes; the editor offers it back the next time\n"
+            "EditorKeepChanges = %s\n"
+            "# The collision view (B) in Single Player as well as Free Roam and Testing Grounds\n"
+            "CollisionInGame = %s\n\n",
+            debug_settings.editor_autosave_minutes, debug_settings.editor_keep_changes ? "true" : "false",
+            debug_settings.collision_in_game ? "true" : "false");
     Controls_Write(file);
     fclose(file);
 }

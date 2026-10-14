@@ -21,12 +21,11 @@ typedef struct TextureEntry {
 #define LIGHT_TEXTURE_W 256
 #define LIGHT_TEXTURE_H 128 // an isometric ellipse, like the ground
 
-#define ROOF_FADE_MS       250    // roofs fade out when you walk in, and back in when you leave
-#define FRONT_WALL_FADE    150.0f // and the building's walls between you and the camera go this see-through (of 255)
-#define SEE_THROUGH_ALPHA  100    // "See through obstructions": what's left of a wall or tree hiding you
-#define SEE_THROUGH_HALF_W 40     // the box around you (screen pixels at zoom 1) it looks at: your body, feet to head
-#define SEE_THROUGH_UP     110
-#define SEE_THROUGH_DOWN   12
+#define ROOF_FADE_MS      250    // roofs fade out when you walk in, and back in when you leave
+#define FRONT_WALL_FADE   150.0f // and the building's walls between you and the camera go this see-through (of 255)
+#define SEE_THROUGH_ALPHA 100    // "See through obstructions": what's left of a wall or tree hiding you
+#define WALL_FADE_MS      200    // how long a wall takes to fade out or back in (no popping as you walk)
+#define SMALL_STRUCTURE   80     // a structure this many tiles or fewer (a tent, a house, a tree) fades as a whole
 
 struct MapRenderer {
     bool see_through; // walls and trees hiding the viewer fade (MapRenderer_SetSeeThrough)
@@ -42,6 +41,17 @@ struct MapRenderer {
     int        roof_cells;
     float      roof_fade; // 0 = drawn, 1 = gone
     uint64_t   roof_tick;
+
+    // Structures: wall tiles joined edge to edge (a house, a tent, a tree, a stretch of wall), so a building fades
+    // as one, not tile by tile. Worked out once per map.
+    const Map *structure_map;
+    int        structure_cells;
+    int       *structure;      // per tile: its structure, -1 = no walls
+    int       *structure_size; // per structure: tiles
+    int        structure_count;
+    uint8_t   *structure_fade; // per structure, this frame: 0 = drawn, else the alpha to fade to
+    uint8_t   *wall_alpha;     // per tile: the alpha it's drawn with now, easing towards where it's going
+    uint64_t   wall_tick;
 
     SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
     uint8_t        light_darkness;
@@ -114,6 +124,10 @@ void MapRenderer_Destroy(MapRenderer **renderer) {
     }
     MapRenderer_ClearCache(*renderer);
     free((*renderer)->roof_hidden);
+    free((*renderer)->structure);
+    free((*renderer)->structure_size);
+    free((*renderer)->structure_fade);
+    free((*renderer)->wall_alpha);
     free(*renderer);
     *renderer = NULL;
 }
@@ -303,21 +317,122 @@ static bool MapRenderer__NearBuilding(const MapRenderer *renderer, const Map *ma
     return false;
 }
 
-void MapRenderer_SetSeeThrough(MapRenderer *renderer, const bool see_through) { renderer->see_through = see_through; }
+// A wall tile drawn in the walls pass (or a roof): what structures are made of
+static bool MapRenderer__IsStructureTile(const DT1Tile *tile) {
+    return tile != NULL && !MapRenderer__IsLowerWall(tile->orientation) && !MapRenderer__IsSpecial(tile->orientation);
+}
 
-// The screen rectangle a tile's picture covers
-static SDL_Rect MapRenderer__TileRect(const MapCamera *camera, const SDL_Rect *view, const DT1Tile *tile, const int tx,
-                                      const int ty) {
+static void MapRenderer__UpdateStructures(MapRenderer *renderer, const Map *map) {
+    const int cells = map->width * map->height;
+    if (renderer->structure_map == map && renderer->structure_cells == cells) {
+        return;
+    }
+    free(renderer->structure);
+    free(renderer->structure_size);
+    free(renderer->structure_fade);
+    free(renderer->wall_alpha);
+    renderer->structure_map   = map;
+    renderer->structure_cells = cells;
+    renderer->structure       = malloc(sizeof(int) * (size_t)cells);
+    renderer->wall_alpha      = malloc((size_t)cells);
+    FAIL_IF_NULL(renderer->structure);
+    FAIL_IF_NULL(renderer->wall_alpha);
+    memset(renderer->wall_alpha, 255, (size_t)cells);
+    for (int c = 0; c < cells; c++) {
+        renderer->structure[c] = -1;
+    }
+    int  count = 0;
+    int *sizes = NULL;
+    int *queue = malloc(sizeof(int) * (size_t)cells);
+    FAIL_IF_NULL(queue);
+    for (int start = 0; start < cells; start++) {
+        bool has = false;
+        for (int w = 0; w < map->wall_layer_count && !has; w++) {
+            has = MapRenderer__IsStructureTile(map->wall_tiles[w][start]);
+        }
+        if (!has || renderer->structure[start] >= 0) {
+            continue;
+        }
+        int head                   = 0;
+        int tail                   = 0;
+        queue[tail++]              = start;
+        renderer->structure[start] = count;
+        while (head < tail) {
+            const int c          = queue[head++];
+            const int cx         = c % map->width;
+            const int cy         = c / map->width;
+            const int next[4][2] = {
+                {cx + 1, cy    },
+                {cx - 1, cy    },
+                {cx,     cy + 1},
+                {cx,     cy - 1}
+            };
+            for (int n = 0; n < 4; n++) {
+                const int nx = next[n][0];
+                const int ny = next[n][1];
+                if (nx < 0 || ny < 0 || nx >= map->width || ny >= map->height) {
+                    continue;
+                }
+                const int nc = (ny * map->width) + nx;
+                if (renderer->structure[nc] >= 0) {
+                    continue;
+                }
+                bool joined = false;
+                for (int w = 0; w < map->wall_layer_count && !joined; w++) {
+                    joined = MapRenderer__IsStructureTile(map->wall_tiles[w][nc]);
+                }
+                if (joined) {
+                    renderer->structure[nc] = count;
+                    queue[tail++]           = nc;
+                }
+            }
+        }
+        sizes = realloc(sizes, sizeof(int) * (size_t)(count + 1));
+        FAIL_IF_NULL(sizes);
+        sizes[count++] = tail;
+    }
+    free(queue);
+    renderer->structure_size  = sizes;
+    renderer->structure_count = count;
+    renderer->structure_fade  = calloc(count > 0 ? (size_t)count : 1, 1);
+    FAIL_IF_NULL(renderer->structure_fade);
+}
+
+// Whether a wall tile's picture really hides the viewer: its pixels (not just its box) over a few points of their body
+static bool MapRenderer__Covers(const DT1Tile *tile, const int tx, const int ty, const float viewer_wx,
+                                const float viewer_wy) {
+    if (tile->image == NULL) {
+        return false;
+    }
     float wx;
     float wy;
     MapRenderer__TileOrigin(tile, tx, ty, &wx, &wy);
-    int sx;
-    int sy;
-    MapView_WorldToScreen(camera, view, wx, wy, &sx, &sy);
-    const SDL_Rect rect = {sx, sy, (int)ceilf((float)tile->image_width * camera->zoom),
-                           (int)ceilf((float)tile->image_height * camera->zoom)};
-    return rect;
+    static const int heights[5] = {12, 30, 50, 70, 90}; // feet to head, world pixels above where they stand
+    static const int sides[3]   = {-10, 0, 10};
+    int              hits       = 0;
+    for (int h = 0; h < 5; h++) {
+        for (int x = 0; x < 3; x++) {
+            const int ix = (int)(viewer_wx + (float)sides[x] - wx);
+            const int iy = (int)(viewer_wy - (float)heights[h] - wy);
+            if (ix >= 0 && iy >= 0 && ix < tile->image_width && iy < tile->image_height &&
+                tile->image[(iy * tile->image_width) + ix] != 0) {
+                hits++;
+            }
+        }
+    }
+    return hits >= 3;
 }
+
+// Eases a tile's alpha towards where it's going; returns what to draw it with
+static uint8_t MapRenderer__EaseWall(MapRenderer *renderer, const int c, const uint8_t target, const int step) {
+    int alpha               = renderer->wall_alpha[c];
+    alpha                   = alpha < target ? (alpha + step > target ? target : alpha + step)
+                                             : (alpha - step < target ? target : alpha - step);
+    renderer->wall_alpha[c] = (uint8_t)alpha;
+    return (uint8_t)alpha;
+}
+
+void MapRenderer_SetSeeThrough(MapRenderer *renderer, const bool see_through) { renderer->see_through = see_through; }
 
 void MapRenderer_SetViewer(MapRenderer *renderer, const float subtile_x, const float subtile_y) {
     renderer->has_viewer = subtile_x >= 0.0f && subtile_y >= 0.0f;
@@ -547,24 +662,53 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
     const int     viewer_sum  = inside ? renderer->roof_tile_x + renderer->roof_tile_y : 0;
     const uint8_t front_alpha = (uint8_t)(255.0f - (FRONT_WALL_FADE * renderer->roof_fade));
 
-    // See through obstructions: the box around the viewer on screen, and the diagonal they stand on
-    SDL_Rect   viewer_box  = {0, 0, 0, 0};
+    // See through obstructions: where the viewer stands (world pixels), and the diagonal they're on
     const bool see_through = renderer->see_through && renderer->has_viewer;
     const int  viewer_tile_sum =
         see_through ? (int)floorf(renderer->viewer_x / MAP_SUBTILES) + (int)floorf(renderer->viewer_y / MAP_SUBTILES)
                      : 0;
+    float viewer_wx = 0.0f;
+    float viewer_wy = 0.0f;
     if (see_through) {
-        float wx;
-        float wy;
-        MapView_SubtileToWorld(renderer->viewer_x, renderer->viewer_y, &wx, &wy);
-        int sx;
-        int sy;
-        MapView_WorldToScreen(camera, view, wx, wy, &sx, &sy);
-        viewer_box.x = sx - (int)(SEE_THROUGH_HALF_W * camera->zoom);
-        viewer_box.y = sy - (int)(SEE_THROUGH_UP * camera->zoom);
-        viewer_box.w = (int)(2 * SEE_THROUGH_HALF_W * camera->zoom);
-        viewer_box.h = (int)((SEE_THROUGH_UP + SEE_THROUGH_DOWN) * camera->zoom);
+        MapView_SubtileToWorld(renderer->viewer_x, renderer->viewer_y, &viewer_wx, &viewer_wy);
     }
+
+    // Which structures fade this frame: the building you're in (its walls in front of you), and with "see through
+    // obstructions" anything small (a tent, a tree, a house) with a tile in front of you that covers you, all of it
+    enum { FADE_BUILDING = 1, FADE_COVERING = 2 };
+    MapRenderer__UpdateStructures(renderer, map);
+    memset(renderer->structure_fade, 0, renderer->structure_count > 0 ? (size_t)renderer->structure_count : 1);
+    if ((flags & MAP_DRAW_WALLS) && (inside || see_through)) {
+        for (int ty = 0; ty < map->height; ty++) {
+            for (int tx = 0; tx < map->width; tx++) {
+                const int c = (ty * map->width) + tx;
+                const int k = renderer->structure[c];
+                if (k < 0 || !MapRenderer__InRange(tx, ty, min_sum, max_sum, min_diff, max_diff)) {
+                    continue;
+                }
+                if (inside && MapRenderer__NearBuilding(renderer, map, tx, ty)) {
+                    renderer->structure_fade[k] |= FADE_BUILDING;
+                }
+                if (see_through && tx + ty > viewer_tile_sum && renderer->structure_size[k] <= SMALL_STRUCTURE &&
+                    !(renderer->structure_fade[k] & FADE_COVERING)) {
+                    for (int w = 0; w < map->wall_layer_count; w++) {
+                        const DT1Tile *tile = map->wall_tiles[w][c];
+                        // The roof you're under is already going (and doesn't make its walls hide you)
+                        if (MapRenderer__IsStructureTile(tile) &&
+                            !(tile->orientation == DT1_ORIENTATION_ROOF && inside && renderer->roof_hidden[c]) &&
+                            MapRenderer__Covers(tile, tx, ty, viewer_wx, viewer_wy)) {
+                            renderer->structure_fade[k] |= FADE_COVERING;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    const uint64_t now  = SDL_GetTicks64();
+    int            step = renderer->wall_tick == 0 ? 255 : (int)((now - renderer->wall_tick) * 255 / WALL_FADE_MS);
+    step                = step < 1 ? 1 : (step > 255 ? 255 : step);
+    renderer->wall_tick = now;
 
     int next = 0;
     for (int sum = 0; sum <= (map->width - 1) + (map->height - 1); sum++) {
@@ -576,21 +720,35 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                     continue;
                 }
                 const int c = (ty * map->width) + tx;
+                const int k = renderer->structure[c];
+                if (k < 0) {
+                    continue;
+                }
+                // Where this tile's alpha is going: whole structures for buildings and small things; tile by tile
+                // for long walls, tree lines and cliffs (fading all of those would empty the screen)
+                uint8_t target = 255;
+                if ((renderer->structure_fade[k] & FADE_BUILDING) && sum > viewer_sum) {
+                    target = front_alpha;
+                }
+                if (renderer->structure_fade[k] & FADE_COVERING) {
+                    target = target < SEE_THROUGH_ALPHA ? target : SEE_THROUGH_ALPHA;
+                } else if (see_through && sum > viewer_tile_sum && renderer->structure_size[k] > SMALL_STRUCTURE) {
+                    for (int w = 0; w < map->wall_layer_count; w++) {
+                        const DT1Tile *tile = map->wall_tiles[w][c];
+                        if (MapRenderer__IsStructureTile(tile) &&
+                            MapRenderer__Covers(tile, tx, ty, viewer_wx, viewer_wy)) {
+                            target = target < SEE_THROUGH_ALPHA ? target : SEE_THROUGH_ALPHA;
+                            break;
+                        }
+                    }
+                }
+                const uint8_t alpha = MapRenderer__EaseWall(renderer, c, target, step);
                 for (int w = 0; w < map->wall_layer_count; w++) {
                     const DT1Tile *tile = map->wall_tiles[w][c];
                     if (tile == NULL || MapRenderer__IsLowerWall(tile->orientation) ||
                         tile->orientation == DT1_ORIENTATION_ROOF ||
                         (MapRenderer__IsSpecial(tile->orientation) && !(flags & MAP_DRAW_SPECIAL))) {
                         continue;
-                    }
-                    uint8_t alpha = (inside && sum > viewer_sum && MapRenderer__NearBuilding(renderer, map, tx, ty))
-                                        ? front_alpha
-                                        : 255;
-                    if (see_through && sum > viewer_tile_sum) {
-                        const SDL_Rect rect = MapRenderer__TileRect(camera, view, tile, tx, ty);
-                        if (SDL_HasIntersection(&rect, &viewer_box)) {
-                            alpha = alpha < SEE_THROUGH_ALPHA ? alpha : SEE_THROUGH_ALPHA;
-                        }
                     }
                     MapRenderer__DrawTileAlpha(renderer, map, camera, view, map->wall_extra_tiles[w][c], tx, ty, alpha);
                     MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
@@ -641,13 +799,8 @@ void MapRenderer_Draw(MapRenderer *renderer, const Map *map, const MapCamera *ca
                     if (tile != NULL && tile->orientation == DT1_ORIENTATION_ROOF) {
                         const bool hidden = renderer->roof_tile_x >= 0 && renderer->roof_hidden[c] != 0;
                         uint8_t    alpha  = hidden ? hidden_alpha : 255;
-                        if (see_through) {
-                            // Roofs (tents, porches) hiding the viewer: whatever their tile, they're drawn over them
-                            const SDL_Rect rect = MapRenderer__TileRect(camera, view, tile, tx, ty);
-                            if (SDL_HasIntersection(&rect, &viewer_box)) {
-                                alpha = alpha < SEE_THROUGH_ALPHA ? alpha : SEE_THROUGH_ALPHA;
-                            }
-                        }
+                        // As faded as the rest of its structure (a tent covering you fades, roof and all)
+                        alpha = alpha < renderer->wall_alpha[c] ? alpha : renderer->wall_alpha[c];
                         MapRenderer__DrawTileAlpha(renderer, map, camera, view, tile, tx, ty, alpha);
                     }
                 }

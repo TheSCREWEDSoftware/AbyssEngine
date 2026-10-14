@@ -1,18 +1,22 @@
 #include "SceneMapEditor.h"
+#include "../common/AbyssConfiguration.h"
 #include "../common/FileManager.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../drawing/Button.h"
+#include "../drawing/ConfirmDialog.h"
 #include "../drawing/Cursor.h"
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
 #include "../drawing/LoadingScreen.h"
 #include "../drawing/TabBar.h"
 #include "../drawing/TextBox.h"
+#include "../game/Settings.h"
 #include "../managers/InputManager.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
+#include "../map/MapHistory.h"
 #include "../map/MapRenderer.h"
 #include "../map/MapSession.h"
 #include "../map/MapUnits.h"
@@ -63,15 +67,23 @@ static const char *open_source_names[OPEN_SOURCE_COUNT] = {"My Maps", "Game Area
 #define DIALOG_W 520
 #define DIALOG_H 440
 
+// What the editor asks about with its confirm dialog
+typedef enum EditorQuestion { QUESTION_NONE, QUESTION_LEAVE, QUESTION_RESTORE } EditorQuestion;
+
 typedef struct SceneMapEditor {
-    Map         *map;
-    char         file_path[4200]; // where the map was loaded from / saved to ("" = new)
-    bool         dirty;
-    MapRenderer *renderer;
-    MapUnits    *units;
-    MapCamera    camera;
-    int          zoom_index;
-    unsigned     draw_flags;
+    Map           *map;
+    char           file_path[4200]; // where the map was loaded from / saved to ("" = new)
+    bool           dirty;
+    MapHistory    *history;       // undo / redo (Ctrl+Z / Ctrl+Y)
+    bool           stroke;        // a change is open: the mouse is held painting or erasing
+    uint64_t       last_autosave; // Options › Gameplay › Debug: auto-save every so many minutes
+    ConfirmDialog *confirm;
+    EditorQuestion question;
+    MapRenderer   *renderer;
+    MapUnits      *units;
+    MapCamera      camera;
+    int            zoom_index;
+    unsigned       draw_flags;
 
     // Tool panel
     EditorTool tool;
@@ -262,11 +274,61 @@ static const MapTileChoice *Editor__SelectedChoice(const SceneMapEditor *editor)
     return (index >= 0 && index < count) ? &choices[index] : NULL;
 }
 
+// The recovery file: the map as it is after every change (Options › Gameplay › Debug › Keep every change...)
+static void Editor__RecoveryPath(char *path, const size_t size) {
+    snprintf(path, size, "%s/editor-recovery.abm", AbyssConfiguration_GetConfigFolder());
+}
+
+static void Editor__ForgetRecovery(void) {
+    char path[4200];
+    Editor__RecoveryPath(path, sizeof(path));
+    remove(path);
+}
+
+// What's kept while play-testing (the scene is made again when you come back)
+static struct {
+    MapHistory *history;
+    char        file_path[4200];
+    bool        dirty;
+} parked;
+
+// A change was made (a stroke, a fill, a unit): kept in the recovery file if wanted
+static void Editor__EndChange(SceneMapEditor *editor) {
+    MapHistory_End(editor->history);
+    if (Settings_GetDebug()->editor_keep_changes && editor->dirty) {
+        char path[4200];
+        Editor__RecoveryPath(path, sizeof(path));
+        Map_SaveFile(editor->map, path);
+    }
+}
+
+static void Editor__Undo(SceneMapEditor *editor, const bool redo) {
+    editor->stroke = false;
+    const bool done =
+        redo ? MapHistory_Redo(editor->history, editor->map) : MapHistory_Undo(editor->history, editor->map);
+    if (!done) {
+        Editor__Message(editor, redo ? "Nothing to redo" : "Nothing to undo");
+        return;
+    }
+    editor->dirty = true;
+    char text[64];
+    snprintf(text, sizeof(text), "%s: change %d of %d", redo ? "Redone" : "Undone",
+             MapHistory_GetPosition(editor->history), MapHistory_GetCount(editor->history));
+    Editor__Message(editor, text);
+    if (Settings_GetDebug()->editor_keep_changes) {
+        char path[4200];
+        Editor__RecoveryPath(path, sizeof(path));
+        Map_SaveFile(editor->map, path);
+    }
+}
+
 static void Editor__SetMap(SceneMapEditor *editor, Map *map, const char *file_path) {
     Map_Destroy(&editor->map);
     editor->map = map;
     snprintf(editor->file_path, sizeof(editor->file_path), "%s", file_path != NULL ? file_path : "");
-    editor->dirty = false;
+    editor->dirty  = false;
+    editor->stroke = false;
+    MapHistory_Clear(editor->history);
     MapRenderer_ClearCache(editor->renderer);
     for (int t = 0; t < TOOL_COUNT; t++) {
         if (t != TOOL_UNITS) {
@@ -395,7 +457,11 @@ void *MapEditor_Create(void) {
     editor->dialog_visible = calloc((size_t)(editor->game_map_count + 1), sizeof(int));
     FAIL_IF_NULL(editor->dialog_visible);
 
-    // Coming back from a play-test: carry on with the same map
+    editor->history       = MapHistory_Create();
+    editor->confirm       = ConfirmDialog_Create();
+    editor->last_autosave = SDL_GetTicks64();
+
+    // Coming back from a play-test: carry on with the same map, its file, its undo history
     const bool returning = MapSession_PeekMap() != NULL;
     Map       *map       = returning ? MapSession_TakeMap() : NULL;
     if (map == NULL) {
@@ -405,6 +471,27 @@ void *MapEditor_Create(void) {
         map = TestingGrounds_CreateDefaultMap();
     }
     Editor__SetMap(editor, map, NULL);
+    if (returning && parked.history != NULL) {
+        MapHistory_Destroy(&editor->history);
+        editor->history = parked.history;
+        snprintf(editor->file_path, sizeof(editor->file_path), "%s", parked.file_path);
+        editor->dirty = parked.dirty;
+    } else {
+        MapHistory_Destroy(&parked.history);
+    }
+    parked.history = NULL;
+
+    // Changes the editor didn't get to save last time (it closed with them): offer them back
+    char recovery[4200];
+    Editor__RecoveryPath(recovery, sizeof(recovery));
+    FILE *left_over = returning ? NULL : fopen(recovery, "r");
+    if (left_over != NULL) {
+        fclose(left_over);
+        editor->question = QUESTION_RESTORE;
+        ConfirmDialog_Open(editor->confirm, "Unsaved Changes",
+                           "The editor closed last time with changes that weren't saved. Open them again?", "Restore",
+                           "Discard", NULL);
+    }
 
     // The Units tab's monsters and NPCs, loaded now (under the same loading screen) so the tab opens straight away
     LoadingScreen_Begin("Loading monsters and NPCs...");
@@ -423,10 +510,17 @@ void MapEditor_Free(void **scene_ref) {
     Map_FreeNames(editor->saved_names, editor->saved_count);
     free(editor->game_maps);
     free(editor->dialog_visible);
-    // Handing over to the Testing Grounds keeps the map alive (see Play)
+    // Handing over to the Testing Grounds keeps the map alive (see Play), and its undo history
     if (MapSession_PeekMap() != editor->map) {
         Map_Destroy(&editor->map);
+        MapHistory_Destroy(&editor->history);
+    } else {
+        MapHistory_Destroy(&parked.history);
+        parked.history = editor->history;
+        snprintf(parked.file_path, sizeof(parked.file_path), "%s", editor->file_path);
+        parked.dirty = editor->dirty;
     }
+    ConfirmDialog_Destroy(&editor->confirm);
     MapRenderer_Destroy(&editor->renderer);
     MapUnits_Destroy(&editor->units);
 
@@ -595,6 +689,7 @@ static void Editor__Save(SceneMapEditor *editor, const char *file_name) {
     if (Map_SaveFile(editor->map, path)) {
         snprintf(editor->file_path, sizeof(editor->file_path), "%s", path);
         editor->dirty = false;
+        Editor__ForgetRecovery();
         char message[128];
         snprintf(message, sizeof(message), "Saved %s.abm", safe);
         Editor__Message(editor, message);
@@ -740,8 +835,8 @@ static void Editor__Paint(SceneMapEditor *editor) {
     if (editor->tool == TOOL_UNITS) {
         CatalogCharacterInfo info;
         if (CatalogCharacters_GetInfo(MapSession_GetBestiary(), editor->selected[TOOL_UNITS], &info)) {
-            Map_AddEntity(map, info.spec->base, info.id, info.name, floorf(editor->hover_sx) + 0.5f,
-                          floorf(editor->hover_sy) + 0.5f);
+            MapHistory_AddEntity(editor->history, map, info.spec->base, info.id, info.name,
+                                 floorf(editor->hover_sx) + 0.5f, floorf(editor->hover_sy) + 0.5f);
             editor->dirty = true;
         }
         return;
@@ -770,7 +865,7 @@ static void Editor__Paint(SceneMapEditor *editor) {
         cell->orientation == choice->orientation) {
         return; // already there
     }
-    Map_SetCell(map, kind, layer, editor->hover_tx, editor->hover_ty, choice);
+    MapHistory_SetCell(editor->history, map, kind, layer, editor->hover_tx, editor->hover_ty, choice);
     editor->dirty = true;
 }
 
@@ -789,7 +884,7 @@ static void Editor__Erase(SceneMapEditor *editor) {
             }
         }
         if (nearest >= 0) {
-            Map_RemoveEntity(map, nearest);
+            MapHistory_RemoveEntity(editor->history, map, nearest);
             editor->dirty = true;
         }
         return;
@@ -800,7 +895,7 @@ static void Editor__Erase(SceneMapEditor *editor) {
         for (int w = map->wall_layer_count - 1; w >= 0; w--) {
             const DS1Cell *cell = Map_GetCell(map, MAP_LAYER_WALL, w, editor->hover_tx, editor->hover_ty);
             if (cell != NULL && cell->prop1 != 0) {
-                Map_SetCell(map, MAP_LAYER_WALL, w, editor->hover_tx, editor->hover_ty, NULL);
+                MapHistory_SetCell(editor->history, map, MAP_LAYER_WALL, w, editor->hover_tx, editor->hover_ty, NULL);
                 editor->dirty = true;
                 return;
             }
@@ -809,7 +904,7 @@ static void Editor__Erase(SceneMapEditor *editor) {
     }
     const DS1Cell *cell = Map_GetCell(map, kind, 0, editor->hover_tx, editor->hover_ty);
     if (cell != NULL && cell->prop1 != 0) {
-        Map_SetCell(map, kind, 0, editor->hover_tx, editor->hover_ty, NULL);
+        MapHistory_SetCell(editor->history, map, kind, 0, editor->hover_tx, editor->hover_ty, NULL);
         editor->dirty = true;
     }
 }
@@ -899,7 +994,17 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
     editor->hover_valid = over_view && editor->hover_tx >= 0 && editor->hover_ty >= 0 &&
                           editor->hover_tx < editor->map->width && editor->hover_ty < editor->map->height;
 
-    // Paint / erase (tiles while held, units once per click)
+    // Paint / erase (tiles while held, units once per click); a stroke, press to release, is one change
+    if ((left && !editor->prev_left) || (right && !editor->prev_right)) {
+        if (!editor->stroke && editor->hover_valid && !editor->panning) {
+            MapHistory_Begin(editor->history);
+            editor->stroke = true;
+        }
+    }
+    if (editor->stroke && !left && !right) {
+        editor->stroke = false;
+        Editor__EndChange(editor);
+    }
     if (editor->hover_valid && !editor->panning) {
         const bool continuous = editor->tool != TOOL_UNITS;
         if (left && (continuous || !editor->prev_left)) {
@@ -916,6 +1021,51 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
 // ---------------------------------------------------------------------------------------------------------------------
 // Update / render
 
+static void Editor__Leave(void) {
+    Editor__ForgetRecovery();       // leaving on purpose: nothing to offer back
+    Scene_Set(SCENE_REF(MainMenu)); // the main menu releases the session (bestiary) once we're gone
+}
+
+// The answer to the confirm dialog's question
+static void Editor__UpdateQuestion(SceneMapEditor *editor) {
+    const ConfirmAnswer answer = ConfirmDialog_Update(editor->confirm);
+    if (answer == CONFIRM_NONE) {
+        return;
+    }
+    const EditorQuestion question = editor->question;
+    editor->question              = QUESTION_NONE;
+    if (question == QUESTION_RESTORE) {
+        char path[4200];
+        Editor__RecoveryPath(path, sizeof(path));
+        if (answer == CONFIRM_FIRST) {
+            LoadingScreen_Begin("Loading map...");
+            Map *map = Map_LoadFile(path);
+            LoadingScreen_End();
+            if (map != NULL) {
+                Editor__SetMap(editor, map, NULL);
+                editor->dirty = true;
+                Editor__Message(editor, "Unsaved changes restored (Save to keep them)");
+            } else {
+                Editor__Message(editor, "Could not read the recovery file");
+            }
+        } else {
+            Editor__ForgetRecovery();
+        }
+        return;
+    }
+    // Leaving with unsaved changes: Save (where it was saved, or ask for a name), Leave, Cancel
+    if (editor->dirty && answer == CONFIRM_FIRST) {
+        if (editor->file_path[0] != '\0' && Map_SaveFile(editor->map, editor->file_path)) {
+            Editor__Leave();
+        } else {
+            Editor__OpenDialog(editor, DIALOG_SAVE);
+            Editor__Message(editor, "Name the map to save it, then press Back again");
+        }
+    } else if ((editor->dirty && answer == CONFIRM_SECOND) || (!editor->dirty && answer == CONFIRM_FIRST)) {
+        Editor__Leave();
+    }
+}
+
 void MapEditor_Update(void *scene_ref, const uint64_t delta) {
     (void)delta;
     SceneMapEditor *editor  = scene_ref;
@@ -923,9 +1073,40 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
     const uint64_t  elapsed = now - editor->last_tick;
     editor->last_tick       = now;
 
+    if (ConfirmDialog_IsOpen(editor->confirm)) {
+        Editor__UpdateQuestion(editor);
+        return;
+    }
     if (editor->dialog != DIALOG_NONE) {
         Editor__UpdateDialog(editor);
         return;
+    }
+
+    // Undo / redo: Ctrl+Z, Ctrl+Y (or Ctrl+Shift+Z)
+    const bool ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+    if (ctrl && InputManager_ConsumeKeyPress(SDL_SCANCODE_Z)) {
+        Editor__Undo(editor, (SDL_GetModState() & KMOD_SHIFT) != 0);
+    } else if (ctrl && InputManager_ConsumeKeyPress(SDL_SCANCODE_Y)) {
+        Editor__Undo(editor, true);
+    }
+
+    // Auto-save (Options › Gameplay › Debug): into the map's file, or the recovery file for a map never saved
+    const int minutes = Settings_GetDebug()->editor_autosave_minutes;
+    if (minutes > 0 && now - editor->last_autosave >= (uint64_t)minutes * 60000u) {
+        editor->last_autosave = now;
+        if (editor->dirty && !editor->stroke) {
+            if (editor->file_path[0] != '\0' && Map_SaveFile(editor->map, editor->file_path)) {
+                editor->dirty = false;
+                Editor__ForgetRecovery();
+                Editor__Message(editor, "Auto-saved");
+            } else {
+                char path[4200];
+                Editor__RecoveryPath(path, sizeof(path));
+                if (Map_SaveFile(editor->map, path)) {
+                    Editor__Message(editor, "Auto-saved to the recovery file (Save to give it a name)");
+                }
+            }
+        }
     }
 
     Editor__UpdateMapView(editor, elapsed);
@@ -946,11 +1127,13 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
     if (Button_Update(editor->fill_button)) {
         const MapTileChoice *choice = editor->tool == TOOL_FLOOR ? Editor__SelectedChoice(editor) : NULL;
         if (choice != NULL) {
+            MapHistory_Begin(editor->history); // the whole fill is one change
             for (int ty = 0; ty < editor->map->height; ty++) {
                 for (int tx = 0; tx < editor->map->width; tx++) {
-                    Map_SetCell(editor->map, MAP_LAYER_FLOOR, 0, tx, ty, choice);
+                    MapHistory_SetCell(editor->history, editor->map, MAP_LAYER_FLOOR, 0, tx, ty, choice);
                 }
             }
+            Editor__EndChange(editor);
             editor->dirty = true;
         }
     }
@@ -964,8 +1147,16 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
     } else if (Button_Update(editor->play_button)) {
         MapSession_ParkMap(editor->map, true);
         Scene_Set(SCENE_REF(TestingGrounds));
-    } else if (Button_Update(editor->back_button)) {
-        Scene_Set(SCENE_REF(MainMenu)); // the main menu releases the session (bestiary) once we're gone
+    } else if (Button_Update(editor->back_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        editor->question = QUESTION_LEAVE;
+        if (editor->dirty) {
+            ConfirmDialog_Open(editor->confirm, "Unsaved Changes",
+                               "You have changes that aren't saved. If you leave now, you'll lose them.", "Save",
+                               "Leave", "Cancel");
+        } else {
+            ConfirmDialog_Open(editor->confirm, "Main Menu", "Are you sure you wish to return to the main menu?", "Yes",
+                               "No", NULL);
+        }
     }
 }
 
@@ -1025,7 +1216,10 @@ static void Editor__DrawPanel(SceneMapEditor *editor) {
     Label_SetText(editor->info_labels[0], text);
     snprintf(text, sizeof(text), "%d tile sets, %d units", editor->map->dt1_count, editor->map->entity_count);
     Label_SetText(editor->info_labels[1], text);
-    for (int i = 0; i < 2; i++) {
+    snprintf(text, sizeof(text), "Changes: %d / %d  (Ctrl+Z / Ctrl+Y)", MapHistory_GetPosition(editor->history),
+             MapHistory_GetCount(editor->history));
+    Label_SetText(editor->info_labels[2], text);
+    for (int i = 0; i < 3; i++) {
         Label_Draw(editor->info_labels[i], PANEL_INNER_X, info_y + (i * 12));
     }
 
@@ -1102,4 +1296,5 @@ void MapEditor_Render(void *scene_ref) {
     if (editor->dialog != DIALOG_NONE) {
         Editor__DrawDialog(editor);
     }
+    ConfirmDialog_Draw(editor->confirm);
 }

@@ -4,6 +4,7 @@
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
 #include "../drawing/Button.h"
+#include "../drawing/ConfirmDialog.h"
 #include "../drawing/Cursor.h"
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
@@ -241,19 +242,20 @@ typedef struct SceneRoam {
     bool      prev_left;
     bool      prev_right;
 
-    TextBox      *seed_box; // Free Roam: world seed (in the Places panel)
-    Button       *seed_use_button;
-    Button       *seed_random_button;
-    Label        *seed_label;
-    float         key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
-    float         key_dy;
-    bool          menu_open; // the game menu (Esc): Options, leave, back to the game; the world waits
-    Button       *menu_options_button;
-    Button       *menu_leave_button;
-    Button       *menu_return_button;
-    OptionsPanel *options_panel;   // Options opened from that menu
-    bool          screenshot;      // take one at the end of this frame's drawing
-    bool          attack_in_place; // the swing under way was from where you stand: don't walk after the target
+    TextBox       *seed_box; // Free Roam: world seed (in the Places panel)
+    Button        *seed_use_button;
+    Button        *seed_random_button;
+    Label         *seed_label;
+    float          key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
+    float          key_dy;
+    bool           menu_open; // the game menu (Esc): Options, leave, back to the game; the world waits
+    Button        *menu_options_button;
+    Button        *menu_leave_button;
+    Button        *menu_return_button;
+    OptionsPanel  *options_panel;   // Options opened from that menu
+    ConfirmDialog *confirm;         // "Return to the main menu?" (Back and Leave in Free Roam / Testing Grounds)
+    bool           screenshot;      // take one at the end of this frame's drawing
+    bool           attack_in_place; // the swing under way was from where you stand: don't walk after the target
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
@@ -271,6 +273,7 @@ typedef struct SceneRoam {
     bool       show_automap;
     Label     *caption_label; // "Entering The Blood Moor"
     uint64_t   caption_until;
+    bool       announce; // this teleport is walking through an exit: "Entering ..." (not spawning or waypoints)
     char       message[96];
     uint64_t   message_until;
     uint64_t   leave_at; // hardcore death: back to the character list at this time
@@ -1035,7 +1038,7 @@ static void Roam__TogglePanel(SceneRoam *roam, const RoamPanel panel) {
 }
 
 // Free Roam: go to another place
-static void Roam__EnteredArea(SceneRoam *roam, int level_id);
+static void Roam__EnteredArea(SceneRoam *roam, int level_id, bool caption);
 static int  Roam__FindPlace(int level_id);
 static void Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
 
@@ -1058,7 +1061,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         roam->attack_target   = -1;
         Roam__ClearPath(&roam->player);
         roam->exits_armed = false;
-        Roam__EnteredArea(roam, place->level_id);
+        Roam__EnteredArea(roam, place->level_id, roam->announce);
         return;
     }
     if (roam->game && roam->map != NULL && Roam__IsAlive(&roam->player)) {
@@ -1092,8 +1095,8 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         automap_key = roam->map->areas[a].level_id < automap_key ? roam->map->areas[a].level_id : automap_key;
     }
     Automap_SetArea(roam->automap, roam->map, automap_key, World_GetSeed());
-    if (roam->free_roam) {
-        // The game's caption as you come in: "Entering The Blood Moor"
+    if (roam->free_roam && roam->announce) {
+        // The game's caption as you come in through an exit: "Entering The Blood Moor" (not where you start)
         char caption[96];
         World_GetEnteringText(place->level_id, caption, sizeof(caption));
         if (caption[0] != '\0') {
@@ -1164,7 +1167,7 @@ static void Roam__ArrivalSpot(const Map *map, const float x, const float y, floa
 }
 
 // Walked into another area of a joined-up map (or arrived in one): the game's caption, and town or not
-static void Roam__EnteredArea(SceneRoam *roam, const int level_id) {
+static void Roam__EnteredArea(SceneRoam *roam, const int level_id, const bool caption_wanted) {
     if (level_id == roam->area_level) {
         return;
     }
@@ -1173,7 +1176,7 @@ static void Roam__EnteredArea(SceneRoam *roam, const int level_id) {
     roam->place      = place >= 0 ? place : roam->place;
     char caption[96];
     World_GetEnteringText(level_id, caption, sizeof(caption));
-    if (caption[0] != '\0') {
+    if (caption_wanted && caption[0] != '\0') {
         Label_SetText(roam->caption_label, caption);
         roam->caption_until = SDL_GetTicks64() + CAPTION_MS;
     }
@@ -1206,7 +1209,9 @@ static void Roam__Travel(SceneRoam *roam, const int target_level) {
         roam->exits_armed = false;
         return;
     }
+    roam->announce = true;
     Roam__Teleport(roam, place);
+    roam->announce      = false;
     const MapExit *back = Map_ExitTo(roam->map, from_level);
     if (back != NULL) {
         Roam__ArrivalSpot(roam->map, back->arrive_x, back->arrive_y, &roam->spawn_x, &roam->spawn_y);
@@ -1312,6 +1317,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     roam->menu_options_button = Button_Create(BUTTON_TYPE_WIDE, "Options");
     roam->menu_leave_button   = Button_Create(BUTTON_TYPE_WIDE, game ? "Save and Exit Game" : "Leave");
     roam->menu_return_button  = Button_Create(BUTTON_TYPE_WIDE, game ? "Return to Game" : "Back to Free Roam");
+    roam->confirm             = ConfirmDialog_Create();
     Button_SetPosition(roam->menu_options_button, 264, 210);
     Button_SetPosition(roam->menu_leave_button, 264, 260);
     Button_SetPosition(roam->menu_return_button, 264, 310);
@@ -1407,6 +1413,7 @@ static void Roam__Free(void **scene_ref) {
     Button_Destroy(&roam->menu_leave_button);
     Button_Destroy(&roam->menu_return_button);
     OptionsPanel_Destroy(&roam->options_panel);
+    ConfirmDialog_Destroy(&roam->confirm);
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -1971,8 +1978,26 @@ static void Roam__Leave(SceneRoam *roam) {
     }
 }
 
+// Free Roam and Testing Grounds ask before leaving (Back, or Leave in the menu)
+static void Roam__AskLeave(SceneRoam *roam) {
+    if (roam->borrowed) {
+        ConfirmDialog_Open(roam->confirm, "Back to the Map Editor", "Stop play-testing and go back to the editor?",
+                           "Yes", "No", NULL);
+    } else {
+        ConfirmDialog_Open(roam->confirm, "Main Menu", "Are you sure you wish to return to the main menu?", "Yes", "No",
+                           NULL);
+    }
+}
+
 // The game menu and Options over the world, which waits meanwhile. Returns true while either is open.
 static bool Roam__UpdateMenu(SceneRoam *roam) {
+    if (ConfirmDialog_IsOpen(roam->confirm)) {
+        if (ConfirmDialog_Update(roam->confirm) == CONFIRM_FIRST) {
+            roam->menu_open = false;
+            Roam__Leave(roam);
+        }
+        return true;
+    }
     if (roam->options_panel != NULL) {
         if (!OptionsPanel_Update(roam->options_panel)) {
             OptionsPanel_Destroy(&roam->options_panel);
@@ -1986,8 +2011,12 @@ static bool Roam__UpdateMenu(SceneRoam *roam) {
     if (Button_Update(roam->menu_options_button)) {
         roam->options_panel = OptionsPanel_Create();
     } else if (Button_Update(roam->menu_leave_button)) {
-        roam->menu_open = false;
-        Roam__Leave(roam);
+        if (roam->game) {
+            roam->menu_open = false;
+            Roam__Leave(roam);
+        } else {
+            Roam__AskLeave(roam);
+        }
     } else if (Button_Update(roam->menu_return_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
         roam->menu_open = false;
     }
@@ -2007,6 +2036,7 @@ static void Roam__Update(SceneRoam *roam) {
     // Controls: the class's own (or all classes'), the actions of this mode; nothing while typing a seed
     Controls_SetProfile(Roam__Profile(roam));
     Controls_SetContext(roam->game ? CONTROL_CONTEXT_GAME : CONTROL_CONTEXT_DEBUG);
+    Controls_AllowAnywhere(ACTION_COLLISION, Settings_GetDebug()->collision_in_game); // Options › Gameplay › Debug
     if (TextBox_IsFocused(roam->seed_box)) {
         InputManager_ClearPresses();
     }
@@ -2182,7 +2212,7 @@ static void Roam__Update(SceneRoam *roam) {
     if (roam->free_roam && roam->map->area_count > 0) {
         const MapArea *area = Map_AreaAt(roam->map, roam->player.x, roam->player.y);
         if (area != NULL) {
-            Roam__EnteredArea(roam, area->level_id);
+            Roam__EnteredArea(roam, area->level_id, true);
         }
     }
 
@@ -2282,8 +2312,8 @@ static void Roam__Update(SceneRoam *roam) {
         roam->menu_open = true;
     }
     if (!roam->game && Button_Update(roam->back_button)) {
-        // Play-testing goes back to the editor (which takes its map back), otherwise to the main menu
-        Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
+        // Play-testing goes back to the editor (which takes its map back), otherwise to the main menu: asked first
+        Roam__AskLeave(roam);
     }
 }
 
@@ -2702,7 +2732,7 @@ static void Roam__Render(SceneRoam *roam) {
         SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 248);
         SDL_RenderFillRect(sdl_renderer, NULL);
         OptionsPanel_Draw(roam->options_panel);
-    } else if (roam->menu_open) {
+    } else if (roam->menu_open && !ConfirmDialog_IsOpen(roam->confirm)) {
         const SDL_Rect screen = {0, 0, 800, 600};
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 150);
@@ -2711,6 +2741,7 @@ static void Roam__Render(SceneRoam *roam) {
         Button_Draw(roam->menu_leave_button);
         Button_Draw(roam->menu_return_button);
     }
+    ConfirmDialog_Draw(roam->confirm);
     if (roam->screenshot) {
         roam->screenshot = false;
         char path[4300];

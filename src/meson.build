@@ -40,6 +40,7 @@ sources = [
     'common/RingBuffer.c',
 
     'map/Map.c',
+    'map/MapHistory.c',
     'map/MapRenderer.c',
     'map/MapSession.c',
     'map/MapUnits.c',
@@ -62,6 +63,7 @@ sources = [
 
     'drawing/Button.c',
     'drawing/Checkbox.c',
+    'drawing/ConfirmDialog.c',
     'drawing/Dropdown.c',
     'drawing/Cursor.c',
     'drawing/Figure.c',

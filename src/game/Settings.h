@@ -20,6 +20,13 @@ typedef struct GameplaySettings {
     bool         see_through; // walls and trees between you and the camera fade, so you can see where you're going
 } GameplaySettings;
 
+// Debug (Options › Gameplay › Debug): for the developer tools, the same for every class
+typedef struct DebugSettings {
+    int  editor_autosave_minutes; // Map Editor: save the map every this many minutes (0 = never)
+    bool editor_keep_changes;     // Map Editor: keep every change in a temporary file too (back after a crash)
+    bool collision_in_game;       // the collision view (B) in Single Player, not only Free Roam / Testing Grounds
+} DebugSettings;
+
 void Settings_Load(void); // options.ini (missing: the defaults)
 void Settings_Save(void);
 
@@ -30,5 +37,8 @@ const GameplaySettings *Settings_GetGameplay(int profile); // a class without it
 void                    Settings_SetGameplay(int profile, const GameplaySettings *settings);
 bool                    Settings_HasOwnGameplay(int profile);
 void                    Settings_SetOwnGameplay(int profile, bool own); // own: starts as a copy of all classes'
+
+const DebugSettings *Settings_GetDebug(void);
+void                 Settings_SetDebug(const DebugSettings *settings);
 
 #endif // ABYSS_SETTINGS_H

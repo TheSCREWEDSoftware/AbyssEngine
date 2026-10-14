@@ -3,6 +3,7 @@ target_sources(${PROJECT_NAME}
         LevelBuilder.c LevelBuilder.h
         LevelTypes.c LevelTypes.h
         Map.c Map.h
+        MapHistory.c MapHistory.h
         MapRenderer.c MapRenderer.h
         MapSession.c MapSession.h
         MapUnits.c MapUnits.h

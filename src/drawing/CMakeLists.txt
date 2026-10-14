@@ -2,6 +2,7 @@ target_sources(${PROJECT_NAME}
         PRIVATE
         Button.c Button.h
         Checkbox.c Checkbox.h
+        ConfirmDialog.c ConfirmDialog.h
         Dropdown.c Dropdown.h
         ListBox.c ListBox.h
         LoadingScreen.c LoadingScreen.h

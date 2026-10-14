@@ -663,6 +663,16 @@ void Map_SetCell(Map *map, const MapLayerKind kind, const int layer, const int t
     Map__ResolveCell(map, tx, ty);
 }
 
+void Map_SetCellRaw(Map *map, const MapLayerKind kind, const int layer, const int tx, const int ty,
+                    const DS1Cell *value) {
+    DS1Cell *cell = Map__Cell(map, kind, layer, tx, ty);
+    if (cell == NULL) {
+        return;
+    }
+    *cell = *value;
+    Map__ResolveCell(map, tx, ty);
+}
+
 uint16_t Map_GetFloorMaterial(const Map *map, const int subtile_x, const int subtile_y) {
     if (subtile_x < 0 || subtile_y < 0 || subtile_x >= map->width * MAP_SUBTILES ||
         subtile_y >= map->height * MAP_SUBTILES) {
