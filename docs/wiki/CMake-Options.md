@@ -19,6 +19,12 @@ cmake -S . -B build -DDEBUG_SKIP_INTRO=OFF          # keep the tools, but play t
 meson setup build-meson -Ddebug_show_catalog=false
 ```
 
+## Programs
+
+| CMake | Meson | Default | What it does |
+|-------|-------|---------|--------------|
+| `BUILD_LOBBY_SERVER` | `build_lobby_server` | `ON` | Also build **abyss-lobby**, the server that lists online games ([Multiplayer](Multiplayer.md#online-games-the-lobby-server)). A small program of its own, without SDL. |
+
 ## Version text
 
 The main menu shows the git commit the build was made from, in the same format as AzerothCore:

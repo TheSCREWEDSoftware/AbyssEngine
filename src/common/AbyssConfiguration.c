@@ -36,6 +36,13 @@ typedef struct AbyssConfiguration {
         int  wheel_speed; // percent of the wheel's steps
     } input;
     struct {
+        char lobby[128];        // the lobby server ("host" or "host:port"), for Multiplayer › Browse › Online
+        char last_address[128]; // what was typed into Direct IP last
+        int  color;             // how other players see us (NetColor)
+        bool show_names;        // names over the other players
+        bool show_circles;      // circles under them
+    } network;
+    struct {
         float master_volume;
         float music_volume;
         float sfx_volume;
@@ -68,7 +75,7 @@ static const char *default_mpqs[] = {"Patch_D2.mpq", "d2exp.MPQ",   "d2xmusic.MP
     memset(X, 0, sizeof(char) * (strlen(Y) + 1));                                                                      \
     strcat(X, Y)
 
-static const char *valid_categories[] = {"general", "mpqs", "graphics", "audio", "input", NULL};
+static const char *valid_categories[] = {"general", "mpqs", "graphics", "audio", "input", "network", NULL};
 
 char *trim_str(char *str) {
     size_t       len   = strlen(str);
@@ -272,6 +279,19 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             LOG_DEBUG("Setting ui volume to '%f'", abyss_configuration.audio.ui_volume);
         } else {
             LOG_FATAL("Invalid key '%s' in the configuration file!", key);
+        }
+    } else if (IS_STR_EQUAL(category, "network")) {
+        if (IS_STR_EQUAL(key, "lobby")) {
+            snprintf(abyss_configuration.network.lobby, sizeof(abyss_configuration.network.lobby), "%.127s", value);
+        } else if (IS_STR_EQUAL(key, "color") || IS_STR_EQUAL(key, "colour")) {
+            abyss_configuration.network.color = atoi(value) < 0 ? 0 : atoi(value);
+        } else if (IS_STR_EQUAL(key, "shownames")) {
+            abyss_configuration.network.show_names = IS_STR_EQUAL(value, "true");
+        } else if (IS_STR_EQUAL(key, "showcircles")) {
+            abyss_configuration.network.show_circles = IS_STR_EQUAL(value, "true");
+        } else if (IS_STR_EQUAL(key, "lastaddress")) {
+            snprintf(abyss_configuration.network.last_address, sizeof(abyss_configuration.network.last_address),
+                     "%.127s", value);
         }
     } else if (IS_STR_EQUAL(category, "input")) {
         int v = atoi(value);
@@ -478,6 +498,8 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.input.mouse_speed_y    = 100;
     abyss_configuration.input.match_axes       = true;
     abyss_configuration.input.wheel_speed      = 100;
+    abyss_configuration.network.show_names     = true;
+    abyss_configuration.network.show_circles   = true;
 
     abyss_configuration.audio.master_volume = 0.8f;
     abyss_configuration.audio.music_volume  = 1.0f;
@@ -527,6 +549,27 @@ void AbyssConfiguration_SetMouse(const int speed_x, const int speed_y, const boo
     abyss_configuration.input.wheel_speed   = wheel_speed;
 }
 
+const char *AbyssConfiguration_GetLobby(void) { return abyss_configuration.network.lobby; }
+const char *AbyssConfiguration_GetLastAddress(void) { return abyss_configuration.network.last_address; }
+void        AbyssConfiguration_SetLobby(const char *address) {
+    snprintf(abyss_configuration.network.lobby, sizeof(abyss_configuration.network.lobby), "%s",
+             address != NULL ? address : "");
+}
+int  AbyssConfiguration_GetPlayerColor(void) { return abyss_configuration.network.color; }
+void AbyssConfiguration_SetPlayerColor(const int color) { abyss_configuration.network.color = color < 0 ? 0 : color; }
+void AbyssConfiguration_GetPlayerMarkers(bool *names, bool *circles) {
+    *names   = abyss_configuration.network.show_names;
+    *circles = abyss_configuration.network.show_circles;
+}
+void AbyssConfiguration_SetPlayerMarkers(const bool names, const bool circles) {
+    abyss_configuration.network.show_names   = names;
+    abyss_configuration.network.show_circles = circles;
+}
+void AbyssConfiguration_SetLastAddress(const char *address) {
+    snprintf(abyss_configuration.network.last_address, sizeof(abyss_configuration.network.last_address), "%s",
+             address != NULL ? address : "");
+}
+
 void AbyssConfiguration_SetScaleQuality(const char *quality) {
     SET_PARAM_STR(abyss_configuration.graphics.scale_quality, quality);
 }
@@ -574,6 +617,11 @@ bool AbyssConfiguration_Save(void) {
         {"input",    "MouseSpeedY",  "", false, false},
         {"input",    "MatchAxes",    "", false, false},
         {"input",    "WheelSpeed",   "", false, false},
+        {"network",  "Lobby",        "", false, false},
+        {"network",  "LastAddress",  "", false, false},
+        {"network",  "Colour",       "", false, false},
+        {"network",  "ShowNames",    "", false, false},
+        {"network",  "ShowCircles",  "", false, false},
     };
     const int count = (int)(sizeof(settings) / sizeof(settings[0]));
     snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
@@ -602,6 +650,13 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[13].value, 64, "%d", abyss_configuration.input.mouse_speed_y);
     snprintf(settings[14].value, 64, "%s", abyss_configuration.input.match_axes ? "true" : "false");
     snprintf(settings[15].value, 64, "%d", abyss_configuration.input.wheel_speed);
+    snprintf(settings[16].value, 64, "%.63s", abyss_configuration.network.lobby);
+    snprintf(settings[17].value, 64, "%.63s", abyss_configuration.network.last_address);
+    settings[16].commented = abyss_configuration.network.lobby[0] == '\0';
+    settings[17].commented = abyss_configuration.network.last_address[0] == '\0';
+    snprintf(settings[18].value, 64, "%d", abyss_configuration.network.color);
+    snprintf(settings[19].value, 64, "%s", abyss_configuration.network.show_names ? "true" : "false");
+    snprintf(settings[20].value, 64, "%s", abyss_configuration.network.show_circles ? "true" : "false");
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

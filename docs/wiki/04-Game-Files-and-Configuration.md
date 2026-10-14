@@ -65,6 +65,12 @@ MouseSpeedY = 100
 MatchAxes = true            # true: MouseSpeedX for both
 WheelSpeed = 100            # percent of each wheel step; 25-400
 
+[Network]
+# Lobby = lobby.example.com:4002  # abyss-lobby, for Multiplayer > Browse > Online
+Colour = 0                  # how other players see you (Options > Multiplayer)
+ShowNames = true
+ShowCircles = true
+
 [MPQs]
 # Highest priority first: the first MPQ that has a file wins
 Patch_D2.mpq

@@ -1,3 +1,4 @@
 option('debug_skip_intro', type: 'boolean', value: true, description: 'Skip the intro videos and start at the main menu')
 option('debug_show_catalog', type: 'boolean', value: true, description: 'Show the Catalog on the main menu')
 option('debug_show_map_editor', type: 'boolean', value: true, description: 'Show the Map Editor and Testing Grounds on the main menu')
+option('build_lobby_server', type: 'boolean', value: true, description: 'Build abyss-lobby, the server that lists online multiplayer games')

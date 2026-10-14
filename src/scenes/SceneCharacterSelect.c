@@ -11,9 +11,11 @@
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
 #include "../map/MapUnits.h"
+#include "../net/Multiplayer.h"
 #include "SceneCharacterCreate.h"
 #include "SceneGame.h"
 #include "SceneMainMenu.h"
+#include "SceneMultiplayer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,9 +67,16 @@ typedef struct SceneCharacterSelect {
     Button    *scroll_up;
     Button    *scroll_down;
     bool       confirming_delete;
-    bool       prev_left;
-    uint64_t   last_click;
-    int        last_click_index;
+    // Multiplayer: the game's characters (yours on a dedicated server, or your own checked against its rules)
+    bool     online;
+    bool     waiting; // picked: the server is deciding
+    int      list_version;
+    char     status[160];
+    Label   *status_label;
+    Label   *game_label;
+    bool     prev_left;
+    uint64_t last_click;
+    int      last_click_index;
 } SceneCharacterSelect;
 
 DEFINE_SCENE_CALLBACKS(CharacterSelect);
@@ -82,6 +91,17 @@ static void CharacterSelect__FreeSlots(SceneCharacterSelect *scene) {
         Label_Destroy(&scene->slots[s].extra_label);
     }
     scene->slots_for_scroll = -1;
+}
+
+// Multiplayer: whether this game's rules let the character in (why not, for the player)
+static bool CharacterSelect__Allowed(const SceneCharacterSelect *scene, const Character *character, const char **why) {
+    if (!scene->online) {
+        if (why != NULL) {
+            *why = NULL;
+        }
+        return true;
+    }
+    return NetSettings_Allows(NetClient_Settings(), character, NetClient_Realm(), why);
 }
 
 // Figures and labels for the characters on screen
@@ -121,7 +141,10 @@ static void CharacterSelect__BuildSlots(SceneCharacterSelect *scene) {
         Label_SetText(slot->class_label, text);
 
         slot->extra_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-        if (character->dead) {
+        if (!CharacterSelect__Allowed(scene, character, NULL) && !character->dead) {
+            Label_SetText(slot->extra_label, "Not allowed in this game");
+            Label_SetColor(slot->extra_label, 0xFF, 0x60, 0x60, 0xFF);
+        } else if (character->dead) {
             Label_SetText(slot->extra_label, "Dead");
             Label_SetColor(slot->extra_label, 0xFF, 0x40, 0x40, 0xFF);
         } else if (character->hardcore) {
@@ -139,16 +162,31 @@ static void CharacterSelect__BuildSlots(SceneCharacterSelect *scene) {
 static void CharacterSelect__Reload(SceneCharacterSelect *scene) {
     free(scene->characters);
     scene->characters = NULL;
-    scene->count      = Character_ListSaved(&scene->characters);
-    scene->selected   = scene->count > 0 ? 0 : -1;
-    scene->scroll     = 0;
+    if (scene->online && NetClient_ServerKeepsCharacters()) {
+        const Character *list  = NULL;
+        const int        count = NetClient_Characters(&list);
+        scene->characters      = calloc((size_t)(count > 0 ? count : 1), sizeof(Character));
+        FAIL_IF_NULL(scene->characters);
+        memcpy(scene->characters, list, sizeof(Character) * (size_t)count);
+        scene->count        = count;
+        scene->list_version = NetClient_CharacterListVersion();
+    } else {
+        scene->count = Character_ListSaved(&scene->characters);
+    }
+    scene->selected = scene->count > 0 ? 0 : -1;
+    scene->scroll   = 0;
     CharacterSelect__BuildSlots(scene);
 }
 
 static void CharacterSelect__UpdateTitle(SceneCharacterSelect *scene) {
     Label_SetText(scene->title_label, scene->selected >= 0 ? scene->characters[scene->selected].name : "");
-    const bool playable = scene->selected >= 0 && !scene->characters[scene->selected].dead;
-    Button_SetEnabled(scene->ok_button, playable);
+    const char *why      = NULL;
+    const bool  playable = scene->selected >= 0 && !scene->characters[scene->selected].dead &&
+                          CharacterSelect__Allowed(scene, &scene->characters[scene->selected], &why);
+    Button_SetEnabled(scene->ok_button, playable && !scene->waiting);
+    if (scene->online && !scene->waiting) {
+        snprintf(scene->status, sizeof(scene->status), "%s", why != NULL ? why : "");
+    }
     Button_SetEnabled(scene->delete_button, scene->selected >= 0);
     const int rows = (scene->count + SLOT_COLUMNS - 1) / SLOT_COLUMNS;
     Button_SetVisible(scene->scroll_up, scene->scroll > 0);
@@ -194,12 +232,29 @@ void *CharacterSelect_Create(void) {
     scene->scroll_down = Button_Create(BUTTON_TYPE_CANCEL, "Down");
     Button_SetPosition(scene->scroll_down, 352, 505);
 
+    scene->online       = NetClient_Stage() == NETC_CHARACTERS;
+    scene->status_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    Label_SetAlignment(scene->status_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    scene->game_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    Label_SetAlignment(scene->game_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    Label_SetColor(scene->game_label, 0xA0, 0xA0, 0xA0, 0xFF);
+    if (scene->online) {
+        const NetSettings *game = NetClient_Settings();
+        char               text[160];
+        snprintf(text, sizeof(text), "%s: %s, %s%s", game->name, NetSettings_DifficultyName(game->difficulty),
+                 NetClient_ServerKeepsCharacters() ? "characters kept on the server" : "your characters",
+                 Multiplayer_IsHosting() ? " (you're hosting)" : "");
+        Label_SetText(scene->game_label, text);
+        Button_SetText(scene->exit_button, "Leave");
+    }
     CharacterSelect__Reload(scene);
     CharacterSelect__UpdateTitle(scene);
     return scene;
 }
 
 void CharacterSelect_Free(void **scene_ref) {
+    Label_Destroy(&((SceneCharacterSelect *)*scene_ref)->status_label);
+    Label_Destroy(&((SceneCharacterSelect *)*scene_ref)->game_label);
     SceneCharacterSelect *scene = *(SceneCharacterSelect **)scene_ref;
     CharacterSelect__FreeSlots(scene);
     free(scene->characters);
@@ -235,6 +290,19 @@ static void CharacterSelect__Play(SceneCharacterSelect *scene) {
     if (scene->selected < 0 || scene->characters[scene->selected].dead) {
         return;
     }
+    if (scene->online) {
+        const char *why = NULL;
+        if (!CharacterSelect__Allowed(scene, &scene->characters[scene->selected], &why)) {
+            snprintf(scene->status, sizeof(scene->status), "%s", why);
+            Sounds_Play("cursor_error", SOUND_KIND_UI);
+            return;
+        }
+        NetClient_Pick(&scene->characters[scene->selected]); // the server says yes or no
+        scene->waiting = true;
+        snprintf(scene->status, sizeof(scene->status), "Joining...");
+        CharacterSelect__UpdateTitle(scene);
+        return;
+    }
     Character_SetCurrent(&scene->characters[scene->selected]);
     Scene_Set(SCENE_REF(Game));
 }
@@ -253,9 +321,40 @@ void CharacterSelect_Update(void *scene_ref, const uint64_t delta) {
     (void)delta;
     SceneCharacterSelect *scene = scene_ref;
 
+    if (scene->online) {
+        const NetClientStage stage = NetClient_Stage();
+        if (stage == NETC_IN_GAME) {
+            Scene_Set(SCENE_REF(Game)); // the server let us in
+            return;
+        }
+        if (stage == NETC_FAILED || stage == NETC_OFF) {
+            Scene_Set(SCENE_REF(MultiplayerMenu)); // it says why
+            return;
+        }
+        bool        ok     = false;
+        const char *result = NetClient_TakeResult(&ok);
+        if (result != NULL && !ok) {
+            snprintf(scene->status, sizeof(scene->status), "%s", result);
+            scene->waiting = false;
+            Sounds_Play("cursor_error", SOUND_KIND_UI);
+            CharacterSelect__UpdateTitle(scene);
+        }
+        if (NetClient_ServerKeepsCharacters() && scene->list_version != NetClient_CharacterListVersion()) {
+            CharacterSelect__Reload(scene);
+            CharacterSelect__UpdateTitle(scene);
+        }
+        if (scene->waiting) {
+            return;
+        }
+    }
+
     if (scene->confirming_delete) {
         if (Button_Update(scene->popup_yes) || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN)) {
-            Character_Delete(scene->characters[scene->selected].name);
+            if (scene->online && NetClient_ServerKeepsCharacters()) {
+                NetClient_Delete(scene->characters[scene->selected].name); // the list comes back without it
+            } else {
+                Character_Delete(scene->characters[scene->selected].name);
+            }
             scene->confirming_delete = false;
             CharacterSelect__Reload(scene);
             CharacterSelect__UpdateTitle(scene);
@@ -342,7 +441,12 @@ void CharacterSelect_Update(void *scene_ref, const uint64_t delta) {
         return;
     }
     if (Button_Update(scene->exit_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
-        Scene_Set(SCENE_REF(MainMenu));
+        if (scene->online) {
+            Multiplayer_Leave();
+            Scene_Set(SCENE_REF(MultiplayerMenu));
+        } else {
+            Scene_Set(SCENE_REF(MainMenu));
+        }
     }
 }
 
@@ -378,6 +482,15 @@ void CharacterSelect_Render(void *scene_ref) {
         Label_Draw(scene->empty_label, 317, 260);
     }
 
+    if (scene->online) {
+        Label_Draw(scene->game_label, 317, 72);
+        if (scene->status[0] != '\0') {
+            Label_SetText(scene->status_label, scene->status);
+            Label_SetColor(scene->status_label, scene->waiting ? 0xFF : 0xFF, scene->waiting ? 0xE8 : 0x70,
+                           scene->waiting ? 0xA0 : 0x60, 0xFF);
+            Label_Draw(scene->status_label, 317, 455);
+        }
+    }
     Button_Draw(scene->create_button);
     Button_Draw(scene->delete_button);
     Button_Draw(scene->exit_button);

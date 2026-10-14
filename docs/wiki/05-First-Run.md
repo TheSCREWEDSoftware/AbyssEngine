@@ -9,7 +9,8 @@ Start `AbyssEngine` (Windows: `build\RelWithDebInfo\AbyssEngine.exe`, or **F5** 
 1. The Blizzard and Diablo II intro videos (skipped with the default `DEBUG_SKIP_INTRO` build option, or
    `SkipIntroMovies = true`).
 2. The **main menu**, with the title music and the animated Diablo II logo:
-   - **Single Player**, **Multiplayer**, **Credits**, **Cinematics**: shown but greyed out (not implemented yet)
+   - **Single Player** ([Single Player](Single-Player.md)) and **Multiplayer** ([Multiplayer](Multiplayer.md))
+   - **Credits**, **Cinematics**: shown but greyed out (not implemented yet)
    - **Catalog**: the item / class / sprite / bestiary browser ([Catalog](Catalog.md))
    - **Map Editor**: opens a small menu with **Map Editor**, **Testing Grounds** and **Free Roam**
      ([Map Editor](Map-Editor.md), [Testing Grounds and Free Roam](Testing-Grounds-and-Free-Roam.md))

@@ -18,6 +18,9 @@ Early, but playable in parts:
   character list, walk out of town, fight, gain experience and levels, spend stat and skill points, wear and swap
   items in the game's inventory, drink potions from the belt, travel by waypoint, save. No casting, drops, quests,
   trading or hirelings yet.
+- **Multiplayer** (first version): browse games on the local network or online, join by address, host your own with
+  Diablo-style settings, or run a dedicated server (`AbyssEngine --server`). Players see each other walk around and
+  chat; monsters and combat aren't shared yet.
 - **The world**: the towns and fixed areas from the game's maps with their NPCs and objects; the wilderness, dungeons,
   jungle and Bloody Foothills built at random from the game's pieces. One world seed builds every area, and areas are
   joined like in the game: walk out of the Rogue Encampment into the Blood Moor, go down into caves and back up.

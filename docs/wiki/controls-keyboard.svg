@@ -155,7 +155,7 @@
 <text x="968" y="280" font-size="13" font-weight="bold">'</text>
 <rect x="1042" y="264" width="176" height="62" rx="6" fill="#c8c8c8" stroke="#606060" stroke-width="1"/>
 <text x="1048" y="280" font-size="13" font-weight="bold">Enter</text>
-<text x="1048" y="295" font-size="9.5" fill="#555555" font-style="italic">Chat</text>
+<text x="1048" y="295" font-size="9.5">Chat</text>
 <rect x="1262" y="264" width="76" height="62" rx="6" fill="#ffffff" stroke="#606060" stroke-width="1"/>
 <text x="1268" y="280" font-size="13" font-weight="bold">End</text>
 <rect x="22" y="332" width="176" height="62" rx="6" fill="#9696dc" stroke="#606060" stroke-width="1"/>

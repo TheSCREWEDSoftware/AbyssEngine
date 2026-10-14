@@ -270,6 +270,9 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         if (right_click && GameInventory_DrinkBelt(character, belt_slot, drunk)) {
             return INVENTORY_EVENT_DRINK;
         }
+        if (!open && left_click && character->belt[belt_slot].code[0] != '\0') {
+            *message = "Right click drinks it; open the inventory (I) to move belt items around.";
+        }
         if (open && left_click) {
             Item *slot = &character->belt[belt_slot];
             if (inventory->holding) {

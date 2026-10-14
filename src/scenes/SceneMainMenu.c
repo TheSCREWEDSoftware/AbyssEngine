@@ -11,6 +11,7 @@
 #include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
 #include "SceneMapEditor.h"
+#include "SceneMultiplayer.h"
 #include "SceneOptions.h"
 #include "SceneTestingGrounds.h"
 #include <stdlib.h>
@@ -45,6 +46,7 @@ static void MainMenu__OnExitClicked(void *user_data);
 static void MainMenu__OnSinglePlayerClicked(void *user_data);
 static void MainMenu__OnCatalogClicked(void *user_data);
 static void MainMenu__OnOptionsClicked(void *user_data);
+static void MainMenu__OnMultiplayerClicked(void *user_data);
 static void MainMenu__OnMapEditorClicked(void *user_data);
 static void MainMenu__OnEditorClicked(void *user_data);
 static void MainMenu__OnTestingGroundsClicked(void *user_data);
@@ -92,6 +94,7 @@ void *MainMenu_Create(void) {
 
     result->multiplayer_button = Button_Create(BUTTON_TYPE_WIDE, "Multiplayer");
     Button_SetPosition(result->multiplayer_button, 264, 330);
+    Button_SetClickHandler(result->multiplayer_button, MainMenu__OnMultiplayerClicked, NULL);
 
     result->catalog_button = Button_Create(BUTTON_TYPE_WIDE, "Catalog");
     Button_SetPosition(result->catalog_button, 264, 380);
@@ -135,7 +138,6 @@ void *MainMenu_Create(void) {
     Button_SetClickHandler(result->exit_button, MainMenu__OnExitClicked, NULL);
 
     // Not implemented yet: shown, but greyed out.
-    Button_SetEnabled(result->multiplayer_button, false);
     Button_SetEnabled(result->credits_button, false);
     Button_SetEnabled(result->cinematics_button, false);
 
@@ -204,6 +206,11 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
 static void MainMenu__OnSinglePlayerClicked(void *user_data) {
     (void)(user_data);
     Scene_Set(SCENE_REF(CharacterSelect));
+}
+
+static void MainMenu__OnMultiplayerClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(MultiplayerMenu));
 }
 
 static void MainMenu__OnOptionsClicked(void *user_data) {

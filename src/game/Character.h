@@ -3,6 +3,7 @@
 
 #include "Items.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // A Single Player character: class, level, experience and stats, saved in our own text format (one file per
@@ -71,7 +72,10 @@ typedef struct Character {
     Item          equipped[EQUIP_COUNT];
     Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
     int           gold;
+    char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
+
+#define CHARACTER_TEXT_MAX 32768 // a character as text (Character_WriteText): the save file's contents
 
 const char *Character_ClassName(CharacterClass class_id);  // "Amazon"
 const char *Character_ClassToken(CharacterClass class_id); // "am" (graphics)
@@ -105,6 +109,11 @@ bool Character_IsValidName(const char *name, const char **reason);
 
 // Saved characters
 bool Character_Save(Character *character); // also stamps last_played
+// The save file's contents: written into text (cut if it doesn't fit; returns the full length), read back
+size_t Character_WriteText(const Character *character, char *text, size_t size);
+bool   Character_ReadText(const char *text, Character *character);
+// Saving goes here instead of the save folder (a game on a dedicated server keeps the character there); NULL: back
+void Character_SetSaveHook(bool (*hook)(Character *character));
 bool Character_Exists(const char *name);
 bool Character_Delete(const char *name);
 // All saved characters, most recently played first. Free the array with free().

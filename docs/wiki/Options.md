@@ -1,6 +1,6 @@
 # Options
 
-**Options** on the main menu (or in the game: **Esc** › Options) has five tabs: Video, Audio, Gameplay, Controls and Debug. **OK** saves, **Cancel** (or **Esc**)
+**Options** on the main menu (or in the game: **Esc** › Options) has six tabs: Video, Audio, Gameplay, Controls, Multiplayer and Debug. **OK** saves, **Cancel** (or **Esc**)
 puts everything back as it was, **Defaults** resets the tab you're on. Everything except the window size shows
 straight away, in the game too (Esc › Options while playing), so you can see or feel a change before keeping it.
 
@@ -23,6 +23,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | **Audio** | Master, music, sound effects, interface and speech volume, 0 to 100; you hear it right away (speech is kept for NPCs and quests, once the engine plays them; `SpeechVolume` in `abyss.ini`) |
 | **Gameplay** | Settings for all classes or one class (the highlighted **Settings for** band at the top; tick "Own settings" to give a class its own), type of movement, entrances, see-through obstructions, even walking speed on screen |
 | **Controls** | Every action and what it's bound to (see below), and the **Mouse** window |
+| **Multiplayer** | Names and circles over the other players, your colour, the lobby server ([Multiplayer](Multiplayer.md#options--multiplayer)) |
 | **Debug** | The developer tools, the same for every class (below) |
 
 **Video** (`[Graphics]` in `abyss.ini`):

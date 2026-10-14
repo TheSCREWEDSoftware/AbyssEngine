@@ -43,5 +43,15 @@ void AbyssConfiguration_SetPicture(int brightness, int contrast, int gamma);
 // The mouse: pointer speed in percent across and up/down (one speed when match_axes), and the wheel's speed
 void AbyssConfiguration_GetMouse(int *speed_x, int *speed_y, bool *match_axes, int *wheel_speed);
 void AbyssConfiguration_SetMouse(int speed_x, int speed_y, bool match_axes, int wheel_speed);
+// Multiplayer: the lobby server listing online games ("" = none), and the last Direct IP address
+const char *AbyssConfiguration_GetLobby(void);
+const char *AbyssConfiguration_GetLastAddress(void);
+void        AbyssConfiguration_SetLastAddress(const char *address);
+void        AbyssConfiguration_SetLobby(const char *address);
+// Multiplayer: our colour (how the others see us), and whether to show the others' names and circles
+int  AbyssConfiguration_GetPlayerColor(void);
+void AbyssConfiguration_SetPlayerColor(int color);
+void AbyssConfiguration_GetPlayerMarkers(bool *names, bool *circles);
+void AbyssConfiguration_SetPlayerMarkers(bool names, bool circles);
 
 #endif // ABYSS_CONFIG_H

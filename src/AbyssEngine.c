@@ -18,17 +18,21 @@
 #include "managers/VideoManager.h"
 #include "map/LevelTypes.h"
 #include "map/MapSession.h"
+#include "net/Multiplayer.h"
 #include "scenes/Scene.h"
 #include "scenes/SceneIntroVideos.h"
 #include "scenes/SceneOptions.h"
 #include "types/Palette.h"
 #include "util/Crypto.h"
 #include <libavutil/log.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #endif
 
 static void Main__Usage(void) {
@@ -37,7 +41,43 @@ static void Main__Usage(void) {
            "  AbyssEngine --settings               just the Options screen (video, audio, gameplay, controls)\n"
            "  AbyssEngine --export-controls DIR    write controls.md, the keyboard and gamepad pictures and the\n"
            "                                       Single Player / Free Roam key tables into DIR (your bindings)\n"
-           "  AbyssEngine --export-controls DIR --defaults   the same with the default bindings\n");
+           "  AbyssEngine --export-controls DIR --defaults   the same with the default bindings\n"
+           "  AbyssEngine --server [--port N]      a dedicated multiplayer server, no window (settings: server.ini\n"
+           "                                       in the server folder next to abyss.ini; Ctrl+C stops it)\n");
+}
+
+static volatile sig_atomic_t server_running = 1;
+static void                  Main__StopServer(int signal_number) {
+    (void)signal_number;
+    server_running = 0;
+}
+
+// --server: the game server on its own (characters are kept here), until Ctrl+C
+static int Main__DedicatedServer(const int port) {
+    NetSettings settings;
+    NetServer_LoadSettings(&settings);
+    if (port > 0) {
+        settings.port = (uint16_t)port;
+    }
+    char       error[160];
+    NetServer *server = NetServer_Start(&settings, true, error, sizeof(error));
+    if (server == NULL) {
+        LOG_ERROR("Server: %s", error);
+        printf("Server: %s\n", error);
+        return 1;
+    }
+    printf("Abyss Engine dedicated server \"%s\" on port %u (settings: %s/server.ini). Ctrl+C to stop.\n",
+           settings.name, (unsigned)settings.port, NetServer_Folder());
+    fflush(stdout);
+    signal(SIGINT, Main__StopServer);
+    signal(SIGTERM, Main__StopServer);
+    while (server_running) {
+        NetServer_Update(server, SDL_GetTicks64());
+        SDL_Delay(5);
+    }
+    NetServer_Stop(&server);
+    printf("Server stopped.\n");
+    return 0;
 }
 
 // --export-controls: the controls for reading outside the game, without opening a window
@@ -79,11 +119,17 @@ int main(int argc, char **argv) {
     bool        settings_only  = false;
     const char *export_folder  = NULL;
     bool        export_default = false;
+    bool        dedicated      = false;
+    int         server_port    = 0;
     for (int a = 1; a < argc; a++) {
         if (strcmp(argv[a], "--settings") == 0) {
             settings_only = true;
         } else if (strcmp(argv[a], "--export-controls") == 0 && a + 1 < argc) {
             export_folder = argv[++a];
+        } else if (strcmp(argv[a], "--server") == 0) {
+            dedicated = true;
+        } else if (strcmp(argv[a], "--port") == 0 && a + 1 < argc) {
+            server_port = atoi(argv[++a]);
         } else if (strcmp(argv[a], "--defaults") == 0) {
             export_default = true;
         } else if (strcmp(argv[a], "--help") == 0 || strcmp(argv[a], "-h") == 0) {
@@ -96,8 +142,18 @@ int main(int argc, char **argv) {
     av_log_set_level(AV_LOG_FATAL);
     LOG_INFO("Abyss Engine");
 
+#ifdef _WIN32
+    if (dedicated) {
+        // A window program on Windows: show the server's output in the terminal it was started from
+        if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+            freopen("CONOUT$", "w", stdout);
+            freopen("CONOUT$", "w", stderr);
+        }
+    }
+#endif
+
     LOG_DEBUG("Initializing SDL...");
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+    if (SDL_Init(dedicated ? SDL_INIT_TIMER : SDL_INIT_EVERYTHING) != 0) { // a server needs no screen or sound
         LOG_FATAL(SDL_GetError());
     }
 
@@ -164,6 +220,10 @@ int main(int argc, char **argv) {
 
     LOG_DEBUG("Loading game strings...");
     StringTable_InitializeSingleton("eng");
+
+    if (dedicated) {
+        return Main__DedicatedServer(server_port); // the game's data tables, no window
+    }
 
     LOG_DEBUG("Creating window...");
     // The game is drawn at 800x600 and scaled to the window, keeping its 4:3 shape (black bars on wide screens).
@@ -256,6 +316,7 @@ int main(int argc, char **argv) {
 
         last_ticks = current_ticks;
 
+        Multiplayer_Update(); // the hosted server and our connection, before the scene reads them
         VideoManager_IsPlayingVideo() ? VideoManager_Update(tick_delta) : Scene_UpdateCurrentScene(tick_delta);
         AudioManager_Update();
 
@@ -291,6 +352,7 @@ int main(int argc, char **argv) {
         frame_start = SDL_GetPerformanceCounter();
     }
 
+    Multiplayer_Leave();
     Picture_Finalize();
     AudioManager_DestroySingleton(); // Destroy this first as it reaches into things via threads
     VideoManager_DestroySingleton();

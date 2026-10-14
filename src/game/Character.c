@@ -7,6 +7,7 @@
 #include "Skills.h"
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -361,89 +362,141 @@ static void Character__Path(const char *name, char *path, const size_t size) {
     snprintf(path, size, "%s/%s%s", Character__Folder(), name, CHARACTER_EXT);
 }
 
-bool Character_Save(Character *character) {
-    char path[4200];
-    Character__Path(character->name, path, sizeof(path));
-    FILE *file = fopen(path, "w");
-    if (file == NULL) {
-        LOG_WARN("Could not save '%s': %s", path, strerror(errno));
-        return false;
+static bool (*save_hook)(Character *character) = NULL;
+
+// Appends to a text buffer like fprintf (the end is cut if it doesn't fit; the length counts what would have been)
+typedef struct CharacterText {
+    char  *text;
+    size_t size;
+    size_t length;
+} CharacterText;
+
+static void Character__Print(CharacterText *out, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    const size_t room  = out->length < out->size ? out->size - out->length : 0;
+    const int    added = vsnprintf(room > 0 ? out->text + out->length : NULL, room, format, args);
+    va_end(args);
+    if (added > 0) {
+        out->length += (size_t)added;
     }
-    character->last_played = (uint64_t)time(NULL);
-    fprintf(file, "%s %d\n", CHARACTER_MAGIC, CHARACTER_VERSION);
-    fprintf(file, "name %s\n", character->name);
-    fprintf(file, "class %s\n", Character_ClassName(character->class_id));
-    fprintf(file, "expansion %d\n", character->expansion ? 1 : 0);
-    fprintf(file, "hardcore %d\n", character->hardcore ? 1 : 0);
-    fprintf(file, "dead %d\n", character->dead ? 1 : 0);
-    fprintf(file, "level %d\n", character->level);
-    fprintf(file, "experience %lu\n", (unsigned long)character->experience);
+}
+
+size_t Character_WriteText(const Character *character, char *text, const size_t size) {
+    CharacterText  out  = {text, size, 0};
+    CharacterText *file = &out;
+    if (size > 0) {
+        text[0] = '\0';
+    }
+    Character__Print(file, "%s %d\n", CHARACTER_MAGIC, CHARACTER_VERSION);
+    Character__Print(file, "name %s\n", character->name);
+    Character__Print(file, "class %s\n", Character_ClassName(character->class_id));
+    Character__Print(file, "expansion %d\n", character->expansion ? 1 : 0);
+    Character__Print(file, "hardcore %d\n", character->hardcore ? 1 : 0);
+    Character__Print(file, "dead %d\n", character->dead ? 1 : 0);
+    Character__Print(file, "level %d\n", character->level);
+    Character__Print(file, "experience %lu\n", (unsigned long)character->experience);
     for (int s = 0; s < STAT_COUNT; s++) {
-        fprintf(file, "%s %d\n", stat_names[s], character->stats[s]);
+        Character__Print(file, "%s %d\n", stat_names[s], character->stats[s]);
     }
-    fprintf(file, "statpoints %d\n", character->stat_points);
-    fprintf(file, "skillpoints %d\n", character->skill_points);
-    fprintf(file, "life %d\n", character->life);
-    fprintf(file, "mana %d\n", character->mana);
-    fprintf(file, "stamina %d\n", character->stamina);
-    fprintf(file, "act %d\n", character->act);
-    fprintf(file, "lastplayed %llu\n", (unsigned long long)character->last_played);
+    Character__Print(file, "statpoints %d\n", character->stat_points);
+    Character__Print(file, "skillpoints %d\n", character->skill_points);
+    Character__Print(file, "life %d\n", character->life);
+    Character__Print(file, "mana %d\n", character->mana);
+    Character__Print(file, "stamina %d\n", character->stamina);
+    Character__Print(file, "act %d\n", character->act);
+    Character__Print(file, "lastplayed %llu\n", (unsigned long long)character->last_played);
     // Skills by name, so they survive changes to the tables' order
     const SkillClass *skills = Skills_ForClass(character->class_id);
     for (int k = 0; k < skills->count && k < CHARACTER_SKILLS; k++) {
         if (character->skill_levels[k] > 0) {
-            fprintf(file, "skill %s %d\n", skills->skills[k].id, character->skill_levels[k]);
+            Character__Print(file, "skill %s %d\n", skills->skills[k].id, character->skill_levels[k]);
         }
     }
     const int hands[2] = {character->left_skill, character->right_skill};
     for (int h = 0; h < 2; h++) {
-        fprintf(file, "%s %s\n", h == 0 ? "leftskill" : "rightskill",
-                hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id : "attack");
+        Character__Print(file, "%s %s\n", h == 0 ? "leftskill" : "rightskill",
+                         hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id : "attack");
     }
     // Items: "item <where> <code> <defense> <quantity>", where is "inv x y", "equip <slot>" or "belt <slot>"
-    fprintf(file, "gold %d\n", character->gold);
-    fprintf(file, "items %d\n", character->inventory_count);
+    Character__Print(file, "gold %d\n", character->gold);
+    Character__Print(file, "items %d\n", character->inventory_count);
     for (int i = 0; i < character->inventory_count; i++) {
         const InventoryItem *it = &character->inventory[i];
-        fprintf(file, "item inv %d %d %s %d %d\n", it->x, it->y, it->item.code, it->item.defense, it->item.quantity);
+        Character__Print(file, "item inv %d %d %s %d %d\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity);
     }
     for (int e = 0; e < EQUIP_COUNT; e++) {
         const Item *it = &character->equipped[e];
         if (it->code[0] != '\0') {
-            fprintf(file, "item equip %d %s %d %d\n", e, it->code, it->defense, it->quantity);
+            Character__Print(file, "item equip %d %s %d %d\n", e, it->code, it->defense, it->quantity);
         }
     }
     for (int b = 0; b < BELT_MAX; b++) {
         const Item *it = &character->belt[b];
         if (it->code[0] != '\0') {
-            fprintf(file, "item belt %d %s %d %d\n", b, it->code, it->defense, it->quantity);
+            Character__Print(file, "item belt %d %s %d %d\n", b, it->code, it->defense, it->quantity);
         }
     }
-    fprintf(file, "end\n");
-    const bool ok = ferror(file) == 0;
+    if (character->realm[0] != '\0') {
+        Character__Print(file, "realm %s\n", character->realm);
+    }
+    Character__Print(file, "end\n");
+    return out.length;
+}
+
+bool Character_Save(Character *character) {
+    character->last_played = (uint64_t)time(NULL);
+    if (save_hook != NULL) {
+        return save_hook(character); // a dedicated server keeps it
+    }
+    char path[4200];
+    Character__Path(character->name, path, sizeof(path));
+    char *text = malloc(CHARACTER_TEXT_MAX);
+    FILE *file = text != NULL ? fopen(path, "w") : NULL;
+    if (file == NULL) {
+        LOG_WARN("Could not save '%s': %s", path, strerror(errno));
+        free(text);
+        return false;
+    }
+    const size_t length = Character_WriteText(character, text, CHARACTER_TEXT_MAX);
+    fwrite(text, 1, length < CHARACTER_TEXT_MAX ? length : CHARACTER_TEXT_MAX - 1, file);
+    const bool ok = ferror(file) == 0 && length < CHARACTER_TEXT_MAX;
     fclose(file);
+    free(text);
     return ok;
 }
 
-static bool Character__Load(const char *path, Character *character) {
-    FILE *file = fopen(path, "r");
-    if (file == NULL) {
+void Character_SetSaveHook(bool (*hook)(Character *character)) { save_hook = hook; }
+
+// The next line of text into line (without its end); false at the end
+static bool Character__Line(const char **at, char *line, const size_t size) {
+    if (**at == '\0') {
         return false;
     }
+    const char  *end    = *at + strcspn(*at, "\n");
+    const size_t length = (size_t)(end - *at) < size - 1 ? (size_t)(end - *at) : size - 1;
+    memcpy(line, *at, length);
+    line[length] = '\0';
+    *at          = *end == '\n' ? end + 1 : end;
+    return true;
+}
+
+bool Character_ReadText(const char *text, Character *character) {
+    const char *at = text;
     memset(character, 0, sizeof(Character));
     char line[256];
     int  version = 0;
-    if (fgets(line, sizeof(line), file) == NULL || sscanf(line, CHARACTER_MAGIC " %d", &version) != 1 ||
+    if (!Character__Line(&at, line, sizeof(line)) || sscanf(line, CHARACTER_MAGIC " %d", &version) != 1 ||
         version > CHARACTER_VERSION) {
-        fclose(file);
         return false;
     }
     character->level       = 1;
     character->left_skill  = SKILL_ATTACK;
     character->right_skill = SKILL_ATTACK;
     bool has_items         = false;
-    while (fgets(line, sizeof(line), file) != NULL) {
-        line[strcspn(line, "\r\n")] = '\0';
+    while (Character__Line(&at, line, sizeof(line))) {
+        line[strcspn(line, "\r")] = '\0';
         char key[32];
         char value[128] = "";
         if (sscanf(line, "%31s %127[^\n]", key, value) < 1 || strcmp(key, "end") == 0) {
@@ -497,6 +550,8 @@ static bool Character__Load(const char *path, Character *character) {
             const int k = Skills_Find(Skills_ForClass(character->class_id), value);
             *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
                 k >= 0 ? k : SKILL_ATTACK;
+        } else if (strcmp(key, "realm") == 0) {
+            snprintf(character->realm, sizeof(character->realm), "%.39s", value);
         } else if (strcmp(key, "gold") == 0) {
             character->gold = number > 0 ? number : 0;
         } else if (strcmp(key, "items") == 0) {
@@ -528,11 +583,27 @@ static bool Character__Load(const char *path, Character *character) {
             }
         }
     }
-    fclose(file);
     if (!has_items && character->name[0] != '\0') {
         Inventory_GiveStartingItems(character); // saved before there were items
     }
     return character->name[0] != '\0';
+}
+
+static bool Character__Load(const char *path, Character *character) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    char        *text   = malloc(CHARACTER_TEXT_MAX);
+    const size_t length = text != NULL ? fread(text, 1, CHARACTER_TEXT_MAX - 1, file) : 0;
+    fclose(file);
+    if (text == NULL) {
+        return false;
+    }
+    text[length]    = '\0';
+    const bool read = Character_ReadText(text, character);
+    free(text);
+    return read;
 }
 
 bool Character_Exists(const char *name) {

@@ -29,13 +29,22 @@ elseif (UNIX)
 endif ()
 
 if (WIN32)
-    list(APPEND ADDITIONAL_LIBRARIES dbghelp) # crash reports: call stacks and minidumps
+    list(APPEND ADDITIONAL_LIBRARIES dbghelp ws2_32) # crash reports: call stacks and minidumps; ws2_32: multiplayer
 else ()
     # Crash reports: function names in the call stack (-rdynamic)
     set_target_properties(${PROJECT_NAME} PROPERTIES ENABLE_EXPORTS ON)
 endif ()
 
 target_link_libraries(AbyssEngine PRIVATE ${ABYSS_DEPENDENCIES} ${ADDITIONAL_LIBRARIES})
+
+# abyss-lobby: the list of online games for Multiplayer › Browse › Online (a small program of its own, no SDL)
+option(BUILD_LOBBY_SERVER "Build abyss-lobby, the server that lists online multiplayer games" ON)
+if (BUILD_LOBBY_SERVER)
+    add_executable(abyss-lobby src/lobby/Lobby.c src/net/Socket.c src/net/Socket.h)
+    if (WIN32)
+        target_link_libraries(abyss-lobby PRIVATE ws2_32)
+    endif ()
+endif ()
 
 # Git commit shown on the main menu: revision_data.h is written now and refreshed on every build
 include(genrev)

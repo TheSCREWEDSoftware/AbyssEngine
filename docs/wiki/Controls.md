@@ -129,11 +129,11 @@ own bindings, next to `abyss.ini`.
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Chat \* | - | `Return` | - |  |
+| Chat | - | `Return` | - |  |
 | Clear messages \* | - | `N` | - | `N` also on an action that's never active at the same time |
 
 > [!NOTE]
-> \* **Not implemented yet:** Chat, Clear messages. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Clear messages. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Free Roam (debug)
 

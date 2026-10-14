@@ -11,6 +11,7 @@
 #include "../drawing/TextBox.h"
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
+#include "../net/Client.h"
 #include "SceneCharacterSelect.h"
 #include "SceneGame.h"
 #include <ctype.h>
@@ -90,6 +91,7 @@ typedef struct Hero {
 } Hero;
 
 typedef struct SceneCharacterCreate {
+    bool     waiting; // multiplayer, dedicated server: it is making the character
     Sprite  *background;
     Sprite  *fire;
     Sprite  *checkbox;
@@ -305,18 +307,29 @@ static void CharacterCreate__Confirm(SceneCharacterCreate *scene) {
         CharacterCreate__ShowError(scene, reason);
         return;
     }
+    if (NetClient_Stage() == NETC_CHARACTERS && NetClient_ServerKeepsCharacters()) {
+        // A dedicated server makes and keeps it: wait for its answer
+        NetClient_Create(name, scene->heroes[scene->selected].class_id, scene->expansion, scene->hardcore);
+        scene->waiting = true;
+        return;
+    }
     if (Character_Exists(name)) {
         CharacterCreate__ShowError(scene, "A character with that name already exists.");
         return;
     }
     Character character;
     Character_Create(&character, name, scene->heroes[scene->selected].class_id, scene->expansion, scene->hardcore);
+    const bool online = NetClient_Stage() == NETC_CHARACTERS;
+    if (online) {
+        // Made in someone's game: marked as made there (games that only take their own characters let it in)
+        snprintf(character.realm, sizeof(character.realm), "%s", NetClient_Realm());
+    }
     if (!Character_Save(&character)) {
         CharacterCreate__ShowError(scene, "Could not save the character.");
         return;
     }
     Character_SetCurrent(&character);
-    Scene_Set(SCENE_REF(Game));
+    Scene_Set(online ? SCENE_REF(CharacterSelect) : SCENE_REF(Game)); // multiplayer: pick it there to join
 }
 
 void CharacterCreate_Update(void *scene_ref, const uint64_t delta) {
@@ -378,6 +391,23 @@ void CharacterCreate_Update(void *scene_ref, const uint64_t delta) {
         }
     }
 
+    if (scene->waiting) {
+        bool        ok     = false;
+        const char *result = NetClient_TakeResult(&ok);
+        if (NetClient_Stage() != NETC_CHARACTERS) {
+            Scene_Set(SCENE_REF(CharacterSelect)); // lost the connection: it sends us on
+            return;
+        }
+        if (result != NULL) {
+            scene->waiting = false;
+            if (ok) {
+                Scene_Set(SCENE_REF(CharacterSelect));
+                return;
+            }
+            CharacterCreate__ShowError(scene, result);
+        }
+        return;
+    }
     TextBox_Update(scene->name_box);
     Button_SetEnabled(scene->ok_button, scene->selected >= 0 && strlen(TextBox_GetText(scene->name_box)) >= 2);
 

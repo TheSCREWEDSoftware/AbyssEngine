@@ -17,6 +17,7 @@
 **Playing**
 
 - [Single Player](Single-Player.md)
+- [Multiplayer](Multiplayer.md)
 - [Options](Options.md)
 - [Controls](Controls.md)
 

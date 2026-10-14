@@ -1,4 +1,5 @@
 #include "../audio/Sounds.h"
+#include "../common/AbyssConfiguration.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
@@ -30,6 +31,7 @@
 #include "../map/Pathfinding.h"
 #include "../map/Places.h"
 #include "../map/World.h"
+#include "../net/Multiplayer.h"
 #include "CatalogCharacters.h"
 #include "GameInventory.h"
 #include "GameSkills.h"
@@ -38,6 +40,7 @@
 #include "SceneGame.h"
 #include "SceneMainMenu.h"
 #include "SceneMapEditor.h"
+#include "SceneMultiplayer.h"
 #include "SceneOptions.h"
 #include "SceneTestingGrounds.h"
 #include <ctype.h>
@@ -175,6 +178,7 @@ typedef struct Unit {
     char        object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
     bool        used;           // opened / activated: can't be clicked again
     int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
+    char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
     DrawContext draw;
 } Unit;
 
@@ -183,11 +187,13 @@ typedef enum RoamPanel { PANEL_NONE, PANEL_MONSTERS, PANEL_PLACES } RoamPanel;
 #define TOWN_COUNT 5
 static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue Encampment ... Harrogath
 
-#define MAX_AUTOMAP_MARKS 256  // objects marked on the automap (waypoints, shrines, wells, stairs)
-#define WAYPOINT_RANGE    8.0f // Single Player: how close to a waypoint the Waypoint button works
-#define MESSAGE_MS        4000 // level up and other messages
-#define CAPTION_MS        3500 // "Entering The Blood Moor"; fades out over the last second
-#define HARDCORE_DEATH_MS 5000 // time to read the bad news
+#define CHAT_LINES        6     // multiplayer: chat shown at the top left
+#define CHAT_MS           12000 // for this long
+#define MAX_AUTOMAP_MARKS 256   // objects marked on the automap (waypoints, shrines, wells, stairs)
+#define WAYPOINT_RANGE    8.0f  // Single Player: how close to a waypoint the Waypoint button works
+#define MESSAGE_MS        4000  // level up and other messages
+#define CAPTION_MS        3500  // "Entering The Blood Moor"; fades out over the last second
+#define HARDCORE_DEATH_MS 5000  // time to read the bad news
 #define CHAR_PANEL        "/data/global/ui/PANEL/invchar6.dc6"
 #define CHAR_PANEL_W      320
 #define CHAR_PANEL_H      432
@@ -253,6 +259,21 @@ typedef struct SceneRoam {
     bool      prev_right;
 
     TextBox *seed_box; // Free Roam: world seed (in the Places panel)
+
+    // Multiplayer: the other players, chat, and the game clock (game speed)
+    bool     online;
+    Unit     others[NET_MAX_PLAYERS];
+    int      other_ids[NET_MAX_PLAYERS];
+    int      other_colors[NET_MAX_PLAYERS];
+    int      other_count;
+    uint64_t last_sent;
+    int      spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
+    uint64_t clock;        // the game's time (runs faster at Fast, Faster, Fastest)
+    uint64_t clock_real;   // the real time it was last moved on at
+    TextBox *chat_box;
+    Label   *chat_label;
+    char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
+    uint64_t chat_times[CHAT_LINES];
     Button  *seed_use_button;
     Button  *seed_random_button;
     Label   *seed_label;
@@ -424,6 +445,9 @@ static const GameplaySettings *Roam__Gameplay(const SceneRoam *roam) {
 static bool Roam__PlayerAtEase(const SceneRoam *roam) { return roam->game ? roam->in_town : !combat_enabled; }
 
 static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
+    if (unit->net_mode[0] != '\0') {
+        return unit->net_mode; // another player: as their game shows them
+    }
     const bool player = Roam__IsPlayer(roam, unit);
     switch (unit->state) {
     case UNIT_WALK:
@@ -1472,8 +1496,15 @@ static void *Roam__Create(const bool free_roam, const bool game) {
 
         roam->character    = Character_Current();
         roam->player_class = (int)roam->character->class_id;
-        roam->running      = true;
-        roam->mana = (float)(roam->character->mana > 0 ? roam->character->mana : Character_MaxMana(roam->character));
+        roam->online       = NetClient_Stage() == NETC_IN_GAME;
+        roam->spread_place = -1;
+        if (roam->online) {
+            roam->chat_box = TextBox_Create(FONTS_FONT16, 120, 500, 560, 22, "Say something (Enter sends, Esc stops)");
+            roam->chat_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+            Label_SetAlignment(roam->chat_label, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+        }
+        roam->running = true;
+        roam->mana    = (float)(roam->character->mana > 0 ? roam->character->mana : Character_MaxMana(roam->character));
         roam->stamina =
             (float)(roam->character->stamina > 0 ? roam->character->stamina : Character_MaxStamina(roam->character));
         roam->char_panel_sprite = Sprite_Create(CHAR_PANEL, PALETTE_UNITS);
@@ -1525,7 +1556,9 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     ListBox_SetBackground(roam->list, 0, 0, 0, 160);
 
     if (game || free_roam) {
-        World_SetSeed(game ? 0 : fixed_seed); // a new world for every game; Free Roam keeps a seed you typed in
+        // A new world for every game (multiplayer: the server's, the same for everyone); Free Roam keeps a seed you
+        // typed in
+        World_SetSeed(game && NetClient_Stage() == NETC_IN_GAME ? NetClient_Seed() : (game ? 0 : fixed_seed));
     }
     if (free_roam && !game) {
         roam->seed_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
@@ -1576,6 +1609,8 @@ void *Game_Create(void) { return Roam__Create(false, true); }
 
 static void Roam__Free(void **scene_ref) {
     SceneRoam *roam = *(SceneRoam **)scene_ref;
+    TextBox_Destroy(&roam->chat_box);
+    Label_Destroy(&roam->chat_label);
     if (!roam->borrowed) {
         Map_Destroy(&roam->map);
     } else if (roam->map != NULL) {
@@ -2510,10 +2545,12 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     return took || roam->ui_owns_press;
 }
 
+static void Roam__ExitGame(SceneRoam *roam);
+
 static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mouse_x, const int mouse_y,
                              const bool clicked) {
     if (roam->leave_at != 0 && now >= roam->leave_at) {
-        Scene_Set(SCENE_REF(CharacterSelect)); // hardcore death
+        Roam__ExitGame(roam); // hardcore death
         return true;
     }
 
@@ -2571,10 +2608,150 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
         if (!roam->character->dead) {
             Roam__StoreCharacter(roam);
         }
-        Scene_Set(SCENE_REF(CharacterSelect));
+        Roam__ExitGame(roam);
         return true;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Multiplayer
+
+// Out of the game: Single Player to the character list; multiplayer leaves the game (stops it, when hosting) and goes
+// back to the Multiplayer screen
+static void Roam__ExitGame(SceneRoam *roam) {
+    if (roam->online) {
+        Multiplayer_Leave();
+        Scene_Set(SCENE_REF(MultiplayerMenu));
+    } else {
+        Scene_Set(SCENE_REF(CharacterSelect));
+    }
+}
+
+static void Roam__AddChat(SceneRoam *roam, const char *text) {
+    memmove(roam->chat_lines[0], roam->chat_lines[1], sizeof(roam->chat_lines[0]) * (CHAT_LINES - 1));
+    memmove(&roam->chat_times[0], &roam->chat_times[1], sizeof(roam->chat_times[0]) * (CHAT_LINES - 1));
+    snprintf(roam->chat_lines[CHAT_LINES - 1], sizeof(roam->chat_lines[CHAT_LINES - 1]), "%s", text);
+    roam->chat_times[CHAT_LINES - 1] = SDL_GetTicks64();
+}
+
+// The others in the game, where they are in this area: shown moving smoothly from one position to the next
+static void Roam__UpdateOthers(SceneRoam *roam, const uint64_t now) {
+    NetPlayer     *players = NULL;
+    const int      count   = NetClient_Players(&players);
+    const uint64_t real    = SDL_GetTicks64();
+    static Unit    kept[NET_MAX_PLAYERS]; // (too big for the stack with 255 players)
+    static int     kept_ids[NET_MAX_PLAYERS];
+    static int     kept_colors[NET_MAX_PLAYERS];
+    int            kept_count = 0;
+    for (int p = 0; p < count && kept_count < NET_MAX_PLAYERS; p++) {
+        const NetPlayer *player = &players[p];
+        if (!player->has_state || player->place != roam->place) {
+            continue; // somewhere else
+        }
+        Unit unit;
+        int  found = -1;
+        for (int o = 0; o < roam->other_count; o++) {
+            found = roam->other_ids[o] == player->id ? o : found;
+        }
+        if (found >= 0) {
+            unit = roam->others[found]; // keeps its animation going
+        } else {
+            memset(&unit, 0, sizeof(Unit));
+            snprintf(unit.base, sizeof(unit.base), "chars");
+            unit.idle_mode  = "nu";
+            unit.frame_time = now;
+        }
+        snprintf(unit.id, sizeof(unit.id), "%s", Character_ClassToken(player->class_id));
+        snprintf(unit.name, sizeof(unit.name), "%s", player->name);
+        const float step = fminf((float)(real - player->moved_at) / (1000.0f / NET_STATE_HZ), 1.0f);
+        unit.x           = player->from_x + ((player->x - player->from_x) * step);
+        unit.y           = player->from_y + ((player->y - player->from_y) * step);
+        unit.turn        = player->turn;
+        unit.level       = player->level;
+        const bool moving =
+            strcmp(player->mode, "wl") == 0 || strcmp(player->mode, "rn") == 0 || strcmp(player->mode, "tw") == 0;
+        if (strcmp(unit.net_mode, player->mode) != 0) {
+            snprintf(unit.net_mode, sizeof(unit.net_mode), "%s", player->mode);
+            unit.frame      = 0;
+            unit.frame_time = now;
+        }
+        unit.state = moving ? UNIT_WALK : UNIT_IDLE;
+        Roam__Animate(roam, &unit, now);
+        kept[kept_count]        = unit;
+        kept_colors[kept_count] = player->color;
+        kept_ids[kept_count++]  = player->id;
+    }
+    memcpy(roam->others, kept, sizeof(Unit) * (size_t)kept_count);
+    memcpy(roam->other_ids, kept_ids, sizeof(int) * (size_t)kept_count);
+    memcpy(roam->other_colors, kept_colors, sizeof(int) * (size_t)kept_count);
+    roam->other_count = kept_count;
+}
+
+// Every frame in a multiplayer game: where we are (15 times a second), what's said, whether we're still connected.
+// Returns true when the game ended (the scene changed).
+static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
+    if (NetClient_Stage() != NETC_IN_GAME) {
+        // Lost the game (or the host closed it): keep the character as it is, then the Multiplayer screen says why
+        if (!roam->character->dead && !NetClient_ServerKeepsCharacters()) {
+            Roam__StoreCharacter(roam);
+        }
+        Scene_Set(SCENE_REF(MultiplayerMenu));
+        return true;
+    }
+    const uint64_t real = SDL_GetTicks64();
+    if (real - roam->last_sent >= 1000 / NET_STATE_HZ) {
+        roam->last_sent = real;
+        NetClient_SendState(roam->place, roam->player.x, roam->player.y, roam->player.turn,
+                            Roam__Mode(roam, &roam->player));
+    }
+    char line[NET_CHAT_MAX + 24];
+    while (NetClient_TakeChat(line, sizeof(line))) {
+        Roam__AddChat(roam, line);
+    }
+    // Arriving somewhere: everyone comes in at the same spot, so step aside by our player id (a ring around it)
+    if (roam->spread_place != roam->place) {
+        roam->spread_place = roam->place;
+        const int   id     = NetClient_MyId();
+        const float angle  = (float)id * 2.39996f; // the golden angle: ids spread evenly round the circle
+        const float far    = 2.0f + (float)(id % 4);
+        const float x      = roam->player.x + (cosf(angle) * far);
+        const float y      = roam->player.y + (sinf(angle) * far);
+        if (id > 1 && Map_IsWalkable(roam->map, (int)floorf(x), (int)floorf(y))) {
+            roam->player.x = x;
+            roam->player.y = y;
+        }
+    }
+    Roam__UpdateOthers(roam, now);
+    // Chat: Enter opens the line, Enter sends it, Esc closes it
+    if (TextBox_IsFocused(roam->chat_box)) {
+        TextBox_Update(roam->chat_box);
+        if (InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN) || InputManager_ConsumeKeyPress(SDL_SCANCODE_KP_ENTER)) {
+            NetClient_SendChat(TextBox_GetText(roam->chat_box));
+            TextBox_Clear(roam->chat_box);
+            TextBox_Blur(roam->chat_box);
+        } else if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+            TextBox_Clear(roam->chat_box);
+            TextBox_Blur(roam->chat_box);
+        }
+        InputManager_ClearPresses(); // typing isn't playing
+    }
+    return false;
+}
+
+// The game's clock: real time, sped up by the multiplayer game's speed (Diablo's Fast, Faster, Fastest)
+static uint64_t Roam__Clock(SceneRoam *roam) {
+    const uint64_t real = SDL_GetTicks64();
+    if (!roam->online) {
+        return real;
+    }
+    if (roam->clock_real == 0) {
+        roam->clock      = real;
+        roam->clock_real = real;
+    }
+    roam->clock += (uint64_t)((float)(real - roam->clock_real) * NetSettings_SpeedScale(NetClient_Settings()->speed));
+    roam->clock_real = real;
+    return roam->clock;
 }
 
 // Leaving from the game menu: Single Player saves and goes back to the character list; Free Roam to where it came from
@@ -2583,7 +2760,7 @@ static void Roam__Leave(SceneRoam *roam) {
         if (!roam->character->dead) {
             Roam__StoreCharacter(roam);
         }
-        Scene_Set(SCENE_REF(CharacterSelect));
+        Roam__ExitGame(roam);
     } else {
         Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
     }
@@ -2648,12 +2825,23 @@ static bool Roam__UpdateMenu(SceneRoam *roam) {
 }
 
 static void Roam__Update(SceneRoam *roam) {
+    const uint64_t now = Roam__Clock(roam);
+    if (roam->online) {
+        // The other players go on whatever we're doing (menus included)
+        if (Roam__UpdateOnline(roam, now)) {
+            return;
+        }
+        if (!TextBox_IsFocused(roam->chat_box) && roam->options_panel == NULL && !roam->menu_open &&
+            Controls_Pressed(ACTION_CHAT)) {
+            TextBox_Focus(roam->chat_box);
+            InputManager_ClearPresses();
+        }
+    }
     if (Roam__UpdateMenu(roam)) {
-        roam->last_tick = SDL_GetTicks64(); // the world waits
+        roam->last_tick = now; // the world waits
         return;
     }
-    const uint64_t now     = SDL_GetTicks64();
-    const float    seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
+    const float seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
     Roam__MeasureSpeed(roam, now);
     roam->last_tick     = now;
     const SDL_Rect view = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
@@ -3211,16 +3399,96 @@ static void Roam__DrawCollisionLegend(SceneRoam *roam) {
     }
 }
 
+// Multiplayer: the other players' circles (under their feet) and names, in each one's colour (Options › Multiplayer)
+static void Roam__DrawOtherPlayers(SceneRoam *roam, const SDL_Rect *view) {
+    bool names;
+    bool circles;
+    AbyssConfiguration_GetPlayerMarkers(&names, &circles);
+    for (int o = 0; o < roam->other_count; o++) {
+        const Unit *unit = &roam->others[o];
+        uint8_t     r;
+        uint8_t     g;
+        uint8_t     b;
+        NetColor_Get(roam->other_colors[o], &r, &g, &b);
+        float wx;
+        float wy;
+        MapView_SubtileToWorld(unit->x, unit->y, &wx, &wy);
+        int sx;
+        int sy;
+        MapView_WorldToScreen(&roam->camera, view, wx, wy, &sx, &sy);
+        if (circles) {
+            // A flat ellipse on the ground (the isometric view: twice as wide as it is tall)
+            const float rx = 22.0f * roam->camera.zoom;
+            const float ry = 11.0f * roam->camera.zoom;
+            SDL_Point   ring[33];
+            for (int i = 0; i <= 32; i++) {
+                const float angle = (float)i * (6.2831853f / 32.0f);
+                ring[i].x         = sx + (int)lroundf(cosf(angle) * rx);
+                ring[i].y         = sy + (int)lroundf(sinf(angle) * ry);
+            }
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, r, g, b, 200);
+            SDL_RenderDrawLines(sdl_renderer, ring, 33);
+            for (int i = 0; i <= 32; i++) {
+                ring[i].y += 1; // two pixels thick
+            }
+            SDL_RenderDrawLines(sdl_renderer, ring, 33);
+        }
+        if (names) {
+            int top = sy - (int)(90.0f * roam->camera.zoom);
+            if (unit->draw.figure != NULL) {
+                int xmin;
+                int ymin;
+                int xmax;
+                int ymax;
+                Figure_GetBounds(unit->draw.figure, &xmin, &ymin, &xmax, &ymax);
+                top = sy + (int)((float)ymin * roam->camera.zoom) - 6;
+            }
+            Label_SetText(roam->target_label, unit->name);
+            Label_SetColor(roam->target_label, r, g, b, 0xFF);
+            Label_Draw(roam->target_label, sx, top);
+        }
+    }
+}
+
+// Multiplayer: what was said lately (top left, like the game's), and the line being typed
+static void Roam__DrawChat(SceneRoam *roam) {
+    const uint64_t now = SDL_GetTicks64();
+    int            y   = 30;
+    for (int l = 0; l < CHAT_LINES; l++) {
+        if (roam->chat_lines[l][0] == '\0' || now - roam->chat_times[l] > CHAT_MS) {
+            continue;
+        }
+        const bool said = strchr(roam->chat_lines[l], ':') != NULL; // "Name: ..." (the server's news has no name)
+        Label_SetText(roam->chat_label, roam->chat_lines[l]);
+        Label_SetColor(roam->chat_label, said ? 0xFF : 0xFF, said ? 0xFF : 0xE8, said ? 0xFF : 0x60, 0xFF);
+        Label_Draw(roam->chat_label, 12, y);
+        y += 18;
+    }
+    if (TextBox_IsFocused(roam->chat_box)) {
+        const SDL_Rect back = {110, 494, 580, 34};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
+        SDL_RenderFillRect(sdl_renderer, &back);
+        TextBox_Draw(roam->chat_box);
+    }
+}
+
 static void Roam__Render(SceneRoam *roam) {
     const SDL_Rect view = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
 
     SDL_SetRenderDrawColor(sdl_renderer, 10, 10, 14, 255);
     SDL_RenderClear(sdl_renderer);
 
-    MapDrawable drawables[MAX_UNITS + 1];
+    MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS];
     int         count = 0;
     for (int i = 0; i < roam->unit_count; i++) {
         if (Roam__PrepareDraw(roam, &roam->units[i], &drawables[count])) {
+            count++;
+        }
+    }
+    for (int o = 0; o < roam->other_count; o++) { // the other players here (multiplayer)
+        if (Roam__PrepareDraw(roam, &roam->others[o], &drawables[count])) {
             count++;
         }
     }
@@ -3278,8 +3546,9 @@ static void Roam__Render(SceneRoam *roam) {
         Roam__DrawPreview(roam, &view);
     }
 
-    // Who's under the mouse / being attacked
+    // Who's under the mouse / being attacked; the other players' names (multiplayer)
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    Roam__DrawOtherPlayers(roam, &view);
     if (roam->attack_target >= 0 && roam->attack_target != roam->hovered) {
         Roam__DrawUnitInfo(roam, &view, &roam->units[roam->attack_target], true);
     }
@@ -3364,6 +3633,9 @@ static void Roam__Render(SceneRoam *roam) {
         }
     }
 
+    if (roam->online) {
+        Roam__DrawChat(roam);
+    }
     if (roam->game && roam->char_panel) {
         Roam__DrawCharacterPanel(roam);
     }

@@ -20,6 +20,7 @@
 #include "../game/Settings.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
+#include "../net/Protocol.h"
 #include "SceneMainMenu.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -55,9 +56,17 @@
 #define DIALOG_W 620
 #define DIALOG_H 480
 
-typedef enum OptionsTab { TAB_VIDEO, TAB_AUDIO, TAB_GAMEPLAY, TAB_CONTROLS, TAB_DEBUG, TAB_COUNT } OptionsTab;
+typedef enum OptionsTab {
+    TAB_VIDEO,
+    TAB_AUDIO,
+    TAB_GAMEPLAY,
+    TAB_CONTROLS,
+    TAB_MULTIPLAYER,
+    TAB_DEBUG,
+    TAB_COUNT
+} OptionsTab;
 
-static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls", "Debug"};
+static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls", "Multiplayer", "Debug"};
 
 static const struct {
     const char *name;
@@ -172,6 +181,13 @@ typedef struct SceneOptions {
     Checkbox *confirm_entrances;
     Checkbox *even_speed;
 
+    // Multiplayer
+    Checkbox   *show_names;
+    Checkbox   *show_circles;
+    Dropdown   *player_color;
+    const char *color_names[NET_COLOR_COUNT];
+    TextBox    *lobby;
+
     // Debug (every class)
     Dropdown *autosave;
     Checkbox *keep_changes;
@@ -273,7 +289,8 @@ static bool Options__AnyDropdownOpen(const SceneOptions *options) {
     return Dropdown_IsOpen(options->window_size) || Dropdown_IsOpen(options->scale_quality) ||
            Dropdown_IsOpen(options->profile_dropdown) || Dropdown_IsOpen(options->movement) ||
            Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
-           Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode);
+           Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode) ||
+           Dropdown_IsOpen(options->player_color);
 }
 
 // The widgets showing what's set now
@@ -505,6 +522,33 @@ OptionsPanel *OptionsPanel_Create(void) {
         Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 88, "Ask before a new world (N in Free Roam)");
     Options__LoadDebug(options);
 
+    // Multiplayer
+    {
+        bool names;
+        bool circles;
+        AbyssConfiguration_GetPlayerMarkers(&names, &circles);
+        options->show_names   = Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + 3, "Names over the other players");
+        options->show_circles = Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + 29, "Circles under their feet");
+        Checkbox_SetChecked(options->show_names, names);
+        Checkbox_SetChecked(options->show_circles, circles);
+        for (int c = 0; c < NET_COLOR_COUNT; c++) {
+            options->color_names[c] = NetColor_Name(c);
+        }
+        options->player_color =
+            Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (2 * ROW_H), 180, options->color_names, NET_COLOR_COUNT);
+        for (int c = 0; c < NET_COLOR_COUNT; c++) {
+            uint8_t r;
+            uint8_t g;
+            uint8_t b;
+            NetColor_Get(c, &r, &g, &b);
+            Dropdown_SetMark(options->player_color, c, r, g, b);
+        }
+        Dropdown_SetSelected(options->player_color, AbyssConfiguration_GetPlayerColor() % NET_COLOR_COUNT);
+        options->lobby = TextBox_Create(FONTS_FONT16, CONTENT_X + LABEL_W, CONTENT_Y + (4 * ROW_H) - 3, 300, 22,
+                                        "host:port (none set)");
+        TextBox_SetText(options->lobby, AbyssConfiguration_GetLobby());
+    }
+
     // Controls
     const char *groups[GROUP_COUNT + 1];
     groups[0] = "Everything";
@@ -613,6 +657,10 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
         Slider_Destroy(&options->picture[i]);
     }
     Checkbox_Destroy(&options->even_speed);
+    Checkbox_Destroy(&options->show_names);
+    Checkbox_Destroy(&options->show_circles);
+    Dropdown_Destroy(&options->player_color);
+    TextBox_Destroy(&options->lobby);
     Checkbox_Destroy(&options->match_axes);
     Slider_Destroy(&options->mouse_x);
     Slider_Destroy(&options->mouse_y);
@@ -666,6 +714,10 @@ static void Options__Save(SceneOptions *options) {
     AbyssConfiguration_SetPicture(Slider_GetValue(options->picture[0]), Slider_GetValue(options->picture[1]),
                                   Slider_GetValue(options->picture[2]));
     Options__ApplyMouse(options);
+    AbyssConfiguration_SetPlayerMarkers(Checkbox_IsChecked(options->show_names),
+                                        Checkbox_IsChecked(options->show_circles));
+    AbyssConfiguration_SetPlayerColor(Dropdown_GetSelected(options->player_color));
+    AbyssConfiguration_SetLobby(TextBox_GetText(options->lobby));
     // Audio
     AbyssConfiguration_SetVolumes(
         (float)Slider_GetValue(options->volumes[0]) / 100.0f, (float)Slider_GetValue(options->volumes[1]) / 100.0f,
@@ -721,6 +773,12 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         Options__LoadGameplay(options);
         break;
     }
+    case TAB_MULTIPLAYER:
+        Checkbox_SetChecked(options->show_names, true);
+        Checkbox_SetChecked(options->show_circles, true);
+        Dropdown_SetSelected(options->player_color, 0);
+        TextBox_Clear(options->lobby);
+        break;
     case TAB_DEBUG: {
         const DebugSettings debug_defaults = {5, true, false, true};
         Settings_SetDebug(&debug_defaults);
@@ -1350,6 +1408,8 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 }
                 AbyssConfiguration_SetFrameRate(Options__FrameRate(options));
             }
+        } else if (Dropdown_IsOpen(options->player_color)) {
+            Dropdown_Update(options->player_color);
         } else if (Dropdown_IsOpen(options->autosave)) {
             if (Dropdown_Update(options->autosave)) {
                 Options__StoreDebug(options);
@@ -1429,6 +1489,12 @@ static void OptionsPanel__Update(SceneOptions *options) {
             Options__Message(options, "Tick \"Own settings\" to give this class controls of its own.");
         }
         break;
+    case TAB_MULTIPLAYER:
+        Checkbox_Update(options->show_names);
+        Checkbox_Update(options->show_circles);
+        Dropdown_Update(options->player_color);
+        TextBox_Update(options->lobby);
+        break;
     case TAB_DEBUG:
         if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
             Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed)) {
@@ -1447,7 +1513,7 @@ static void OptionsPanel__Update(SceneOptions *options) {
         Options__Leave(options);
         return;
     }
-    bool typing = false; // Esc in a slider's box clears the box, not the whole window
+    bool typing = TextBox_IsFocused(options->lobby); // Esc in a box clears the box, not the whole window
     for (int v = 0; v < VOLUME_COUNT; v++) {
         typing = typing || Slider_IsTyping(options->volumes[v]);
     }
@@ -1595,6 +1661,21 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           CONTENT_Y + (5 * ROW_H) + 20);
         break;
     }
+    case TAB_MULTIPLAYER:
+        Options__Name(options, "Other players", CONTENT_Y);
+        Checkbox_Draw(options->show_names);
+        Checkbox_Draw(options->show_circles);
+        Options__Name(options, "Your colour", CONTENT_Y + (2 * ROW_H));
+        Options__Describe(options, "The others see your name and circle in it (from the next game you join or host).",
+                          CONTENT_Y + (2 * ROW_H));
+        Options__Name(options, "Lobby server", CONTENT_Y + (4 * ROW_H) - 6);
+        TextBox_Draw(options->lobby);
+        Options__Describe(options,
+                          "The list of online games (Multiplayer > Browse > Online): the address of an abyss-lobby "
+                          "server, \"host\" or \"host:port\" (port 4002 if you leave it out).",
+                          CONTENT_Y + (4 * ROW_H) - 6);
+        Dropdown_Draw(options->player_color); // last: its list opens over the rest
+        break;
     case TAB_DEBUG: {
         // The developer tools, the same for every class
         Options__Name(options, "Map Editor auto-save", DEBUG_Y);
@@ -1648,6 +1729,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
     Dropdown_DrawList(options->window_size);
     Dropdown_DrawList(options->scale_quality);
     Dropdown_DrawList(options->frame_mode);
+    Dropdown_DrawList(options->player_color);
     Dropdown_DrawList(options->profile_dropdown);
     Dropdown_DrawList(options->movement);
     Dropdown_DrawList(options->group_filter);

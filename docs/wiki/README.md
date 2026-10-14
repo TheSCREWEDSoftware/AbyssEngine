@@ -6,7 +6,8 @@ portable engine.
 
 > **Status:** early. The engine boots to the main menu and has a set of developer tools (Catalog, Map Editor, Testing
 > Grounds, Free Roam). Single Player is a first playable version: create a character, fight, gain levels, spend skill
-> points, wear items, drink potions, save; no casting, drops or quests yet. Multiplayer isn't there.
+> points, wear items, drink potions, save; no casting, drops or quests yet. Multiplayer is a first version: host or
+> join a game (LAN, online or by address) and see each other walk around and chat; monsters aren't shared yet.
 > See **[Feature Status](Feature-Status.md)** for exactly what works and what doesn't.
 
 ## Installation guide

@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME}
         SceneMainMenu.c SceneMainMenu.h
         SceneOptions.c SceneOptions.h
         SceneMapEditor.c SceneMapEditor.h
+        SceneMultiplayer.c SceneMultiplayer.h
         GameInventory.c GameInventory.h
         GameSkills.c GameSkills.h
         SceneRoam.c SceneTestingGrounds.h SceneFreeRoam.h SceneGame.h

@@ -21,6 +21,9 @@ dependencies = [
     dependency('threads'),
     cc.find_library('m', required: false),
 ]
+if host_machine.system() == 'windows'
+    dependencies += [cc.find_library('ws2_32')] # multiplayer
+endif
 
 sources = [
     'AbyssEngine.c',
@@ -39,65 +42,79 @@ sources = [
     'common/Revision.c',
     'common/RingBuffer.c',
 
+    'map/Automap.c',
+    'map/LevelBuilder.c',
+    'map/LevelTypes.c',
     'map/Map.c',
     'map/MapHistory.c',
     'map/MapRenderer.c',
     'map/MapSession.c',
     'map/MapUnits.c',
     'map/MonsterStats.c',
-    'map/Pathfinding.c',
     'map/Objects.c',
+    'map/Pathfinding.c',
     'map/Places.c',
     'map/World.c',
-    'map/Automap.c',
-    'map/LevelBuilder.c',
-    'map/LevelTypes.c',
 
     'data/DataTable.c',
     'data/StringTable.c',
 
     'game/Character.c',
-    'game/Controls.c',
     'game/ControlPresets.c',
+    'game/Controls.c',
     'game/ControlsExport.c',
+    'game/Inventory.c',
+    'game/Items.c',
     'game/Settings.c',
+    'game/Skills.c',
 
     'drawing/Button.c',
     'drawing/Checkbox.c',
     'drawing/ConfirmDialog.c',
-    'drawing/Dropdown.c',
     'drawing/Cursor.c',
+    'drawing/Dropdown.c',
     'drawing/Figure.c',
     'drawing/Label.c',
     'drawing/ListBox.c',
     'drawing/LoadingScreen.c',
-    'drawing/TabBar.c',
-    'drawing/TextBox.c',
+    'drawing/Picture.c',
     'drawing/Screenshot.c',
     'drawing/Slider.c',
     'drawing/Sprite.c',
+    'drawing/TabBar.c',
+    'drawing/TextBox.c',
 
     'managers/AudioManager.c',
     'managers/InputManager.c',
     'managers/VideoManager.c',
 
+    'net/Client.c',
+    'net/Multiplayer.c',
+    'net/NetMessage.c',
+    'net/Protocol.c',
+    'net/Server.c',
+    'net/Socket.c',
+
     'scenes/CatalogCharacters.c',
     'scenes/CatalogClasses.c',
     'scenes/CatalogSprites.c',
     'scenes/CatalogTheme.c',
+    'scenes/GameInventory.c',
+    'scenes/GameSkills.c',
     'scenes/Scene.c',
     'scenes/SceneCatalog.c',
     'scenes/SceneCharacterCreate.c',
     'scenes/SceneCharacterSelect.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
-    'scenes/SceneOptions.c',
     'scenes/SceneMapEditor.c',
+    'scenes/SceneMultiplayer.c',
+    'scenes/SceneOptions.c',
     'scenes/SceneRoam.c',
 
+    'types/COF.c',
     'types/DC6.c',
     'types/DC6Frame.c',
-    'types/COF.c',
     'types/DCC.c',
     'types/DS1.c',
     'types/DT1.c',
@@ -155,6 +172,15 @@ executable('AbyssEngine',
     dependencies: dependencies,
     link_args: crash_link_args,
 )
+
+# abyss-lobby: the list of online games for Multiplayer > Browse > Online (a small program of its own, no SDL)
+if get_option('build_lobby_server')
+    executable('abyss-lobby',
+        install: true,
+        sources: ['lobby/Lobby.c', 'net/Socket.c'],
+        dependencies: host_machine.system() == 'windows' ? [cc.find_library('ws2_32')] : [],
+    )
+endif
 
 ring_buffer_test = executable('ring_buffer_test',
     sources: ['../tests/RingBufferTest.c', 'common/RingBuffer.c', 'util/Mutex.c'],

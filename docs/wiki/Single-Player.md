@@ -92,6 +92,7 @@ on the right. **Save and Exit Game** is in the game menu (**Esc**).
 | Zoom out | `Wheel Down` | - | - | Further out |
 | Day / dusk / night | - | `L` | - | Cycle the light (debug) |
 | Screenshot | - | `PrintScreen` | - | Saves a picture in the screenshots folder next to abyss.ini |
+| Chat | - | `Return` | - | Multiplayer: type a message (Enter sends it, Esc stops) |
 <!-- keys:end -->
 
 - **Combat** is always on. Town folk (Akara, Charsi, Gheed, ...) never fight and can't be attacked. Hits can miss:
