@@ -21,6 +21,8 @@ try them straight away in the [Testing Grounds](Testing-Grounds-and-Free-Roam.md
 | **Shadow** | Paint a shadow | Remove it |
 | **Units** | Place the selected monster, NPC, object or player (animated) | Remove the nearest unit |
 
+The monsters, NPCs and players for **Units** are loaded when the editor opens (under its loading screen), so the tab is ready the first time you click it.
+
 **Fill Floor** (Floor tab) covers the whole map with the selected floor.
 
 ## Moving around

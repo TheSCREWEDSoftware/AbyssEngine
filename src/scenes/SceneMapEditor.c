@@ -405,6 +405,14 @@ void *MapEditor_Create(void) {
         map = TestingGrounds_CreateDefaultMap();
     }
     Editor__SetMap(editor, map, NULL);
+
+    // The Units tab's monsters and NPCs, loaded now (under the same loading screen) so the tab opens straight away
+    LoadingScreen_Begin("Loading monsters and NPCs...");
+    CatalogCharacterInfo info;
+    if (CatalogCharacters_GetInfo(MapSession_GetBestiary(), editor->selected[TOOL_UNITS], &info)) {
+        MapUnits_GetFigure(editor->units, info.spec->base, info.id, info.idle_mode); // its preview
+    }
+    LoadingScreen_End();
     return editor;
 }
 
