@@ -120,8 +120,9 @@ static void Path__Smooth(const Map *map, const float from_x, const float from_y,
 
 bool Map_FindPath(const Map *map, const float from_x, const float from_y, const float to_x, const float to_y,
                   MapPath *path) {
-    path->count = 0;
-    path->next  = 0;
+    path->count   = 0;
+    path->next    = 0;
+    path->partial = false;
 
     const int map_w = map->width * MAP_SUBTILES;
     const int map_h = map->height * MAP_SUBTILES;
@@ -248,6 +249,17 @@ bool Map_FindPath(const Map *map, const float from_x, const float from_y, const 
                                 : (float)cells_y[length - 1] + 0.5f;
         // cells_x[0] is the start cell
         Path__Smooth(map, from_x, from_y, cells_x + 1, cells_y + 1, length - 1, end_x, end_y, path);
+        // Stopped short rather than blocked: out of searching, out of points, or the closest spot is on the edge of
+        // the box it looked in (the way on may be outside it)
+        const int  ex      = cells_x[length - 1];
+        const int  ey      = cells_y[length - 1];
+        const bool at_edge = (ex == search.x0 && search.x0 > 0) || (ey == search.y0 && search.y0 > 0) ||
+                             (ex == x1 && x1 < map_w - 1) || (ey == y1 && y1 < map_h - 1);
+        path->partial = !found && (expansions >= PATH_MAX_EXPANSIONS || at_edge);
+        if (path->count == PATH_MAX_POINTS &&
+            (path->x[path->count - 1] != end_x || path->y[path->count - 1] != end_y)) {
+            path->partial = true;
+        }
         free(cells_x);
         free(cells_y);
         ok = path->count > 0;

@@ -22,5 +22,7 @@ void Sprite_DrawScaled(const Sprite *sprite, int frame_index, int x, int y, floa
 // Draws one frame stretched into the given rectangle; ignores the frame offsets.
 void Sprite_DrawStretched(const Sprite *sprite, int frame_index, int x, int y, int width, int height);
 void Sprite_GetFrameSize(const Sprite *sprite, int frame_index, int *width, int *height);
+// Draws part of a frame (section, in the frame's pixels) with the frame's top-left corner at (x, y)
+void Sprite_DrawSection(const Sprite *sprite, int frame_index, int x, int y, const SDL_Rect *section);
 
 #endif // ABYSS_SPRITE_H

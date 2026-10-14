@@ -148,6 +148,17 @@ void Sprite_DrawAnimated(Sprite *sprite, const int x, const int y) {
 
     Sprite_Draw(sprite, (uint8_t)sprite->animation_index, x, y);
 }
+void Sprite_DrawSection(const Sprite *sprite, const int frame_index, const int x, const int y,
+                        const SDL_Rect *section) {
+    if (sprite == NULL || frame_index < 0 || (uint32_t)frame_index >= sprite->frame_count || section->w <= 0 ||
+        section->h <= 0) {
+        return;
+    }
+    const SpriteFrame *frame = &sprite->frames[frame_index];
+    const SDL_Rect     dest  = {x + section->x, y + section->y, section->w, section->h};
+    SDL_RenderCopy(sdl_renderer, frame->texture, section, &dest);
+}
+
 void Sprite_GetFrameSize(const Sprite *sprite, const int frame_index, int *width, int *height) {
     if (width != NULL) {
         *width = sprite->frames[frame_index].width;

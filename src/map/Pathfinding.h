@@ -13,6 +13,7 @@
 typedef struct MapPath {
     int   count;
     int   next;               // the point being walked to
+    bool  partial;            // the search stopped short (too far to look at once): plan again from the end of it
     float x[PATH_MAX_POINTS]; // sub-tiles (centres)
     float y[PATH_MAX_POINTS];
 } MapPath;

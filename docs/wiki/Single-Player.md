@@ -34,21 +34,28 @@ These are the default keys; every one can be changed (and more added) in **Optio
 for one ([Options](Options.md)). With **Modern** or **Combined** movement (Options › Gameplay) the arrow keys (or a
 gamepad's left stick) walk and **E** attacks.
 
+The bottom of the screen is the game's own **control panel**: the red life globe and blue mana globe (point at them for
+the numbers), the attack icons, the run/walk button, the stamina bar (red when you're out of breath) with the
+experience bar over it, the four belt slots, and the arrow in the middle that opens the **mini panel** (Character,
+Inventory, Skill Tree, Party, Automap, Message Log, Quest Log, Game Menu; the ones the engine doesn't do yet say so).
+When you have stat points to spend, the **New Stats** button lights up on the left. **Save and Exit Game** is in the
+game menu (**Esc**).
+
 | | |
 |---|---|
 | **Left click** | Walk; click a monster to attack it; click a chest, door, shrine or waypoint to open / use it |
-| **C** or **A** / Character button | Character screen |
-| **R** / Run button | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
+| **C** or **A** / mini panel's Character button | Character screen |
+| **R** / the run button on the control panel | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
 | **Shift** + click | Stand still: attack where you stand instead of walking |
-| **V** / Waypoint button | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
-| **Home** / Town button | Back to the act's town |
+| **V** | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
+| **Home** | Back to the act's town |
 | **Space** | Close the open screens |
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
 | **Tab** | Automap: what you've seen of the area, from the game's automap pieces, with the ways out labelled |
 | Walk out of town / click an entrance | On into the next area, or into a cave, tomb or dungeon (see [Walking between areas](Testing-Grounds-and-Free-Roam.md#walking-between-areas)) |
 | **L** | Lighting: day, dusk, night |
 | **Esc** | Close the open panel; with none open, the game menu: **Options**, **Save and Exit Game**, **Return to Game** (the world waits while it's open) |
-| Exit Game button | Save and go back to the character list |
+| **Tab** / mini panel's Automap button | Automap |
 
 ### Every key, from the engine
 

@@ -58,8 +58,10 @@
 #define SEED_LABEL_Y     418 // Free Roam: the world seed, under the Places list
 #define SEED_BOX_Y       432
 #define SEED_BUTTONS_Y   460
-#define MAX_UNITS        2048 // an act's outdoors joined into one map has many
-#define WALK_SPEED       5.0f // sub-tiles per second
+#define MAX_UNITS        2048  // an act's outdoors joined into one map has many
+#define WALK_SPEED       5.0f  // sub-tiles per second
+#define ACTIVE_DISTANCE  90.0f // sub-tiles: units further from you than this wait (about two screens)
+#define LONG_WALK_LEGS   64    // a far click is walked in up to this many searches
 #define RUN_SPEED        9.0f
 #define ARRIVE_DISTANCE  0.15f
 
@@ -247,6 +249,7 @@ typedef struct SceneRoam {
     Button        *seed_use_button;
     Button        *seed_random_button;
     Label         *seed_label;
+    int            long_walk_legs; // searches so far on the way to a far click
     float          key_dx; // Modern / Combined movement: where the movement keys (or stick) point, sub-tiles; 0 = none
     float          key_dy;
     bool           menu_open; // the game menu (Esc): Options, leave, back to the game; the world waits
@@ -270,17 +273,29 @@ typedef struct SceneRoam {
     bool       in_town;
     bool       char_panel; // the character screen
     Sprite    *char_panel_sprite;
-    Label     *panel_label;       // small text on the character screen
-    Label     *panel_value_label; // its numbers
-    Label     *message_label;     // "Level up!", ...
-    Automap   *automap;           // Tab
-    bool       show_automap;
-    Label     *caption_label; // "Entering The Blood Moor"
-    uint64_t   caption_until;
-    bool       announce; // this teleport is walking through an exit: "Entering ..." (not spawning or waypoints)
-    char       message[96];
-    uint64_t   message_until;
-    uint64_t   leave_at; // hardcore death: back to the character list at this time
+    // Single Player: the game's control panel (globes, run/walk, stamina, experience, mini panel)
+    Sprite  *ctrl_panel;
+    Sprite  *ctrl_globes;  // the red and blue fills
+    Sprite  *ctrl_overlap; // the glass over them
+    Sprite  *ctrl_run;
+    Sprite  *ctrl_menu; // the arrow that opens the mini panel
+    Sprite  *ctrl_mini;
+    Sprite  *ctrl_mini_buttons;
+    Sprite  *ctrl_level; // "new stats"
+    Sprite  *ctrl_skill; // skill icons
+    bool     mini_open;
+    int      ctrl_pressed;      // the panel button held down (drawn pressed), -1 = none
+    Label   *panel_label;       // small text on the character screen
+    Label   *panel_value_label; // its numbers
+    Label   *message_label;     // "Level up!", ...
+    Automap *automap;           // Tab
+    bool     show_automap;
+    Label   *caption_label; // "Entering The Blood Moor"
+    uint64_t caption_until;
+    bool     announce; // this teleport is walking through an exit: "Entering ..." (not spawning or waypoints)
+    char     message[96];
+    uint64_t message_until;
+    uint64_t leave_at; // hardcore death: back to the character list at this time
 } SceneRoam;
 
 static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);
@@ -333,7 +348,10 @@ static bool Roam__IsRunning(const SceneRoam *roam) {
 
 // The settings for the class being played (or all classes')
 static int Roam__Profile(const SceneRoam *roam) {
-    return roam->game ? (int)roam->character->class_id + 1 : roam->player_class + 1;
+    if (roam->game) {
+        return roam->character != NULL ? (int)roam->character->class_id + 1 : 0; // (all classes' until it's loaded)
+    }
+    return roam->player_class + 1;
 }
 
 static const GameplaySettings *Roam__Gameplay(const SceneRoam *roam) {
@@ -1320,7 +1338,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetColor(roam->title_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_SetAlignment(roam->target_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_END);
     Label_SetColor(roam->help_label, 0xA0, 0xA0, 0xA0, 0xFF);
-    Roam__UpdateHelp(roam); // from the bindings (Options › Controls), made again when they change
+    // The help line comes from the bindings (Options › Controls): worked out as it's drawn
 
     const char *names[6] = {
         "Back", "Class", "Walk", free_roam ? "Places" : "Monsters", free_roam ? "Monsters" : "Clear", "Combat"};
@@ -1353,6 +1371,19 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->stamina =
             (float)(roam->character->stamina > 0 ? roam->character->stamina : Character_MaxStamina(roam->character));
         roam->char_panel_sprite = Sprite_Create(CHAR_PANEL, PALETTE_UNITS);
+        roam->ctrl_panel        = Sprite_Create("/data/global/ui/PANEL/800ctrlpnl7.dc6", PALETTE_SKY);
+        roam->ctrl_globes       = Sprite_Create("/data/global/ui/PANEL/hlthmana.dc6", PALETTE_SKY);
+        roam->ctrl_overlap      = Sprite_Create("/data/global/ui/PANEL/overlap.dc6", PALETTE_SKY);
+        roam->ctrl_run          = Sprite_Create("/data/global/ui/PANEL/runbutton.dc6", PALETTE_SKY);
+        roam->ctrl_menu         = Sprite_Create("/data/global/ui/PANEL/menubutton.dc6", PALETTE_SKY);
+        roam->ctrl_mini         = Sprite_Create("/data/global/ui/PANEL/minipanel.dc6", PALETTE_SKY);
+        roam->ctrl_mini_buttons = Sprite_Create("/data/global/ui/PANEL/minipanelbtn.dc6", PALETTE_SKY);
+        roam->ctrl_level        = Sprite_Create("/data/global/ui/PANEL/level.dc6", PALETTE_SKY);
+        roam->ctrl_skill        = Sprite_Create("/data/global/ui/SPELLS/Skillicon.dc6", PALETTE_SKY);
+        roam->ctrl_pressed      = -1;
+        for (int b = 0; b < 6; b++) {
+            Button_SetVisible(roam->buttons[b], false); // the control panel does their jobs (Esc menu: exit)
+        }
         roam->panel_label       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
         roam->panel_value_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     } else if (free_roam) {
@@ -1452,6 +1483,11 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->life_label);
     Label_Destroy(&roam->target_label);
     Sprite_Destroy(&roam->char_panel_sprite);
+    Sprite *ctrl[] = {roam->ctrl_panel, roam->ctrl_globes,       roam->ctrl_overlap, roam->ctrl_run,  roam->ctrl_menu,
+                      roam->ctrl_mini,  roam->ctrl_mini_buttons, roam->ctrl_level,   roam->ctrl_skill};
+    for (size_t c = 0; c < sizeof(ctrl) / sizeof(ctrl[0]); c++) {
+        Sprite_Destroy(&ctrl[c]);
+    }
     TextBox_Destroy(&roam->seed_box);
     Button_Destroy(&roam->seed_use_button);
     Button_Destroy(&roam->seed_random_button);
@@ -1684,7 +1720,16 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         // Around walls, not through them
         Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
         roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
+        // A long walk: the search only looks so far at once, so carry on from where that leg ended
+        if (!roam->moving && player->path.partial && roam->long_walk_legs < LONG_WALK_LEGS &&
+            Roam__Distance(player->x, player->y, player->target_x, player->target_y) > ARRIVE_DISTANCE * 2.0f) {
+            roam->long_walk_legs++;
+            Roam__ClearPath(player);
+            Roam__PlanPath(roam->map, player, player->target_x, player->target_y, now, REPATH_PLAYER_MS);
+            roam->moving = Roam__FollowPath(roam->map, player, Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED, seconds);
+        }
         if (!roam->moving) {
+            roam->long_walk_legs = 0;
             Roam__ClearPath(player);
             if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
                 roam->use_target = -1; // got as close as it gets, and it's still out of reach
@@ -1763,6 +1808,12 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
 
     for (int i = 0; i < roam->unit_count; i++) {
         Unit *unit = &roam->units[i];
+        // Like the game's rooms: only what's near you is awake. The rest of the act waits where it is (and picks up
+        // again when you come near), so a joined-up act of hundreds of monsters costs only what's around you.
+        if (Roam__Distance(unit->x, unit->y, player->x, player->y) > ACTIVE_DISTANCE && unit->state != UNIT_DYING &&
+            i != roam->attack_target) {
+            continue;
+        }
         if (Roam__Animate(roam, unit, now)) {
             if (unit->state == UNIT_ATTACK && player_alive && Roam__Combat(roam) &&
                 Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
@@ -1952,6 +2003,220 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
 }
 
 // Single Player keys, buttons and panels. Returns true when the scene is being left.
+// ---------------------------------------------------------------------------------------------------------------------
+// Single Player's control panel, the game's: life and mana globes, skills, run/walk, stamina and experience, the mini
+// panel (character, inventory, skill tree, party, automap, messages, quests, game menu). Positions at 800x600.
+
+#define CTRL_RUN_X       255
+#define CTRL_RUN_Y       570
+#define CTRL_STAMINA_X   273
+#define CTRL_STAMINA_Y   572
+#define CTRL_XP_X        256
+#define CTRL_XP_Y        561
+#define CTRL_MENU_X      392
+#define CTRL_MENU_Y      562
+#define CTRL_LEVEL_X     206
+#define CTRL_LEVEL_Y     561
+#define CTRL_MINI_X      312
+#define CTRL_MINI_Y      532
+#define CTRL_MINI_COUNT  8
+#define CTRL_MINI_STEP   21
+#define CTRL_SKILL_LEFT  117
+#define CTRL_SKILL_RIGHT 635
+
+enum { CTRL_RUN = 100, CTRL_MENU, CTRL_LEVEL }; // mini panel buttons are 0 to 7
+
+static const char *ctrl_mini_names[CTRL_MINI_COUNT] = {"Character (A)", "Inventory (I)",  "Skill Tree (T)",
+                                                       "Party (P)",     "Automap (Tab)",  "Message Log (M)",
+                                                       "Quest Log (Q)", "Game Menu (Esc)"};
+
+static bool Roam__In(const int x, const int y, const int rx, const int ry, const int rw, const int rh) {
+    return x >= rx && x < rx + rw && y >= ry && y < ry + rh;
+}
+
+// The panel button under the mouse (CTRL_RUN, CTRL_MENU, CTRL_LEVEL, a mini panel slot), -1 = none
+static int Roam__CtrlButtonAt(const SceneRoam *roam, const int x, const int y) {
+    if (Roam__In(x, y, CTRL_RUN_X, CTRL_RUN_Y, 16, 20)) {
+        return CTRL_RUN;
+    }
+    if (Roam__In(x, y, CTRL_MENU_X, CTRL_MENU_Y, 15, 24)) {
+        return CTRL_MENU;
+    }
+    if (roam->character->stat_points > 0 && Roam__In(x, y, CTRL_LEVEL_X, CTRL_LEVEL_Y, 30, 30)) {
+        return CTRL_LEVEL;
+    }
+    if (roam->mini_open) {
+        for (int b = 0; b < CTRL_MINI_COUNT; b++) {
+            if (Roam__In(x, y, CTRL_MINI_X + 4 + (b * CTRL_MINI_STEP), CTRL_MINI_Y + 3, 20, 20)) {
+                return b;
+            }
+        }
+    }
+    return -1;
+}
+
+// Whether the mouse is on the panel (clicks there don't walk)
+static bool Roam__OverControlPanel(const SceneRoam *roam, const int x, const int y) {
+    return y >= 545 || (y >= 496 && (x < 117 || x >= 683)) ||
+           (roam->mini_open && Roam__In(x, y, CTRL_MINI_X, CTRL_MINI_Y, 176, 26));
+}
+
+static void Roam__CtrlPress(SceneRoam *roam, const int button) {
+    switch (button) {
+    case CTRL_RUN:
+        roam->running = !roam->running;
+        break;
+    case CTRL_MENU:
+        roam->mini_open = !roam->mini_open;
+        break;
+    case CTRL_LEVEL:
+    case 0: // character
+        roam->char_panel = !roam->char_panel;
+        break;
+    case 4: // automap
+        roam->show_automap = !roam->show_automap;
+        break;
+    case 7: // game menu
+        roam->menu_open = true;
+        break;
+    default: {
+        char text[96];
+        snprintf(text, sizeof(text), "%.*s isn't in the engine yet.",
+                 (int)(strchr(ctrl_mini_names[button], '(') - ctrl_mini_names[button] - 1), ctrl_mini_names[button]);
+        Roam__ShowMessage(roam, text);
+        break;
+    }
+    }
+    Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    Roam__UpdateButtons(roam);
+}
+
+// Clicks on the panel; true when the click was the panel's
+static bool Roam__UpdateControlPanel(SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    bool left;
+    InputManager_GetMouseButtons(&left, NULL, NULL);
+    const int under = Roam__CtrlButtonAt(roam, mouse_x, mouse_y);
+    if (left && roam->ctrl_pressed < 0 && !roam->prev_left && under >= 0) {
+        roam->ctrl_pressed = under; // pressed: acts when let go over it, like the game's buttons
+    }
+    if (!left && roam->ctrl_pressed >= 0) {
+        if (under == roam->ctrl_pressed) {
+            Roam__CtrlPress(roam, under);
+        }
+        roam->ctrl_pressed = -1;
+        return true;
+    }
+    return roam->ctrl_pressed >= 0;
+}
+
+// A globe's fill, as full as value / max (the top cut away)
+static void Roam__DrawGlobe(const SceneRoam *roam, const int frame, const int x, const int y, const float value,
+                            const float max) {
+    const float    part = max > 0.0f ? fminf(fmaxf(value / max, 0.0f), 1.0f) : 0.0f;
+    const int      high = (int)(80.0f * part);
+    const SDL_Rect cut  = {0, 80 - high, 80, high};
+    Sprite_DrawSection(roam->ctrl_globes, frame, x, y, &cut);
+}
+
+static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    const Character *character = roam->character;
+    // The panel: left globe holder, the middle pieces, right globe holder (a skill icon's width between)
+    static const int pieces[6][2] = {
+        {0, 0  },
+        {1, 165},
+        {2, 293},
+        {3, 421},
+        {4, 549},
+        {5, 683}
+    };
+    // The globes go behind the holders
+    Roam__DrawGlobe(roam, 0, 30, 507, (float)roam->player.hp, (float)roam->player.max_hp);
+    Roam__DrawGlobe(roam, 1, 690, 508, roam->mana, (float)Character_MaxMana(character));
+    for (int p = 0; p < 6; p++) {
+        Sprite_Draw(roam->ctrl_panel, (uint8_t)pieces[p][0], pieces[p][1], 600);
+    }
+    Sprite_Draw(roam->ctrl_overlap, 0, 28, 595);
+    Sprite_Draw(roam->ctrl_overlap, 1, 691, 592);
+    // Skills: attack on both sides until there are skills
+    Sprite_Draw(roam->ctrl_skill, 0, CTRL_SKILL_LEFT, 600);
+    Sprite_Draw(roam->ctrl_skill, 0, CTRL_SKILL_RIGHT, 600);
+
+    // Stamina (red when you've run yourself out) and experience through this level
+    const int      max_stamina = Character_MaxStamina(character);
+    const float    stamina     = max_stamina > 0 ? fminf(roam->stamina / (float)max_stamina, 1.0f) : 0.0f;
+    const SDL_Rect stamina_bar = {CTRL_STAMINA_X, CTRL_STAMINA_Y, (int)(102.0f * stamina), 19};
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    if (roam->exhausted || stamina < 0.25f) {
+        SDL_SetRenderDrawColor(sdl_renderer, 0xC8, 0x20, 0x10, 0xC8);
+    } else {
+        SDL_SetRenderDrawColor(sdl_renderer, 0xAF, 0x88, 0x48, 0xC8);
+    }
+    SDL_RenderFillRect(sdl_renderer, &stamina_bar);
+    const uint32_t low  = Character_ExperienceFor(character->level);
+    const uint32_t high = Character_ExperienceFor(character->level + 1);
+    const float    done = (character->level >= CHARACTER_MAX_LEVEL || high <= low)
+                              ? 1.0f
+                              : (float)(character->experience - low) / (float)(high - low);
+    const SDL_Rect xp   = {CTRL_XP_X, CTRL_XP_Y, (int)(120.0f * fminf(fmaxf(done, 0.0f), 1.0f)), 2};
+    SDL_SetRenderDrawColor(sdl_renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_RenderFillRect(sdl_renderer, &xp);
+
+    // Buttons (drawn pressed while held)
+    const int pressed = roam->ctrl_pressed == Roam__CtrlButtonAt(roam, mouse_x, mouse_y) ? roam->ctrl_pressed : -1;
+    Sprite_Draw(roam->ctrl_run, (uint8_t)((roam->running ? 2 : 0) + (pressed == CTRL_RUN ? 1 : 0)), CTRL_RUN_X,
+                CTRL_RUN_Y + 20);
+    Sprite_Draw(roam->ctrl_menu, (uint8_t)((roam->mini_open ? 2 : 0) + (pressed == CTRL_MENU ? 1 : 0)), CTRL_MENU_X,
+                CTRL_MENU_Y + 24);
+    if (character->stat_points > 0) {
+        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_LEVEL ? 1 : 0), CTRL_LEVEL_X, CTRL_LEVEL_Y + 30);
+    }
+    if (roam->mini_open) {
+        Sprite_Draw(roam->ctrl_mini, 0, CTRL_MINI_X, CTRL_MINI_Y + 26);
+        for (int b = 0; b < CTRL_MINI_COUNT; b++) {
+            Sprite_Draw(roam->ctrl_mini_buttons, (uint8_t)((b * 2) + (pressed == b ? 1 : 0)),
+                        CTRL_MINI_X + 4 + (b * CTRL_MINI_STEP), CTRL_MINI_Y + 23);
+        }
+    }
+
+    // What's under the mouse: the globes' numbers, the buttons' names
+    char      text[64] = "";
+    int       tx       = mouse_x;
+    int       ty       = mouse_y - 18;
+    const int button   = Roam__CtrlButtonAt(roam, mouse_x, mouse_y);
+    if (Roam__In(mouse_x, mouse_y, 30, 507, 80, 80)) {
+        snprintf(text, sizeof(text), "Life: %d / %d", roam->player.hp, roam->player.max_hp);
+        tx = 70;
+        ty = 490;
+    } else if (Roam__In(mouse_x, mouse_y, 690, 508, 80, 80)) {
+        snprintf(text, sizeof(text), "Mana: %d / %d", (int)roam->mana, Character_MaxMana(character));
+        tx = 730;
+        ty = 490;
+    } else if (Roam__In(mouse_x, mouse_y, CTRL_STAMINA_X, CTRL_STAMINA_Y, 102, 19)) {
+        snprintf(text, sizeof(text), "Stamina: %d / %d", (int)roam->stamina, max_stamina);
+    } else if (Roam__In(mouse_x, mouse_y, CTRL_XP_X, CTRL_XP_Y - 3, 120, 8)) {
+        snprintf(text, sizeof(text), "Experience: %u / %u", character->experience, high);
+    } else if (button == CTRL_RUN) {
+        snprintf(text, sizeof(text), roam->running ? "Walk (R)" : "Run (R)");
+    } else if (button == CTRL_MENU) {
+        snprintf(text, sizeof(text), roam->mini_open ? "Close Mini Panel" : "Open Mini Panel");
+    } else if (button == CTRL_LEVEL) {
+        snprintf(text, sizeof(text), "New Stats");
+    } else if (button >= 0) {
+        snprintf(text, sizeof(text), "%s", ctrl_mini_names[button]);
+    }
+    if (text[0] != '\0') {
+        Label_SetText(roam->target_label, text);
+        Label_SetColor(roam->target_label, 0xFF, 0xFF, 0xFF, 0xFF);
+        int w = 0;
+        Label_GetSize(roam->target_label, &w, NULL);
+        tx                 = tx - (w / 2) < 4 ? 4 + (w / 2) : (tx + (w / 2) > 796 ? 796 - (w / 2) : tx);
+        const SDL_Rect box = {tx - (w / 2) - 4, ty - 18, w + 8, 20};
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 200);
+        SDL_RenderFillRect(sdl_renderer, &box);
+        Label_Draw(roam->target_label, tx, ty);
+    }
+}
+
 static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mouse_x, const int mouse_y,
                              const bool clicked) {
     if (roam->leave_at != 0 && now >= roam->leave_at) {
@@ -2093,7 +2358,7 @@ static void Roam__Update(SceneRoam *roam) {
     const uint64_t now     = SDL_GetTicks64();
     const float    seconds = fminf((float)(now - roam->last_tick) / 1000.0f, 0.1f);
     roam->last_tick        = now;
-    const SDL_Rect view    = {0, 0, VIEW_W, VIEW_H};
+    const SDL_Rect view    = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
 
     // Controls: the class's own (or all classes'), the actions of this mode; nothing while typing a seed
     Controls_SetProfile(Roam__Profile(roam));
@@ -2112,7 +2377,11 @@ static void Roam__Update(SceneRoam *roam) {
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
     const bool over_panel = (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
                             (roam->game && roam->char_panel && mouse_x < CHAR_PANEL_W && mouse_y < CHAR_PANEL_H);
-    const bool over_view = mouse_y < VIEW_H && !over_panel;
+    const bool on_ctrl   = roam->game && Roam__OverControlPanel(roam, mouse_x, mouse_y);
+    const bool over_view = (roam->game ? mouse_y < 600 && !on_ctrl : mouse_y < VIEW_H) && !over_panel;
+    if (roam->game && (Roam__UpdateControlPanel(roam, mouse_x, mouse_y) || (on_ctrl && left))) {
+        left = false; // a click on the panel isn't a click in the world
+    }
 
     if (roam->game && Roam__UpdateGame(roam, now, mouse_x, mouse_y, left && !roam->prev_left)) {
         return;
@@ -2531,57 +2800,34 @@ static void Roam__DrawPreview(SceneRoam *roam, const SDL_Rect *view) {
 }
 
 // Single Player: mana and stamina next to life, the experience bar, messages
-static void Roam__DrawGameHud(SceneRoam *roam) {
-    const Character *character   = roam->character;
-    const int        max_mana    = Character_MaxMana(character);
-    const int        max_stamina = Character_MaxStamina(character);
-    char             text[64];
+// Free Roam / Testing Grounds: the help line and the life bar over the button bar
+static void Roam__DrawDebugBars(SceneRoam *roam) {
+    const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
+    SDL_RenderFillRect(sdl_renderer, &help_bar);
+    Roam__UpdateHelp(roam);
+    Label_Draw(roam->help_label, 4, VIEW_H - 12);
 
-    const SDL_Rect mana      = {VIEW_W - 128, VIEW_H - 34, 120, 10};
-    const SDL_Rect mana_fill = {VIEW_W - 128, VIEW_H - 34,
-                                max_mana > 0 ? (int)(120.0f * roam->mana / (float)max_mana) : 0, 10};
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 40, 220);
-    SDL_RenderFillRect(sdl_renderer, &mana);
-    SDL_SetRenderDrawColor(sdl_renderer, 30, 60, 220, 255);
-    SDL_RenderFillRect(sdl_renderer, &mana_fill);
-    snprintf(text, sizeof(text), "Mana %d / %d", (int)roam->mana, max_mana);
-    Label_SetText(roam->life_label, text);
-    int width = 0;
-    Label_GetSize(roam->life_label, &width, NULL);
-    Label_Draw(roam->life_label, VIEW_W - 134 - width, VIEW_H - 37);
-
-    // Stamina: a thin bar under life, yellow (red when you've run yourself out)
-    const SDL_Rect stamina      = {8, VIEW_H - 22, 120, 4};
-    const SDL_Rect stamina_fill = {8, VIEW_H - 22,
-                                   max_stamina > 0 ? (int)(120.0f * roam->stamina / (float)max_stamina) : 0, 4};
-    SDL_SetRenderDrawColor(sdl_renderer, 30, 30, 0, 220);
-    SDL_RenderFillRect(sdl_renderer, &stamina);
-    if (roam->exhausted) {
-        SDL_SetRenderDrawColor(sdl_renderer, 200, 60, 20, 255);
+    const Unit    *player = &roam->player;
+    const SDL_Rect life   = {8, VIEW_H - 34, 120, 10};
+    const SDL_Rect fill   = {8, VIEW_H - 34, player->max_hp > 0 ? 120 * player->hp / player->max_hp : 0, 10};
+    SDL_SetRenderDrawColor(sdl_renderer, 40, 0, 0, 220);
+    SDL_RenderFillRect(sdl_renderer, &life);
+    SDL_SetRenderDrawColor(sdl_renderer, 200, 20, 20, 255);
+    SDL_RenderFillRect(sdl_renderer, &fill);
+    char life_text[64];
+    if (player->state == UNIT_DEAD && roam->game && roam->character->dead) {
+        snprintf(life_text, sizeof(life_text), "You died");
+    } else if (player->state == UNIT_DEAD) {
+        const uint64_t now = SDL_GetTicks64();
+        snprintf(life_text, sizeof(life_text),
+                 roam->game ? "You died - back in town in %d..." : "You died - back in %d...",
+                 (int)((roam->respawn_at > now ? roam->respawn_at - now + 999 : 0) / 1000));
     } else {
-        SDL_SetRenderDrawColor(sdl_renderer, 210, 190, 40, 255);
+        snprintf(life_text, sizeof(life_text), "Life %d / %d", player->hp, player->max_hp);
     }
-    SDL_RenderFillRect(sdl_renderer, &stamina_fill);
-
-    // Experience through this level, across the bottom of the view
-    const uint32_t low     = Character_ExperienceFor(character->level);
-    const uint32_t high    = Character_ExperienceFor(character->level + 1);
-    const float    done    = (character->level >= CHARACTER_MAX_LEVEL || high <= low)
-                                 ? 1.0f
-                                 : (float)(character->experience - low) / (float)(high - low);
-    const SDL_Rect xp      = {0, VIEW_H - 16, VIEW_W, 2};
-    const SDL_Rect xp_fill = {0, VIEW_H - 16, (int)((float)VIEW_W * fminf(fmaxf(done, 0.0f), 1.0f)), 2};
-    SDL_SetRenderDrawColor(sdl_renderer, 40, 34, 10, 255);
-    SDL_RenderFillRect(sdl_renderer, &xp);
-    SDL_SetRenderDrawColor(sdl_renderer, 230, 200, 80, 255);
-    SDL_RenderFillRect(sdl_renderer, &xp_fill);
-
-    if (character->stat_points > 0 && !roam->char_panel && (SDL_GetTicks64() / 600) % 2 == 0) {
-        Label_SetText(roam->life_label, "New stats! (C)");
-        Label_SetColor(roam->life_label, 0xFF, 0xE8, 0x60, 0xFF);
-        Label_Draw(roam->life_label, 340, VIEW_H - 37);
-        Label_SetColor(roam->life_label, 0xFF, 0xFF, 0xFF, 0xFF);
-    }
+    Label_SetText(roam->life_label, life_text);
+    Label_Draw(roam->life_label, 134, VIEW_H - 37);
 }
 
 // Collision view (B): where each unit stands (the sub-tile clicks and fights go by); purple = monsters and the
@@ -2646,7 +2892,7 @@ static void Roam__DrawCollisionLegend(SceneRoam *roam) {
 }
 
 static void Roam__Render(SceneRoam *roam) {
-    const SDL_Rect view = {0, 0, VIEW_W, VIEW_H};
+    const SDL_Rect view = {0, 0, VIEW_W, roam->game ? 600 : VIEW_H}; // Single Player: under the control panel
 
     SDL_SetRenderDrawColor(sdl_renderer, 10, 10, 14, 255);
     SDL_RenderClear(sdl_renderer);
@@ -2752,39 +2998,12 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->draw_flags & MAP_DRAW_BLOCKED) {
         Roam__DrawCollisionLegend(roam);
     }
-    const SDL_Rect help_bar = {0, VIEW_H - 14, VIEW_W, 14};
-    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
-    SDL_RenderFillRect(sdl_renderer, &help_bar);
-    Roam__UpdateHelp(roam);
-    Label_Draw(roam->help_label, 4, VIEW_H - 12);
-
-    // Life
-    const Unit    *player = &roam->player;
-    const SDL_Rect life   = {8, VIEW_H - 34, 120, 10};
-    const SDL_Rect fill   = {8, VIEW_H - 34, player->max_hp > 0 ? 120 * player->hp / player->max_hp : 0, 10};
-    SDL_SetRenderDrawColor(sdl_renderer, 40, 0, 0, 220);
-    SDL_RenderFillRect(sdl_renderer, &life);
-    SDL_SetRenderDrawColor(sdl_renderer, 200, 20, 20, 255);
-    SDL_RenderFillRect(sdl_renderer, &fill);
-    char life_text[64];
-    if (player->state == UNIT_DEAD && roam->game && roam->character->dead) {
-        snprintf(life_text, sizeof(life_text), "You died");
-    } else if (player->state == UNIT_DEAD) {
-        const uint64_t now = SDL_GetTicks64();
-        snprintf(life_text, sizeof(life_text),
-                 roam->game ? "You died - back in town in %d..." : "You died - back in %d...",
-                 (int)((roam->respawn_at > now ? roam->respawn_at - now + 999 : 0) / 1000));
-    } else {
-        snprintf(life_text, sizeof(life_text), "Life %d / %d", player->hp, player->max_hp);
-    }
-    Label_SetText(roam->life_label, life_text);
-    Label_Draw(roam->life_label, 134, VIEW_H - 37);
-
-    if (roam->game) {
-        Roam__DrawGameHud(roam);
+    if (!roam->game) {
+        Roam__DrawDebugBars(roam);
     }
 
     if (roam->panel != PANEL_NONE) {
+
         const SDL_Rect panel = {PANEL_X, 14, 800 - PANEL_X, VIEW_H - 28};
         SDL_SetRenderDrawColor(sdl_renderer, 22, 20, 18, 235);
         SDL_RenderFillRect(sdl_renderer, &panel);
@@ -2824,11 +3043,18 @@ static void Roam__Render(SceneRoam *roam) {
         Label_Draw(roam->message_label, VIEW_W / 2, 125);
     }
 
-    const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};
-    SDL_SetRenderDrawColor(sdl_renderer, 22, 20, 18, 255);
-    SDL_RenderFillRect(sdl_renderer, &bottom);
-    for (int i = 0; i < 6; i++) {
-        Button_Draw(roam->buttons[i]);
+    if (roam->game) {
+        int mouse_x;
+        int mouse_y;
+        InputManager_GetMousePosition(&mouse_x, &mouse_y);
+        Roam__DrawControlPanel(roam, mouse_x, mouse_y);
+    } else {
+        const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};
+        SDL_SetRenderDrawColor(sdl_renderer, 22, 20, 18, 255);
+        SDL_RenderFillRect(sdl_renderer, &bottom);
+        for (int i = 0; i < 6; i++) {
+            Button_Draw(roam->buttons[i]);
+        }
     }
     if (roam->options_panel != NULL) {
         // The game stays dimly behind it, without the bars and labels showing through
