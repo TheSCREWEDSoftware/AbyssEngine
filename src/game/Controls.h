@@ -130,7 +130,7 @@ unsigned     Controls_ActionContexts(ControlAction action);
 bool         Controls_ActionWorks(ControlAction action); // false: the game has it, we don't yet
 const char  *Controls_GroupName(ControlGroup group);
 
-// Inputs as text: "W", "Left Ctrl+X", "2x K", "Mouse Left", "Wheel Up", "Pad A", "Pad Left Stick Up"
+// Inputs as text: "W", "Left Ctrl+X", "2x K", "Mouse Left", "Wheel Up", "Pad Button Down", "Pad Left Stick Up"
 void Controls_InputName(const ControlInput *input, char *text, int size);
 bool Controls_ParseInput(const char *text, ControlInput *input);
 bool Controls_SameInput(const ControlInput *a, const ControlInput *b);

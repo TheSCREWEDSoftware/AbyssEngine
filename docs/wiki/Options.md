@@ -30,9 +30,11 @@ setting, so they can be edited outside the game too.
   game's back, **Undo** what you did in the window, **Previous** / **Next** go through the actions, **OK** / **Cancel**
   (or **Esc**).
 - **Export** writes the controls for reading outside the game, next to `abyss.ini`: `controls.md` (a table per group:
-  action, inputs, clashes, whether it works yet) and `controls-keyboard.svg` (a keyboard coloured by group with the
-  actions on each key, and the mouse / gamepad / combination inputs listed under it). The defaults are on the
-  [Controls](Controls.md) page.
+  action, mouse, keyboard and controller inputs, clashes, and a note under it naming what isn't implemented yet,
+  with the pictures folded away above it), a keyboard coloured by group
+  with the actions on each key (`controls-keyboard.svg`), and a gamepad (a generic pad) with what
+  each trigger, bumper, stick direction, D-pad direction and button does (`controls-gamepad.svg`), each also in a dark version (`-dark.svg`). The
+  defaults are on the [Controls](Controls.md) page.
 
 ## Gameplay
 
@@ -48,6 +50,12 @@ setting, so they can be edited outside the game too.
 Every action of the game, with its default keys, and ours. Bindings work the way ArmA's do:
 
 - an action can have **any number of inputs**, and the same input can be on several actions;
+- gamepad buttons carry the numbers Windows gives them (its game controller settings) and where they are, the same
+  for any pad, whatever is printed on it: the four on the right are a second D-pad, `Pad Button 1 (Left)`,
+  `Pad Button 2 (Down)`, `Pad Button 3 (Right)`, `Pad Button 4 (Up)`; then `Pad Button 5 (Left Bumper)`,
+  `6 (Right Bumper)`, `7 (Left Trigger)`, `8 (Right Trigger)`, `9 (Select)`, `10 (Start)`, `11 (Left Stick Press)`,
+  `12 (Right Stick Press)`, `13 (Home)`, `14 (Touchpad)`, and `Pad D-pad Up` ..., `Pad Left Stick Up` ... (older names
+  in an `options.ini`, `Pad A`, `Pad X`, `Pad Left Shoulder`, ..., still work);
 - an input is a keyboard key, a mouse button, a wheel step, a gamepad button or stick direction, with modifiers held
   (`Ctrl+X`, `Shift+Mouse Left`) or **tapped twice** (`2x K`);
 - an input on two actions that are active at the same time **clashes**: only the first in the list fires (shown
@@ -64,7 +72,7 @@ they can be set up already; they're marked "not in the engine yet".
 | Run / walk | R | ✅ |
 | Run (hold) | Left Ctrl | ✅ |
 | Stand still | Left Shift, Right Shift | ✅ |
-| Attack | E, Pad X | ✅ Modern and Combined |
+| Attack | E, Pad Button 1 (Left) | ✅ Modern and Combined |
 | Right skill / drop monster | Mouse Right | ✅ Free Roam (drop) |
 | Swap weapons | W | |
 | Skill 1-8 | F1-F8 | |
@@ -105,7 +113,7 @@ SeeThroughObstructions = true
 [Controls]
 move_attack = Mouse Left
 move_up = Up, Keypad 8, Pad Left Stick Up
-attack = E, Mouse 4, Pad X
+attack = E, Mouse 4, Pad Button 1 (Left)
 character = A, C
 screenshot = PrintScreen, 2x F12
 

@@ -610,18 +610,25 @@ static void Options__UpdateDialog(SceneOptions *options, const int mouse_x, cons
     }
 }
 
-// The controls for outside the game: controls.md (a table) and controls-keyboard.svg (a diagram), next to abyss.ini
+// The controls for outside the game, next to abyss.ini: controls.md (a table, with the diagrams folded away in it) and
+// the keyboard and gamepad diagrams, light and dark
 static void Options__Export(SceneOptions *options) {
-    char md[4200];
-    char svg[4200];
-    snprintf(md, sizeof(md), "%s/controls.md", AbyssConfiguration_GetConfigFolder());
-    snprintf(svg, sizeof(svg), "%s/controls-keyboard.svg", AbyssConfiguration_GetConfigFolder());
-    if (!ControlsExport_Svg(options->profile, svg) ||
-        !ControlsExport_Markdown(options->profile, md, "controls-keyboard.svg")) {
+    static const char *names[4] = {"controls-keyboard.svg", "controls-keyboard-dark.svg", "controls-gamepad.svg",
+                                   "controls-gamepad-dark.svg"};
+    const char        *folder   = AbyssConfiguration_GetConfigFolder();
+    char               path[4200];
+    bool               ok = true;
+    for (int n = 0; n < 4; n++) {
+        snprintf(path, sizeof(path), "%s/%s", folder, names[n]);
+        ok = ok && (n < 2 ? ControlsExport_Svg(options->profile, path, n == 1)
+                          : ControlsExport_PadSvg(options->profile, path, n == 3));
+    }
+    snprintf(path, sizeof(path), "%s/controls.md", folder);
+    if (!ok || !ControlsExport_Markdown(options->profile, path, true)) {
         Options__Message(options, "Could not write the controls files.");
         return;
     }
-    Options__Message(options, "Saved controls.md and controls-keyboard.svg (next to abyss.ini).");
+    Options__Message(options, "Saved controls.md and the keyboard and gamepad pictures (next to abyss.ini).");
 }
 
 static void Options__UpdateControls(SceneOptions *options, const int mouse_x, const int mouse_y, const bool clicked) {

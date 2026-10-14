@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // The keyboard, row by row: key names (SDL's), labels, widths in quarter keys (4 = one key); "" = a gap
@@ -107,38 +108,139 @@ static const char *ControlsExport__Conflict(const ControlConflict conflict) {
                                          : "";
 }
 
-bool ControlsExport_Markdown(const int profile, const char *path, const char *svg_name) {
+// ---------------------------------------------------------------------------------------------------------------------
+// Dark theme: the light picture with every colour swapped for its dark counterpart
+
+static const char *dark_colors[][2] = {
+    {"#f4f4f4", "#1b1b1f"}, // background
+    {"#111111", "#e6e6e6"}, // text
+    {"#ffffff", "#2c2c31"}, // a key with nothing on it
+    {"#606060", "#7a7a80"}, // key outline
+    {"#555555", "#a0a0a8"}, // not in the engine yet
+    {"#909090", "#7c7c84"}, // (free)
+    {"#707070", "#8c8c94"}, // leader lines
+    {"#505050", "#8a8a90"}, // pad outline
+    {"#404040", "#18181b"}, // D-pad and face button outlines
+    {"#d6d6d6", "#3a3a40"}, // pad body
+    {"#bdbdbd", "#2c2c31"}, // bumpers
+    {"#9a9a9a", "#55555c"}, // sticks
+    {"#7a7a7a", "#44444a"},
+    {"#8a8a8a", "#5c5c64"}, // the four buttons
+    {"#f0f0f0", "#d8d8dc"}, // their arrows
+    {"#6a6a6a", "#202024"}, // D-pad, Back / Guide / Start
+    {"#9696dc", "#4b4b94"}, // the groups, deeper so light text reads on them
+    {"#e68c8c", "#8f3d3d"},
+    {"#e6c878", "#8a7230"},
+    {"#96dca0", "#3b7a47"},
+    {"#78c8dc", "#2e6e80"},
+    {"#c8a0e6", "#6c4b8c"},
+    {"#c8c8c8", "#5a5a60"},
+    {"#f0aa5a", "#95602a"},
+    {"#e02020", "#ff4a4a"}, // clashes
+    {"#d01010", "#ff5a5a"},
+};
+
+static bool ControlsExport__MakeDark(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    fseek(file, 0, SEEK_END);
+    const long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *text = malloc((size_t)size + 1);
+    if (text == NULL || fread(text, 1, (size_t)size, file) != (size_t)size) {
+        free(text);
+        fclose(file);
+        return false;
+    }
+    fclose(file);
+    text[size] = '\0';
+    for (char *c = strchr(text, '#'); c != NULL; c = strchr(c + 1, '#')) {
+        for (size_t k = 0; k < sizeof(dark_colors) / sizeof(dark_colors[0]); k++) {
+            if (strncmp(c, dark_colors[k][0], 7) == 0) {
+                memcpy(c, dark_colors[k][1], 7);
+                break;
+            }
+        }
+    }
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        free(text);
+        return false;
+    }
+    fwrite(text, 1, (size_t)size, file);
+    fclose(file);
+    free(text);
+    return true;
+}
+
+bool ControlsExport_Markdown(const int profile, const char *path, const bool pictures) {
     FILE *file = fopen(path, "w");
     if (file == NULL) {
         return false;
     }
     fprintf(file, "# Abyss Engine controls (%s)\n\n", Settings_ProfileName(profile));
-    if (svg_name != NULL) {
-        fprintf(file, "![Keyboard](%s)\n\n", svg_name);
+    if (pictures) {
+        // Folded away, each in a light and a dark version
+        static const char *shown[4][2] = {
+            {"Keyboard Layout (Light Theme)", "controls-keyboard.svg"     },
+            {"Keyboard Layout (Dark Theme)",  "controls-keyboard-dark.svg"},
+            {"Gamepad Layout (Light Theme)",  "controls-gamepad.svg"      },
+            {"Gamepad Layout (Dark Theme)",   "controls-gamepad-dark.svg" }
+        };
+        for (int p = 0; p < 4; p++) {
+            fprintf(file, "<details>\n<summary>Show %s</summary>\n\n![%s](%s)\n\n</details>\n\n", shown[p][0],
+                    shown[p][0], shown[p][1]);
+        }
     }
-    fprintf(file, "Actions marked \\* aren't in the engine yet.\n");
     for (int g = 0; g < GROUP_COUNT; g++) {
-        fprintf(file, "\n## %s\n\n| Action | Inputs | Note |\n|---|---|---|\n", Controls_GroupName((ControlGroup)g));
+        fprintf(file, "## %s\n\n| Action | Mouse | Keyboard | Controller | Note |\n|---|---|---|---|---|\n",
+                Controls_GroupName((ControlGroup)g));
+        char missing[1024] = ""; // the actions not in the engine yet, for the note under the table
         for (int a = 0; a < ACTION_COUNT; a++) {
             if ((int)Controls_ActionGroup((ControlAction)a) != g) {
                 continue;
             }
-            const ControlBindings *list        = Controls_GetBindings(profile, (ControlAction)a);
-            char                   inputs[512] = "";
-            char                   notes[256]  = "";
+            const ControlBindings *list = Controls_GetBindings(profile, (ControlAction)a);
+            char                   columns[3][384]; // mouse (and wheel), keyboard, controller
+            char                   notes[256] = "";
+            columns[0][0] = columns[1][0] = columns[2][0] = '\0';
             for (int b = 0; b < list->count; b++) {
-                char name[64];
-                Controls_InputName(&list->inputs[b], name, sizeof(name));
-                const size_t used = strlen(inputs);
-                snprintf(inputs + used, sizeof(inputs) - used, "%s`%s`", b > 0 ? ", " : "", name);
-                const ControlConflict conflict = Controls_Conflict(profile, (ControlAction)a, &list->inputs[b]);
+                const ControlInput *input = &list->inputs[b];
+                char                name[64];
+                Controls_InputName(input, name, sizeof(name));
+                const int    column = input->kind == INPUT_KEY                                             ? 1
+                                      : (input->kind == INPUT_PAD_BUTTON || input->kind == INPUT_PAD_AXIS) ? 2
+                                                                                                           : 0;
+                const size_t used   = strlen(columns[column]);
+                // A backtick key needs a longer fence to show as code
+                const bool tick = strchr(name, '`') != NULL;
+                snprintf(columns[column] + used, sizeof(columns[column]) - used, "%s%s%s%s", used > 0 ? ", " : "",
+                         tick ? "`` " : "`", name, tick ? " ``" : "`");
+                const ControlConflict conflict = Controls_Conflict(profile, (ControlAction)a, input);
                 if (conflict != CONFLICT_NONE && notes[0] == '\0') {
-                    snprintf(notes, sizeof(notes), "%s: %s", name, ControlsExport__Conflict(conflict));
+                    snprintf(notes, sizeof(notes), "`%s` %s", name, ControlsExport__Conflict(conflict));
                 }
             }
-            fprintf(file, "| %s%s | %s | %s |\n", Controls_ActionName((ControlAction)a),
-                    Controls_ActionWorks((ControlAction)a) ? "" : " \\*", inputs[0] != '\0' ? inputs : "-", notes);
+            const bool works = Controls_ActionWorks((ControlAction)a);
+            if (!works) {
+                const size_t used = strlen(missing);
+                snprintf(missing + used, sizeof(missing) - used, "%s%s", used > 0 ? ", " : "",
+                         Controls_ActionName((ControlAction)a));
+            }
+            fprintf(file, "| %s%s | %s | %s | %s | %s |\n", Controls_ActionName((ControlAction)a), works ? "" : " \\*",
+                    columns[0][0] != '\0' ? columns[0] : "-", columns[1][0] != '\0' ? columns[1] : "-",
+                    columns[2][0] != '\0' ? columns[2] : "-", notes);
         }
+        // GitHub shows this as a note box (other Markdown viewers as a quote)
+        if (missing[0] != '\0') {
+            fprintf(file,
+                    "\n> [!NOTE]\n> \\* **Not implemented yet:** %s. Their inputs are already set (the game's "
+                    "defaults) so they work as soon as the engine does them.\n",
+                    missing);
+        }
+        fprintf(file, "\n");
     }
     fclose(file);
     return true;
@@ -186,7 +288,7 @@ static void ControlsExport__Text(FILE *file, const char *text) {
     }
 }
 
-bool ControlsExport_Svg(const int profile, const char *path) {
+bool ControlsExport_Svg(const int profile, const char *path, const bool dark) {
     FILE *file = fopen(path, "w");
     if (file == NULL) {
         return false;
@@ -215,7 +317,7 @@ bool ControlsExport_Svg(const int profile, const char *path) {
 
     fprintf(file,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\" "
-            "font-family=\"Segoe UI, Helvetica, Arial, sans-serif\">\n",
+            "font-family=\"Segoe UI, Helvetica, Arial, sans-serif\" fill=\"#111111\">\n",
             width, height, width, height);
     fprintf(file, "<rect width=\"100%%\" height=\"100%%\" fill=\"#f4f4f4\"/>\n");
     fprintf(file, "<text x=\"%d\" y=\"30\" font-size=\"20\" font-weight=\"bold\">Abyss Engine controls: %s</text>\n",
@@ -308,5 +410,253 @@ bool ControlsExport_Svg(const int profile, const char *path) {
     }
     fprintf(file, "</svg>\n");
     fclose(file);
-    return true;
+    return !dark || ControlsExport__MakeDark(path);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The gamepad diagram: a generic pad (D-pad top left, four buttons top right, both sticks low in the middle, sticks
+// with a ring around a dished top). Buttons carry Windows' numbers and where they are, the same for any pad.
+
+typedef struct PadPart {
+    const char *label; // "Up", or "" for a control with one input
+    int         kind;  // INPUT_PAD_BUTTON / INPUT_PAD_AXIS
+    int         value; // SDL's button / our axis numbering (see Controls.c)
+} PadPart;
+
+typedef struct PadCallout {
+    const char *title;
+    int         side; // where the label goes: 0 left column, 1 right column, 2 under the pad, in the middle
+    int         y;    // the title's baseline
+    int         target_x;
+    int         target_y;
+    int         part_count;
+    PadPart     parts[5];
+} PadCallout;
+
+// Each column is ordered so that its leader lines fan out without crossing (and miss the D-pad and buttons)
+// clang-format off
+static const PadCallout pad_callouts[] = {
+    {"Left trigger (Button 7)",             0, 60,  410, 175, 1, {{"", INPUT_PAD_AXIS, 9}}   },
+    {"Left bumper (Button 5)",              0, 110, 395, 207, 1, {{"", INPUT_PAD_BUTTON, 9}} },
+    {"Select (Button 9)",                   0, 165, 505, 278, 1, {{"", INPUT_PAD_BUTTON, 4}} },
+    {"D-pad",
+     0,                             215,
+     387,                                     285,
+     4,                                               {{"Up", INPUT_PAD_BUTTON, 11},
+      {"Down", INPUT_PAD_BUTTON, 12},
+      {"Left", INPUT_PAD_BUTTON, 13},
+      {"Right", INPUT_PAD_BUTTON, 14}}                                     },
+    {"Left stick",
+     0,                             315,
+     446,                                     375,
+     5,                                               {{"Up", INPUT_PAD_AXIS, 2},
+      {"Down", INPUT_PAD_AXIS, 3},
+      {"Left", INPUT_PAD_AXIS, 0},
+      {"Right", INPUT_PAD_AXIS, 1},
+      {"Press (Button 11)", INPUT_PAD_BUTTON, 7}}                          },
+    {"Right trigger (Button 8)", 1, 60,  690, 175, 1, {{"", INPUT_PAD_AXIS, 11}}  },
+    {"Right bumper (Button 6)",             1, 110, 705, 207, 1, {{"", INPUT_PAD_BUTTON, 10}}},
+    {"Start (Button 10)",                    1, 165, 595, 278, 1, {{"", INPUT_PAD_BUTTON, 6}} },
+    {"Buttons (the right-hand D-pad)",
+     1,                             215,
+     726,                                     285,
+     4,                                               {{"Up (Button 4)", INPUT_PAD_BUTTON, 3},
+      {"Down (Button 2)", INPUT_PAD_BUTTON, 0},
+      {"Left (Button 1)", INPUT_PAD_BUTTON, 2},
+      {"Right (Button 3)", INPUT_PAD_BUTTON, 1}}                           },
+    {"Right stick",
+     1,                             315,
+     654,                                     375,
+     5,                                               {{"Up", INPUT_PAD_AXIS, 6},
+      {"Down", INPUT_PAD_AXIS, 7},
+      {"Left", INPUT_PAD_AXIS, 4},
+      {"Right", INPUT_PAD_AXIS, 5},
+      {"Press (Button 12)", INPUT_PAD_BUTTON, 8}}                          },
+    {"Home (Button 13)",                     2, 462, 550, 343, 1, {{"", INPUT_PAD_BUTTON, 5}} },
+};
+// clang-format on
+
+// "Move up, 2x Attack": every action on that pad input (with modifiers or a double tap said so)
+static bool ControlsExport__PadActions(const int profile, const int kind, const int value, char *text,
+                                       const size_t size, bool *clash) {
+    text[0] = '\0';
+    *clash  = false;
+    for (int a = 0; a < ACTION_COUNT; a++) {
+        const ControlBindings *list = Controls_GetBindings(profile, (ControlAction)a);
+        for (int b = 0; b < list->count; b++) {
+            const ControlInput *input = &list->inputs[b];
+            if ((int)input->kind != kind || input->value != value) {
+                continue;
+            }
+            const size_t used = strlen(text);
+            snprintf(text + used, size - used, "%s%s%s%s%s%s", used > 0 ? ", " : "", input->twice ? "2x " : "",
+                     (input->mods & KMOD_CTRL) ? "Ctrl+" : "", (input->mods & KMOD_SHIFT) ? "Shift+" : "",
+                     (input->mods & KMOD_ALT) ? "Alt+" : "", Controls_ActionName((ControlAction)a));
+            *clash = *clash || Controls_Conflict(profile, (ControlAction)a, input) == CONFLICT_CLASH;
+        }
+    }
+    return text[0] != '\0';
+}
+
+// The shell: triggers, bumpers and the body (the leader lines go over it, under the buttons)
+// The shell: triggers, bumpers and the body (the leader lines go over it, under the controls)
+static void ControlsExport__PadBody(FILE *file) {
+    const char *style = "fill=\"#d6d6d6\" stroke=\"#505050\" stroke-width=\"2\"";
+    fprintf(file, "<rect x=\"385\" y=\"160\" width=\"95\" height=\"32\" rx=\"10\" %s/>\n", style);
+    fprintf(file, "<rect x=\"620\" y=\"160\" width=\"95\" height=\"32\" rx=\"10\" %s/>\n", style);
+    fprintf(file, "<rect x=\"378\" y=\"196\" width=\"110\" height=\"22\" rx=\"8\" fill=\"#bdbdbd\" stroke=\"#505050\" "
+                  "stroke-width=\"2\"/>\n");
+    fprintf(file, "<rect x=\"612\" y=\"196\" width=\"110\" height=\"22\" rx=\"8\" fill=\"#bdbdbd\" stroke=\"#505050\" "
+                  "stroke-width=\"2\"/>\n");
+    fprintf(file,
+            "<path d=\"M 380 215 L 720 215 Q 790 215 810 290 L 845 450 Q 860 530 800 535 Q 755 538 725 470 "
+            "L 690 420 L 410 420 L 375 470 Q 345 538 300 535 Q 240 530 255 450 L 290 290 Q 310 215 380 215 Z\" %s/>\n",
+            style);
+}
+
+// A stick: a ring around a dished top
+static void ControlsExport__PadStick(FILE *file, const int x, const int y) {
+    fprintf(file, "<circle cx=\"%d\" cy=\"%d\" r=\"34\" fill=\"#9a9a9a\" stroke=\"#505050\" stroke-width=\"2\"/>\n", x,
+            y);
+    fprintf(file, "<circle cx=\"%d\" cy=\"%d\" r=\"26\" fill=\"#7a7a7a\" stroke=\"#404040\" stroke-width=\"1.5\"/>\n",
+            x, y);
+    fprintf(file, "<circle cx=\"%d\" cy=\"%d\" r=\"19\" fill=\"#6a6a6a\"/>\n", x, y);
+    fprintf(file, "<circle cx=\"%d\" cy=\"%d\" r=\"21\" fill=\"none\" stroke=\"#9a9a9a\" stroke-width=\"2\"/>\n", x, y);
+}
+
+// D-pad, the four buttons, Select / Start / Home and the sticks, over the leader lines
+static void ControlsExport__PadControls(FILE *file) {
+    // D-pad: four separate arrow keys, pointed towards the middle
+    static const char *dpad[4] = {"409,252 431,252 431,272 420,282 409,272", "409,318 431,318 431,298 420,288 409,298",
+                                  "387,274 407,274 417,285 407,296 387,296", "453,274 433,274 423,285 433,296 453,296"};
+    for (int d = 0; d < 4; d++) {
+        fprintf(file, "<polygon points=\"%s\" fill=\"#6a6a6a\" stroke=\"#404040\" stroke-width=\"1.5\"/>\n", dpad[d]);
+    }
+    // The four buttons, each with a small arrow for its name (up, left, right, down)
+    static const struct {
+        int         x, y;
+        const char *arrow;
+    } buttons[4] = {
+        {680, 253, "0,-6 -5,3 5,3" },
+        {648, 285, "-6,0 3,-5 3,5" },
+        {712, 285, "6,0 -3,-5 -3,5"},
+        {680, 317, "0,6 -5,-3 5,-3"}
+    };
+    for (int b = 0; b < 4; b++) {
+        fprintf(file,
+                "<circle cx=\"%d\" cy=\"%d\" r=\"14\" fill=\"#8a8a8a\" stroke=\"#404040\" stroke-width=\"1.5\"/>\n",
+                buttons[b].x, buttons[b].y);
+        fprintf(file, "<polygon points=\"%s\" transform=\"translate(%d %d)\" fill=\"#f0f0f0\"/>\n", buttons[b].arrow,
+                buttons[b].x, buttons[b].y);
+    }
+    // Select, Start, Home
+    fprintf(file, "<rect x=\"494\" y=\"279\" width=\"22\" height=\"12\" rx=\"4\" fill=\"#6a6a6a\"/>\n");
+    fprintf(file, "<polygon points=\"584,279 606,285 584,291\" fill=\"#6a6a6a\"/>\n");
+    fprintf(file, "<circle cx=\"550\" cy=\"330\" r=\"13\" fill=\"#6a6a6a\" stroke=\"#404040\"/>\n");
+    ControlsExport__PadStick(file, 480, 375);
+    ControlsExport__PadStick(file, 620, 375);
+}
+
+bool ControlsExport_PadSvg(const int profile, const char *path, const bool dark) {
+    FILE *file = fopen(path, "w");
+    if (file == NULL) {
+        return false;
+    }
+    const int width  = 1100;
+    const int height = 620;
+    fprintf(file,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\" "
+            "font-family=\"Segoe UI, Helvetica, Arial, sans-serif\" fill=\"#111111\">\n",
+            width, height, width, height);
+    fprintf(file, "<rect width=\"100%%\" height=\"100%%\" fill=\"#f4f4f4\"/>\n");
+    fprintf(file, "<text x=\"20\" y=\"30\" font-size=\"20\" font-weight=\"bold\">Abyss Engine gamepad: %s</text>\n",
+            Settings_ProfileName(profile));
+    ControlsExport__PadBody(file);
+
+    // Leader lines: from the label straight to the control
+    const size_t count = sizeof(pad_callouts) / sizeof(pad_callouts[0]);
+    for (size_t c = 0; c < count; c++) {
+        const PadCallout *callout = &pad_callouts[c];
+        const int         from_x  = callout->side == 2 ? callout->target_x : (callout->side == 1 ? 845 : 255);
+        const int         from_y  = callout->side == 2 ? callout->y - 13 : callout->y - 4;
+        fprintf(file, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" stroke=\"#707070\" stroke-width=\"1.2\"/>\n",
+                from_x, from_y, callout->target_x, callout->target_y);
+    }
+    ControlsExport__PadControls(file);
+    for (size_t c = 0; c < count; c++) {
+        const PadCallout *callout = &pad_callouts[c];
+        if (callout->side != 2) {
+            fprintf(file, "<circle cx=\"%d\" cy=\"%d\" r=\"3\" fill=\"#707070\"/>\n", callout->target_x,
+                    callout->target_y);
+        }
+    }
+
+    const int line = 15;
+    for (size_t c = 0; c < count; c++) {
+        const PadCallout *callout = &pad_callouts[c];
+        if (callout->side == 2) {
+            char       actions[256];
+            bool       clash = false;
+            const bool bound = ControlsExport__PadActions(profile, callout->parts[0].kind, callout->parts[0].value,
+                                                          actions, sizeof(actions), &clash);
+            fprintf(file, "<text x=\"550\" y=\"%d\" font-size=\"13\" font-weight=\"bold\" text-anchor=\"middle\">",
+                    callout->y);
+            ControlsExport__Text(file, callout->title);
+            fprintf(file, "</text>\n<text x=\"550\" y=\"%d\" font-size=\"11\" text-anchor=\"middle\"%s>",
+                    callout->y + line, clash ? " fill=\"#d01010\"" : (bound ? "" : " fill=\"#909090\""));
+            ControlsExport__Text(file, bound ? actions : "(free)");
+            fprintf(file, "</text>\n");
+            continue;
+        }
+        // Left column: right-aligned against its line; right column: left-aligned
+        const bool  right  = callout->side == 1;
+        const int   x      = right ? 850 : 250;
+        const char *anchor = right ? "start" : "end";
+        fprintf(file, "<text x=\"%d\" y=\"%d\" font-size=\"13\" font-weight=\"bold\" text-anchor=\"%s\">", x,
+                callout->y, anchor);
+        ControlsExport__Text(file, callout->title);
+        fprintf(file, "</text>\n");
+        for (int p = 0; p < callout->part_count; p++) {
+            const PadPart *part = &callout->parts[p];
+            char           actions[256];
+            bool           clash = false;
+            const bool     bound =
+                ControlsExport__PadActions(profile, part->kind, part->value, actions, sizeof(actions), &clash);
+            fprintf(file, "<text x=\"%d\" y=\"%d\" font-size=\"11\" text-anchor=\"%s\"%s>", x,
+                    callout->y + ((p + 1) * line), anchor,
+                    clash ? " fill=\"#d01010\"" : (bound ? "" : " fill=\"#909090\""));
+            if (part->label[0] != '\0') {
+                ControlsExport__Text(file, part->label);
+                fprintf(file, ": ");
+            }
+            ControlsExport__Text(file, bound ? actions : "(free)");
+            fprintf(file, "</text>\n");
+        }
+    }
+
+    // Anything bound to the extra buttons some pads have
+    char extras[512] = "";
+    for (int b = 15; b <= 20; b++) {
+        char actions[256];
+        bool clash;
+        if (ControlsExport__PadActions(profile, INPUT_PAD_BUTTON, b, actions, sizeof(actions), &clash)) {
+            char               name[48];
+            const ControlInput input = {INPUT_PAD_BUTTON, b, 0, false};
+            const size_t       used  = strlen(extras);
+            Controls_InputName(&input, name, sizeof(name));
+            snprintf(extras + used, sizeof(extras) - used, "%s%s: %s", used > 0 ? "; " : "", name + 4, actions);
+        }
+    }
+    fprintf(file,
+            "<text x=\"20\" y=\"%d\" font-size=\"12\">Buttons are numbered as Windows numbers them and named by where "
+            "they are (the four on the right are a second D-pad), whatever the pad prints on them.</text>\n",
+            height - 54);
+    fprintf(file,
+            "<text x=\"20\" y=\"%d\" font-size=\"12\">Red: clashes with another action. (free): nothing on it yet. "
+            "Paddles, touchpad and other extra buttons: ",
+            height - 34);
+    ControlsExport__Text(file, extras[0] != '\0' ? extras : "nothing bound");
+    fprintf(file, "</text>\n</svg>\n");
+    fclose(file);
+    return !dark || ControlsExport__MakeDark(path);
 }

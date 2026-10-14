@@ -61,7 +61,7 @@ static const ActionInfo actions[ACTION_COUNT] = {
     [ACTION_ATTACK]      = {"attack",
                             "Attack",                               GROUP_COMBAT,
                             A,                                                         true,
-                            {"E", "Pad X"},
+                            {"E", "Pad Button 1 (Left)"},
                             "Modern and Combined movement: attack what's under the mouse, or the nearest monster"                                    },
     [ACTION_RIGHT_SKILL] = {"right_skill",
                             "Right skill / drop monster",           GROUP_COMBAT,
@@ -169,37 +169,85 @@ const char  *Controls_GroupName(const ControlGroup group) { return group_names[g
 
 static const char *mouse_names[] = {"", "Mouse Left", "Mouse Middle", "Mouse Right", "Mouse 4", "Mouse 5"};
 
+// Gamepad inputs carry Windows' button numbers (what the system's game controller settings show, the same for any
+// pad) with where the button is: the four on the right are a second D-pad, "Pad Button 4 (Up)" is the top one.
+// SDL numbers them by position too, so this holds for every pad.
 static const char *Controls__AxisName(const int value) {
-    static const char *names[] = {"Pad Left Stick Left", "Pad Left Stick Right", "Pad Left Stick Up",
-                                  "Pad Left Stick Down", "Pad Right Stick Left", "Pad Right Stick Right",
-                                  "Pad Right Stick Up",  "Pad Right Stick Down", "Pad Left Trigger -",
-                                  "Pad Left Trigger",    "Pad Right Trigger -",  "Pad Right Trigger"};
+    static const char *names[] = {
+        "Pad Left Stick Left",         "Pad Left Stick Right",           "Pad Left Stick Up",
+        "Pad Left Stick Down",         "Pad Right Stick Left",           "Pad Right Stick Right",
+        "Pad Right Stick Up",          "Pad Right Stick Down",           "Pad Button 7 (Left Trigger) -",
+        "Pad Button 7 (Left Trigger)", "Pad Button 8 (Right Trigger) -", "Pad Button 8 (Right Trigger)"};
     return value >= 0 && value < (int)(sizeof(names) / sizeof(names[0])) ? names[value] : "Pad Axis";
 }
 
 static const char *Controls__PadButtonName(const int value) {
-    static const char *names[] = {"Pad A",
-                                  "Pad B",
-                                  "Pad X",
-                                  "Pad Y",
-                                  "Pad Back",
-                                  "Pad Guide",
-                                  "Pad Start",
-                                  "Pad Left Stick",
-                                  "Pad Right Stick",
-                                  "Pad Left Shoulder",
-                                  "Pad Right Shoulder",
-                                  "Pad Up",
-                                  "Pad Down",
-                                  "Pad Left",
-                                  "Pad Right",
+    static const char *names[] = {"Pad Button 2 (Down)",
+                                  "Pad Button 3 (Right)",
+                                  "Pad Button 1 (Left)",
+                                  "Pad Button 4 (Up)",
+                                  "Pad Button 9 (Select)",
+                                  "Pad Button 13 (Home)",
+                                  "Pad Button 10 (Start)",
+                                  "Pad Button 11 (Left Stick Press)",
+                                  "Pad Button 12 (Right Stick Press)",
+                                  "Pad Button 5 (Left Bumper)",
+                                  "Pad Button 6 (Right Bumper)",
+                                  "Pad D-pad Up",
+                                  "Pad D-pad Down",
+                                  "Pad D-pad Left",
+                                  "Pad D-pad Right",
                                   "Pad Misc",
                                   "Pad Paddle 1",
                                   "Pad Paddle 2",
                                   "Pad Paddle 3",
                                   "Pad Paddle 4",
-                                  "Pad Touchpad"};
+                                  "Pad Button 14 (Touchpad)"};
     return value >= 0 && value < (int)(sizeof(names) / sizeof(names[0])) ? names[value] : "Pad Button";
+}
+
+// Names options.ini files written before used, still read: an input kind, its value
+static bool Controls__OldPadName(const char *name, ControlInput *input) {
+    static const struct {
+        const char *name;
+        int         kind;
+        int         value;
+    } old[] = {
+        {"Pad A",              INPUT_PAD_BUTTON, 0 },
+        {"Pad B",              INPUT_PAD_BUTTON, 1 },
+        {"Pad X",              INPUT_PAD_BUTTON, 2 },
+        {"Pad Y",              INPUT_PAD_BUTTON, 3 },
+        {"Pad Button Down",    INPUT_PAD_BUTTON, 0 },
+        {"Pad Button Right",   INPUT_PAD_BUTTON, 1 },
+        {"Pad Button Left",    INPUT_PAD_BUTTON, 2 },
+        {"Pad Button Up",      INPUT_PAD_BUTTON, 3 },
+        {"Pad Back",           INPUT_PAD_BUTTON, 4 },
+        {"Pad Select",         INPUT_PAD_BUTTON, 4 },
+        {"Pad Guide",          INPUT_PAD_BUTTON, 5 },
+        {"Pad Home",           INPUT_PAD_BUTTON, 5 },
+        {"Pad Start",          INPUT_PAD_BUTTON, 6 },
+        {"Pad Left Stick",     INPUT_PAD_BUTTON, 7 },
+        {"Pad Right Stick",    INPUT_PAD_BUTTON, 8 },
+        {"Pad Left Shoulder",  INPUT_PAD_BUTTON, 9 },
+        {"Pad Left Bumper",    INPUT_PAD_BUTTON, 9 },
+        {"Pad Right Shoulder", INPUT_PAD_BUTTON, 10},
+        {"Pad Right Bumper",   INPUT_PAD_BUTTON, 10},
+        {"Pad Up",             INPUT_PAD_BUTTON, 11},
+        {"Pad Down",           INPUT_PAD_BUTTON, 12},
+        {"Pad Left",           INPUT_PAD_BUTTON, 13},
+        {"Pad Right",          INPUT_PAD_BUTTON, 14},
+        {"Pad Touchpad",       INPUT_PAD_BUTTON, 20},
+        {"Pad Left Trigger",   INPUT_PAD_AXIS,   9 },
+        {"Pad Right Trigger",  INPUT_PAD_AXIS,   11},
+    };
+    for (size_t o = 0; o < sizeof(old) / sizeof(old[0]); o++) {
+        if (strcmp(name, old[o].name) == 0) {
+            input->kind  = (InputKind)old[o].kind;
+            input->value = old[o].value;
+            return true;
+        }
+    }
+    return false;
 }
 
 void Controls_InputName(const ControlInput *input, char *text, const int size) {
@@ -286,6 +334,9 @@ bool Controls_ParseInput(const char *text, ControlInput *input) {
             input->value = b;
             return true;
         }
+    }
+    if (Controls__OldPadName(name, input)) {
+        return true;
     }
     const SDL_Scancode scancode = SDL_GetScancodeFromName(name);
     if (scancode != SDL_SCANCODE_UNKNOWN) {
@@ -500,7 +551,8 @@ void Controls_Write(FILE *file) {
                     "# Controls for all classes. Each line: action = inputs, separated by commas. An input is a key\n"
                     "# (\"W\", \"Left Ctrl\", \"F1\", \"Keypad 5\"), \"Mouse Left\" / \"Mouse Middle\" / \"Mouse "
                     "Right\" / \"Mouse 4\" /\n"
-                    "# \"Mouse 5\", \"Wheel Up\" / \"Wheel Down\", a gamepad button or stick (\"Pad A\", \"Pad Left "
+                    "# \"Mouse 5\", \"Wheel Up\" / \"Wheel Down\", a gamepad button or stick (\"Pad Button Down\", "
+                    "\"Pad Left "
                     "Stick Up\"),\n"
                     "# with modifiers in front (\"Ctrl+\", \"Shift+\", \"Alt+\") or tapped twice (\"2x K\"). Empty = "
                     "not bound.\n"
