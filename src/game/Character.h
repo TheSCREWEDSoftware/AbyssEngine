@@ -1,6 +1,7 @@
 #ifndef ABYSS_CHARACTER_H
 #define ABYSS_CHARACTER_H
 
+#include "Items.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -12,6 +13,11 @@
 
 #define CHARACTER_NAME_MAX  16 // 15 letters
 #define CHARACTER_MAX_LEVEL 99
+#define CHARACTER_SKILLS    40 // per class (Skills.h's SKILLS_PER_CLASS_MAX)
+#define INVENTORY_W         10 // the inventory grid, in cells
+#define INVENTORY_H         4
+#define INVENTORY_MAX       (INVENTORY_W * INVENTORY_H)
+#define BELT_MAX            16 // four rows of four, with the biggest belt
 
 typedef enum CharacterClass {
     CHARACTER_AMAZON,
@@ -25,6 +31,19 @@ typedef enum CharacterClass {
 } CharacterClass;
 
 typedef enum CharacterStat { STAT_STRENGTH, STAT_DEXTERITY, STAT_VITALITY, STAT_ENERGY, STAT_COUNT } CharacterStat;
+
+// One item a character has (a base item from Items.h; no magic properties yet). code[0] == '\0': none.
+typedef struct Item {
+    char code[ITEM_CODE_MAX];
+    int  defense;  // armor: rolled between the base's minimum and maximum
+    int  quantity; // stacks (books, javelins)
+} Item;
+
+typedef struct InventoryItem {
+    Item item;
+    int  x; // top left cell
+    int  y;
+} InventoryItem;
 
 typedef struct Character {
     char           name[CHARACTER_NAME_MAX];
@@ -42,6 +61,16 @@ typedef struct Character {
     int            stamina;
     int            act;         // 0..4: the town the game starts in
     uint64_t       last_played; // seconds since 1970
+    // Skills: points in each of the class's skills (Skills.h's order), and what the mouse buttons use
+    uint8_t skill_levels[CHARACTER_SKILLS];
+    int     left_skill; // a skill's index, or SKILL_ATTACK (-1)
+    int     right_skill;
+    // Items
+    InventoryItem inventory[INVENTORY_MAX];
+    int           inventory_count;
+    Item          equipped[EQUIP_COUNT];
+    Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
+    int           gold;
 } Character;
 
 const char *Character_ClassName(CharacterClass class_id);  // "Amazon"
@@ -58,7 +87,7 @@ int         Character_MaxMana(const Character *character);
 int         Character_MaxStamina(const Character *character);
 int         Character_Defense(const Character *character);
 int         Character_AttackRating(const Character *character);
-void        Character_Damage(const Character *character, int *minimum, int *maximum); // with the starting weapon
+void        Character_Damage(const Character *character, int *minimum, int *maximum); // with the weapon held
 const char *Character_WeaponName(const Character *character);
 int         Character_ManaRegenSeconds(const Character *character); // time to refill mana from empty
 int         Character_RunDrain(const Character *character);         // stamina used running (charstats RunDrain)

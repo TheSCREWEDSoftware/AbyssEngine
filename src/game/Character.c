@@ -3,6 +3,8 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "Inventory.h"
+#include "Skills.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -19,7 +21,7 @@
 
 #define EXCEL_EXPERIENCE  "/data/global/excel/experience.txt"
 #define CHARACTER_MAGIC   "AbyssCharacter"
-#define CHARACTER_VERSION 1
+#define CHARACTER_VERSION 2 // 2: skills and items
 #define CHARACTER_EXT     ".abc"
 
 static const struct {
@@ -40,24 +42,19 @@ static const char *stat_names[STAT_COUNT] = {"Strength", "Dexterity", "Vitality"
 
 // What charstats.txt (and the class's starting weapon in weapons.txt) says about a class
 typedef struct ClassInfo {
-    int  stats[STAT_COUNT];
-    int  stamina;
-    int  hp_add;
-    int  to_hit_factor;
-    int  life_per_level; // in fourths
-    int  stamina_per_level;
-    int  mana_per_level;
-    int  life_per_vitality;
-    int  stamina_per_vitality;
-    int  mana_per_energy;
-    int  stat_per_level;
-    int  mana_regen; // seconds
-    int  run_drain;
-    char weapon_name[32];
-    int  weapon_min; // damage
-    int  weapon_max;
-    int  weapon_str_bonus; // % damage per 100 strength
-    int  weapon_dex_bonus;
+    int stats[STAT_COUNT];
+    int stamina;
+    int hp_add;
+    int to_hit_factor;
+    int life_per_level; // in fourths
+    int stamina_per_level;
+    int mana_per_level;
+    int life_per_vitality;
+    int stamina_per_vitality;
+    int mana_per_energy;
+    int stat_per_level;
+    int mana_regen; // seconds
+    int run_drain;
 } ClassInfo;
 
 static ClassInfo class_info[CHARACTER_CLASS_COUNT];
@@ -76,8 +73,6 @@ static void Character__DefaultClass(ClassInfo *info) {
     info->stamina = 84, info->hp_add = 30, info->life_per_level = 8, info->stamina_per_level = 4;
     info->mana_per_level = 6, info->life_per_vitality = 12, info->stamina_per_vitality = 4, info->mana_per_energy = 6;
     info->stat_per_level = 5, info->mana_regen = 120, info->run_drain = 20;
-    snprintf(info->weapon_name, sizeof(info->weapon_name), "Fists");
-    info->weapon_min = 1, info->weapon_max = 2;
 }
 
 static void Character__LoadTables(void) {
@@ -89,8 +84,7 @@ static void Character__LoadTables(void) {
         Character__DefaultClass(&class_info[c]);
     }
 
-    DataTable *stats   = DataTable_Load(EXCEL_CHARSTATS);
-    DataTable *weapons = DataTable_Load(EXCEL_WEAPONS);
+    DataTable *stats = DataTable_Load(EXCEL_CHARSTATS);
     if (stats != NULL) {
 #define COL(n) DataTable_GetColumnIndex(stats, n)
         const int c_class = COL("class");
@@ -123,46 +117,10 @@ static void Character__LoadTables(void) {
             info->run_drain             = DataTable_GetInt(stats, row, COL("RunDrain"));
             info->stat_per_level        = info->stat_per_level > 0 ? info->stat_per_level : 5;
             info->mana_regen            = info->mana_regen > 0 ? info->mana_regen : 120;
-
-            // The first starting item that is a weapon
-            for (int i = 1; i <= 10 && weapons != NULL; i++) {
-                char column[8];
-                snprintf(column, sizeof(column), "item%d", i);
-                const char *code = DataTable_GetString(stats, row, COL(column));
-                if (code[0] == '\0') {
-                    continue;
-                }
-                const int w_code = DataTable_GetColumnIndex(weapons, "code");
-                bool      found  = false;
-                for (int w = 0; w < DataTable_GetRowCount(weapons) && !found; w++) {
-                    if (strcmp(DataTable_GetString(weapons, w, w_code), code) != 0) {
-                        continue;
-                    }
-                    found  = true;
-                    int lo = DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "mindam"));
-                    int hi = DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "maxdam"));
-                    if (lo <= 0) { // two-handed (staves)
-                        lo = DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "2handmindam"));
-                        hi = DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "2handmaxdam"));
-                    }
-                    snprintf(info->weapon_name, sizeof(info->weapon_name), "%s",
-                             DataTable_GetString(weapons, w, DataTable_GetColumnIndex(weapons, "name")));
-                    info->weapon_min = lo > 0 ? lo : 1;
-                    info->weapon_max = hi > info->weapon_min ? hi : info->weapon_min + 1;
-                    info->weapon_str_bonus =
-                        DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "StrBonus"));
-                    info->weapon_dex_bonus =
-                        DataTable_GetInt(weapons, w, DataTable_GetColumnIndex(weapons, "DexBonus"));
-                }
-                if (found) {
-                    break;
-                }
-            }
         }
 #undef COL
     }
     DataTable_Destroy(&stats);
-    DataTable_Destroy(&weapons);
 
     // experience.txt: the row for level L holds what's needed to reach level L + 1
     for (int level = 0; level <= CHARACTER_MAX_LEVEL; level++) {
@@ -221,9 +179,12 @@ void Character_Create(Character *character, const char *name, const CharacterCla
     character->level      = 1;
     const ClassInfo *info = Character__Info(character);
     memcpy(character->stats, info->stats, sizeof(character->stats));
-    character->life    = Character_MaxLife(character);
-    character->mana    = Character_MaxMana(character);
-    character->stamina = Character_MaxStamina(character);
+    character->life        = Character_MaxLife(character);
+    character->mana        = Character_MaxMana(character);
+    character->stamina     = Character_MaxStamina(character);
+    character->left_skill  = SKILL_ATTACK;
+    character->right_skill = SKILL_ATTACK;
+    Inventory_GiveStartingItems(character);
 }
 
 // Starting value, plus so much (in fourths) per point above the class's start and per level after the first
@@ -251,7 +212,14 @@ int Character_MaxStamina(const Character *character) {
                            info->stamina_per_vitality, character->level - 1, info->stamina_per_level);
 }
 
-int Character_Defense(const Character *character) { return character->stats[STAT_DEXTERITY] / 4; }
+// Dexterity's share, and what's worn
+int Character_Defense(const Character *character) {
+    int defense = character->stats[STAT_DEXTERITY] / 4;
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        defense += character->equipped[s].code[0] != '\0' ? character->equipped[s].defense : 0;
+    }
+    return defense;
+}
 
 int Character_AttackRating(const Character *character) {
     const ClassInfo *info = Character__Info(character);
@@ -260,18 +228,30 @@ int Character_AttackRating(const Character *character) {
 }
 
 void Character_Damage(const Character *character, int *minimum, int *maximum) {
-    const ClassInfo *info = Character__Info(character);
+    // The weapon held (two-handed ones, like staves, have only their two-hand damage), or bare hands' 1-2
+    const ItemBase *weapon     = Inventory_Weapon(character);
+    const bool      two_hand   = weapon != NULL && (weapon->max_damage <= 0 || weapon->two_handed);
+    int             weapon_min = weapon == NULL ? 1 : (two_hand ? weapon->two_hand_min : weapon->min_damage);
+    int             weapon_max = weapon == NULL ? 2 : (two_hand ? weapon->two_hand_max : weapon->max_damage);
+    if (weapon != NULL && weapon_max <= 0) { // two-handed with one-hand damage too (swords): the one-hand numbers
+        weapon_min = weapon->min_damage;
+        weapon_max = weapon->max_damage;
+    }
     // Strength (and for some weapons dexterity) adds a percentage to the weapon's damage
-    const int str_bonus = info->weapon_str_bonus > 0 ? info->weapon_str_bonus : 100;
-    const int bonus     = ((character->stats[STAT_STRENGTH] * str_bonus) / 100) +
-                      ((character->stats[STAT_DEXTERITY] * info->weapon_dex_bonus) / 100);
-    *minimum = info->weapon_min + ((info->weapon_min * bonus) / 100);
-    *maximum = info->weapon_max + ((info->weapon_max * bonus) / 100);
+    const int str_bonus = weapon != NULL && weapon->str_bonus > 0 ? weapon->str_bonus : 100;
+    const int dex_bonus = weapon != NULL ? weapon->dex_bonus : 0;
+    const int bonus =
+        ((character->stats[STAT_STRENGTH] * str_bonus) / 100) + ((character->stats[STAT_DEXTERITY] * dex_bonus) / 100);
+    *minimum = weapon_min + ((weapon_min * bonus) / 100);
+    *maximum = weapon_max + ((weapon_max * bonus) / 100);
     *minimum = *minimum > 0 ? *minimum : 1;
     *maximum = *maximum > *minimum ? *maximum : *minimum;
 }
 
-const char *Character_WeaponName(const Character *character) { return Character__Info(character)->weapon_name; }
+const char *Character_WeaponName(const Character *character) {
+    const ItemBase *weapon = Inventory_Weapon(character);
+    return weapon != NULL ? weapon->name : "Bare hands";
+}
 
 int Character_ManaRegenSeconds(const Character *character) { return Character__Info(character)->mana_regen; }
 
@@ -408,6 +388,37 @@ bool Character_Save(Character *character) {
     fprintf(file, "stamina %d\n", character->stamina);
     fprintf(file, "act %d\n", character->act);
     fprintf(file, "lastplayed %llu\n", (unsigned long long)character->last_played);
+    // Skills by name, so they survive changes to the tables' order
+    const SkillClass *skills = Skills_ForClass(character->class_id);
+    for (int k = 0; k < skills->count && k < CHARACTER_SKILLS; k++) {
+        if (character->skill_levels[k] > 0) {
+            fprintf(file, "skill %s %d\n", skills->skills[k].id, character->skill_levels[k]);
+        }
+    }
+    const int hands[2] = {character->left_skill, character->right_skill};
+    for (int h = 0; h < 2; h++) {
+        fprintf(file, "%s %s\n", h == 0 ? "leftskill" : "rightskill",
+                hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id : "attack");
+    }
+    // Items: "item <where> <code> <defense> <quantity>", where is "inv x y", "equip <slot>" or "belt <slot>"
+    fprintf(file, "gold %d\n", character->gold);
+    fprintf(file, "items %d\n", character->inventory_count);
+    for (int i = 0; i < character->inventory_count; i++) {
+        const InventoryItem *it = &character->inventory[i];
+        fprintf(file, "item inv %d %d %s %d %d\n", it->x, it->y, it->item.code, it->item.defense, it->item.quantity);
+    }
+    for (int e = 0; e < EQUIP_COUNT; e++) {
+        const Item *it = &character->equipped[e];
+        if (it->code[0] != '\0') {
+            fprintf(file, "item equip %d %s %d %d\n", e, it->code, it->defense, it->quantity);
+        }
+    }
+    for (int b = 0; b < BELT_MAX; b++) {
+        const Item *it = &character->belt[b];
+        if (it->code[0] != '\0') {
+            fprintf(file, "item belt %d %s %d %d\n", b, it->code, it->defense, it->quantity);
+        }
+    }
     fprintf(file, "end\n");
     const bool ok = ferror(file) == 0;
     fclose(file);
@@ -427,7 +438,10 @@ static bool Character__Load(const char *path, Character *character) {
         fclose(file);
         return false;
     }
-    character->level = 1;
+    character->level       = 1;
+    character->left_skill  = SKILL_ATTACK;
+    character->right_skill = SKILL_ATTACK;
+    bool has_items         = false;
     while (fgets(line, sizeof(line), file) != NULL) {
         line[strcspn(line, "\r\n")] = '\0';
         char key[32];
@@ -468,6 +482,44 @@ static bool Character__Load(const char *path, Character *character) {
             character->act = number < 0 ? 0 : (number > 4 ? 4 : number);
         } else if (strcmp(key, "lastplayed") == 0) {
             character->last_played = strtoull(value, NULL, 10);
+        } else if (strcmp(key, "skill") == 0) {
+            // "skill <id> <points>": the id can have spaces ("Fire Bolt"), the points are after the last one
+            char *space = strrchr(value, ' ');
+            if (space != NULL) {
+                *space       = '\0';
+                const int k  = Skills_Find(Skills_ForClass(character->class_id), value);
+                const int pt = atoi(space + 1);
+                if (k >= 0 && k < CHARACTER_SKILLS) {
+                    character->skill_levels[k] = (uint8_t)(pt < 0 ? 0 : (pt > SKILL_MAX_LEVEL ? SKILL_MAX_LEVEL : pt));
+                }
+            }
+        } else if (strcmp(key, "leftskill") == 0 || strcmp(key, "rightskill") == 0) {
+            const int k = Skills_Find(Skills_ForClass(character->class_id), value);
+            *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
+                k >= 0 ? k : SKILL_ATTACK;
+        } else if (strcmp(key, "gold") == 0) {
+            character->gold = number > 0 ? number : 0;
+        } else if (strcmp(key, "items") == 0) {
+            has_items = true;
+        } else if (strcmp(key, "item") == 0) {
+            char where[8];
+            char code[ITEM_CODE_MAX];
+            int  a = 0;
+            int  b = 0;
+            Item item;
+            memset(&item, 0, sizeof(item));
+            if (sscanf(value, "inv %d %d %7s %d %d", &a, &b, code, &item.defense, &item.quantity) == 5) {
+                snprintf(item.code, sizeof(item.code), "%s", code);
+                Inventory_Place(character, &item, a, b);
+            } else if (sscanf(value, "%7s %d %7s %d %d", where, &a, code, &item.defense, &item.quantity) == 5 &&
+                       Items_Find(code) != NULL) {
+                snprintf(item.code, sizeof(item.code), "%s", code);
+                if (strcmp(where, "equip") == 0 && a >= 0 && a < EQUIP_COUNT) {
+                    character->equipped[a] = item;
+                } else if (strcmp(where, "belt") == 0 && a >= 0 && a < BELT_MAX) {
+                    character->belt[a] = item;
+                }
+            }
         } else {
             for (int s = 0; s < STAT_COUNT; s++) {
                 if (strcmp(key, stat_names[s]) == 0) {
@@ -477,6 +529,9 @@ static bool Character__Load(const char *path, Character *character) {
         }
     }
     fclose(file);
+    if (!has_items && character->name[0] != '\0') {
+        Inventory_GiveStartingItems(character); // saved before there were items
+    }
     return character->name[0] != '\0';
 }
 

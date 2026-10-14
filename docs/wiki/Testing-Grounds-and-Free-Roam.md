@@ -43,7 +43,7 @@ These are the default keys; they can all be changed in **Options › Controls** 
 | Run (hold) | - | `Left Ctrl` | - | Run (or walk, when running is on) while held |
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
-| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster (the game: use the right skill) |
+| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet) |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
 | Automap | - | `Tab` | - | Show or hide the map of the explored area |

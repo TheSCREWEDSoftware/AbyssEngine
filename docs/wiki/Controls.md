@@ -64,31 +64,31 @@ own bindings, next to `abyss.ini`.
 | Skill 8 \* | - | `F8` | - |  |
 | Previous skill \* | - | - | - |  |
 | Next skill \* | - | - | - |  |
-| Skill tree \* | - | `T` | - |  |
+| Skill tree | - | `T` | - |  |
 | Skill speed bar \* | - | `S` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Swap weapons, Skill 1, Skill 2, Skill 3, Skill 4, Skill 5, Skill 6, Skill 7, Skill 8, Previous skill, Next skill, Skill tree, Skill speed bar. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Swap weapons, Skill 1, Skill 2, Skill 3, Skill 4, Skill 5, Skill 6, Skill 7, Skill 8, Previous skill, Next skill, Skill speed bar. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Belt
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Use belt 1 \* | - | `1` | - |  |
-| Use belt 2 \* | - | `2` | - |  |
-| Use belt 3 \* | - | `3` | - |  |
-| Use belt 4 \* | - | `4` | - |  |
+| Use belt 1 | - | `1` | - |  |
+| Use belt 2 | - | `2` | - |  |
+| Use belt 3 | - | `3` | - |  |
+| Use belt 4 | - | `4` | - |  |
 | Show belt \* | - | `` ` `` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Use belt 1, Use belt 2, Use belt 3, Use belt 4, Show belt. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Show belt. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Screens
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
 | Character screen | - | `A`, `C` | - | `C` also on an action that's never active at the same time |
-| Inventory \* | - | `B`, `I` | - | `B` also on an action that's never active at the same time |
+| Inventory | - | `B`, `I` | - | `B` also on an action that's never active at the same time |
 | Party screen \* | - | `P` | - | `P` also on an action that's never active at the same time |
 | Hireling screen \* | - | `O` | - |  |
 | Quest log \* | - | `Q` | - |  |
@@ -101,7 +101,7 @@ own bindings, next to `abyss.ini`.
 | Back to town | - | `Home` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Inventory, Party screen, Hireling screen, Quest log, Message log, Help, Show items, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Party screen, Hireling screen, Quest log, Message log, Help, Show items, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Automap
 

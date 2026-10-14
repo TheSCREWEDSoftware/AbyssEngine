@@ -15,7 +15,9 @@
 #include "../drawing/TextBox.h"
 #include "../game/Character.h"
 #include "../game/Controls.h"
+#include "../game/Inventory.h"
 #include "../game/Settings.h"
+#include "../game/Skills.h"
 #include "../managers/InputManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
@@ -29,6 +31,8 @@
 #include "../map/Places.h"
 #include "../map/World.h"
 #include "CatalogCharacters.h"
+#include "GameInventory.h"
+#include "GameSkills.h"
 #include "SceneCharacterSelect.h"
 #include "SceneFreeRoam.h"
 #include "SceneGame.h"
@@ -276,17 +280,30 @@ typedef struct SceneRoam {
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
-    Character *character;
-    float      mana; // kept as fractions while regenerating
-    float      stamina;
-    bool       exhausted; // ran out of stamina: walking until it's back up a bit
-    bool       in_town;
-    bool       char_panel; // the character screen
-    Sprite    *char_panel_sprite;
+    Character     *character;
+    float          mana; // kept as fractions while regenerating
+    float          stamina;
+    bool           exhausted; // ran out of stamina: walking until it's back up a bit
+    bool           in_town;
+    bool           char_panel; // the character screen
+    Sprite        *char_panel_sprite;
+    bool           inventory_panel; // the inventory (right)
+    bool           skill_panel;     // the skill tree (right, instead of the inventory)
+    GameInventory *inventory_ui;
+    GameSkills    *skills_ui;
+    bool           ui_prev_left; // the mouse buttons last frame, for the panels' clicks
+    bool           ui_prev_right;
+    bool           ui_owns_press; // a press that started on the panels stays theirs until the button is let go
+    float          potion_life;   // still to come from the potions drunk, and how fast
+    float          potion_life_rate;
+    float          potion_mana;
+    float          potion_mana_rate;
+    float          life_carry; // parts of a life point healed so far
     // Single Player: the game's control panel (globes, run/walk, stamina, experience, mini panel)
     Sprite  *ctrl_panel;
     Sprite  *ctrl_globes;  // the red and blue fills
     Sprite  *ctrl_overlap; // the glass over them
+    Sprite  *panel_close;  // the inventory's and skill tree's close button (buysellbtn.dc6)
     Sprite  *ctrl_run;
     Sprite  *ctrl_menu; // the arrow that opens the mini panel
     Sprite  *ctrl_mini;
@@ -897,6 +914,9 @@ static void Roam__StoreCharacter(SceneRoam *roam) {
     roam->character->life    = roam->player.hp;
     roam->character->mana    = (int)roam->mana;
     roam->character->stamina = (int)roam->stamina;
+    if (roam->inventory_ui != NULL) {
+        GameInventory_PutBack(roam->inventory_ui, roam->character); // nothing's saved on the cursor
+    }
     Character_Save(roam->character);
 }
 
@@ -1460,6 +1480,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->ctrl_panel        = Sprite_Create("/data/global/ui/PANEL/800ctrlpnl7.dc6", PALETTE_SKY);
         roam->ctrl_globes       = Sprite_Create("/data/global/ui/PANEL/hlthmana.dc6", PALETTE_SKY);
         roam->ctrl_overlap      = Sprite_Create("/data/global/ui/PANEL/overlap.dc6", PALETTE_SKY);
+        roam->panel_close       = Sprite_Create("/data/global/ui/PANEL/buysellbtn.dc6", PALETTE_SKY);
         roam->ctrl_run          = Sprite_Create("/data/global/ui/PANEL/runbutton.dc6", PALETTE_SKY);
         roam->ctrl_menu         = Sprite_Create("/data/global/ui/PANEL/menubutton.dc6", PALETTE_SKY);
         roam->ctrl_mini         = Sprite_Create("/data/global/ui/PANEL/minipanel.dc6", PALETTE_SKY);
@@ -1472,6 +1493,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         }
         roam->panel_label       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
         roam->panel_value_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+        roam->inventory_ui      = GameInventory_Create();
+        roam->skills_ui         = GameSkills_Create(roam->character->class_id);
     } else if (free_roam) {
         roam->places_button   = roam->buttons[3];
         roam->monsters_button = roam->buttons[4];
@@ -1572,8 +1595,11 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->life_label);
     Label_Destroy(&roam->target_label);
     Sprite_Destroy(&roam->char_panel_sprite);
-    Sprite *ctrl[] = {roam->ctrl_panel, roam->ctrl_globes,       roam->ctrl_overlap, roam->ctrl_run,  roam->ctrl_menu,
-                      roam->ctrl_mini,  roam->ctrl_mini_buttons, roam->ctrl_level,   roam->ctrl_skill};
+    GameInventory_Destroy(&roam->inventory_ui);
+    GameSkills_Destroy(&roam->skills_ui);
+    Sprite *ctrl[] = {roam->ctrl_panel, roam->ctrl_globes, roam->ctrl_overlap,      roam->ctrl_run,
+                      roam->ctrl_menu,  roam->ctrl_mini,   roam->ctrl_mini_buttons, roam->ctrl_level,
+                      roam->ctrl_skill, roam->panel_close};
     for (size_t c = 0; c < sizeof(ctrl) / sizeof(ctrl[0]); c++) {
         Sprite_Destroy(&ctrl[c]);
     }
@@ -1706,6 +1732,20 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         const float max_stamina = (float)Character_MaxStamina(roam->character);
         const int   regen       = Character_ManaRegenSeconds(roam->character);
         roam->mana              = fminf(max_mana, roam->mana + (max_mana * seconds / (float)(regen > 0 ? regen : 120)));
+        // Potions drunk give their life and mana over a few seconds
+        if (roam->potion_life > 0.0f) {
+            const float healed  = fminf(roam->potion_life, roam->potion_life_rate * seconds);
+            roam->potion_life  -= healed;
+            roam->life_carry   += healed;
+            const int whole     = (int)roam->life_carry;
+            roam->life_carry   -= (float)whole;
+            player->hp          = player->hp + whole > player->max_hp ? player->max_hp : player->hp + whole;
+        }
+        if (roam->potion_mana > 0.0f) {
+            const float gained  = fminf(roam->potion_mana, roam->potion_mana_rate * seconds);
+            roam->potion_mana  -= gained;
+            roam->mana          = fminf(max_mana, roam->mana + gained);
+        }
         if (Roam__IsRunning(roam) && (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
             // charstats RunDrain is per frame (25 a second), in 256ths
             roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;
@@ -2005,6 +2045,27 @@ static void Roam__PanelText(SceneRoam *roam, Label *label, const char *text, con
     (void)roam;
 }
 
+// Where the open right-hand panel's close button is: false when neither the inventory nor the skill tree is open
+static bool Roam__PanelClose(const SceneRoam *roam, SDL_Rect *rect) {
+    if (!roam->game || (!roam->inventory_panel && !roam->skill_panel)) {
+        return false;
+    }
+    *rect = roam->inventory_panel ? (SDL_Rect){GAME_PANEL_X + 18, 385, 32, 32}
+                                  : (SDL_Rect){GAME_PANEL_X + 172, 385, 32, 32};
+    return true;
+}
+
+static void Roam__DrawPanelClose(const SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    SDL_Rect rect;
+    if (roam->panel_close == NULL || !Roam__PanelClose(roam, &rect)) {
+        return;
+    }
+    bool left;
+    InputManager_GetMouseButtons(&left, NULL, NULL);
+    const bool pressed = left && SDL_PointInRect(&(SDL_Point){mouse_x, mouse_y}, &rect);
+    Sprite_Draw(roam->panel_close, pressed ? 11 : 10, rect.x, rect.y + rect.h);
+}
+
 static void Roam__DrawCharacterPanel(SceneRoam *roam) {
     const Character *character = roam->character;
     Sprite_DrawMulti(roam->char_panel_sprite, 0, 0, 0, 2, 2);
@@ -2097,24 +2158,24 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
 // Single Player's control panel, the game's: life and mana globes, skills, run/walk, stamina and experience, the mini
 // panel (character, inventory, skill tree, party, automap, messages, quests, game menu). Positions at 800x600.
 
-#define CTRL_RUN_X       255
-#define CTRL_RUN_Y       570
-#define CTRL_STAMINA_X   273
-#define CTRL_STAMINA_Y   572
-#define CTRL_XP_X        256
-#define CTRL_XP_Y        561
-#define CTRL_MENU_X      392
-#define CTRL_MENU_Y      562
-#define CTRL_LEVEL_X     206
-#define CTRL_LEVEL_Y     561
-#define CTRL_MINI_X      312
-#define CTRL_MINI_Y      532
-#define CTRL_MINI_COUNT  8
-#define CTRL_MINI_STEP   21
-#define CTRL_SKILL_LEFT  117
-#define CTRL_SKILL_RIGHT 635
+#define CTRL_RUN_X      255
+#define CTRL_RUN_Y      570
+#define CTRL_STAMINA_X  273
+#define CTRL_STAMINA_Y  572
+#define CTRL_XP_X       256
+#define CTRL_XP_Y       561
+#define CTRL_MENU_X     392
+#define CTRL_MENU_Y     562
+#define CTRL_LEVEL_X    206
+#define CTRL_LEVEL_Y    561
+#define CTRL_MINI_X     312
+#define CTRL_MINI_Y     532
+#define CTRL_MINI_COUNT 8
+#define CTRL_MINI_STEP  21
+#define CTRL_SKILLS_X   562 // "new skills", when there are skill points to spend
+#define CTRL_SKILLS_Y   561
 
-enum { CTRL_RUN = 100, CTRL_MENU, CTRL_LEVEL }; // mini panel buttons are 0 to 7
+enum { CTRL_RUN = 100, CTRL_MENU, CTRL_LEVEL, CTRL_SKILLS }; // mini panel buttons are 0 to 7
 
 static const char *ctrl_mini_names[CTRL_MINI_COUNT] = {"Character (A)", "Inventory (I)",  "Skill Tree (T)",
                                                        "Party (P)",     "Automap (Tab)",  "Message Log (M)",
@@ -2134,6 +2195,9 @@ static int Roam__CtrlButtonAt(const SceneRoam *roam, const int x, const int y) {
     }
     if (roam->character->stat_points > 0 && Roam__In(x, y, CTRL_LEVEL_X, CTRL_LEVEL_Y, 30, 30)) {
         return CTRL_LEVEL;
+    }
+    if (roam->character->skill_points > 0 && Roam__In(x, y, CTRL_SKILLS_X, CTRL_SKILLS_Y, 30, 30)) {
+        return CTRL_SKILLS;
     }
     if (roam->mini_open) {
         for (int b = 0; b < CTRL_MINI_COUNT; b++) {
@@ -2162,6 +2226,15 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
     case CTRL_LEVEL:
     case 0: // character
         roam->char_panel = !roam->char_panel;
+        break;
+    case 1: // inventory
+        roam->inventory_panel = !roam->inventory_panel;
+        roam->skill_panel     = false;
+        break;
+    case CTRL_SKILLS:
+    case 2: // skill tree
+        roam->skill_panel     = !roam->skill_panel;
+        roam->inventory_panel = false;
         break;
     case 4: // automap
         roam->show_automap = !roam->show_automap;
@@ -2235,9 +2308,9 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
     Roam__DrawGlobe(roam, 1, 690, 508, roam->mana, (float)Character_MaxMana(character));
     Sprite_Draw(roam->ctrl_overlap, 0, 28, 595);
     Sprite_Draw(roam->ctrl_overlap, 1, 691, 592);
-    // Skills: Attack on both sides until there are skills
-    Sprite_Draw(roam->ctrl_skill, 2, CTRL_SKILL_LEFT, 600);
-    Sprite_Draw(roam->ctrl_skill, 2, CTRL_SKILL_RIGHT, 600);
+    // The left and right skills, and the belt's bottom row
+    GameSkills_DrawButtons(roam->skills_ui, character);
+    GameInventory_DrawBelt(roam->inventory_ui, character);
 
     // Stamina (red when you've run yourself out) and experience through this level
     const int      max_stamina = Character_MaxStamina(character);
@@ -2267,6 +2340,9 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
                 CTRL_MENU_Y + 24);
     if (character->stat_points > 0) {
         Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_LEVEL ? 1 : 0), CTRL_LEVEL_X, CTRL_LEVEL_Y + 30);
+    }
+    if (character->skill_points > 0) {
+        Sprite_Draw(roam->ctrl_level, (uint8_t)(pressed == CTRL_SKILLS ? 1 : 0), CTRL_SKILLS_X, CTRL_SKILLS_Y + 30);
     }
     if (roam->mini_open) {
         Sprite_Draw(roam->ctrl_mini, 0, CTRL_MINI_X, CTRL_MINI_Y + 26);
@@ -2299,6 +2375,8 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         snprintf(text, sizeof(text), roam->mini_open ? "Close Mini Panel" : "Open Mini Panel");
     } else if (button == CTRL_LEVEL) {
         snprintf(text, sizeof(text), "New Stats");
+    } else if (button == CTRL_SKILLS) {
+        snprintf(text, sizeof(text), "New Skills");
     } else if (button >= 0) {
         snprintf(text, sizeof(text), "%s", ctrl_mini_names[button]);
     }
@@ -2313,6 +2391,123 @@ static void Roam__DrawControlPanel(SceneRoam *roam, const int mouse_x, const int
         SDL_RenderFillRect(sdl_renderer, &box);
         Label_Draw(roam->target_label, tx, ty);
     }
+}
+
+// Drinking a potion: healing ones over a few seconds, rejuvenation at once
+static void Roam__Drink(SceneRoam *roam, const Item *item) {
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL) {
+        return;
+    }
+    const float seconds = (float)(base->seconds > 0 ? base->seconds : 1);
+    if (base->life > 0) {
+        roam->potion_life      += (float)base->life;
+        roam->potion_life_rate  = roam->potion_life / seconds;
+    }
+    if (base->mana > 0) {
+        roam->potion_mana      += (float)base->mana;
+        roam->potion_mana_rate  = roam->potion_mana / seconds;
+    }
+    if (base->rejuvenate_pct > 0) {
+        const float max_mana = (float)Character_MaxMana(roam->character);
+        roam->player.hp      = roam->player.hp + (roam->player.max_hp * base->rejuvenate_pct / 100);
+        roam->player.hp      = roam->player.hp > roam->player.max_hp ? roam->player.max_hp : roam->player.hp;
+        roam->mana           = fminf(max_mana, roam->mana + (max_mana * (float)base->rejuvenate_pct / 100.0f));
+    }
+    Sounds_Play(base->use_sound[0] != '\0' ? base->use_sound : "item_potion", SOUND_KIND_SFX);
+}
+
+// Single Player's inventory, skill tree, belt and skill buttons. They take their clicks before the world does; true
+// when this frame's mouse belongs to them (or an item is on the cursor, which nothing in the world takes yet).
+static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    Character *character = roam->character;
+    bool       left_down;
+    bool       right_down;
+    InputManager_GetMouseButtons(&left_down, NULL, &right_down);
+    const bool left_click  = left_down && !roam->ui_prev_left;
+    const bool right_click = right_down && !roam->ui_prev_right;
+    roam->ui_prev_left     = left_down;
+    roam->ui_prev_right    = right_down;
+
+    if (Controls_Pressed(ACTION_INVENTORY)) {
+        roam->inventory_panel = !roam->inventory_panel;
+        roam->skill_panel     = false;
+        roam->panel           = PANEL_NONE;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    }
+    if (Controls_Pressed(ACTION_SKILL_TREE)) {
+        roam->skill_panel     = !roam->skill_panel;
+        roam->inventory_panel = false;
+        roam->panel           = PANEL_NONE;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    }
+    if (roam->panel != PANEL_NONE) { // the waypoint list takes the right side
+        roam->inventory_panel = false;
+        roam->skill_panel     = false;
+    }
+    // The open panel's close button (the game's square with the "no" sign, bottom corner of the panel)
+    SDL_Rect   close_rect;
+    const bool closed_panel = Roam__PanelClose(roam, &close_rect) && left_click &&
+                              SDL_PointInRect(&(SDL_Point){mouse_x, mouse_y}, &close_rect) &&
+                              !GameInventory_Holding(roam->inventory_ui);
+    if (closed_panel) {
+        roam->inventory_panel = false;
+        roam->skill_panel     = false;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    }
+    Item drunk;
+    for (int b = 0; b < 4; b++) {
+        if (Controls_Pressed((ControlAction)(ACTION_BELT_1 + b)) && Roam__IsAlive(&roam->player) &&
+            GameInventory_DrinkBelt(character, b, &drunk)) {
+            Roam__Drink(roam, &drunk);
+        }
+    }
+
+    const bool picker_was_open = GameSkills_PickerOpen(roam->skills_ui);
+    const bool over_panels = ((roam->inventory_panel || roam->skill_panel) && GameInventory_IsOver(mouse_x, mouse_y)) ||
+                             GameInventory_IsOverBelt(character, mouse_x, mouse_y) ||
+                             GameSkills_IsOver(roam->skills_ui, roam->skill_panel, mouse_x, mouse_y);
+    const char *message = NULL;
+    const int   skill_events =
+        GameSkills_Update(roam->skills_ui, character, roam->skill_panel, mouse_x, mouse_y, left_click, &message);
+    if (message != NULL) {
+        Roam__ShowMessage(roam, message);
+    }
+    if (skill_events & SKILLS_EVENT_RAISED) {
+        Sounds_Play("cursor_point_drop", SOUND_KIND_UI);
+    }
+    const bool skills_took = (skill_events & SKILLS_EVENT_CLICKED) != 0;
+    const bool shift       = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    const int item_events = GameInventory_Update(roam->inventory_ui, character, roam->inventory_panel, mouse_x, mouse_y,
+                                                 left_click && !skills_took,
+                                                 right_click && Roam__IsAlive(&roam->player), shift, &drunk, &message);
+    if (message != NULL) {
+        Roam__ShowMessage(roam, message);
+    }
+    if (item_events & INVENTORY_EVENT_EQUIPMENT) {
+        Roam__ApplyCharacter(roam); // damage and defense from what's worn now
+    }
+    if (item_events & INVENTORY_EVENT_DRINK) {
+        Roam__Drink(roam, &drunk);
+    }
+    if ((item_events & INVENTORY_EVENT_MOVED) && GameInventory_Sound(roam->inventory_ui)[0] != '\0') {
+        Sounds_Play(GameInventory_Sound(roam->inventory_ui), SOUND_KIND_SFX);
+    }
+    const bool holding = GameInventory_Holding(roam->inventory_ui);
+    if (left_click && holding && !over_panels && item_events == INVENTORY_EVENT_NONE) {
+        Roam__ShowMessage(roam, "There's no dropping items on the ground yet: put it in your inventory.");
+    }
+    // Right click in the world with a skill on the right: there's no casting yet
+    if (right_click && !over_panels && !holding && character->right_skill != SKILL_ATTACK) {
+        char text[128];
+        snprintf(text, sizeof(text), "%s: casting skills isn't in the engine yet.",
+                 Skills_ForClass(character->class_id)->skills[character->right_skill].name);
+        Roam__ShowMessage(roam, text);
+    }
+    const bool took = closed_panel || skills_took || picker_was_open || item_events != INVENTORY_EVENT_NONE ||
+                      holding || ((left_click || right_click) && over_panels);
+    roam->ui_owns_press = (left_down || right_down) && (roam->ui_owns_press || took);
+    return took || roam->ui_owns_press;
 }
 
 static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mouse_x, const int mouse_y,
@@ -2360,9 +2555,13 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
     }
 
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
-        if (roam->panel != PANEL_NONE || roam->char_panel) {
-            roam->panel      = PANEL_NONE;
-            roam->char_panel = false;
+        if (roam->panel != PANEL_NONE || roam->char_panel || roam->inventory_panel || roam->skill_panel ||
+            GameSkills_PickerOpen(roam->skills_ui)) {
+            roam->panel           = PANEL_NONE;
+            roam->char_panel      = false;
+            roam->inventory_panel = false;
+            roam->skill_panel     = false;
+            GameSkills_ClosePicker(roam->skills_ui);
             Roam__UpdateButtons(roam);
         } else {
             roam->menu_open = true; // the game menu, like the game's
@@ -2475,8 +2674,14 @@ static void Roam__Update(SceneRoam *roam) {
     bool left  = Controls_Held(ACTION_MOVE_ATTACK);
     bool right = Controls_Held(ACTION_RIGHT_SKILL);
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
-    const bool over_panel = (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
-                            (roam->game && roam->char_panel && mouse_x < CHAR_PANEL_W && mouse_y < CHAR_PANEL_H);
+    const bool over_panel =
+        (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
+        (roam->game && roam->char_panel && mouse_x < CHAR_PANEL_W && mouse_y < CHAR_PANEL_H) ||
+        (roam->game && (roam->inventory_panel || roam->skill_panel) && GameInventory_IsOver(mouse_x, mouse_y));
+    if (roam->game && Roam__UpdateGamePanels(roam, mouse_x, mouse_y)) {
+        left  = false; // the panels' click, not the world's
+        right = false;
+    }
     const bool on_ctrl   = roam->game && Roam__OverControlPanel(roam, mouse_x, mouse_y);
     const bool over_view = (roam->game ? mouse_y < 600 && !on_ctrl : mouse_y < VIEW_H) && !over_panel;
     if (roam->game && (Roam__UpdateControlPanel(roam, mouse_x, mouse_y) || (on_ctrl && left))) {
@@ -2517,9 +2722,11 @@ static void Roam__Update(SceneRoam *roam) {
         roam->screenshot = true;
     }
     if (Controls_Pressed(ACTION_CLEAR_SCREEN)) {
-        roam->panel        = PANEL_NONE;
-        roam->char_panel   = false;
-        roam->show_automap = false;
+        roam->panel           = PANEL_NONE;
+        roam->char_panel      = false;
+        roam->inventory_panel = false;
+        roam->skill_panel     = false;
+        roam->show_automap    = false;
         Roam__UpdateButtons(roam);
     }
     if (!roam->game && roam->free_roam && Controls_Pressed(ACTION_WAYPOINT)) {
@@ -3160,6 +3367,15 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->game && roam->char_panel) {
         Roam__DrawCharacterPanel(roam);
     }
+    int ui_mouse_x;
+    int ui_mouse_y;
+    InputManager_GetMousePosition(&ui_mouse_x, &ui_mouse_y);
+    if (roam->game && roam->inventory_panel) {
+        GameInventory_Draw(roam->inventory_ui, roam->character, ui_mouse_x, ui_mouse_y);
+    } else if (roam->game && roam->skill_panel) {
+        GameSkills_DrawTree(roam->skills_ui, roam->character, ui_mouse_x, ui_mouse_y);
+    }
+    Roam__DrawPanelClose(roam, ui_mouse_x, ui_mouse_y);
     const uint64_t now = SDL_GetTicks64();
     if (now < roam->caption_until) {
         const uint64_t left  = roam->caption_until - now;
@@ -3176,6 +3392,9 @@ static void Roam__Render(SceneRoam *roam) {
         int mouse_y;
         InputManager_GetMousePosition(&mouse_x, &mouse_y);
         Roam__DrawControlPanel(roam, mouse_x, mouse_y);
+        // On top: the skill pickers, the item on the cursor, what's under the mouse
+        GameSkills_DrawOverlay(roam->skills_ui, roam->character, roam->skill_panel, mouse_x, mouse_y);
+        GameInventory_DrawOverlay(roam->inventory_ui, roam->character, roam->inventory_panel, mouse_x, mouse_y);
     } else {
         const SDL_Rect bottom = {0, VIEW_H, 800, 600 - VIEW_H};
         SDL_SetRenderDrawColor(sdl_renderer, 22, 20, 18, 255);

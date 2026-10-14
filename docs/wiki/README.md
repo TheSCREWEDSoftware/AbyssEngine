@@ -5,8 +5,8 @@ the game's original data files (the MPQs from your own copy of the game) and dra
 portable engine.
 
 > **Status:** early. The engine boots to the main menu and has a set of developer tools (Catalog, Map Editor, Testing
-> Grounds, Free Roam). Single Player is a first playable version: create a character, fight, gain levels, save; no
-> items, skills or quests yet. Multiplayer isn't there.
+> Grounds, Free Roam). Single Player is a first playable version: create a character, fight, gain levels, spend skill
+> points, wear items, drink potions, save; no casting, drops or quests yet. Multiplayer isn't there.
 > See **[Feature Status](Feature-Status.md)** for exactly what works and what doesn't.
 
 ## Installation guide

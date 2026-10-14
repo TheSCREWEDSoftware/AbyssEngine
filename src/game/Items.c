@@ -1,0 +1,204 @@
+#include "Items.h"
+#include "../common/Logging.h"
+#include "../common/ResourcePaths.h"
+#include "../data/DataTable.h"
+#include "../data/StringTable.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define EXCEL_MISC  "/data/global/excel/misc.txt"
+#define EXCEL_BELTS "/data/global/excel/belts.txt"
+
+static const struct {
+    const char *code; // bodylocs.txt
+    const char *name;
+} slot_info[EQUIP_COUNT] = {
+    {"head", "Head"      },
+    {"neck", "Neck"      },
+    {"tors", "Torso"     },
+    {"rarm", "Right Hand"},
+    {"larm", "Left Hand" },
+    {"rrin", "Right Ring"},
+    {"lrin", "Left Ring" },
+    {"belt", "Belt"      },
+    {"feet", "Feet"      },
+    {"glov", "Gloves"    },
+};
+
+static ItemBase *bases      = NULL;
+static int       base_count = 0;
+static bool      loaded     = false;
+
+const char *Items_SlotName(const EquipSlot slot) { return slot < EQUIP_COUNT ? slot_info[slot].name : "?"; }
+
+bool Items_IsPotion(const ItemBase *base) {
+    return base != NULL && (base->life > 0 || base->mana > 0 || base->rejuvenate_pct > 0);
+}
+
+// Only what the game's fonts draw
+static void Items__Sanitize(char *out, const size_t out_len, const char *in) {
+    size_t o = 0;
+    for (const unsigned char *ch = (const unsigned char *)in; *ch != '\0' && o + 1 < out_len; ch++) {
+        if (*ch == 0xFF && ch[1] == 'c' && ch[2] != '\0') {
+            ch += 2;
+            continue;
+        }
+        if (*ch >= 0x20 && *ch < 0x7F) {
+            out[o++] = (char)*ch;
+        }
+    }
+    out[o] = '\0';
+}
+
+// itemtypes.txt: a type's row, -1 if none
+static int Items__TypeRow(const DataTable *types, const int c_code, const char *code) {
+    for (int r = 0; r < DataTable_GetRowCount(types) && code[0] != '\0'; r++) {
+        if (strcmp(DataTable_GetString(types, r, c_code), code) == 0) {
+            return r;
+        }
+    }
+    return -1;
+}
+
+// Where a type is worn, and whether it goes in the belt: from the type, or what it counts as (Equiv1/2), up the chain
+static void Items__TypeInfo(const DataTable *types, const char *code, ItemBase *base, const int depth) {
+    if (depth > 8) {
+        return;
+    }
+    const int c_code     = DataTable_GetColumnIndex(types, "Code");
+    const int row        = Items__TypeRow(types, c_code, code);
+    const int c_body     = DataTable_GetColumnIndex(types, "Body");
+    const int c_loc[2]   = {DataTable_GetColumnIndex(types, "BodyLoc1"), DataTable_GetColumnIndex(types, "BodyLoc2")};
+    const int c_equiv[2] = {DataTable_GetColumnIndex(types, "Equiv1"), DataTable_GetColumnIndex(types, "Equiv2")};
+    const int c_belt     = DataTable_GetColumnIndex(types, "Beltable");
+    if (row < 0) {
+        return;
+    }
+    base->beltable = base->beltable || DataTable_GetInt(types, row, c_belt) == 1;
+    if (DataTable_GetInt(types, row, c_body) == 1) {
+        for (int l = 0; l < 2; l++) {
+            const char *loc = DataTable_GetString(types, row, c_loc[l]);
+            for (int s = 0; s < EQUIP_COUNT; s++) {
+                base->slots[s] = base->slots[s] || strcmp(loc, slot_info[s].code) == 0;
+            }
+        }
+    }
+    for (int e = 0; e < 2; e++) {
+        Items__TypeInfo(types, DataTable_GetString(types, row, c_equiv[e]), base, depth + 1);
+    }
+}
+
+static void Items__LoadTable(const char *path, const ItemKind kind, const DataTable *types, const DataTable *belts) {
+    DataTable *t = DataTable_Load(path);
+    if (t == NULL) {
+        return;
+    }
+#define COL(n) DataTable_GetColumnIndex(t, n)
+    const int c_code = COL("code"), c_name = COL("name"), c_namestr = COL("namestr"), c_type = COL("type"),
+              c_w = COL("invwidth"), c_h = COL("invheight"), c_inv = COL("invfile"), c_min = COL("mindam"),
+              c_max = COL("maxdam"), c_2min = COL("2handmindam"), c_2max = COL("2handmaxdam"), c_2h = COL("2handed"),
+              c_strb = COL("StrBonus"), c_dexb = COL("DexBonus"), c_minac = COL("minac"), c_maxac = COL("maxac"),
+              c_block = COL("block"), c_str = COL("reqstr"), c_dex = COL("reqdex"), c_lvl = COL("levelreq"),
+              c_belt = COL("belt"), c_stack = COL("stackable"), c_maxstack = COL("maxstack"), c_stat1 = COL("stat1"),
+              c_sound = COL("usesound"), c_calc1 = COL("calc1"), c_stat2 = COL("stat2"), c_len = COL("len");
+#undef COL
+    const int rows  = DataTable_GetRowCount(t);
+    ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
+    FAIL_IF_NULL(grown);
+    bases = grown;
+    for (int row = 0; row < rows; row++) {
+        const char *code = DataTable_GetString(t, row, c_code);
+        if (code[0] == '\0') {
+            continue; // "Expansion" separators
+        }
+        ItemBase *base = &bases[base_count++];
+        memset(base, 0, sizeof(ItemBase));
+        base->kind = kind;
+        snprintf(base->code, sizeof(base->code), "%s", code);
+        snprintf(base->type, sizeof(base->type), "%s", DataTable_GetString(t, row, c_type));
+        const char *name = c_namestr >= 0 ? StringTable_Find(DataTable_GetString(t, row, c_namestr)) : NULL;
+        name             = name != NULL ? name : StringTable_Find(code);
+        Items__Sanitize(base->name, sizeof(base->name), name != NULL ? name : DataTable_GetString(t, row, c_name));
+        snprintf(base->inv_file, sizeof(base->inv_file), "%s", DataTable_GetString(t, row, c_inv));
+        snprintf(base->use_sound, sizeof(base->use_sound), "%s", DataTable_GetString(t, row, c_sound));
+        base->width              = DataTable_GetInt(t, row, c_w) > 0 ? DataTable_GetInt(t, row, c_w) : 1;
+        base->height             = DataTable_GetInt(t, row, c_h) > 0 ? DataTable_GetInt(t, row, c_h) : 1;
+        base->min_damage         = DataTable_GetInt(t, row, c_min);
+        base->max_damage         = DataTable_GetInt(t, row, c_max);
+        base->two_hand_min       = DataTable_GetInt(t, row, c_2min);
+        base->two_hand_max       = DataTable_GetInt(t, row, c_2max);
+        base->two_handed         = DataTable_GetInt(t, row, c_2h) == 1;
+        base->str_bonus          = DataTable_GetInt(t, row, c_strb);
+        base->dex_bonus          = DataTable_GetInt(t, row, c_dexb);
+        base->min_defense        = DataTable_GetInt(t, row, c_minac);
+        base->max_defense        = DataTable_GetInt(t, row, c_maxac);
+        base->block              = DataTable_GetInt(t, row, c_block);
+        base->required_strength  = DataTable_GetInt(t, row, c_str);
+        base->required_dexterity = DataTable_GetInt(t, row, c_dex);
+        base->required_level     = DataTable_GetInt(t, row, c_lvl);
+        base->stackable          = DataTable_GetInt(t, row, c_stack) == 1;
+        base->max_stack          = DataTable_GetInt(t, row, c_maxstack);
+        Items__TypeInfo(types, base->type, base, 0);
+        if (base->slots[EQUIP_BELT] && belts != NULL && c_belt >= 0) {
+            // armor.txt's "belt" is a row of belts.txt, which says how many potions it holds
+            const int belt_row = DataTable_GetInt(t, row, c_belt);
+            const int boxes    = DataTable_GetInt(belts, belt_row, DataTable_GetColumnIndex(belts, "numboxes"));
+            base->belt_rows    = boxes > 0 ? boxes / 4 : 1;
+        }
+        if (kind == ITEM_KIND_MISC && c_stat1 >= 0) {
+            // Potions: healing over time (stat "hpregen" / "manarecovery" with the amount, "len" in frames), or
+            // rejuvenation (a percentage of life and mana at once)
+            const char *stat1  = DataTable_GetString(t, row, c_stat1);
+            const char *stat2  = DataTable_GetString(t, row, c_stat2);
+            const int   amount = DataTable_GetInt(t, row, c_calc1);
+            const int   frames = DataTable_GetInt(t, row, c_len);
+            if (strcmp(stat1, "hpregen") == 0) {
+                base->life    = amount;
+                base->seconds = (frames + 24) / 25;
+            } else if (strcmp(stat1, "manarecovery") == 0) {
+                base->mana    = amount;
+                base->seconds = (frames + 24) / 25;
+            } else if (strcmp(stat1, "hitpoints") == 0 && strcmp(stat2, "mana") == 0) {
+                base->rejuvenate_pct = amount;
+            }
+        }
+    }
+    DataTable_Destroy(&t);
+}
+
+static void Items__Load(void) {
+    if (loaded) {
+        return;
+    }
+    loaded         = true;
+    DataTable *ty  = DataTable_Load(EXCEL_ITEMTYPES);
+    DataTable *blt = DataTable_Load(EXCEL_BELTS);
+    if (ty != NULL) {
+        Items__LoadTable(EXCEL_WEAPONS, ITEM_KIND_WEAPON, ty, blt);
+        Items__LoadTable(EXCEL_ARMOR, ITEM_KIND_ARMOR, ty, blt);
+        Items__LoadTable(EXCEL_MISC, ITEM_KIND_MISC, ty, blt);
+        DataTable_Destroy(&ty);
+    }
+    if (blt != NULL) {
+        DataTable_Destroy(&blt);
+    }
+    LOG_INFO("Items: %d base items", base_count);
+}
+
+const ItemBase *Items_Find(const char *code) {
+    Items__Load();
+    for (int i = 0; i < base_count; i++) {
+        if (strcmp(bases[i].code, code) == 0) {
+            return &bases[i];
+        }
+    }
+    return NULL;
+}
+
+void Items_Release(void) {
+    free(bases);
+    bases      = NULL;
+    base_count = 0;
+    loaded     = false;
+}

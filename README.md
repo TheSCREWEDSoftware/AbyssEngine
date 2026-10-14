@@ -15,8 +15,9 @@ Early, but playable in parts:
 
 - **Menus**: intro videos, the main menu, loading screens, the game's fonts, buttons, cursors and sounds.
 - **Single Player** (first version): create a character on the game's "Select Hero Class" screen, pick it from the
-  character list, walk out of town, fight, gain experience and levels, spend stat points, travel by waypoint, save.
-  No items, skills, quests, trading or hirelings yet.
+  character list, walk out of town, fight, gain experience and levels, spend stat and skill points, wear and swap
+  items in the game's inventory, drink potions from the belt, travel by waypoint, save. No casting, drops, quests,
+  trading or hirelings yet.
 - **The world**: the towns and fixed areas from the game's maps with their NPCs and objects; the wilderness, dungeons,
   jungle and Bloody Foothills built at random from the game's pieces. One world seed builds every area, and areas are
   joined like in the game: walk out of the Rogue Encampment into the Blood Moor, go down into caves and back up.

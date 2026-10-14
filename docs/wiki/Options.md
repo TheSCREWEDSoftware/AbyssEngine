@@ -83,7 +83,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 |---|---|---|
 | `EditorAutoSaveMinutes` | `0` (off) to `120`; the screen offers 1, 2, 5, 10, 15, 30 | Map Editor: save the map every this many minutes (default 5); a map never saved goes to the recovery file |
 | `EditorKeepChanges` | `true` / `false` | Map Editor: write the map to `editor-recovery.abm` after every change, so nothing's lost if the game closes; the editor offers it back (default on) |
-| `CollisionInGame` | `true` / `false` | The collision view (**B**) works in Single Player too, not only Free Roam and Testing Grounds (default off). B is also Inventory there, but actions the engine doesn't do yet never take a key from one it does |
+| `CollisionInGame` | `true` / `false` | The collision view (**B**) works in Single Player too, not only Free Roam and Testing Grounds (default off). B is also Inventory there, which comes first: give Collision view another key in Options › Controls to use it in Single Player |
 | `ConfirmNewSeed` | `true` / `false` | Free Roam: ask "Do you wish to generate a new seed?" before **N** makes a new world (default on) |
 
 ## Controls
@@ -117,14 +117,17 @@ they can be set up already; they're marked "not in the engine yet".
 | Run (hold) | Left Ctrl | ✅ |
 | Stand still | Left Shift, Right Shift | ✅ |
 | Attack | E, Pad Button 1 (Left) | ✅ Modern and Combined |
-| Right skill / drop monster | Mouse Right | ✅ Free Roam (drop) |
+| Right skill / drop monster | Mouse Right | ✅ Free Roam (drop); Single Player: no casting yet |
 | Swap weapons | W | |
 | Skill 1-8 | F1-F8 | |
 | Previous / next skill | (the game: mouse wheel; here the wheel zooms) | |
-| Skill tree, skill speed bar | T, S | |
-| Use belt 1-4, show belt | 1-4, ` | |
+| Skill tree | T | ✅ Single Player |
+| Skill speed bar | S | |
+| Use belt 1-4 | 1-4 | ✅ Single Player |
+| Show belt | ` | |
 | Character screen | A, C | ✅ Single Player |
-| Inventory, party, hireling, quests, message log, help | B or I, P, O, Q, M, H | |
+| Inventory | B or I | ✅ Single Player |
+| Party, hireling, quests, message log, help | P, O, Q, M, H | |
 | Clear screen | Space | ✅ closes panels |
 | Show items, show portraits | Left Alt, Z | |
 | Waypoint / places | V | ✅ |

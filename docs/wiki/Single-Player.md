@@ -1,8 +1,8 @@
 # Single Player
 
 **Main menu › Single Player** opens the character list. This is the start of the real game: characters are kept
-between sessions, gain experience and levels. There are no items, skills or quests yet (see
-[Feature Status](Feature-Status.md)).
+between sessions, gain experience and levels, carry and wear items and learn skills. There's no casting, no drops
+and no quests yet (see [Feature Status](Feature-Status.md)).
 
 ## Character list
 
@@ -26,7 +26,8 @@ voice line). Then type a **name** (2-15 letters, at most one `-` or `_`, not at 
 start in the Rogue Encampment. **Exit** goes back to the list.
 
 Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 Strength, 25 Dexterity, 20 Vitality,
-15 Energy, 50 life and 15 mana; a Barbarian 30/20/25/10, 55 life and 10 mana.
+15 Energy, 50 life and 15 mana; a Barbarian 30/20/25/10, 55 life and 10 mana. So do the starting items: the class's
+weapon (and a buckler for most), four healing potions in the belt, and a Town Portal and an Identify scroll.
 
 ## Playing
 
@@ -35,16 +36,20 @@ for one ([Options](Options.md)). With **Modern** or **Combined** movement (Optio
 gamepad's left stick) walk and **E** attacks.
 
 The bottom of the screen is the game's own **control panel**: the red life globe and blue mana globe (point at them for
-the numbers), the attack icons, the run/walk button, the stamina bar (red when you're out of breath) with the
-experience bar over it, the four belt slots, and the arrow in the middle that opens the **mini panel** (Character,
+the numbers), the left and right skills, the run/walk button, the stamina bar (red when you're out of breath) with the
+experience bar over it, the belt's four slots, and the arrow in the middle that opens the **mini panel** (Character,
 Inventory, Skill Tree, Party, Automap, Message Log, Quest Log, Game Menu; the ones the engine doesn't do yet say so).
-When you have stat points to spend, the **New Stats** button lights up on the left. **Save and Exit Game** is in the
-game menu (**Esc**).
+When you have stat points to spend, the **New Stats** button lights up on the left; with skill points, **New Skills**
+on the right. **Save and Exit Game** is in the game menu (**Esc**).
 
 | | |
 |---|---|
 | **Left click** | Walk; click a monster to attack it; click a chest, door, shrine or waypoint to open / use it |
 | **C** or **A** / mini panel's Character button | Character screen |
+| **I** or **B** / mini panel's Inventory button | Inventory (see [Items](#items)) |
+| **T** / mini panel's Skill Tree button / **New Skills** | Skill tree (see [Skills](#skills)) |
+| **1**-**4** / right click a belt slot | Drink what's in that belt slot |
+| Click the left or right skill on the control panel | Choose what that mouse button uses |
 | **R** / the run button on the control panel | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
 | **Shift** + click | Stand still: attack where you stand instead of walking |
 | **V** | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
@@ -71,8 +76,14 @@ game menu (**Esc**).
 | Run (hold) | - | `Left Ctrl` | - | Run (or walk, when running is on) while held |
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
-| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster (the game: use the right skill) |
+| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet) |
+| Skill tree | - | `T` | - | Single Player: the skill tree (spend skill points) |
+| Use belt 1 | - | `1` | - | Drink what's in belt slot 1 |
+| Use belt 2 | - | `2` | - | Drink what's in belt slot 2 |
+| Use belt 3 | - | `3` | - | Drink what's in belt slot 3 |
+| Use belt 4 | - | `4` | - | Drink what's in belt slot 4 |
 | Character screen | - | `A`, `C` | - | - |
+| Inventory | - | `B`, `I` | - | Single Player: the inventory (items, what you wear) |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
 | Back to town | - | `Home` | - | Single Player: back to the act's town |
@@ -86,8 +97,9 @@ game menu (**Esc**).
 - **Combat** is always on. Town folk (Akara, Charsi, Gheed, ...) never fight and can't be attacked. Hits can miss:
   the game's chance to hit uses the attacker's attack rating and level against the defender's defense and level (5% to
   95%), both ways.
-- **Your damage** is your class's starting weapon (Hand Axe 3-6, Javelin 1-5, Short Staff, Wand, Short Sword, Club,
-  Katar) plus Strength's bonus. **Attack rating** comes from Dexterity, **defense** is Dexterity / 4.
+- **Your damage** is the weapon you hold (bare hands: 1-2; two-handed weapons such as staves use their two-hand
+  damage) plus Strength's bonus (and Dexterity's, for weapons that have one). **Attack rating** comes from Dexterity,
+  **defense** is Dexterity / 4 plus what you wear.
 - **Experience** for each kill comes from the game's tables (`monstats.txt` / `MonLvl.txt`, normal difficulty): a
   Zombie gives 33. Levels follow `experience.txt` (500 for level 2, 1,500 for level 3, ...).
 - **Levelling up** gives 5 stat points and a skill point and fills life, mana and stamina; you hear the level-up
@@ -95,14 +107,49 @@ game menu (**Esc**).
   spend a point. Vitality adds life and stamina, Energy adds mana, at your class's rates.
 - **Mana** refills over two minutes. **Stamina** drains while running and comes back while walking or standing; run
   out and you walk until it's back to a tenth.
-- **Life** doesn't come back by itself (no potions yet): going to town fills life and mana up.
+- **Life** doesn't come back by itself: drink a healing potion (it heals over a few seconds, like the game's: a
+  Lesser Healing Potion gives 30 life over 8 seconds), or go to town, which fills life and mana up.
 - **Dying**: you wake up in the act's town after 3 seconds with full life. **Hardcore** characters die for good: they
   stay in the list as "Dead" and can't be played.
 - The game is **saved** when you travel, level up, die and exit. Saves are text files in the `save` folder next to
   `abyss.ini` (`<name>.abc`); they're not compatible with the original game's `.d2s` files.
 
+## Items
+
+**I** (or **B**, or the mini panel) opens the game's inventory screen on the right, laid out from the game's
+`inventory.txt`: what you wear around the outline (helm, amulet, armor, the two hands, rings, belt, gloves, boots) and
+the 10 x 4 grid below. The square button in its bottom corner closes it (the skill tree has the same one), as do
+**I**, **Space** and **Esc**.
+
+- **Click** an item to pick it up; it follows the mouse. **Click** again to put it down: in the grid (a green patch
+  shows where), or in a slot it suits. Putting it on another item swaps them. Close the inventory with an item on the
+  mouse and it goes back where it came from (there's no dropping items on the ground yet).
+- **Wearing**: an item goes only where it suits (a helm on the head, a shield in a hand, ...) and only if you meet its
+  requirements; ones you can't use yet are tinted red, with their unmet requirements in red. A two-handed weapon needs
+  both hands; only Barbarians hold a weapon in each hand (Assassins: two claws).
+- **Pointing at an item** shows what the game shows: its name, damage or defense, block, belt size, quantity and
+  requirements.
+- **The belt**: potions and scrolls, its bottom row on the control panel (keys **1**-**4**). Without a belt it holds
+  one row of four; a sash two rows, a belt three, a girdle four. **Shift + click** a potion in the grid to put it in
+  the belt; **right click** a potion (in the grid or the belt) to drink it.
+- Everything is saved with the character: the grid, what's worn, the belt and gold. Characters saved before items
+  existed get their class's starting items.
+
+## Skills
+
+**T** (or the mini panel, or **New Skills**) opens the class's skill tree on the right: its three trees on tabs, with
+"Skill Choices Remaining" above them.
+
+- **Click** a skill to put a point in it. The game's rules: your level must be at least the skill's required level
+  plus the points already in it, every skill it needs has a point, and 20 is the most. Skills you can't learn yet are
+  dimmed; point at one to see why, and its description, level and mana cost.
+- **Left and right skill**: click the skill on either side of the control panel to pick from Attack and the skills you
+  know (passives can't be picked; the left button takes only the skills the game allows there).
+- Casting isn't in yet: the skills you pick show on the panel and are saved, but attacking is still the weapon's
+  attack, and right clicking with a skill says so.
+
 ## Not yet
 
-Items (inventory, equipment, drops, gold), skills and the skill tree, potions and the belt, quests, NPC dialogue and
-trading, hirelings, the real control panel (life/mana globes), difficulty levels. Each game has its own random world
-seed: the areas keep their layout while you play.
+Casting skills, magic items, drops and picking things up, gold from monsters, the stash, quests, NPC dialogue and
+trading, hirelings, items shown on the character, difficulty levels. Each game has its own random world seed: the
+areas keep their layout while you play.

@@ -9,6 +9,7 @@
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
+#include "../game/Skills.h"
 #include "../managers/InputManager.h"
 #include "CatalogTheme.h"
 #include <ctype.h>
@@ -177,27 +178,6 @@ static void Classes__String(char *out, const size_t out_len, const char *key, co
     Classes__Sanitize(out, out_len, value != NULL ? value : fallback);
 }
 
-// Multi-line game strings are stored bottom line first; flip them into reading order (one line per '\n').
-static void Classes__ReverseLines(char *text) {
-    char  copy[CLASS_TEXT_LEN * 3];
-    char *lines[16];
-    int   line_count = 0;
-
-    snprintf(copy, sizeof(copy), "%s", text);
-    for (char *line = strtok(copy, "\n"); line != NULL && line_count < 16; line = strtok(NULL, "\n")) {
-        lines[line_count++] = line;
-    }
-
-    text[0] = '\0';
-    for (int i = line_count - 1; i >= 0; i--) {
-        lines[i][0] = (char)toupper((unsigned char)lines[i][0]);
-        strncat(text, lines[i], (CLASS_TEXT_LEN * 3) - strlen(text) - 2);
-        if (i > 0) {
-            strncat(text, "\n", (CLASS_TEXT_LEN * 3) - strlen(text) - 1);
-        }
-    }
-}
-
 // Quarter-point values (life per level etc.) as "2" or "1.5".
 static void Classes__FormatQuarters(char *out, const size_t out_len, const int quarters) {
     const int whole    = quarters / 4;
@@ -302,126 +282,41 @@ static void Classes__LoadStats(CatalogClasses *classes) {
     DataTable_Destroy(&t);
 }
 
-static ClassInfo *Classes__FindClassByCode(CatalogClasses *classes, const char *code) {
-    for (int i = 0; i < classes->class_count; i++) {
-        if (strcmp(classes->classes[i].visual->code, code) == 0) {
-            return &classes->classes[i];
-        }
-    }
-    return NULL;
-}
-
+// The skills come from the shared table (game/Skills.h), which the game's skill tree uses too
 static void Classes__LoadSkills(CatalogClasses *classes) {
-    DataTable *skills = DataTable_Load(EXCEL_SKILLS);
-    // 1.10+ keeps the tree layout and text keys in skilldesc.txt; older data has the layout in skills.txt.
-    const int  c_desc_ref = DataTable_GetColumnIndex(skills, "skilldesc");
-    DataTable *desc =
-        (c_desc_ref >= 0 && FileManager_FileExists(EXCEL_SKILLDESC)) ? DataTable_Load(EXCEL_SKILLDESC) : NULL;
-    const DataTable *layout = desc != NULL ? desc : skills;
-
-    const int c_skill   = DataTable_GetColumnIndex(skills, "skill");
-    const int c_class   = DataTable_GetColumnIndex(skills, "charclass");
-    const int c_level   = DataTable_GetColumnIndex(skills, "reqlevel");
-    const int c_req[3]  = {DataTable_GetColumnIndex(skills, "reqskill1"), DataTable_GetColumnIndex(skills, "reqskill2"),
-                           DataTable_GetColumnIndex(skills, "reqskill3")};
-    const int c_passive = DataTable_GetColumnIndex(skills, "passive");
-    const int c_mana    = DataTable_GetColumnIndex(skills, "mana");
-    const int c_mana_shift = DataTable_GetColumnIndex(skills, "manashift");
-
-    const int c_desc_key = desc != NULL ? DataTable_GetColumnIndex(desc, "skilldesc") : -1;
-    const int c_page     = DataTable_GetColumnIndex(layout, "SkillPage");
-    const int c_row      = DataTable_GetColumnIndex(layout, "SkillRow");
-    const int c_column   = DataTable_GetColumnIndex(layout, "SkillColumn");
-    const int c_icon     = DataTable_GetColumnIndex(layout, "IconCel");
-    const int c_name     = desc != NULL ? DataTable_GetColumnIndex(desc, "str name") : -1;
-    const int c_short    = desc != NULL ? DataTable_GetColumnIndex(desc, "str short") : -1;
-    const int c_long     = desc != NULL ? DataTable_GetColumnIndex(desc, "str long") : -1;
-
-    const int skill_rows = DataTable_GetRowCount(skills);
-    const int desc_rows  = desc != NULL ? DataTable_GetRowCount(desc) : 0;
-
-    for (int row = 0; row < skill_rows; row++) {
-        ClassInfo *info = Classes__FindClassByCode(classes, DataTable_GetString(skills, row, c_class));
-        if (info == NULL || info->skill_count >= CLASS_MAX_SKILLS) {
+    for (int c = 0; c < classes->class_count; c++) {
+        ClassInfo *info     = &classes->classes[c];
+        int        class_id = -1;
+        for (int k = 0; k < CHARACTER_CLASS_COUNT; k++) {
+            class_id = strcmp(Character_ClassName((CharacterClass)k), info->visual->name) == 0 ? k : class_id;
+        }
+        if (class_id < 0) {
             continue;
         }
-
-        // Find the layout row for this skill
-        int layout_row = row;
-        if (desc != NULL) {
-            const char *desc_name = DataTable_GetString(skills, row, c_desc_ref);
-            layout_row            = -1;
-            for (int d = 0; d < desc_rows && desc_name[0] != '\0'; d++) {
-                if (strcmp(DataTable_GetString(desc, d, c_desc_key), desc_name) == 0) {
-                    layout_row = d;
-                    break;
-                }
-            }
-            if (layout_row < 0) {
-                continue;
-            }
-        }
-
-        const int page = DataTable_GetInt(layout, layout_row, c_page);
-        if (page < 1 || page > SKILL_PAGES) {
-            continue; // not on a skill tree (e.g. hidden or item-only skills)
-        }
-
-        SkillInfo *skill = &info->skills[info->skill_count++];
-        memset(skill, 0, sizeof(SkillInfo));
-
-        snprintf(skill->id, sizeof(skill->id), "%s", DataTable_GetString(skills, row, c_skill));
-        skill->page           = page;
-        skill->row            = DataTable_GetInt(layout, layout_row, c_row);
-        skill->column         = DataTable_GetInt(layout, layout_row, c_column);
-        skill->icon_frame     = DataTable_GetInt(layout, layout_row, c_icon);
-        skill->required_level = DataTable_GetInt(skills, row, c_level);
-        skill->passive        = c_passive >= 0 && DataTable_GetInt(skills, row, c_passive) == 1;
-
-        // Mana cost at level 1: mana is stored in 1/256ths, scaled by 2^manashift.
-        if (c_mana >= 0 && c_mana_shift >= 0) {
-            skill->mana_cost =
-                (DataTable_GetInt(skills, row, c_mana) << DataTable_GetInt(skills, row, c_mana_shift)) >> 8;
-        }
-
-        for (int r = 0; r < 3; r++) {
-            snprintf(skill->prerequisites[r], sizeof(skill->prerequisites[r]), "%s",
-                     DataTable_GetString(skills, row, c_req[r]));
-        }
-
-        if (desc != NULL) {
-            Classes__String(skill->name, sizeof(skill->name), DataTable_GetString(desc, layout_row, c_name), skill->id);
-            Classes__String(skill->short_desc, sizeof(skill->short_desc),
-                            DataTable_GetString(desc, layout_row, c_short), "");
-            Classes__String(skill->long_desc, sizeof(skill->long_desc), DataTable_GetString(desc, layout_row, c_long),
-                            "");
-            Classes__ReverseLines(skill->short_desc);
-            Classes__ReverseLines(skill->long_desc);
-        } else {
-            Classes__Sanitize(skill->name, sizeof(skill->name), skill->id);
-        }
-    }
-
-    // Prerequisites are stored by internal skill id; show their display names.
-    for (int c = 0; c < classes->class_count; c++) {
-        ClassInfo *info = &classes->classes[c];
-        for (int s = 0; s < info->skill_count; s++) {
+        const SkillClass *skills = Skills_ForClass((CharacterClass)class_id);
+        for (int s = 0; s < skills->count && info->skill_count < CLASS_MAX_SKILLS; s++) {
+            const SkillDef *def   = &skills->skills[s];
+            SkillInfo      *skill = &info->skills[info->skill_count++];
+            memset(skill, 0, sizeof(SkillInfo));
+            Classes__Copy(skill->id, sizeof(skill->id), def->id);
+            Classes__Copy(skill->name, sizeof(skill->name), def->name);
+            Classes__Copy(skill->short_desc, sizeof(skill->short_desc), def->short_desc);
+            Classes__Copy(skill->long_desc, sizeof(skill->long_desc), def->long_desc);
             for (int r = 0; r < 3; r++) {
-                char *req = info->skills[s].prerequisites[r];
-                for (int o = 0; o < info->skill_count && req[0] != '\0'; o++) {
-                    if (strcmp(info->skills[o].id, req) == 0) {
-                        Classes__Copy(req, sizeof(info->skills[s].prerequisites[r]), info->skills[o].name);
-                        break;
-                    }
+                if (def->prerequisites[r] >= 0) {
+                    Classes__Copy(skill->prerequisites[r], sizeof(skill->prerequisites[r]),
+                                  skills->skills[def->prerequisites[r]].name);
                 }
             }
+            skill->page           = def->page;
+            skill->row            = def->row;
+            skill->column         = def->column;
+            skill->icon_frame     = def->icon_frame;
+            skill->required_level = def->required_level;
+            skill->mana_cost      = def->mana_cost;
+            skill->passive        = def->passive;
         }
     }
-
-    if (desc != NULL) {
-        DataTable_Destroy(&desc);
-    }
-    DataTable_Destroy(&skills);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
