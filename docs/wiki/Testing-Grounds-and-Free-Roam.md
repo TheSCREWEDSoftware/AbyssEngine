@@ -29,6 +29,13 @@ Both are in **Main menu › Map Editor**. They share the same engine.
 
 These are the default keys; they can all be changed in **Options › Controls** ([Options](Options.md)).
 
+### In Single Player and Multiplayer
+
+**Options › Debug › Free Roam in Single Player and Multiplayer** (`FreeRoamInGame`) brings Free Roam's travel into a
+real game, with your own character: the **Places** list (V, or the Waypoint button) opens anywhere and goes to any
+area, and **CapsLock** sprints. In Multiplayer the others see you arrive in the new area as usual. It's a debug option
+like the rest of that tab, so the game doesn't stop you using it in someone else's game.
+
 ### Every key, from the engine
 
 <!-- keys:begin (generated: AbyssEngine --export-controls DIR --defaults, then keys-free-roam.md) -->

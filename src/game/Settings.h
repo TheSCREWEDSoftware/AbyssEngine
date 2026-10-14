@@ -38,6 +38,7 @@ typedef struct DebugSettings {
     bool editor_keep_changes;     // Map Editor: keep every change in a temporary file too (back after a crash)
     bool collision_in_game;       // the collision view (B) in Single Player, not only Free Roam / Testing Grounds
     bool confirm_new_seed;        // Free Roam: ask before N makes a new world
+    bool free_roam_in_game;       // Free Roam's tools (Places from anywhere, sprint) in Single Player and Multiplayer
 } DebugSettings;
 
 void Settings_Load(void); // options.ini (missing: the defaults)

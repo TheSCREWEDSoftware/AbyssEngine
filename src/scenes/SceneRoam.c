@@ -355,6 +355,10 @@ DEFINE_SCENE_CALLBACKS(Game);
 // Fighting is on: always in the game, by the debug switch elsewhere
 static bool Roam__Combat(const SceneRoam *roam) { return roam->game || combat_enabled; }
 
+// Single Player / Multiplayer with Options › Debug › "Free Roam in Single Player and Multiplayer": the Places list
+// from anywhere (not only at a waypoint) and sprint
+static bool Roam__DebugTools(const SceneRoam *roam) { return roam->game && Settings_GetDebug()->free_roam_in_game; }
+
 // Town folk (Akara, the rogue scouts in the encampment, ...) never fight and can't be attacked, whatever the combat
 // switch says: it's for monsters
 static bool Roam__IsPeaceful(const SceneRoam *roam, const struct Unit *unit) {
@@ -1125,7 +1129,8 @@ static void Roam__UpdateButtons(SceneRoam *roam) {
     Button_SetText(roam->preview_button, roam->preview ? "Preview On" : "Preview Off");
     Button_SetToggled(roam->preview_button, roam->preview);
     if (roam->game) {
-        Button_SetText(roam->places_button, roam->panel == PANEL_PLACES ? "Close" : "Waypoint");
+        Button_SetText(roam->places_button,
+                       roam->panel == PANEL_PLACES ? "Close" : (Roam__DebugTools(roam) ? "Places" : "Waypoint"));
         Button_SetToggled(roam->character_button, roam->char_panel);
         Button_SetEnabled(roam->town_button, !roam->in_town);
         return;
@@ -1152,7 +1157,7 @@ static void Roam__RefreshList(SceneRoam *roam) {
     Roam__FreeList(roam);
     int list_y = CATEGORIES_Y;
     if (roam->panel == PANEL_PLACES) {
-        Label_SetText(roam->title_label, roam->game ? "Waypoint" : "Places");
+        Label_SetText(roam->title_label, roam->game && !Roam__DebugTools(roam) ? "Waypoint" : "Places");
         roam->list_count = Places_GetCount();
         roam->list_names = calloc(roam->list_count > 0 ? (size_t)roam->list_count : 1, sizeof(char *));
         FAIL_IF_NULL(roam->list_names);
@@ -1396,22 +1401,23 @@ static void Roam__UpdateHelp(SceneRoam *roam) {
     static const struct {
         ControlAction action;
         const char   *what;
-        int           modes; // 1 Single Player, 2 Free Roam, 4 Testing Grounds
+        int           modes; // 1 Single Player, 2 Free Roam, 4 Testing Grounds, 8 Free Roam's tools in a game
     } entries[] = {
-        {ACTION_MOVE_ATTACK, "walk/attack", 7},
-        {ACTION_RIGHT_SKILL, "drop",        6},
-        {ACTION_RUN_TOGGLE,  "run",         7},
-        {ACTION_CHARACTER,   "character",   1},
-        {ACTION_COMBAT,      "combat",      6},
-        {ACTION_WAYPOINT,    "waypoint",    1},
-        {ACTION_TOWN,        "town",        1},
-        {ACTION_PREVIEW,     "preview",     4},
-        {ACTION_LIGHT,       "light",       7},
-        {ACTION_COLLISION,   "collision",   6},
-        {ACTION_AUTOMAP,     "map",         3},
-        {ACTION_NEW_WORLD,   "new world",   2},
+        {ACTION_MOVE_ATTACK, "walk/attack", 7 },
+        {ACTION_RIGHT_SKILL, "drop",        6 },
+        {ACTION_RUN_TOGGLE,  "run",         7 },
+        {ACTION_CHARACTER,   "character",   1 },
+        {ACTION_COMBAT,      "combat",      6 },
+        {ACTION_WAYPOINT,    "waypoint",    1 },
+        {ACTION_TOWN,        "town",        1 },
+        {ACTION_PREVIEW,     "preview",     4 },
+        {ACTION_LIGHT,       "light",       7 },
+        {ACTION_COLLISION,   "collision",   6 },
+        {ACTION_AUTOMAP,     "map",         3 },
+        {ACTION_NEW_WORLD,   "new world",   2 },
+        {ACTION_SPRINT,      "sprint",      10},
     };
-    const int mode    = roam->game ? 1 : (roam->free_roam ? 2 : 4);
+    const int mode    = roam->game ? (Roam__DebugTools(roam) ? 9 : 1) : (roam->free_roam ? 2 : 4);
     const int profile = Roam__Profile(roam);
     char      text[400];
     text[0] = '\0';
@@ -1428,7 +1434,7 @@ static void Roam__UpdateHelp(SceneRoam *roam) {
         const char  *shown = strncmp(name, "Mouse ", 6) == 0 ? name + 6 : name; // "Left walk/attack"
         const size_t used  = strlen(text);
         snprintf(text + used, sizeof(text) - used, "%s%s %s", used > 0 ? "  " : "", shown, entries[e].what);
-        if (entries[e].action == ACTION_RIGHT_SKILL && mode != 1) {
+        if (entries[e].action == ACTION_RIGHT_SKILL && !(mode & 1)) {
             const size_t more = strlen(text);
             snprintf(text + more, sizeof(text) - more, "  Shift+%s remove", shown);
         }
@@ -1781,7 +1787,8 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             roam->potion_mana  -= gained;
             roam->mana          = fminf(max_mana, roam->mana + gained);
         }
-        if (Roam__IsRunning(roam) && (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
+        if (Roam__IsRunning(roam) && !roam->sprinting &&
+            (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
             // charstats RunDrain is per frame (25 a second), in 256ths
             roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;
             if (roam->stamina <= 0.0f) {
@@ -2712,7 +2719,7 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
         }
     }
 
-    const bool can_waypoint = roam->in_town || Roam__NearWaypoint(roam);
+    const bool can_waypoint = roam->in_town || Roam__NearWaypoint(roam) || Roam__DebugTools(roam);
     if (Controls_Pressed(ACTION_WAYPOINT) || Button_Update(roam->places_button)) {
         if (roam->panel == PANEL_PLACES || can_waypoint) {
             Roam__TogglePanel(roam, PANEL_PLACES);
@@ -2985,6 +2992,10 @@ static void Roam__Update(SceneRoam *roam) {
     Controls_SetProfile(Roam__Profile(roam));
     Controls_SetContext(roam->game ? CONTROL_CONTEXT_GAME : CONTROL_CONTEXT_DEBUG);
     Controls_AllowAnywhere(ACTION_COLLISION, Settings_GetDebug()->collision_in_game); // Options › Gameplay › Debug
+    Controls_AllowAnywhere(ACTION_SPRINT, Roam__DebugTools(roam));
+    if (roam->game && roam->sprinting && !Roam__DebugTools(roam)) {
+        roam->sprinting = false; // turned off in Options while playing
+    }
     if (TextBox_IsFocused(roam->seed_box)) {
         InputManager_ClearPresses();
     }
@@ -3275,14 +3286,14 @@ static void Roam__Update(SceneRoam *roam) {
         if (roam->sprinting) {
             roam->sprinting = false;
             roam->running   = false;
-        } else if (roam->running && roam->free_roam && !roam->game) {
+        } else if (roam->running && roam->free_roam && (!roam->game || Roam__DebugTools(roam))) {
             roam->sprinting = true;
         } else {
             roam->running = !roam->running;
         }
         Roam__UpdateButtons(roam);
     }
-    if (!roam->game && Controls_Pressed(ACTION_SPRINT)) {
+    if ((!roam->game || Roam__DebugTools(roam)) && Controls_Pressed(ACTION_SPRINT)) {
         roam->sprinting = !roam->sprinting;
         Roam__ShowMessage(roam, roam->sprinting ? "Sprint on" : "Sprint off");
         Roam__UpdateButtons(roam);

@@ -39,6 +39,9 @@ In the game, **Enter** opens the chat line (Enter sends, Esc stops); what's said
 Save and Exit Game** leaves (and closes the game when you're the host). Losing the connection saves your character
 (hosted games) and takes you back to the Multiplayer screen, which says why.
 
+**Options › Debug › Free Roam in Single Player and Multiplayer** works here too: travel to any area from anywhere,
+and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)).
+
 ## Game settings
 
 The Host tab (remembered in `host.ini`) and a dedicated server's `server/server.ini`:

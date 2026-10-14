@@ -84,7 +84,7 @@ static int Settings__SectionProfile(const char *section, const char *prefix) {
     return -1;
 }
 
-static DebugSettings debug_settings = {5, true, false, true};
+static DebugSettings debug_settings = {5, true, false, true, false};
 
 const DebugSettings *Settings_GetDebug(void) { return &debug_settings; }
 void                 Settings_SetDebug(const DebugSettings *settings) { debug_settings = *settings; }
@@ -103,6 +103,7 @@ void Settings_Load(void) {
     debug_settings.editor_keep_changes     = true;
     debug_settings.collision_in_game       = false;
     debug_settings.confirm_new_seed        = true;
+    debug_settings.free_roam_in_game       = false;
     for (int p = 0; p < CONTROL_PROFILES; p++) {
         Settings_GameplayDefaults(&gameplay[p]);
         own_gameplay[p] = p == 0;
@@ -153,6 +154,8 @@ void Settings_Load(void) {
                 debug_settings.collision_in_game = strcmp(value, "true") == 0;
             } else if (strcmp(key, "ConfirmNewSeed") == 0) {
                 debug_settings.confirm_new_seed = strcmp(value, "true") == 0;
+            } else if (strcmp(key, "FreeRoamInGame") == 0) {
+                debug_settings.free_roam_in_game = strcmp(value, "true") == 0;
             }
             continue;
         }
@@ -241,9 +244,12 @@ void Settings_Save(void) {
             "# The collision view (B) in Single Player as well as Free Roam and Testing Grounds\n"
             "CollisionInGame = %s\n"
             "# Free Roam: ask before N makes a new random world\n"
-            "ConfirmNewSeed = %s\n\n",
+            "ConfirmNewSeed = %s\n"
+            "# Free Roam's tools in Single Player and Multiplayer: the Places list from anywhere, and sprint\n"
+            "FreeRoamInGame = %s\n\n",
             debug_settings.editor_autosave_minutes, debug_settings.editor_keep_changes ? "true" : "false",
-            debug_settings.collision_in_game ? "true" : "false", debug_settings.confirm_new_seed ? "true" : "false");
+            debug_settings.collision_in_game ? "true" : "false", debug_settings.confirm_new_seed ? "true" : "false",
+            debug_settings.free_roam_in_game ? "true" : "false");
     Controls_Write(file);
     fclose(file);
 }

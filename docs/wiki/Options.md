@@ -90,6 +90,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | `EditorKeepChanges` | `true` / `false` | Map Editor: write the map to `editor-recovery.abm` after every change, so nothing's lost if the game closes; the editor offers it back (default on) |
 | `CollisionInGame` | `true` / `false` | The collision view (**B**) works in Single Player too, not only Free Roam and Testing Grounds (default off). B is also Inventory there, which comes first: give Collision view another key in Options › Controls to use it in Single Player |
 | `ConfirmNewSeed` | `true` / `false` | Free Roam: ask "Do you wish to generate a new seed?" before **N** makes a new world (default on) |
+| `FreeRoamInGame` | `true` / `false` | Free Roam in Single Player and Multiplayer: the Waypoint button and **V** open the **Places** list from anywhere (not only in town or at a waypoint) and take you to any area, and **CapsLock** sprints (twice as fast as running, no stamina). Can be turned on and off while playing (default off) |
 
 ## Controls
 

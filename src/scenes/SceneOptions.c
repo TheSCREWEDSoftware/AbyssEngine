@@ -200,6 +200,7 @@ typedef struct SceneOptions {
     Checkbox *keep_changes;
     Checkbox *collision_in_game;
     Checkbox *confirm_new_seed;
+    Checkbox *free_roam_in_game;
 
     // Controls
     Dropdown *group_filter;                     // "Show:"
@@ -413,6 +414,7 @@ static void Options__LoadDebug(SceneOptions *options) {
     Checkbox_SetChecked(options->keep_changes, debug->editor_keep_changes);
     Checkbox_SetChecked(options->collision_in_game, debug->collision_in_game);
     Checkbox_SetChecked(options->confirm_new_seed, debug->confirm_new_seed);
+    Checkbox_SetChecked(options->free_roam_in_game, debug->free_roam_in_game);
 }
 
 static void Options__StoreDebug(const SceneOptions *options) {
@@ -421,6 +423,7 @@ static void Options__StoreDebug(const SceneOptions *options) {
     debug.editor_keep_changes     = Checkbox_IsChecked(options->keep_changes);
     debug.collision_in_game       = Checkbox_IsChecked(options->collision_in_game);
     debug.confirm_new_seed        = Checkbox_IsChecked(options->confirm_new_seed);
+    debug.free_roam_in_game       = Checkbox_IsChecked(options->free_roam_in_game);
     Settings_SetDebug(&debug);
 }
 
@@ -536,9 +539,11 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->keep_changes =
         Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 36, "Keep every change in a temporary file too");
     options->collision_in_game =
-        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 62, "Collision view (B) in Single Player too");
+        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 62, "Collision view (B) in Single and Multiplayer");
     options->confirm_new_seed =
         Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 88, "Ask before a new world (N in Free Roam)");
+    options->free_roam_in_game =
+        Checkbox_Create(CONTENT_X + LABEL_W, DEBUG_Y + 114, "Free Roam in Single Player and Multiplayer");
     Options__LoadDebug(options);
 
     // Multiplayer
@@ -697,6 +702,7 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Checkbox_Destroy(&options->keep_changes);
     Checkbox_Destroy(&options->collision_in_game);
     Checkbox_Destroy(&options->confirm_new_seed);
+    Checkbox_Destroy(&options->free_roam_in_game);
     Dropdown_Destroy(&options->group_filter);
     Checkbox_Destroy(&options->fullscreen);
     Checkbox_Destroy(&options->own_profile);
@@ -811,7 +817,7 @@ static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
         TextBox_Clear(options->lobby);
         break;
     case TAB_DEBUG: {
-        const DebugSettings debug_defaults = {5, true, false, true};
+        const DebugSettings debug_defaults = {5, true, false, true, false};
         Settings_SetDebug(&debug_defaults);
         Options__LoadDebug(options);
         break;
@@ -1551,7 +1557,8 @@ static void OptionsPanel__Update(SceneOptions *options) {
         break;
     case TAB_DEBUG:
         if (Dropdown_Update(options->autosave) | Checkbox_Update(options->keep_changes) |
-            Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed)) {
+            Checkbox_Update(options->collision_in_game) | Checkbox_Update(options->confirm_new_seed) |
+            Checkbox_Update(options->free_roam_in_game)) {
             Options__StoreDebug(options);
         }
         break;
@@ -1744,11 +1751,12 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Checkbox_Draw(options->keep_changes);
         Checkbox_Draw(options->collision_in_game);
         Checkbox_Draw(options->confirm_new_seed);
+        Checkbox_Draw(options->free_roam_in_game);
         Options__Name(options, "Debug", DEBUG_Y + 50);
         Options__Describe(options,
                           "For the Map Editor and testing; the same for every class. A map never saved auto-saves "
                           "to the temporary file, which the editor offers back if it closed with changes.",
-                          DEBUG_Y + 114);
+                          DEBUG_Y + 144);
         Dropdown_Draw(options->autosave); // last: its list opens over the rest
         break;
     }

@@ -56,7 +56,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Click the left or right skill on the control panel | Choose what that mouse button uses |
 | **R** / the run button on the control panel | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
 | **Shift** + click | Stand still: attack where you stand instead of walking |
-| **V** | Travel (in town, or near a waypoint; clicking a waypoint does the same) |
+| **V** | Travel (in town, or near a waypoint; clicking a waypoint does the same). With **Options › Debug › Free Roam in Single Player and Multiplayer**: from anywhere, and **CapsLock** sprints ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)) |
 | **Home** | Back to the act's town |
 | **Space** | Close the open screens |
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
