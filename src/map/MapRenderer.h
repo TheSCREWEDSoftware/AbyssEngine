@@ -22,6 +22,7 @@ typedef struct MapDrawable {
     float y;
     void (*draw)(void *context, int screen_x, int screen_y, float zoom);
     void *context;
+    bool  on_floor; // lies on the ground (an item): drawn before whatever stands near it
 } MapDrawable;
 
 #define MAP_DRAW_WALLS   0x01

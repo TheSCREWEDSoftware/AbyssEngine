@@ -95,13 +95,13 @@ own bindings, next to `abyss.ini`.
 | Message log \* | - | `M` | - |  |
 | Help \* | - | `H` | - |  |
 | Clear screen | - | `Space` | - |  |
-| Show items \* | - | `Left Alt` | - |  |
+| Show items | - | `Left Alt` | - |  |
 | Show portraits \* | - | `Z` | - |  |
 | Waypoint / places | - | `V` | - |  |
 | Back to town | - | `Home` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Party screen, Hireling screen, Quest log, Message log, Help, Show items, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Party screen, Hireling screen, Quest log, Message log, Help, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Automap
 

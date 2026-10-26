@@ -115,7 +115,7 @@ static const ActionInfo actions[ACTION_COUNT] = {
         {"clear_screen",   "Clear screen",       GROUP_SCREENS,  A, true,  {"Space"},      "Close the open screens and panels"                      },
     [ACTION_SHOW_ITEMS]     = {"show_items",
                             "Show items",                           GROUP_SCREENS,
-                            G,                                                         false,
+                            G,                                                         true,
                             {"Left Alt"},
                             "Show the names of items on the ground while held"                                                                                         },
     [ACTION_SHOW_PORTRAITS] = {"show_portraits", "Show portraits",     GROUP_SCREENS,  G, false, {"Z"},          NULL                                                     },

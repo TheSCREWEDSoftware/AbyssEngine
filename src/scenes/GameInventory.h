@@ -39,9 +39,16 @@ void GameInventory_SetModernPickup(GameInventory *inventory, bool modern);
 // Where the control panel shows the belt's bottom row (its top-left; the Classic panel: 422, 568)
 void        GameInventory_SetBeltPosition(int x, int y);
 const char *GameInventory_Sound(const GameInventory *inventory); // the sound of what was last put down ("" none)
-void        GameInventory_PutBack(GameInventory *inventory, Character *character); // the carried item back where it was
-bool        GameInventory_IsOver(int mouse_x, int mouse_y);                        // over the panel
-bool        GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);
+// The carried item back where it was (or anywhere it fits); false when there's no room (it stays on the cursor)
+bool GameInventory_PutBack(GameInventory *inventory, Character *character);
+// Lets go of the carried item, to put it on the ground: false when nothing's carried. Modern pick-up: a worn item
+// comes off now (*equipment_changed)
+bool GameInventory_Drop(GameInventory *inventory, Character *character, Item *item, bool *equipment_changed);
+void GameInventory_Hold(GameInventory *inventory, const Item *item); // picked up off the ground, onto the cursor
+// For saving: copy (of the character) as if the carried item were put back; the cursor keeps it
+void GameInventory_PutBackCopy(const GameInventory *inventory, Character *copy);
+bool GameInventory_IsOver(int mouse_x, int mouse_y); // over the panel
+bool GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);
 void GameInventory_DrawBelt(GameInventory *inventory, const Character *character);

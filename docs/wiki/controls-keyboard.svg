@@ -203,7 +203,7 @@
 <text x="148" y="416" font-size="13" font-weight="bold">Win</text>
 <rect x="242" y="400" width="96" height="62" rx="6" fill="#96dca0" stroke="#606060" stroke-width="1"/>
 <text x="248" y="416" font-size="13" font-weight="bold">Alt</text>
-<text x="248" y="431" font-size="9.5" fill="#555555" font-style="italic">Show items</text>
+<text x="248" y="431" font-size="9.5">Show items</text>
 <rect x="342" y="400" width="496" height="62" rx="6" fill="#96dca0" stroke="#606060" stroke-width="1"/>
 <text x="348" y="416" font-size="13" font-weight="bold">Space</text>
 <text x="348" y="431" font-size="9.5">Clear screen</text>

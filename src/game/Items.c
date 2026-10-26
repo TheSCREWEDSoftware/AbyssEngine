@@ -101,7 +101,8 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
               c_strb = COL("StrBonus"), c_dexb = COL("DexBonus"), c_minac = COL("minac"), c_maxac = COL("maxac"),
               c_block = COL("block"), c_str = COL("reqstr"), c_dex = COL("reqdex"), c_lvl = COL("levelreq"),
               c_belt = COL("belt"), c_stack = COL("stackable"), c_maxstack = COL("maxstack"), c_stat1 = COL("stat1"),
-              c_sound = COL("usesound"), c_calc1 = COL("calc1"), c_stat2 = COL("stat2"), c_len = COL("len");
+              c_sound = COL("usesound"), c_calc1 = COL("calc1"), c_stat2 = COL("stat2"), c_len = COL("len"),
+              c_flippy = COL("flippyfile"), c_drop = COL("dropsound"), c_drop_frame = COL("dropsfxframe");
 #undef COL
     const int rows  = DataTable_GetRowCount(t);
     ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
@@ -122,6 +123,9 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
         Items__Sanitize(base->name, sizeof(base->name), name != NULL ? name : DataTable_GetString(t, row, c_name));
         snprintf(base->inv_file, sizeof(base->inv_file), "%s", DataTable_GetString(t, row, c_inv));
         snprintf(base->use_sound, sizeof(base->use_sound), "%s", DataTable_GetString(t, row, c_sound));
+        snprintf(base->flippy_file, sizeof(base->flippy_file), "%s", DataTable_GetString(t, row, c_flippy));
+        snprintf(base->drop_sound, sizeof(base->drop_sound), "%s", DataTable_GetString(t, row, c_drop));
+        base->drop_sound_frame   = DataTable_GetInt(t, row, c_drop_frame);
         base->width              = DataTable_GetInt(t, row, c_w) > 0 ? DataTable_GetInt(t, row, c_w) : 1;
         base->height             = DataTable_GetInt(t, row, c_h) > 0 ? DataTable_GetInt(t, row, c_h) : 1;
         base->min_damage         = DataTable_GetInt(t, row, c_min);

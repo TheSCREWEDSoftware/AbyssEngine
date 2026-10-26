@@ -5,7 +5,7 @@ games.
 
 > **What's shared so far:** who's in the game, where everyone is (you see each other walk and run between areas, with
 > names and coloured circles), chat, and the game's settings. Monsters, combat and items are still each player's
-> own: Difficulty and PvP are set and shown, and take effect once those are shared.
+> own (an item you drop only you see): Difficulty and PvP are set and shown, and take effect once those are shared.
 
 ## How it works
 

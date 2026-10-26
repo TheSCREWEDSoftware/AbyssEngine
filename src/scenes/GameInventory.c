@@ -40,7 +40,7 @@ static int belt_y = 568;
 #define BELT_Y    belt_y
 #define BELT_STEP 31
 
-typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT } Origin;
+typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND } Origin;
 
 typedef struct IconCache {
     char    file[32];
@@ -61,6 +61,7 @@ struct GameInventory {
     bool   modern;       // Options > Gameplay > Picking up worn gear: Modern
     bool   still_worn;   // Modern: the carried item is still worn (in origin_index's slot) until it's put down
     char   sound[32];    // what was last put down sounds like
+    bool   no_room;      // the panel closed and the carried item had nowhere to go: it stays on the cursor
 };
 
 const char *GameInventory_Sound(const GameInventory *inventory) { return inventory->sound; }
@@ -239,14 +240,14 @@ static bool GameInventory__PageArrow(const int mouse_x, const int mouse_y, int *
     return false;
 }
 
-void GameInventory_PutBack(GameInventory *inventory, Character *character) {
+bool GameInventory_PutBack(GameInventory *inventory, Character *character) {
     if (!inventory->holding) {
-        return;
+        return true;
     }
     if (inventory->still_worn) { // Modern: it never came off
         inventory->holding    = false;
         inventory->still_worn = false;
-        return;
+        return true;
     }
     bool placed = false;
     switch (inventory->origin) {
@@ -267,11 +268,45 @@ void GameInventory_PutBack(GameInventory *inventory, Character *character) {
                                        (inventory->origin_index % INVENTORY_PAGE) / INVENTORY_W,
                                        inventory->origin_index / INVENTORY_PAGE);
         break;
+    case ORIGIN_GROUND: // picked up off the ground: anywhere it fits
+        break;
     }
-    if (!placed && !Inventory_Add(character, &inventory->held)) {
-        Inventory_AddToBelt(character, &inventory->held);
+    const ItemBase *base = Items_Find(inventory->held.code);
+    if (!placed && base != NULL && base->beltable) {
+        placed = Inventory_AddToBelt(character, &inventory->held);
+    }
+    if (!placed) {
+        placed = Inventory_Add(character, &inventory->held);
+    }
+    if (!placed) {
+        return false; // nowhere for it: still on the cursor (a click in the world drops it)
     }
     inventory->holding = false;
+    return true;
+}
+
+bool GameInventory_Drop(GameInventory *inventory, Character *character, Item *item, bool *equipment_changed) {
+    *equipment_changed = false;
+    if (!inventory->holding) {
+        return false;
+    }
+    if (inventory->still_worn) { // Modern: it comes off now, onto the ground
+        memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+        inventory->still_worn = false;
+        *equipment_changed    = true;
+    }
+    *item              = inventory->held;
+    inventory->holding = false;
+    return true;
+}
+
+void GameInventory_PutBackCopy(const GameInventory *inventory, Character *copy) {
+    GameInventory scratch = *inventory; // the real one keeps carrying it
+    GameInventory_PutBack(&scratch, copy);
+}
+
+void GameInventory_Hold(GameInventory *inventory, const Item *item) {
+    GameInventory__Take(inventory, item, ORIGIN_GROUND, 0);
 }
 
 static bool GameInventory__Drink(Item *item, Item *drunk) {
@@ -298,8 +333,11 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     *message            = NULL;
     inventory->sound[0] = '\0';
     int events          = INVENTORY_EVENT_NONE;
-    if (!open && inventory->holding) {
-        GameInventory_PutBack(inventory, character);
+    if (!open && inventory->holding && !inventory->no_room) {
+        inventory->no_room = !GameInventory_PutBack(inventory, character); // no room: it stays on the cursor
+    }
+    if (open || !inventory->holding) {
+        inventory->no_room = false;
     }
 
     // The belt (on the control panel): right click drinks; with the inventory open, left click picks up / puts down

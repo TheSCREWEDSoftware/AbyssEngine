@@ -1,7 +1,7 @@
 # Single Player
 
 **Main menu › Single Player** opens the character list. This is the start of the real game: characters are kept
-between sessions, gain experience and levels, carry and wear items and learn skills. There's no casting, no drops
+between sessions, gain experience and levels, carry, wear and drop items and learn skills. There's no casting, no monster drops
 and no quests yet (see [Feature Status](Feature-Status.md)).
 
 ## Character list
@@ -89,6 +89,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Character screen | - | `A`, `C` | - | - |
 | Inventory | - | `B`, `I` | - | Single Player: the inventory (items, what you wear) |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
+| Show items | - | `Left Alt` | - | Show the names of items on the ground while held |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
 | Back to town | - | `Home` | - | Single Player: back to the act's town |
 | Automap | - | `Tab` | - | Show or hide the map of the explored area |
@@ -129,7 +130,7 @@ page number under the grid, next to the gold). The square button in its bottom c
 
 - **Click** an item to pick it up; it follows the mouse. **Click** again to put it down: in the grid (a green patch
   shows where), or in a slot it suits. Putting it on another item swaps them. Close the inventory with an item on the
-  mouse and it goes back where it came from (there's no dropping items on the ground yet).
+  mouse and it goes back where it came from (or anywhere it fits; with no room at all it stays on the mouse).
 - **Picking up what you wear**: **Classic** (the game's way) takes it off at once; **Modern** (Options › Gameplay ›
   Worn gear) leaves it worn, faded in its slot, until you put it in the grid or another slot.
 - **Wearing**: an item goes only where it suits (a helm on the head, a shield in a hand, ...) and only if you meet its
@@ -141,7 +142,20 @@ page number under the grid, next to the gold). The square button in its bottom c
   one row of four; a sash two rows, a belt three, a girdle four. **Shift + click** a potion in the grid to put it in
   the belt; **right click** a potion (in the grid or the belt) to drink it.
 - Everything is saved with the character: the grid, what's worn, the belt and gold. Characters saved before items
-  existed get their class's starting items.
+  existed get their class's starting items. An item on the mouse is saved where it came from.
+
+### On the ground
+
+- **Dropping**: with an item on the mouse, **click anywhere in the world** (or the Modern panel's drop spot between
+  the skills). It flips out at your feet, onto the nearest free spot, with the game's picture and sounds. Modern
+  pick-up: a worn item comes off as it's dropped.
+- **Names**: point at an item to see its name; hold **Show items** (**Left Alt**) to see every name around (they stack
+  up when they'd overlap). Click a name or the item itself.
+- **Picking up**: click it and you walk over and pick it up: potions into the belt if there's room, the rest into the
+  inventory ("There's no room for that" when it's full). With the inventory open it goes onto the mouse instead.
+  Modern movement picks up only what's in reach.
+- Like the game, what's on the ground stays there while the game lasts (each area keeps its own), and is gone when you
+  leave the game. In multiplayer only you see what you drop, for now.
 
 ## Skills
 
@@ -158,6 +172,6 @@ page number under the grid, next to the gold). The square button in its bottom c
 
 ## Not yet
 
-Casting skills, magic items, drops and picking things up, gold from monsters, the stash, quests, NPC dialogue and
+Casting skills, magic items, monster drops, gold from monsters, the stash, quests, NPC dialogue and
 trading, hirelings, items shown on the character, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.

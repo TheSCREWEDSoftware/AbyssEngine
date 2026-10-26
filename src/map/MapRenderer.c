@@ -709,10 +709,20 @@ static bool MapRenderer__InRange(const int tx, const int ty, const int min_sum, 
 }
 
 static int MapRenderer__CompareDrawables(const void *a, const void *b) {
-    const MapDrawable *x  = *(const MapDrawable *const *)a;
-    const MapDrawable *y  = *(const MapDrawable *const *)b;
-    const float        dx = x->x + x->y;
-    const float        dy = y->x + y->y;
+    const MapDrawable *x = *(const MapDrawable *const *)a;
+    const MapDrawable *y = *(const MapDrawable *const *)b;
+    // By the tile diagonal they're on (they're drawn with its walls), then what lies on the floor before what stands
+    // there, then front to back
+    const int tx = (int)floorf(x->x / MAP_SUBTILES) + (int)floorf(x->y / MAP_SUBTILES);
+    const int ty = (int)floorf(y->x / MAP_SUBTILES) + (int)floorf(y->y / MAP_SUBTILES);
+    if (tx != ty) {
+        return tx < ty ? -1 : 1;
+    }
+    if (x->on_floor != y->on_floor) {
+        return x->on_floor ? -1 : 1;
+    }
+    const float dx = x->x + x->y;
+    const float dy = y->x + y->y;
     return (dx < dy) ? -1 : (dx > dy);
 }
 

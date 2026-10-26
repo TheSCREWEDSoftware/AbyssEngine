@@ -198,6 +198,35 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define CHAR_PANEL_W      320
 #define CHAR_PANEL_H      432
 
+// Items on the ground (Single Player and multiplayer games): kept while the game lasts, per area, like the game's
+#define MAX_GROUND_ITEMS 1024
+#define ITEM_FLIP_MS     40   // the flip through the air, a frame each (the game's 25 a second)
+#define PICKUP_RANGE     2.0f // how close the player must be to pick one up
+#define ITEM_SPRITES     48   // flippy pictures kept loaded
+
+typedef struct GroundItem {
+    Item     item;
+    int      map_key; // the map it's on (Roam__MapKey)
+    float    x;       // sub-tiles
+    float    y;
+    uint64_t dropped_at;
+    bool     landed; // its landing sound has played
+    // Drawing (worked out each frame)
+    Sprite  *sprite;
+    int      frame;
+    bool     on_screen;
+    int      screen_x; // where it lies
+    int      screen_y;
+    SDL_Rect rect;  // its picture on screen
+    SDL_Rect label; // its name's box, when shown
+    bool     label_shown;
+} GroundItem;
+
+typedef struct ItemSprite {
+    char    file[32];
+    Sprite *sprite;
+} ItemSprite;
+
 typedef struct SceneRoam {
     bool         free_roam; // Free Roam, or the game (both travel between the game's areas)
     bool         game;      // Single Player: the character from Character_Current(), real combat and levels
@@ -344,6 +373,16 @@ typedef struct SceneRoam {
     char     message[96];
     uint64_t message_until;
     uint64_t leave_at; // hardcore death: back to the character list at this time
+
+    // Items on the ground
+    GroundItem *ground;
+    int         ground_count;
+    int         item_target; // the ground item being walked to, to pick it up; -1 = none
+    int         hover_item;  // the ground item under the mouse (its picture or name), -1 = none
+    ItemSprite  item_sprites[ITEM_SPRITES];
+    int         item_sprite_count;
+    int         item_sprite_act; // the palette they were loaded with
+    Label      *item_label;
 } SceneRoam;
 
 static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);
@@ -942,8 +981,17 @@ static void Roam__StoreCharacter(SceneRoam *roam) {
     roam->character->life    = roam->player.hp;
     roam->character->mana    = (int)roam->mana;
     roam->character->stamina = (int)roam->stamina;
-    if (roam->inventory_ui != NULL) {
-        GameInventory_PutBack(roam->inventory_ui, roam->character); // nothing's saved on the cursor
+    if (roam->inventory_ui != NULL && GameInventory_Holding(roam->inventory_ui)) {
+        // Saved as if the carried item were put back (it stays on the cursor: saving happens mid-game too, on a
+        // level up or going through an exit)
+        Character *copy = malloc(sizeof(Character));
+        FAIL_IF_NULL(copy);
+        *copy = *roam->character;
+        GameInventory_PutBackCopy(roam->inventory_ui, copy);
+        Character_Save(copy);
+        roam->character->last_played = copy->last_played;
+        free(copy);
+        return;
     }
     Character_Save(roam->character);
 }
@@ -952,6 +1000,216 @@ static void Roam__ShowMessage(SceneRoam *roam, const char *text) {
     snprintf(roam->message, sizeof(roam->message), "%s", text);
     Label_SetText(roam->message_label, text);
     roam->message_until = SDL_GetTicks64() + MESSAGE_MS;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Items on the ground
+
+// Which map this is, for the items lying on it: an act's outdoors joined into one map is the same map whichever area
+// you're in (its lowest level Id, the town), otherwise the area's level Id
+static int Roam__MapKey(const SceneRoam *roam) {
+    if (roam->map == NULL) {
+        return -1;
+    }
+    int key = roam->area_level;
+    for (int a = 0; a < roam->map->area_count; a++) {
+        key = a == 0 || roam->map->areas[a].level_id < key ? roam->map->areas[a].level_id : key;
+    }
+    return key;
+}
+
+static int Roam__Act(const SceneRoam *roam) {
+    const Place *place = roam->place >= 0 && roam->place < Places_GetCount() ? Places_Get(roam->place) : NULL;
+    return place != NULL ? place->act : 0;
+}
+
+// An item's picture on the ground (items/<flippyfile>.dc6, in the act's colours)
+static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
+    if (base == NULL || base->flippy_file[0] == '\0') {
+        return NULL;
+    }
+    const int act = Roam__Act(roam);
+    if (act != roam->item_sprite_act) {
+        for (int i = 0; i < roam->item_sprite_count; i++) {
+            Sprite_Destroy(&roam->item_sprites[i].sprite);
+        }
+        roam->item_sprite_count = 0;
+        roam->item_sprite_act   = act;
+    }
+    for (int i = 0; i < roam->item_sprite_count; i++) {
+        if (strcmp(roam->item_sprites[i].file, base->flippy_file) == 0) {
+            return roam->item_sprites[i].sprite;
+        }
+    }
+    if (roam->item_sprite_count >= ITEM_SPRITES) {
+        return NULL;
+    }
+    char path[96];
+    snprintf(path, sizeof(path), "/data/global/items/%s.dc6", base->flippy_file);
+    ItemSprite *entry = &roam->item_sprites[roam->item_sprite_count++];
+    snprintf(entry->file, sizeof(entry->file), "%s", base->flippy_file);
+    entry->sprite = Sprite_Create(path, MapView_ActPalette(act));
+    return entry->sprite;
+}
+
+// Puts an item on the ground by the player: on the nearest free spot (not on another item, not in a wall)
+static bool Roam__DropItem(SceneRoam *roam, const Item *item, const uint64_t now) {
+    if (roam->ground_count >= MAX_GROUND_ITEMS) {
+        Roam__ShowMessage(roam, "There are too many items on the ground already.");
+        return false;
+    }
+    const int key    = Roam__MapKey(roam);
+    const int cx     = (int)roam->player.x;
+    const int cy     = (int)roam->player.y;
+    float     best_x = roam->player.x;
+    float     best_y = roam->player.y;
+    bool      found  = false;
+    for (int ring = 0; ring <= 8 && !found; ring++) {
+        for (int dy = -ring; dy <= ring && !found; dy++) {
+            for (int dx = -ring; dx <= ring && !found; dx++) {
+                if (abs(dx) != ring && abs(dy) != ring) {
+                    continue; // only the ring's edge (the inside was looked at already)
+                }
+                const float x = (float)(cx + dx) + 0.5f;
+                const float y = (float)(cy + dy) + 0.5f;
+                if (!Map_IsWalkable(roam->map, cx + dx, cy + dy)) {
+                    continue;
+                }
+                bool taken = false;
+                for (int g = 0; g < roam->ground_count && !taken; g++) {
+                    taken = roam->ground[g].map_key == key && fabsf(roam->ground[g].x - x) < 0.9f &&
+                            fabsf(roam->ground[g].y - y) < 0.9f;
+                }
+                if (!taken) {
+                    best_x = x;
+                    best_y = y;
+                    found  = true;
+                }
+            }
+        }
+    }
+    GroundItem *ground = &roam->ground[roam->ground_count++];
+    memset(ground, 0, sizeof(GroundItem));
+    ground->item       = *item;
+    ground->map_key    = key;
+    ground->x          = best_x;
+    ground->y          = best_y;
+    ground->dropped_at = now;
+    Sounds_Play("item_flippy", SOUND_KIND_SFX);
+    return true;
+}
+
+// The item on the cursor onto the ground
+static void Roam__DropHeld(SceneRoam *roam) {
+    if (roam->ground_count >= MAX_GROUND_ITEMS) {
+        Roam__ShowMessage(roam, "There are too many items on the ground already.");
+        return;
+    }
+    Item item;
+    bool equipment_changed = false;
+    if (GameInventory_Drop(roam->inventory_ui, roam->character, &item, &equipment_changed)) {
+        Roam__DropItem(roam, &item, SDL_GetTicks64());
+        if (equipment_changed) {
+            Roam__ApplyCharacter(roam); // Modern pick-up: it was still worn until now
+        }
+    }
+}
+
+static void Roam__RemoveGroundItem(SceneRoam *roam, const int index) {
+    roam->ground[index] = roam->ground[--roam->ground_count];
+    roam->item_target   = -1;
+    roam->hover_item    = -1;
+}
+
+// Picks a ground item up: onto the cursor with the inventory open, otherwise into the belt (potions) or the inventory
+static void Roam__PickUp(SceneRoam *roam, const int index) {
+    GroundItem     *ground = &roam->ground[index];
+    const ItemBase *base   = Items_Find(ground->item.code);
+    if (roam->inventory_panel && !GameInventory_Holding(roam->inventory_ui)) {
+        GameInventory_Hold(roam->inventory_ui, &ground->item);
+    } else {
+        bool placed = base != NULL && base->beltable && Inventory_AddToBelt(roam->character, &ground->item);
+        placed      = placed || Inventory_Add(roam->character, &ground->item);
+        if (!placed) {
+            Roam__ShowMessage(roam, "There's no room for that in your inventory.");
+            Sounds_Play("cursor_error", SOUND_KIND_UI);
+            roam->item_target = -1;
+            return;
+        }
+    }
+    Sounds_Play("item_pickup", SOUND_KIND_SFX);
+    Roam__RemoveGroundItem(roam, index);
+}
+
+// Walking to a ground item: picks it up once close enough. True when that's done (or it's gone).
+static bool Roam__TryPickUp(SceneRoam *roam) {
+    if (roam->item_target < 0 || roam->item_target >= roam->ground_count) {
+        roam->item_target = -1;
+        return true;
+    }
+    const GroundItem *ground = &roam->ground[roam->item_target];
+    if (Roam__Distance(roam->player.x, roam->player.y, ground->x, ground->y) > PICKUP_RANGE) {
+        return false;
+    }
+    roam->moving = false;
+    Roam__ClearPath(&roam->player);
+    Roam__PickUp(roam, roam->item_target);
+    roam->item_target = -1;
+    return true;
+}
+
+// The flip and its landing sound
+static void Roam__UpdateGroundItems(SceneRoam *roam, const uint64_t now) {
+    const int key = Roam__MapKey(roam);
+    for (int g = 0; g < roam->ground_count; g++) {
+        GroundItem *ground = &roam->ground[g];
+        if (ground->map_key != key || ground->landed) {
+            continue;
+        }
+        const ItemBase *base  = Items_Find(ground->item.code);
+        const int       frame = (int)((now - ground->dropped_at) / ITEM_FLIP_MS);
+        if (base == NULL || frame >= base->drop_sound_frame) {
+            ground->landed = true;
+            if (base != NULL && base->drop_sound[0] != '\0') {
+                Sounds_Play(base->drop_sound, SOUND_KIND_SFX);
+            }
+        }
+    }
+}
+
+// Which ground item is under the mouse (from where they were drawn last frame): its name when shown, or its picture
+static int Roam__GroundItemAt(const SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    const SDL_Point mouse = {mouse_x, mouse_y};
+    const int       key   = Roam__MapKey(roam);
+    for (int g = 0; g < roam->ground_count; g++) {
+        const GroundItem *ground = &roam->ground[g];
+        if (ground->map_key == key && ground->label_shown && SDL_PointInRect(&mouse, &ground->label)) {
+            return g;
+        }
+    }
+    int   best      = -1;
+    float best_dist = 1e9f;
+    for (int g = 0; g < roam->ground_count; g++) {
+        const GroundItem *ground = &roam->ground[g];
+        if (ground->map_key != key || !ground->on_screen) {
+            continue;
+        }
+        SDL_Rect box  = ground->rect; // a little bigger: small items are hard to hit
+        box.x        -= 4;
+        box.y        -= 4;
+        box.w        += 8;
+        box.h        += 8;
+        if (SDL_PointInRect(&mouse, &box)) {
+            const float dx   = (float)(mouse_x - ground->screen_x);
+            const float dy   = (float)(mouse_y - ground->screen_y);
+            const float dist = (dx * dx) + (dy * dy);
+            if (dist < best_dist) {
+                best      = g;
+                best_dist = dist;
+            }
+        }
+    }
+    return best;
 }
 
 static void Roam__ResetPlayer(SceneRoam *roam) {
@@ -1205,6 +1463,8 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     if (place == NULL) {
         return;
     }
+    roam->item_target = -1;
+    roam->hover_item  = -1;
     // Already on the map (an act's outdoors are one map): just go there
     const MapArea *area = roam->map != NULL && !roam->borrowed && roam->map->seed == World_GetSeed()
                               ? Map_FindArea(roam->map, place->level_id)
@@ -1452,17 +1712,20 @@ static void *Roam__Create(const bool free_roam, const bool game) {
 
     SceneRoam *roam = calloc(1, sizeof(SceneRoam));
     FAIL_IF_NULL(roam);
-    roam->free_roam     = free_roam || game;
-    roam->game          = game;
-    roam->renderer      = MapRenderer_Create();
-    roam->units_cache   = MapUnits_Create();
-    roam->camera.zoom   = 1.0f;
-    roam->last_tick     = SDL_GetTicks64();
-    roam->draw_flags    = MAP_DRAW_DEFAULT;
-    roam->attack_target = -1;
-    roam->use_target    = -1;
-    roam->step_frame    = -1;
-    roam->hovered       = -1;
+    roam->free_roam       = free_roam || game;
+    roam->game            = game;
+    roam->renderer        = MapRenderer_Create();
+    roam->units_cache     = MapUnits_Create();
+    roam->camera.zoom     = 1.0f;
+    roam->last_tick       = SDL_GetTicks64();
+    roam->draw_flags      = MAP_DRAW_DEFAULT;
+    roam->attack_target   = -1;
+    roam->use_target      = -1;
+    roam->item_target     = -1;
+    roam->hover_item      = -1;
+    roam->item_sprite_act = -1;
+    roam->step_frame      = -1;
+    roam->hovered         = -1;
     srand((unsigned)SDL_GetTicks64());
 
     roam->title_label  = Label_Create(FONTS_FONT24, PALETTE_STATIC);
@@ -1531,7 +1794,10 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->panel_label       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
         roam->panel_value_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
         roam->inventory_ui      = GameInventory_Create();
-        roam->skills_ui         = GameSkills_Create(roam->character->class_id);
+        roam->ground            = calloc(MAX_GROUND_ITEMS, sizeof(GroundItem));
+        FAIL_IF_NULL(roam->ground);
+        roam->item_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+        roam->skills_ui  = GameSkills_Create(roam->character->class_id);
     } else if (free_roam) {
         roam->places_button   = roam->buttons[3];
         roam->monsters_button = roam->buttons[4];
@@ -1658,6 +1924,11 @@ static void Roam__Free(void **scene_ref) {
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
+    Label_Destroy(&roam->item_label);
+    for (int i = 0; i < roam->item_sprite_count; i++) {
+        Sprite_Destroy(&roam->item_sprites[i].sprite);
+    }
+    free(roam->ground);
     free(roam);
     *scene_ref = NULL;
 }
@@ -1841,6 +2112,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     if (key_walking) {
         roam->use_target    = -1;
         roam->attack_target = -1;
+        roam->item_target   = -1;
         roam->moving        = false;
         Roam__ClearPath(player);
         const float step = Roam__PlayerSpeed(roam) * seconds *
@@ -1865,6 +2137,12 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     if (!key_walking && roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
         player->target_x = roam->units[roam->use_target].x;
         player->target_y = roam->units[roam->use_target].y;
+        roam->moving     = true;
+    }
+    // Picking something up: the same
+    if (!key_walking && roam->item_target >= 0 && !Roam__TryPickUp(roam)) {
+        player->target_x = roam->ground[roam->item_target].x;
+        player->target_y = roam->ground[roam->item_target].y;
         roam->moving     = true;
     }
 
@@ -1905,6 +2183,9 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             Roam__ClearPath(player);
             if (roam->use_target >= 0 && !Roam__TryUse(roam, now)) {
                 roam->use_target = -1; // got as close as it gets, and it's still out of reach
+            }
+            if (roam->item_target >= 0 && !Roam__TryPickUp(roam)) {
+                roam->item_target = -1;
             }
         }
     }
@@ -2352,9 +2633,12 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
         roam->menu_open = true;
         break;
     case CTRL_DROP:
-        Roam__ShowMessage(roam, GameInventory_Holding(roam->inventory_ui)
-                                    ? "There's no dropping items on the ground yet: put it in your inventory."
-                                    : "Drop items on the ground here (once the engine has items on the ground).");
+        if (GameInventory_Holding(roam->inventory_ui)) {
+            Roam__DropHeld(roam);
+        } else {
+            Roam__ShowMessage(roam, "Pick something up in the inventory, then click here (or anywhere in the world) "
+                                    "to drop it.");
+        }
         break;
     default: {
         char text[96];
@@ -2670,10 +2954,14 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     if ((item_events & INVENTORY_EVENT_MOVED) && GameInventory_Sound(roam->inventory_ui)[0] != '\0') {
         Sounds_Play(GameInventory_Sound(roam->inventory_ui), SOUND_KIND_SFX);
     }
-    const bool holding = GameInventory_Holding(roam->inventory_ui);
-    if (left_click && holding && !over_panels && item_events == INVENTORY_EVENT_NONE) {
-        Roam__ShowMessage(roam, "There's no dropping items on the ground yet: put it in your inventory.");
+    // A click in the world with an item on the cursor puts it on the ground at your feet
+    bool dropped = false;
+    if (left_click && GameInventory_Holding(roam->inventory_ui) && !over_panels &&
+        item_events == INVENTORY_EVENT_NONE && !Roam__OverControlPanel(roam, mouse_x, mouse_y)) {
+        Roam__DropHeld(roam);
+        dropped = true; // the click was for that, not for walking
     }
+    const bool holding = GameInventory_Holding(roam->inventory_ui);
     // Right click in the world with a skill on the right: there's no casting yet
     if (right_click && !over_panels && !holding && character->right_skill != SKILL_ATTACK) {
         char text[128];
@@ -2682,7 +2970,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         Roam__ShowMessage(roam, text);
     }
     const bool took = closed_panel || skills_took || picker_was_open || item_events != INVENTORY_EVENT_NONE ||
-                      holding || ((left_click || right_click) && over_panels);
+                      holding || dropped || ((left_click || right_click) && over_panels);
     roam->ui_owns_press = (left_down || right_down) && (roam->ui_owns_press || took);
     return took || roam->ui_owns_press;
 }
@@ -3106,6 +3394,11 @@ static void Roam__Update(SceneRoam *roam) {
     MapView_ScreenToWorld(&roam->camera, &view, mouse_x, mouse_y, &world_x, &world_y);
     MapView_WorldToSubtile(world_x, world_y, &sub_x, &sub_y);
     roam->hovered = over_view ? Roam__UnitAt(roam, sub_x, sub_y) : -1;
+    // An item on the ground under the mouse (its picture, or its name while names are shown) comes first
+    roam->hover_item = roam->game && over_view ? Roam__GroundItemAt(roam, mouse_x, mouse_y) : -1;
+    if (roam->hover_item >= 0) {
+        roam->hovered = -1;
+    }
     // An entrance under the mouse (cave mouth, tomb door, stairs): its name is shown, like the game's
     roam->hover_exit = -1;
     for (int e = 0; over_view && roam->hovered < 0 && e < roam->map->exit_count; e++) {
@@ -3127,7 +3420,13 @@ static void Roam__Update(SceneRoam *roam) {
     // Modern: the mouse attacks and opens things within reach, but doesn't walk
     if (gameplay->movement == MOVEMENT_MODERN && over_view && left && !roam->prev_left &&
         Roam__IsAlive(&roam->player)) {
-        if (roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+        if (roam->hover_item >= 0) {
+            roam->item_target = roam->hover_item;
+            if (!Roam__TryPickUp(roam)) {
+                roam->item_target = -1; // out of reach
+                Roam__ShowMessage(roam, "Too far away: walk up to it to pick it up.");
+            }
+        } else if (roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
             roam->use_target = roam->hovered;
             if (!Roam__TryUse(roam, now)) {
                 roam->use_target = -1; // out of reach
@@ -3145,9 +3444,15 @@ static void Roam__Update(SceneRoam *roam) {
 
     // Left: attack what's under the mouse (combat on), otherwise walk there (hold to keep following the mouse)
     if (gameplay->movement != MOVEMENT_MODERN && !stand_still && over_view && left && Roam__IsAlive(&roam->player)) {
-        if (!roam->prev_left && roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+        if (!roam->prev_left && roam->hover_item >= 0) {
+            roam->item_target   = roam->hover_item; // walk over and pick it up
+            roam->use_target    = -1;
+            roam->attack_target = -1;
+            Roam__ClearPath(&roam->player);
+        } else if (!roam->prev_left && roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
             roam->use_target    = roam->hovered; // walk over and open it
             roam->attack_target = -1;
+            roam->item_target   = -1;
             Roam__ClearPath(&roam->player);
         } else if (!roam->prev_left && Roam__Combat(roam) && roam->hovered >= 0 &&
                    Roam__IsCombatant(&roam->units[roam->hovered]) &&
@@ -3155,11 +3460,13 @@ static void Roam__Update(SceneRoam *roam) {
             roam->attack_target   = roam->hovered;
             roam->attack_in_place = false;
             roam->use_target      = -1;
-        } else if (roam->use_target >= 0 && roam->prev_left) {
-            // holding the button after clicking an object: keep going to it
+            roam->item_target     = -1;
+        } else if ((roam->use_target >= 0 || roam->item_target >= 0) && roam->prev_left) {
+            // holding the button after clicking an object or item: keep going to it
         } else if (roam->attack_target < 0 || roam->prev_left == false) {
             roam->use_target      = -1;
             roam->attack_target   = -1;
+            roam->item_target     = -1;
             roam->player.target_x = sub_x;
             roam->player.target_y = sub_y;
             roam->moving          = true;
@@ -3194,6 +3501,9 @@ static void Roam__Update(SceneRoam *roam) {
 
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
+    if (roam->game) {
+        Roam__UpdateGroundItems(roam, now);
+    }
 
     // Which area of a joined-up map you're in
     if (roam->free_roam && roam->map->area_count > 0) {
@@ -3352,6 +3662,93 @@ static void Roam__DrawFigure(void *context, const int screen_x, const int screen
     Figure_Draw(draw->figure, draw->direction, draw->frame, screen_x, screen_y, zoom);
 }
 
+// An item on the ground, in its flip or lying still; remembers where it went (for the mouse)
+static void Roam__DrawGroundItem(void *context, const int screen_x, const int screen_y, const float zoom) {
+    GroundItem *ground = context;
+    ground->on_screen  = true;
+    ground->screen_x   = screen_x;
+    ground->screen_y   = screen_y;
+    if (ground->sprite == NULL) {
+        ground->rect = (SDL_Rect){screen_x - 8, screen_y - 8, 16, 12};
+        return;
+    }
+    int w;
+    int h;
+    int ox;
+    int oy;
+    Sprite_GetFrameSize(ground->sprite, ground->frame, &w, &h);
+    Sprite_GetFrameOffset(ground->sprite, ground->frame, &ox, &oy);
+    const int x = screen_x + (int)((float)ox * zoom);
+    const int y = screen_y + (int)((float)(oy - h) * zoom);
+    Sprite_DrawScaled(ground->sprite, ground->frame, x, y, zoom);
+    ground->rect = (SDL_Rect){x, y, (int)((float)w * zoom), (int)((float)h * zoom)};
+}
+
+static bool Roam__PrepareGroundItem(SceneRoam *roam, GroundItem *ground, const uint64_t now, MapDrawable *drawable) {
+    ground->on_screen = false;
+    if (ground->map_key != Roam__MapKey(roam)) {
+        return false;
+    }
+    ground->sprite = Roam__ItemSprite(roam, Items_Find(ground->item.code));
+    if (ground->sprite != NULL) {
+        const int frames = (int)Sprite_GetFrameCount(ground->sprite);
+        const int frame  = (int)((now - ground->dropped_at) / ITEM_FLIP_MS);
+        ground->frame    = frames > 0 ? (frame < frames ? frame : frames - 1) : 0;
+    }
+    drawable->x        = ground->x;
+    drawable->y        = ground->y;
+    drawable->draw     = Roam__DrawGroundItem;
+    drawable->context  = ground;
+    drawable->on_floor = true;
+    return true;
+}
+
+// The names of the items on the ground: the one under the mouse, or all of them while Show items (Alt) is held. Like
+// the game's: white on a dark box, blue under the mouse; boxes that would overlap move up.
+static void Roam__DrawItemLabels(SceneRoam *roam) {
+    const bool all = Controls_Held(ACTION_SHOW_ITEMS);
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    for (int g = 0; g < roam->ground_count; g++) {
+        roam->ground[g].label_shown = false;
+    }
+    for (int g = 0; g < roam->ground_count; g++) {
+        GroundItem *ground = &roam->ground[g];
+        if (!ground->on_screen || (!all && g != roam->hover_item)) {
+            continue;
+        }
+        const ItemBase *base = Items_Find(ground->item.code);
+        char            text[80];
+        if (base != NULL && base->stackable && ground->item.quantity > 1) {
+            snprintf(text, sizeof(text), "%s (%d)", base->name, ground->item.quantity);
+        } else {
+            snprintf(text, sizeof(text), "%s", base != NULL ? base->name : ground->item.code);
+        }
+        Label_SetText(roam->item_label, text);
+        int w = 0;
+        int h = 0;
+        Label_GetSize(roam->item_label, &w, &h);
+        SDL_Rect box = {ground->screen_x - (w / 2) - 3, ground->rect.y - h - 6, w + 6, h + 2};
+        for (int tries = 0; tries < 40; tries++) { // up, out of the way of the names already shown
+            bool overlaps = false;
+            for (int o = 0; o < g && !overlaps; o++) {
+                overlaps = roam->ground[o].label_shown && SDL_HasIntersection(&box, &roam->ground[o].label);
+            }
+            if (!overlaps) {
+                break;
+            }
+            box.y -= h + 2;
+        }
+        ground->label       = box;
+        ground->label_shown = true;
+        const bool hovered  = g == roam->hover_item;
+        SDL_SetRenderDrawColor(sdl_renderer, hovered ? 24 : 0, hovered ? 36 : 0, hovered ? 120 : 0,
+                               hovered ? 220 : 170);
+        SDL_RenderFillRect(sdl_renderer, &box);
+        Label_SetColor(roam->item_label, 0xFF, 0xFF, 0xFF, 0xFF);
+        Label_Draw(roam->item_label, box.x + 3, box.y + 1);
+    }
+}
+
 static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable) {
     if (unit->state == UNIT_DEAD && unit->vanished) {
         return false; // no corpse graphics: it's gone
@@ -3371,10 +3768,11 @@ static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable
     if (unit->is_object && unit->rest_frame >= 0 && unit->state == UNIT_IDLE) {
         unit->draw.frame = unit->rest_frame;
     }
-    drawable->x       = unit->x;
-    drawable->y       = unit->y;
-    drawable->draw    = Roam__DrawFigure;
-    drawable->context = &unit->draw;
+    drawable->x        = unit->x;
+    drawable->y        = unit->y;
+    drawable->draw     = Roam__DrawFigure;
+    drawable->context  = &unit->draw;
+    drawable->on_floor = false;
     return true;
 }
 
@@ -3626,8 +4024,14 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_SetRenderDrawColor(sdl_renderer, 10, 10, 14, 255);
     SDL_RenderClear(sdl_renderer);
 
-    MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS];
-    int         count = 0;
+    static MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS + MAX_GROUND_ITEMS];
+    int                count = 0;
+    const uint64_t     now   = SDL_GetTicks64();
+    for (int g = 0; g < roam->ground_count; g++) { // items on the ground first: under whoever stands there
+        if (Roam__PrepareGroundItem(roam, &roam->ground[g], now, &drawables[count])) {
+            count++;
+        }
+    }
     for (int i = 0; i < roam->unit_count; i++) {
         if (Roam__PrepareDraw(roam, &roam->units[i], &drawables[count])) {
             count++;
@@ -3673,6 +4077,8 @@ static void Roam__Render(SceneRoam *roam) {
         MapRenderer_DrawLight(roam->renderer, &roam->camera, &view, light_x, light_y - 30.0f,
                               light_levels[light_level].radius, light_levels[light_level].darkness);
     }
+
+    Roam__DrawItemLabels(roam);
 
     // Walk target marker
     if (roam->moving && roam->attack_target < 0) {
@@ -3794,7 +4200,6 @@ static void Roam__Render(SceneRoam *roam) {
         GameSkills_DrawTree(roam->skills_ui, roam->character, ui_mouse_x, ui_mouse_y);
     }
     Roam__DrawPanelClose(roam, ui_mouse_x, ui_mouse_y);
-    const uint64_t now = SDL_GetTicks64();
     if (now < roam->caption_until) {
         const uint64_t left  = roam->caption_until - now;
         const uint8_t  alpha = left >= 1000 ? 255 : (uint8_t)((left * 255) / 1000);

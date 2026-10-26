@@ -174,10 +174,11 @@ int MapUnits_BuildDrawables(MapUnits *units, const Map *map, const uint64_t time
         draw->direction = MapUnits_Direction(figure, entity->direction);
         draw->frame     = frames > 0 ? first + (int)(((time_ms + offset) / (uint64_t)frame_ms) % (uint64_t)frames) : 0;
 
-        drawables[count].x       = entity->x;
-        drawables[count].y       = entity->y;
-        drawables[count].draw    = MapUnits__Draw;
-        drawables[count].context = draw;
+        drawables[count].x        = entity->x;
+        drawables[count].y        = entity->y;
+        drawables[count].draw     = MapUnits__Draw;
+        drawables[count].context  = draw;
+        drawables[count].on_floor = false;
         count++;
     }
     return count;

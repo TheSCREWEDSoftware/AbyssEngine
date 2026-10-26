@@ -35,24 +35,27 @@ typedef struct ItemBase {
     int      height;
     char     inv_file[32];  // data/global/items/<inv_file>.dc6
     char     use_sound[32]; // sounds.txt: put down in the inventory, worn, drunk
-    bool     slots[EQUIP_COUNT];
-    int      min_damage; // one hand (or the only damage)
-    int      max_damage;
-    int      two_hand_min;
-    int      two_hand_max;
-    bool     two_handed;
-    int      str_bonus; // % damage per 100 strength
-    int      dex_bonus;
-    int      min_defense;
-    int      max_defense;
-    int      block;
-    int      required_strength;
-    int      required_dexterity;
-    int      required_level;
-    int      belt_rows; // a belt: rows of four potions it holds
-    bool     beltable;  // potions and scrolls go in the belt
-    bool     stackable;
-    int      max_stack;
+    char flippy_file[32];   // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
+    char drop_sound[32];    // sounds.txt: landing on the ground
+    int  drop_sound_frame;  // ... played at this frame of the flip
+    bool slots[EQUIP_COUNT];
+    int  min_damage; // one hand (or the only damage)
+    int  max_damage;
+    int  two_hand_min;
+    int  two_hand_max;
+    bool two_handed;
+    int  str_bonus; // % damage per 100 strength
+    int  dex_bonus;
+    int  min_defense;
+    int  max_defense;
+    int  block;
+    int  required_strength;
+    int  required_dexterity;
+    int  required_level;
+    int  belt_rows; // a belt: rows of four potions it holds
+    bool beltable;  // potions and scrolls go in the belt
+    bool stackable;
+    int  max_stack;
     // Potions
     int life;           // healing: this much life ...
     int mana;           // ... or mana
