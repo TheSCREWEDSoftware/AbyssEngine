@@ -313,10 +313,15 @@ typedef struct SceneRoam {
     uint64_t last_sent;
     uint64_t last_monsters; // the map's owner: monsters last sent at
     int      attack_other;  // PvP: the player being attacked (their id), 0 = none
-    int      hover_other;   // PvP: the other player under the mouse (index into others), -1 = none
-    int      spread_place;  // the place we were last moved off the arrival spot in (-1: not yet)
-    uint64_t clock;         // the game's time (runs faster at Fast, Faster, Fastest)
-    uint64_t clock_real;    // the real time it was last moved on at
+    bool     party_panel;   // P: the party screen
+    bool     use_is_ours;   // the server said we're the one opening this object (its treasure is ours to drop)
+    int      used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
+    int      used_objects[NET_USED_OBJECTS_MAX];
+    int      used_count;
+    int      hover_other;  // PvP: the other player under the mouse (index into others), -1 = none
+    int      spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
+    uint64_t clock;        // the game's time (runs faster at Fast, Faster, Fastest)
+    uint64_t clock_real;   // the real time it was last moved on at
     TextBox *chat_box;
     Label   *chat_label;
     char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
@@ -925,9 +930,11 @@ static int Roam__OtherAt(const SceneRoam *roam, const float sub_x, const float s
     int   nearest  = -1;
     float distance = HOVER_RANGE;
     for (int o = 0; o < roam->other_count; o++) {
-        const Unit *other = &roam->others[o];
-        const float d     = Roam__Distance(other->x - 0.8f, other->y - 0.8f, sub_x, sub_y);
-        if (Roam__OtherAlive(other) && d < distance) {
+        const Unit      *other  = &roam->others[o];
+        const float      d      = Roam__Distance(other->x - 0.8f, other->y - 0.8f, sub_x, sub_y);
+        const NetPlayer *player = NetClient_Player(roam->other_ids[o]);
+        const bool friend       = NetClient_MyParty() != 0 && player != NULL && player->party == NetClient_MyParty();
+        if (Roam__OtherAlive(other) && !friend && d < distance) {
             distance = d;
             nearest  = o;
         }
@@ -1038,6 +1045,21 @@ static void Roam__FinishOperate(SceneRoam *roam, Unit *unit, const uint64_t now)
     Roam__UpdateBlocking(roam);
 }
 
+// Multiplayer: what was opened on this map before we came in shows open
+static void Roam__ApplyUsedObjects(SceneRoam *roam) {
+    if (!roam->online) {
+        return;
+    }
+    const int key = Roam__MapKey(roam);
+    for (int i = 0; i < roam->used_count; i++) {
+        const int index = roam->used_objects[i];
+        if (roam->used_maps[i] == key && index < roam->unit_count && roam->units[index].is_object) {
+            roam->units[index].used = true;
+            Roam__FinishOperate(roam, &roam->units[index], SDL_GetTicks64());
+        }
+    }
+}
+
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (roam->game && unit->object.operate_fn == 23) {
         // A waypoint: lights up the first time, and opens the list of places every time
@@ -1056,10 +1078,11 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     }
     unit->used = true;
     Roam__ObjectSound(unit);
-    // Chests, caskets, urns, barrels, crates, corpses and racks have something in them (Single Player for now: a
-    // multiplayer game's chests aren't shared yet, so each player could empty the same one)
+    // Chests, caskets, urns, barrels, crates, corpses and racks have something in them (multiplayer: the player the
+    // server let open it drops it, once, for everyone)
     const int fn = unit->object.operate_fn;
-    if (roam->game && !roam->online && (fn == 1 || fn == 3 || fn == 4 || fn == 5 || fn == 14 || fn == 19 || fn == 20)) {
+    if (roam->game && (!roam->online || roam->use_is_ours) &&
+        (fn == 1 || fn == 3 || fn == 4 || fn == 5 || fn == 14 || fn == 19 || fn == 20)) {
         char treasure[32];
         snprintf(treasure, sizeof(treasure), "Act %d Chest A", Roam__Act(roam) + 1);
         Roam__DropTreasure(roam, treasure, roam->character->level, unit->x, unit->y);
@@ -1504,6 +1527,18 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
+    if (roam->online && object->object.operate_fn != 23) {
+        // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
+        object->used      = true;
+        NetWriter *writer = malloc(sizeof(NetWriter));
+        FAIL_IF_NULL(writer);
+        NetWriter_Begin(writer);
+        NetWriter_I32(writer, Roam__MapKey(roam));
+        NetWriter_U16(writer, (uint16_t)(object - roam->units));
+        NetClient_Send(MSG_OBJECT_USE, writer);
+        free(writer);
+        return true;
+    }
     Roam__Operate(roam, object, now);
     return true;
 }
@@ -1766,6 +1801,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         roam->in_town = roam->in_town || town_level_ids[t] == place->level_id;
     }
     Roam__Populate(roam);
+    Roam__ApplyUsedObjects(roam);
     // The automap of an act's outdoors is kept under its lowest level Id (the town), whichever area you came in by
     int automap_key = place->level_id;
     for (int a = 0; a < roam->map->area_count; a++) {
@@ -2206,11 +2242,11 @@ void Game_Free(void **scene_ref) { Roam__Free(scene_ref); }
 // Update
 
 // Single Player: experience for a kill, and what comes with a new level
-static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
-    if (!roam->game || victim->experience <= 0) {
+static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
+    if (!roam->game || amount <= 0) {
         return;
     }
-    const int levels = Character_AddExperience(roam->character, (uint32_t)victim->experience);
+    const int levels = Character_AddExperience(roam->character, (uint32_t)amount);
     if (levels > 0) {
         roam->player.hp = Character_MaxLife(roam->character); // a new level fills you up
         roam->mana      = (float)Character_MaxMana(roam->character);
@@ -2223,6 +2259,23 @@ static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
         Roam__ShowMessage(roam, text);
         Roam__StoreCharacter(roam);
     }
+}
+
+static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
+    Roam__GainExperienceAmount(roam, victim->experience);
+}
+
+// Multiplayer: a monster we run died; whoever killed it (and their party nearby) gets the experience, through the
+// server
+static void Roam__SendKilled(SceneRoam *roam, const int index, const int killer) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    FAIL_IF_NULL(writer);
+    NetWriter_Begin(writer);
+    NetWriter_I32(writer, Roam__MapKey(roam));
+    NetWriter_U16(writer, (uint16_t)index);
+    NetWriter_U8(writer, (uint8_t)killer);
+    NetClient_Send(MSG_MONSTER_KILLED, writer);
+    free(writer);
 }
 
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
@@ -2251,7 +2304,11 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     const bool was_alive = Roam__IsAlive(target);
     Roam__Damage(roam, target, damage, now);
     if (was_alive && !Roam__IsAlive(target)) {
-        Roam__GainExperience(roam, target);
+        if (roam->online) {
+            Roam__SendKilled(roam, (int)(target - roam->units), NetClient_MyId()); // shared with our party
+        } else {
+            Roam__GainExperience(roam, target);
+        }
     }
 }
 
@@ -3205,6 +3262,145 @@ static void Roam__Drink(SceneRoam *roam, const Item *item) {
 
 // Single Player's inventory, skill tree, belt and skill buttons. They take their clicks before the world does; true
 // when this frame's mouse belongs to them (or an item is on the cursor, which nothing in the world takes yet).
+// ---------------------------------------------------------------------------------------------------------------------
+// Multiplayer: the party screen (P). Everyone in the game, and a button to invite them, accept their invitation, or
+// leave your party. A party shares the experience of kills made near each other, and can't fight each other.
+
+#define PARTY_X     150
+#define PARTY_Y     80
+#define PARTY_W     500
+#define PARTY_ROW   26
+#define PARTY_ROWS  12
+#define PARTY_TOP   (PARTY_Y + 44)
+#define PARTY_BTN_W 110
+
+static int Roam__PartyHeight(int rows) { return 44 + (rows * PARTY_ROW) + 46; }
+
+static bool Roam__InMyParty(const NetPlayer *player) {
+    return NetClient_MyParty() != 0 && player != NULL && player->party == NetClient_MyParty();
+}
+
+static SDL_Rect Roam__PartyButton(const int row) {
+    return (SDL_Rect){PARTY_X + PARTY_W - PARTY_BTN_W - 12, PARTY_TOP + (row * PARTY_ROW) + 2, PARTY_BTN_W, 21};
+}
+
+static SDL_Rect Roam__PartyLeaveButton(const int rows) {
+    return (SDL_Rect){PARTY_X + (PARTY_W / 2) - 70, PARTY_Y + Roam__PartyHeight(rows) - 36, 140, 24};
+}
+
+static void Roam__SendPartyMessage(const uint8_t type, const int id) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    FAIL_IF_NULL(writer);
+    NetWriter_Begin(writer);
+    if (id > 0) {
+        NetWriter_U8(writer, (uint8_t)id);
+    }
+    NetClient_Send(type, writer);
+    free(writer);
+}
+
+// Clicks on the party screen; true when the mouse is over it (the click was its)
+static bool Roam__UpdatePartyPanel(SceneRoam *roam, const int mouse_x, const int mouse_y, const bool click) {
+    if (!roam->party_panel || !roam->online) {
+        return false;
+    }
+    NetPlayer      *players = NULL;
+    const int       count   = NetClient_Players(&players);
+    const int       rows    = count < PARTY_ROWS ? count : PARTY_ROWS;
+    const SDL_Point mouse   = {mouse_x, mouse_y};
+    const SDL_Rect  panel   = {PARTY_X, PARTY_Y, PARTY_W, Roam__PartyHeight(rows > 0 ? rows : 1)};
+    if (!SDL_PointInRect(&mouse, &panel)) {
+        return false;
+    }
+    if (!click) {
+        return true;
+    }
+    for (int r = 0; r < rows; r++) {
+        const SDL_Rect button = Roam__PartyButton(r);
+        if (!SDL_PointInRect(&mouse, &button) || Roam__InMyParty(&players[r])) {
+            continue;
+        }
+        char text[96];
+        if (NetClient_InviteFrom() == players[r].id) {
+            Roam__SendPartyMessage(MSG_PARTY_ACCEPT, players[r].id);
+            NetClient_ClearInvite();
+        } else {
+            Roam__SendPartyMessage(MSG_PARTY_INVITE, players[r].id);
+            snprintf(text, sizeof(text), "You invited %s to your party.", players[r].name);
+            Roam__ShowMessage(roam, text);
+        }
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+        return true;
+    }
+    const SDL_Rect leave = Roam__PartyLeaveButton(rows > 0 ? rows : 1);
+    if (NetClient_MyParty() != 0 && SDL_PointInRect(&mouse, &leave)) {
+        Roam__SendPartyMessage(MSG_PARTY_LEAVE, 0);
+        Roam__ShowMessage(roam, "You left the party.");
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    }
+    return true;
+}
+
+static void Roam__PartyButtonDraw(SceneRoam *roam, const SDL_Rect *box, const char *text, const bool hover) {
+    SDL_SetRenderDrawColor(sdl_renderer, hover ? 70 : 35, hover ? 60 : 30, hover ? 35 : 20, 240);
+    SDL_RenderFillRect(sdl_renderer, box);
+    SDL_SetRenderDrawColor(sdl_renderer, 0xC7, 0xB3, 0x77, 255);
+    SDL_RenderDrawRect(sdl_renderer, box);
+    Label_SetText(roam->item_label, text);
+    Label_SetColor(roam->item_label, 0xFF, 0xFF, 0xFF, 0xFF);
+    int w = 0;
+    int h = 0;
+    Label_GetSize(roam->item_label, &w, &h);
+    Label_Draw(roam->item_label, box->x + ((box->w - w) / 2), box->y + ((box->h - h) / 2));
+}
+
+static void Roam__DrawPartyPanel(SceneRoam *roam, const int mouse_x, const int mouse_y) {
+    NetPlayer      *players = NULL;
+    const int       count   = NetClient_Players(&players);
+    const int       rows    = count < PARTY_ROWS ? count : PARTY_ROWS;
+    const SDL_Point mouse   = {mouse_x, mouse_y};
+    const SDL_Rect  panel   = {PARTY_X, PARTY_Y, PARTY_W, Roam__PartyHeight(rows > 0 ? rows : 1)};
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 225);
+    SDL_RenderFillRect(sdl_renderer, &panel);
+    SDL_SetRenderDrawColor(sdl_renderer, 0xC7, 0xB3, 0x77, 255);
+    SDL_RenderDrawRect(sdl_renderer, &panel);
+    Label_SetText(roam->item_label, NetClient_MyParty() != 0 ? "Party  (you're in a party)" : "Party");
+    Label_SetColor(roam->item_label, 0xC7, 0xB3, 0x77, 0xFF);
+    Label_Draw(roam->item_label, PARTY_X + 14, PARTY_Y + 12);
+    if (rows == 0) {
+        Label_SetText(roam->item_label, "Nobody else is in the game.");
+        Label_SetColor(roam->item_label, 0xA0, 0xA0, 0xA0, 0xFF);
+        Label_Draw(roam->item_label, PARTY_X + 14, PARTY_TOP + 4);
+    }
+    for (int r = 0; r < rows; r++) {
+        const NetPlayer *player = &players[r];
+        uint8_t          cr;
+        uint8_t          cg;
+        uint8_t          cb;
+        NetColor_Get(player->color, &cr, &cg, &cb);
+        char text[96];
+        snprintf(text, sizeof(text), "%s  (level %d %s)", player->name, player->level,
+                 Character_ClassName(player->class_id));
+        Label_SetText(roam->item_label, text);
+        Label_SetColor(roam->item_label, cr, cg, cb, 0xFF);
+        Label_Draw(roam->item_label, PARTY_X + 14, PARTY_TOP + (r * PARTY_ROW) + 4);
+        const SDL_Rect button = Roam__PartyButton(r);
+        if (Roam__InMyParty(player)) {
+            Label_SetText(roam->item_label, "In your party");
+            Label_SetColor(roam->item_label, 0x60, 0xFF, 0x60, 0xFF);
+            Label_Draw(roam->item_label, button.x + 6, button.y + 3);
+        } else {
+            Roam__PartyButtonDraw(roam, &button, NetClient_InviteFrom() == player->id ? "Accept" : "Invite",
+                                  SDL_PointInRect(&mouse, &button));
+        }
+    }
+    if (NetClient_MyParty() != 0) {
+        const SDL_Rect leave = Roam__PartyLeaveButton(rows > 0 ? rows : 1);
+        Roam__PartyButtonDraw(roam, &leave, "Leave Party", SDL_PointInRect(&mouse, &leave));
+    }
+}
+
 static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int mouse_y) {
     Character *character = roam->character;
     bool       left_down;
@@ -3215,6 +3411,10 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     roam->ui_prev_left     = left_down;
     roam->ui_prev_right    = right_down;
 
+    if (Roam__UpdatePartyPanel(roam, mouse_x, mouse_y, left_click)) {
+        roam->ui_owns_press = left_down || right_down;
+        return true; // the party screen's
+    }
     if (Controls_Pressed(ACTION_INVENTORY)) {
         roam->inventory_panel = !roam->inventory_panel;
         roam->skill_panel     = false;
@@ -3318,6 +3518,14 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
         return true;
     }
 
+    if (Controls_Pressed(ACTION_PARTY)) {
+        if (roam->online) {
+            roam->party_panel = !roam->party_panel;
+            Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+        } else {
+            Roam__ShowMessage(roam, "Parties are for multiplayer games.");
+        }
+    }
     if (Controls_Pressed(ACTION_CHARACTER) || Button_Update(roam->character_button)) {
         roam->char_panel = !roam->char_panel;
         Roam__UpdateButtons(roam);
@@ -3357,8 +3565,9 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
 
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
         if (roam->panel != PANEL_NONE || roam->char_panel || roam->inventory_panel || roam->skill_panel ||
-            GameSkills_PickerOpen(roam->skills_ui)) {
+            roam->party_panel || GameSkills_PickerOpen(roam->skills_ui)) {
             roam->panel           = PANEL_NONE;
+            roam->party_panel     = false;
             roam->char_panel      = false;
             roam->inventory_panel = false;
             roam->skill_panel     = false;
@@ -3594,15 +3803,8 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         unit->provoked   = true;
         unit->net_target = from;
         Roam__Damage(roam, unit, damage, now);
-        if (!Roam__IsAlive(unit)) { // theirs: they get the experience
-            NetWriter *writer = malloc(sizeof(NetWriter));
-            FAIL_IF_NULL(writer);
-            NetWriter_Begin(writer);
-            NetWriter_I32(writer, key);
-            NetWriter_U16(writer, (uint16_t)index);
-            NetWriter_U8(writer, (uint8_t)from);
-            NetClient_Send(MSG_MONSTER_KILLED, writer);
-            free(writer);
+        if (!Roam__IsAlive(unit)) { // theirs: they (and their party) get the experience
+            Roam__SendKilled(roam, index, from);
         }
         break;
     }
@@ -3610,8 +3812,37 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         NetReader_U8(reader); // from (the owner)
         const int map   = NetReader_I32(reader);
         const int index = NetReader_U16(reader);
-        if (map == key && index < roam->unit_count && !reader->failed) {
-            Roam__GainExperience(roam, &roam->units[index]);
+        NetReader_U8(reader); // the killer
+        const int sharing = NetReader_U8(reader);
+        if (map == key && index < roam->unit_count && !reader->failed && sharing > 0) {
+            // A party shares it: the game's bonus of 35% for each member after the first, split evenly
+            const int whole = roam->units[index].experience * (100 + (35 * (sharing - 1))) / 100;
+            Roam__GainExperienceAmount(roam, whole / sharing);
+        }
+        break;
+    }
+    case MSG_OBJECT_USED: {
+        const int from  = NetReader_U8(reader);
+        const int map   = NetReader_I32(reader);
+        const int index = NetReader_U16(reader);
+        if (reader->failed) {
+            break;
+        }
+        if (roam->used_count < NET_USED_OBJECTS_MAX) {
+            roam->used_maps[roam->used_count]      = map;
+            roam->used_objects[roam->used_count++] = index;
+        }
+        if (map != key || index >= roam->unit_count || !roam->units[index].is_object) {
+            break; // somewhere else: when we get there
+        }
+        Unit *unit = &roam->units[index];
+        if (from == 0) {
+            unit->used = true; // open from before we came
+            Roam__FinishOperate(roam, unit, now);
+        } else {
+            roam->use_is_ours = from == NetClient_MyId(); // ours: its treasure is ours to drop
+            Roam__Operate(roam, unit, now);
+            roam->use_is_ours = false;
         }
         break;
     }
@@ -4761,6 +4992,9 @@ static void Roam__Render(SceneRoam *roam) {
         GameSkills_DrawTree(roam->skills_ui, roam->character, ui_mouse_x, ui_mouse_y);
     }
     Roam__DrawPanelClose(roam, ui_mouse_x, ui_mouse_y);
+    if (roam->party_panel) {
+        Roam__DrawPartyPanel(roam, ui_mouse_x, ui_mouse_y);
+    }
     if (now < roam->caption_until) {
         const uint64_t left  = roam->caption_until - now;
         const uint8_t  alpha = left >= 1000 ? 255 : (uint8_t)((left * 255) / 1000);

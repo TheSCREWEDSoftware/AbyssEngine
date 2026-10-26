@@ -5,9 +5,8 @@ games.
 
 > **What's shared:** who's in the game, where everyone is (you see each other walk and run between areas, with names
 > and coloured circles), chat, the game's settings, the monsters (where they are, their life, who they're after),
-> combat (with the monsters, and with each other when PvP is on), and items on the ground. Not yet: parties (shared
-> experience), chests and doors (each player's own: they drop nothing in multiplayer yet, or each player could
-> empty the same one). What monsters drop is shared: the one running the monsters rolls it.
+> combat (with the monsters, and with each other when PvP is on), items on the ground and what monsters drop,
+> chests, doors and shrines (opened once, for everyone), and parties.
 
 ## How it works
 
@@ -59,6 +58,12 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   (H) columns): higher levels, much more life and damage, more experience.
 - **PvP** (when the host turns it on): point at another player outside town (their name turns red) and click to
   attack them, like a monster. There's no fighting in town. "So-and-so killed you" says who.
+- **Chests, doors and shrines**: the first to open one opens it for everyone (the server decides who was first), and
+  what's in a chest drops once, for everyone to pick up. Coming into an area later, what's been opened shows open.
+- **Parties**: **P** opens the party screen: everyone in the game, with **Invite** next to each (or **Accept** when
+  they've invited you; the chat says so), and **Leave Party** when you're in one. Party members share the experience
+  of kills made within about two screens of each other, with the game's bonus of 35% for each member after the first
+  (two players get 67.5% each), and can't attack each other with PvP on. Leaving the game leaves the party.
 - **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On
   a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
   around stays for the others until the game ends.

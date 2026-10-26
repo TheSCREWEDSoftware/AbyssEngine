@@ -39,6 +39,8 @@ typedef struct Peer {
     float          y;
     int            turn;
     char           mode[4];
+    int            party;       // the party's id (its first member's player id), 0 = none
+    int            invite_from; // the last player who invited them
 } Peer;
 
 // An item lying on the ground somewhere in the game
@@ -56,6 +58,9 @@ struct NetServer {
     NetSettings settings;
     ServerItem  items[NET_GROUND_ITEMS_MAX];
     int         item_count;
+    int         used_maps[NET_USED_OBJECTS_MAX]; // opened chests, doors, shrines: map and object index
+    int         used_objects[NET_USED_OBJECTS_MAX];
+    int         used_count;
     uint32_t    next_item_id;
     bool        dedicated;
     char        realm[NET_ID_MAX];
@@ -428,6 +433,7 @@ static void Server__WritePlayer(NetWriter *writer, const Peer *peer) {
     NetWriter_U8(writer, (uint8_t)peer->character.level);
     NetWriter_U8(writer, peer->character.hardcore ? 1 : 0);
     NetWriter_U8(writer, (uint8_t)peer->color);
+    NetWriter_U8(writer, (uint8_t)peer->party);
 }
 
 static int Server__InGame(const NetServer *server) {
@@ -538,6 +544,13 @@ static void Server__Enter(NetServer *server, Peer *peer) {
     Server__WritePlayer(&writer, peer);
     Server__Broadcast(server, MSG_PLAYER, &writer, peer);
     Server__TellWaiting(server, MSG_PLAYER, &writer);
+    for (int i = 0; i < server->used_count; i++) { // what's been opened already
+        NetWriter_Begin(&writer);
+        NetWriter_U8(&writer, 0);
+        NetWriter_I32(&writer, server->used_maps[i]);
+        NetWriter_U16(&writer, (uint16_t)server->used_objects[i]);
+        Server__Send(peer, MSG_OBJECT_USED, &writer);
+    }
     for (int i = 0; i < server->item_count; i++) { // what's lying around already
         NetWriter_Begin(&writer);
         Server__WriteItem(&writer, &server->items[i], 0);
@@ -550,11 +563,55 @@ static void Server__Enter(NetServer *server, Peer *peer) {
     LOG_INFO("Server: %s joined from %s", peer->character.name, peer->connection->address);
 }
 
+static Peer *Server__PeerById(NetServer *server, const int id) {
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *peer = &server->peers[p];
+        if (peer->connection != NULL && peer->stage == STAGE_IN_GAME && peer->id == id) {
+            return peer;
+        }
+    }
+    return NULL;
+}
+
+// Everyone hears about a player again (their party changed)
+static void Server__TellPlayer(NetServer *server, const Peer *peer) {
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    Server__WritePlayer(&writer, peer);
+    Server__Broadcast(server, MSG_PLAYER, &writer, NULL);
+}
+
+static void Server__LeaveParty(NetServer *server, Peer *peer) {
+    const int party = peer->party;
+    if (party == 0) {
+        return;
+    }
+    peer->party = 0;
+    if (peer->stage == STAGE_IN_GAME) {
+        Server__TellPlayer(server, peer);
+    }
+    // One left on their own: no party any more
+    Peer *last  = NULL;
+    int   count = 0;
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *other = &server->peers[p];
+        if (other->connection != NULL && other->stage == STAGE_IN_GAME && other->party == party) {
+            last = other;
+            count++;
+        }
+    }
+    if (count == 1) {
+        last->party = 0;
+        Server__TellPlayer(server, last);
+    }
+}
+
 static void Server__Drop(NetServer *server, Peer *peer) {
     if (peer->connection == NULL) {
         return;
     }
     if (peer->stage == STAGE_IN_GAME) {
+        Server__LeaveParty(server, peer);
         NetWriter writer;
         NetWriter_Begin(&writer);
         NetWriter_U8(&writer, (uint8_t)peer->id);
@@ -808,6 +865,92 @@ static void Server__ItemPick(NetServer *server, Peer *peer, NetReader *reader) {
     }
 }
 
+// Opening a chest, door or shrine: the first to ask opens it, and everyone's game shows it open
+static void Server__ObjectUse(NetServer *server, Peer *peer, NetReader *reader) {
+    const int map   = NetReader_I32(reader);
+    const int index = NetReader_U16(reader);
+    if (peer->stage != STAGE_IN_GAME || reader->failed || server->used_count >= NET_USED_OBJECTS_MAX) {
+        return;
+    }
+    for (int i = 0; i < server->used_count; i++) {
+        if (server->used_maps[i] == map && server->used_objects[i] == index) {
+            return; // someone was first
+        }
+    }
+    server->used_maps[server->used_count]      = map;
+    server->used_objects[server->used_count++] = index;
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    NetWriter_U8(&writer, (uint8_t)peer->id);
+    NetWriter_I32(&writer, map);
+    NetWriter_U16(&writer, (uint16_t)index);
+    Server__Broadcast(server, MSG_OBJECT_USED, &writer, NULL);
+}
+
+// A kill's experience: the killer, and their party on the same map nearby, share it
+static void Server__Killed(NetServer *server, Peer *peer, NetReader *reader) {
+    const int map    = NetReader_I32(reader);
+    const int index  = NetReader_U16(reader);
+    const int killer = NetReader_U8(reader);
+    Peer     *by     = Server__PeerById(server, killer);
+    if (peer->stage != STAGE_IN_GAME || reader->failed || by == NULL) {
+        return;
+    }
+    Peer *sharing[MAX_CONNECTIONS];
+    int   count = 0;
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *other = &server->peers[p];
+        if (other == by || (by->party != 0 && other->connection != NULL && other->stage == STAGE_IN_GAME &&
+                            other->party == by->party && other->has_state && other->place == map &&
+                            (other->x - by->x) * (other->x - by->x) + (other->y - by->y) * (other->y - by->y) <=
+                                NET_PARTY_RANGE * NET_PARTY_RANGE)) {
+            sharing[count++] = other;
+        }
+    }
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    NetWriter_U8(&writer, (uint8_t)peer->id);
+    NetWriter_I32(&writer, map);
+    NetWriter_U16(&writer, (uint16_t)index);
+    NetWriter_U8(&writer, (uint8_t)killer);
+    NetWriter_U8(&writer, (uint8_t)count);
+    for (int s = 0; s < count; s++) {
+        Server__Send(sharing[s], MSG_MONSTER_KILLED_FROM, &writer);
+    }
+}
+
+static void Server__PartyInvite(NetServer *server, Peer *peer, NetReader *reader) {
+    Peer *target = Server__PeerById(server, NetReader_U8(reader));
+    if (peer->stage != STAGE_IN_GAME || target == NULL || target == peer ||
+        (target->party != 0 && target->party == peer->party)) {
+        return;
+    }
+    target->invite_from = peer->id;
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    NetWriter_U8(&writer, (uint8_t)peer->id);
+    Server__Send(target, MSG_PARTY_INVITED, &writer);
+}
+
+static void Server__PartyAccept(NetServer *server, Peer *peer, NetReader *reader) {
+    const int inviter_id = NetReader_U8(reader);
+    Peer     *inviter    = Server__PeerById(server, inviter_id);
+    if (peer->stage != STAGE_IN_GAME || inviter == NULL || peer->invite_from != inviter_id) {
+        return;
+    }
+    peer->invite_from = 0;
+    Server__LeaveParty(server, peer);
+    if (inviter->party == 0) {
+        inviter->party = inviter->id;
+        Server__TellPlayer(server, inviter);
+    }
+    peer->party = inviter->party;
+    Server__TellPlayer(server, peer);
+    char text[96];
+    snprintf(text, sizeof(text), "%s joined %s's party.", peer->character.name, inviter->character.name);
+    Server__Chat(server, 0, text, NULL);
+}
+
 // What a player sent, passed on as it is with their id in front: to everyone on a map, or to one player
 static void Server__PassOn(NetServer *server, const Peer *from, const uint8_t type, const NetReader *reader,
                            const int map, const int to_id) {
@@ -883,14 +1026,20 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
         }
         break;
     case MSG_MONSTER_KILLED:
+        Server__Killed(server, peer, reader);
+        break;
+    case MSG_OBJECT_USE:
+        Server__ObjectUse(server, peer, reader);
+        break;
+    case MSG_PARTY_INVITE:
+        Server__PartyInvite(server, peer, reader);
+        break;
+    case MSG_PARTY_ACCEPT:
+        Server__PartyAccept(server, peer, reader);
+        break;
+    case MSG_PARTY_LEAVE:
         if (peer->stage == STAGE_IN_GAME) {
-            NetReader peek = *reader;
-            NetReader_I32(&peek); // map
-            NetReader_U16(&peek); // monster
-            const int killer = NetReader_U8(&peek);
-            if (killer > 0) {
-                Server__PassOn(server, peer, MSG_MONSTER_KILLED_FROM, reader, 0, killer);
-            }
+            Server__LeaveParty(server, peer);
         }
         break;
     case MSG_HIT_PLAYER:

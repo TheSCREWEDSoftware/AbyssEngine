@@ -32,6 +32,8 @@ static struct {
     char        result[160];
 
     int       my_id;
+    int       my_party;
+    int       invite_from;
     uint32_t  seed;
     NetPlayer players[MAX_REMOTE];
     int       player_count;
@@ -252,6 +254,17 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
     case MSG_PLAYER: {
         const int  id     = NetReader_U8(reader);
         NetPlayer *player = NetClient_Player(id);
+        if (id == client.my_id) { // us: only our party matters
+            char name[CHARACTER_NAME_MAX];
+            NetReader_String(reader, name, sizeof(name));
+            NetReader_U8(reader); // class
+            NetReader_U8(reader); // level
+            NetReader_U8(reader); // hardcore
+            NetReader_U8(reader); // colour
+            client.my_party = NetReader_U8(reader);
+            client.players_version++;
+            break;
+        }
         if (player == NULL && client.player_count < MAX_REMOTE && id != client.my_id) {
             player = &client.players[client.player_count++];
             memset(player, 0, sizeof(NetPlayer));
@@ -264,6 +277,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
             player->level      = NetReader_U8(reader);
             player->hardcore   = NetReader_U8(reader) != 0;
             player->color      = NetReader_U8(reader) % NET_COLOR_COUNT;
+            player->party      = NetReader_U8(reader);
         }
         client.players_version++;
         break;
@@ -332,8 +346,18 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
     case MSG_HIT_MONSTER_FROM:
     case MSG_MONSTER_KILLED_FROM:
     case MSG_HIT_YOU:
+    case MSG_OBJECT_USED:
         NetClient__QueueGame(type, reader);
         break;
+    case MSG_PARTY_INVITED: {
+        client.invite_from      = NetReader_U8(reader);
+        const NetPlayer *player = NetClient_Player(client.invite_from);
+        char             line[96];
+        snprintf(line, sizeof(line), "%s invites you to their party (P to answer).",
+                 player != NULL ? player->name : "Someone");
+        NetClient__AddChat(line);
+        break;
+    }
     default:
         break;
     }
@@ -478,7 +502,10 @@ void NetClient_Send(const uint8_t type, const NetWriter *writer) {
     }
 }
 
-int NetClient_PlayersVersion(void) { return client.players_version; }
+int  NetClient_PlayersVersion(void) { return client.players_version; }
+int  NetClient_MyParty(void) { return client.my_party; }
+int  NetClient_InviteFrom(void) { return client.invite_from; }
+void NetClient_ClearInvite(void) { client.invite_from = 0; }
 
 bool NetClient_NameInGame(const char *name) {
     for (int p = 0; p < client.player_count; p++) {

@@ -25,6 +25,7 @@ typedef struct NetPlayer {
     int            level;
     bool           hardcore;
     int            color;     // NetColor: theirs
+    int            party;     // their party's id, 0 = none
     bool           has_state; // where they are (MSG_STATES)
     int            place;     // Places index (same seed: same map)
     float          x;         // sub-tiles
@@ -68,7 +69,10 @@ NetPlayer *NetClient_Player(int id);
 void NetClient_Send(uint8_t type, const NetWriter *writer);
 bool NetClient_TakeGameMessage(uint8_t *type, NetReader *reader);
 int  NetClient_PlayersVersion(void); // goes up when someone joins or leaves
-bool NetClient_NameInGame(
-    const char *name); // someone's playing a character of this name (seen from the character screen too)
+// Someone's playing a character of this name (seen from the character screen too)
+bool NetClient_NameInGame(const char *name);
+int  NetClient_MyParty(void);    // our party's id, 0 = none
+int  NetClient_InviteFrom(void); // who last invited us to their party (0: nobody)
+void NetClient_ClearInvite(void);
 
 #endif // ABYSS_CLIENT_H

@@ -89,7 +89,7 @@ own bindings, next to `abyss.ini`.
 |---|---|---|---|---|
 | Character screen | - | `A`, `C` | - | `C` also on an action that's never active at the same time |
 | Inventory | - | `B`, `I` | - | `B` also on an action that's never active at the same time |
-| Party screen \* | - | `P` | - | `P` also on an action that's never active at the same time |
+| Party screen | - | `P` | - | `P` also on an action that's never active at the same time |
 | Hireling screen \* | - | `O` | - |  |
 | Quest log \* | - | `Q` | - |  |
 | Message log \* | - | `M` | - |  |
@@ -101,7 +101,7 @@ own bindings, next to `abyss.ini`.
 | Back to town | - | `Home` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Party screen, Hireling screen, Quest log, Message log, Help, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Hireling screen, Quest log, Message log, Help, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Automap
 

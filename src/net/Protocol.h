@@ -10,7 +10,7 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 2    // 2: items on the ground, monsters and combat
+#define NET_PROTOCOL_VERSION 3    // 2: items on the ground, monsters and combat; 3: chests and doors, parties
 #define NET_DEFAULT_PORT     4000 // Diablo II's own TCP/IP game port
 #define NET_DISCOVERY_PORT   4001 // LAN: "is anyone hosting?" over UDP broadcast
 #define NET_LOBBY_PORT       4002 // abyss-lobby: the list of online games
@@ -19,8 +19,10 @@
 #define NET_NAME_MAX         32 // game names and passwords
 #define NET_ID_MAX           40 // a computer's id (client and realm ids)
 #define NET_CHAT_MAX         160
-#define NET_STATE_HZ         15   // positions sent this often
-#define NET_GROUND_ITEMS_MAX 4096 // items on the ground in a game (every area)
+#define NET_STATE_HZ         15    // positions sent this often
+#define NET_GROUND_ITEMS_MAX 4096  // items on the ground in a game (every area)
+#define NET_USED_OBJECTS_MAX 8192  // chests, doors, shrines opened in a game (every area)
+#define NET_PARTY_RANGE      60.0f // sub-tiles: party members this close to a kill share its experience
 
 // Message types
 typedef enum NetMessageType {
@@ -40,26 +42,32 @@ typedef enum NetMessageType {
     // they're told. The server passes these on.
     MSG_MONSTERS,       // owner: map, count, then index, x, y, hp, max hp, state, turn, vanished for each
     MSG_HIT_MONSTER,    // map, monster index, damage (to the map's owner, who takes it off)
-    MSG_MONSTER_KILLED, // owner: map, monster index, killer's player id (the killer gets the experience)
+    MSG_MONSTER_KILLED, // owner: map, monster index, killer's player id (the killer and their party get the experience)
     MSG_HIT_PLAYER,     // player id, pvp, attack rating, level, damage (the one hit rolls whether it lands)
+    MSG_OBJECT_USE,     // map, object index: "I'd like to open it" (the first to ask opens it, for everyone)
+    MSG_PARTY_INVITE,   // player id
+    MSG_PARTY_ACCEPT,   // the inviter's player id
+    MSG_PARTY_LEAVE,
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
     MSG_CHAR_LIST,    // dedicated server: how many characters you have here (MSG_CHAR_ENTRY each follows)
     MSG_CHAR_RESULT,  // ok or why not; ok: the character as the server has it
     MSG_ENTER,        // in you go: your player id, the world seed
-    MSG_PLAYER, // someone in the game: id, name, class, level (when they join or change; also to the character screen)
-    MSG_PLAYER_GONE, // id (also to the character screen)
-    MSG_STATES,      // everyone's position
-    MSG_CHAT_FROM,   // id (0: the server), text
-    MSG_CHAR_ENTRY,  // one of your characters on the server (after MSG_CHAR_LIST)
-    MSG_ITEM_ADD,    // an item on the ground: id, dropper's id (0: was there already), map, x, y, item
-    MSG_ITEM_GONE,   // id, who picked it up
+    MSG_PLAYER,       // someone in the game: id, name, class, level, hardcore, colour, party (when they join or change)
+    MSG_PLAYER_GONE,  // id (also to the character screen)
+    MSG_STATES,       // everyone's position
+    MSG_CHAT_FROM,    // id (0: the server), text
+    MSG_CHAR_ENTRY,   // one of your characters on the server (after MSG_CHAR_LIST)
+    MSG_ITEM_ADD,     // an item on the ground: id, dropper's id (0: was there already), map, x, y, item
+    MSG_ITEM_GONE,    // id, who picked it up
     // Passed on from another player: their id first, then what they sent
     MSG_MONSTERS_FROM,
     MSG_HIT_MONSTER_FROM,
-    MSG_MONSTER_KILLED_FROM, // only to the killer
+    MSG_MONSTER_KILLED_FROM, // to the killer and their party nearby, with how many share it at the end
     MSG_HIT_YOU,             // only to the one hit
+    MSG_OBJECT_USED,         // who opened it (0: was open already), map, object index
+    MSG_PARTY_INVITED,       // who invites you
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;

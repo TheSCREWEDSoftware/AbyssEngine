@@ -88,6 +88,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Use belt 4 | - | `4` | - | Drink what's in belt slot 4 |
 | Character screen | - | `A`, `C` | - | - |
 | Inventory | - | `B`, `I` | - | Single Player: the inventory (items, what you wear) |
+| Party screen | - | `P` | - | Multiplayer: who's in the game; invite them to your party, accept, or leave |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Show items | - | `Left Alt` | - | Show the names of items on the ground while held |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
