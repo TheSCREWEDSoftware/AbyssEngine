@@ -200,6 +200,10 @@ MpqStream *FileManager_OpenFile(const char *file_path) {
         }
 
         if (file_entry == NULL) {
+            if (file_manager->mpq_count == 0) {
+                LOG_FATAL("No Diablo II MPQs were found in '%s'.\n\nSet BasePath in %s to your Diablo II folder.",
+                          AbyssConfiguration_GetBasePath(), AbyssConfiguration_GetIniPath());
+            }
             LOG_FATAL("Could not find '%s'", file_path);
         }
     }

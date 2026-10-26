@@ -33,7 +33,8 @@ vcpkg.
 
 The MPQs weren't loaded:
 
-- `BasePath` must point at the folder with the MPQs **and end with a slash** (`C:\Games\Diablo II\`).
+- `BasePath` must point at the folder with the MPQs (`C:\Games\Diablo II`; a slash at the end is fine too, and so are
+  quotes around it). With no MPQs found at all, the game says so and names the `abyss.ini` it read.
 - Check the names in `[MPQs]`. On Windows case doesn't matter; on Linux the engine also finds `D2DATA.MPQ` when you wrote
   `d2data.mpq`.
 - The log lists every MPQ it loads.

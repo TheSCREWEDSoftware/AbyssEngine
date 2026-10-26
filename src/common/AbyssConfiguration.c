@@ -166,6 +166,13 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
                 memset(abyss_configuration.base_path, 0, sizeof(char) * strlen(abyss_configuration.base_path));
             }
             SET_PARAM_STR(abyss_configuration.base_path, value);
+            // "C:\Program Files (x86)\Diablo II" with the quotes: without them
+            const size_t base_len = strlen(abyss_configuration.base_path);
+            if (base_len >= 2 && abyss_configuration.base_path[0] == '"' &&
+                abyss_configuration.base_path[base_len - 1] == '"') {
+                memmove(abyss_configuration.base_path, abyss_configuration.base_path + 1, base_len - 2);
+                abyss_configuration.base_path[base_len - 2] = '\0';
+            }
             LOG_DEBUG("Setting base path to '%s'", abyss_configuration.base_path);
         } else if (IS_STR_EQUAL(key, "locale")) {
             if (strlen(abyss_configuration.locale) != 0) {
@@ -433,15 +440,43 @@ void AbyssConfiguration_AddMpq(const char *mpq_file) {
     abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1] = malloc(sizeof(char) * MAX_LINE_LEN);
     FAIL_IF_NULL(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1]);
 
-    memset(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1], 0, sizeof(char) * MAX_LINE_LEN);
-    strcat(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1], abyss_configuration.base_path);
-    strcat(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1], mpq_file);
+    // Just the name: joined to BasePath when it's asked for, so BasePath can come before or after [MPQs] in the file
+    snprintf(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1], MAX_LINE_LEN, "%s", mpq_file);
 }
 const char *AbyssConfiguration_GetLocale(void) { return abyss_configuration.locale; }
 
 size_t AbyssConfiguration_GetMpqCount(void) { return abyss_configuration.num_mpqs; }
 
-const char *AbyssConfiguration_GetMpqFileName(size_t index) { return abyss_configuration.mpqs[index]; }
+const char *AbyssConfiguration_GetBasePath(void) {
+    return abyss_configuration.base_path != NULL ? abyss_configuration.base_path : "";
+}
+
+const char *AbyssConfiguration_GetIniPath(void) {
+    return abyss_configuration.ini_path != NULL ? abyss_configuration.ini_path : "abyss.ini";
+}
+
+// BasePath + the MPQ's name, with a slash between them whether or not BasePath ends with one (an MPQ given as a full
+// path is used as it is). Good until the next call.
+const char *AbyssConfiguration_GetMpqFileName(size_t index) {
+    static char path[MAX_LINE_LEN * 2];
+    const char *name = abyss_configuration.mpqs[index];
+    const char *base = abyss_configuration.base_path != NULL ? abyss_configuration.base_path : "";
+    const bool  absolute =
+        name[0] == '/' || name[0] == '\\' || (isalpha((unsigned char)name[0]) && name[1] == ':'); // "C:\..."
+    const size_t base_len = strlen(base);
+    if (absolute || base_len == 0) {
+        snprintf(path, sizeof(path), "%s", name);
+    } else if (base[base_len - 1] == '/' || base[base_len - 1] == '\\') {
+        snprintf(path, sizeof(path), "%s%s", base, name);
+    } else {
+#ifdef _WIN32
+        snprintf(path, sizeof(path), "%s\\%s", base, name);
+#else
+        snprintf(path, sizeof(path), "%s/%s", base, name);
+#endif
+    }
+    return path;
+}
 
 float AbyssConfiguration_GetInitialScale(void) { return abyss_configuration.graphics.initial_scale; }
 

@@ -37,7 +37,7 @@ Then edit it:
 
 ```ini
 [General]
-# The folder with the MPQs. It MUST end with a slash (Windows: \  Linux/macOS: /)
+# The folder with the MPQs (a slash at the end or not, both work)
 BasePath = C:\Program Files (x86)\Diablo II\
 Locale = latin
 SkipIntroMovies = false
@@ -88,7 +88,7 @@ d2speech.MPQ
 
 | Setting | Meaning |
 |---------|---------|
-| `BasePath` | Folder containing the MPQs. The MPQ names are appended to it as-is, so **end it with a slash**. |
+| `BasePath` | Folder containing the MPQs, with or without a slash at the end (quotes around it are fine). An entry in `[MPQs]` given as a full path is used as it is. |
 | `Locale` | Font set: `latin` for English and other Latin-alphabet languages. |
 | `SkipIntroMovies` | `true` starts at the main menu (the `DEBUG_SKIP_INTRO` build option does this regardless). |
 | `Resolution` | Window size. The game is drawn at 800x600 and scaled, with black bars on wide screens. |

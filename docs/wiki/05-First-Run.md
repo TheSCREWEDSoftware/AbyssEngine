@@ -24,7 +24,7 @@ Catalog and Map Editor only appear when their [CMake options](CMake-Options.md) 
 | You see | Likely cause |
 |---------|--------------|
 | A window closes right away / "Could not find file abyss.ini" | `abyss.ini` isn't in one of the places listed in [Game Files and Configuration](04-Game-Files-and-Configuration.md) |
-| Black screen, no menu, or missing pictures | `BasePath` is wrong or doesn't end with a slash, so the MPQs weren't loaded |
+| "No Diablo II MPQs were found", black screen, or missing pictures | `BasePath` is wrong, so the MPQs weren't loaded |
 | Text missing | `Locale` isn't `latin` |
 
 More in [Troubleshooting](Troubleshooting.md). The console (or the Visual Studio *Output* window) shows a log; quote it

@@ -11,6 +11,8 @@ void        AbyssConfiguration_AddMpq(const char *mpq_file);
 const char *AbyssConfiguration_GetLocale(void);
 size_t      AbyssConfiguration_GetMpqCount(void);
 const char *AbyssConfiguration_GetMpqFileName(size_t index);
+const char *AbyssConfiguration_GetBasePath(void); // BasePath: the Diablo II folder
+const char *AbyssConfiguration_GetIniPath(void);  // abyss.ini
 float       AbyssConfiguration_GetInitialScale(void);
 void        AbyssConfiguration_GetWindowSize(int *width, int *height); // Resolution, or 800x600 * InitialScale
 const char *AbyssConfiguration_GetScaleQuality(void);

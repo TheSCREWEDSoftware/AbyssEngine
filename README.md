@@ -92,7 +92,7 @@ video MPQs for sound, music and the intro videos. They are not included, and mod
 supported.
 
 Copy [`content/abyss.ini`](content/abyss.ini) to one of these places (the first one found is used) and set `BasePath`
-to the folder with your MPQs, **ending with a slash**:
+to the folder with your MPQs (with or without a slash at the end):
 
 1. next to the program (`AbyssEngine` / `AbyssEngine.exe`), for a portable setup;
 2. your user settings folder:
