@@ -68,10 +68,12 @@
 #define MAX_UNITS        2048  // an act's outdoors joined into one map has many
 #define WALK_SPEED       5.0f  // sub-tiles per second
 #define ACTIVE_DISTANCE  90.0f // sub-tiles: units further from you than this wait (about two screens)
-#define SPRINT_SPEED     18.0f // Free Roam's sprint: twice as fast as running, no stamina
-#define LONG_WALK_LEGS   64    // a far click is walked in up to this many searches
-#define RUN_SPEED        9.0f
-#define ARRIVE_DISTANCE  0.15f
+#define MONSTER_SYNC_DISTANCE                                                                                          \
+    55.0f                     // multiplayer: the monsters this near a player are sent to the others (beyond a screen)
+#define SPRINT_SPEED    18.0f // Free Roam's sprint: twice as fast as running, no stamina
+#define LONG_WALK_LEGS  64    // a far click is walked in up to this many searches
+#define RUN_SPEED       9.0f
+#define ARRIVE_DISTANCE 0.15f
 
 // Combat
 #define AGGRO_RANGE       10.0f // sub-tiles
@@ -179,6 +181,14 @@ typedef struct Unit {
     bool        used;           // opened / activated: can't be clicked again
     int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
+    // Multiplayer monsters
+    int         net_target; // the map's owner: the player it's after (0: the owner's own)
+    float       net_from_x; // the others: shown moving smoothly to where the owner last said it is
+    float       net_from_y;
+    float       net_to_x;
+    float       net_to_y;
+    uint64_t    net_at;
+    int         net_state; // the state the owner last said it's in (-1: not told yet)
     DrawContext draw;
 } Unit;
 
@@ -199,7 +209,7 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define CHAR_PANEL_H      432
 
 // Items on the ground (Single Player and multiplayer games): kept while the game lasts, per area, like the game's
-#define MAX_GROUND_ITEMS 1024
+#define MAX_GROUND_ITEMS NET_GROUND_ITEMS_MAX
 #define ITEM_FLIP_MS     40   // the flip through the air, a frame each (the game's 25 a second)
 #define PICKUP_RANGE     2.0f // how close the player must be to pick one up
 #define ITEM_SPRITES     48   // flippy pictures kept loaded
@@ -220,6 +230,8 @@ typedef struct GroundItem {
     SDL_Rect rect;  // its picture on screen
     SDL_Rect label; // its name's box, when shown
     bool     label_shown;
+    uint32_t net_id; // multiplayer: the server's id for it
+    bool     asked;  // multiplayer: we asked the server for it
 } GroundItem;
 
 typedef struct ItemSprite {
@@ -296,9 +308,12 @@ typedef struct SceneRoam {
     int      other_colors[NET_MAX_PLAYERS];
     int      other_count;
     uint64_t last_sent;
-    int      spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
-    uint64_t clock;        // the game's time (runs faster at Fast, Faster, Fastest)
-    uint64_t clock_real;   // the real time it was last moved on at
+    uint64_t last_monsters; // the map's owner: monsters last sent at
+    int      attack_other;  // PvP: the player being attacked (their id), 0 = none
+    int      hover_other;   // PvP: the other player under the mouse (index into others), -1 = none
+    int      spread_place;  // the place we were last moved off the arrival spot in (-1: not yet)
+    uint64_t clock;         // the game's time (runs faster at Fast, Faster, Fastest)
+    uint64_t clock_real;    // the real time it was last moved on at
     TextBox *chat_box;
     Label   *chat_label;
     char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
@@ -610,6 +625,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     unit->can_attack = -1;
     unit->rest_frame = -1;
     unit->state      = UNIT_IDLE;
+    unit->net_state  = -1;
 
     MonsterStats stats;
     if (strcmp(base, "monsters") == 0 && MonsterStats_Get(id, &stats)) {
@@ -818,6 +834,111 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const ui
             Roam__SetState(unit, UNIT_HIT, now);
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Multiplayer: who runs the monsters, and who they go after
+
+static int Roam__MapKey(const SceneRoam *roam);
+
+// On each map the player with the lowest id runs the monsters (and tells the others where they are); alone, or not
+// online, that's us
+static bool Roam__RunsMonsters(const SceneRoam *roam) {
+    if (!roam->online) {
+        return true;
+    }
+    const int me = NetClient_MyId();
+    for (int o = 0; o < roam->other_count; o++) {
+        if (roam->other_ids[o] < me) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool Roam__OtherAlive(const Unit *other) {
+    return strcmp(other->net_mode, "dt") != 0 && strcmp(other->net_mode, "dd") != 0;
+}
+
+// How far the nearest player on this map (us or another) is from a spot
+static float Roam__NearestPlayer(const SceneRoam *roam, const float x, const float y) {
+    float nearest = Roam__Distance(x, y, roam->player.x, roam->player.y);
+    for (int o = 0; o < roam->other_count; o++) {
+        nearest = fminf(nearest, Roam__Distance(x, y, roam->others[o].x, roam->others[o].y));
+    }
+    return nearest;
+}
+
+// The player a monster goes after: the nearest one that can be fought (us, when we can be; the others alive). False
+// when there's nobody.
+static bool Roam__MonsterTarget(const SceneRoam *roam, const Unit *unit, const bool player_alive, float *x, float *y,
+                                int *id) {
+    float best = 1e9f;
+    if (player_alive) {
+        best = Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y);
+        *x   = roam->player.x;
+        *y   = roam->player.y;
+        *id  = 0;
+    }
+    for (int o = 0; o < roam->other_count; o++) {
+        const Unit *other = &roam->others[o];
+        const float d     = Roam__Distance(unit->x, unit->y, other->x, other->y);
+        if (Roam__OtherAlive(other) && d < best) {
+            best = d;
+            *x   = other->x;
+            *y   = other->y;
+            *id  = roam->other_ids[o];
+        }
+    }
+    return best < 1e8f;
+}
+
+// Where another player is now (by id): false when they're not on this map
+static bool Roam__OtherById(const SceneRoam *roam, const int id, const Unit **other) {
+    for (int o = 0; o < roam->other_count; o++) {
+        if (roam->other_ids[o] == id) {
+            *other = &roam->others[o];
+            return true;
+        }
+    }
+    return false;
+}
+
+// PvP: the game allows players to fight, and we're out of town
+static bool Roam__PvP(const SceneRoam *roam) {
+    return roam->online && NetClient_Settings() != NULL && NetClient_Settings()->pvp && !roam->in_town;
+}
+
+// The other player nearest the mouse (within reach, alive), -1 if none
+static int Roam__OtherAt(const SceneRoam *roam, const float sub_x, const float sub_y) {
+    int   nearest  = -1;
+    float distance = HOVER_RANGE;
+    for (int o = 0; o < roam->other_count; o++) {
+        const Unit *other = &roam->others[o];
+        const float d     = Roam__Distance(other->x - 0.8f, other->y - 0.8f, sub_x, sub_y);
+        if (Roam__OtherAlive(other) && d < distance) {
+            distance = d;
+            nearest  = o;
+        }
+    }
+    return nearest;
+}
+
+// A blow at another player (a monster's, or ours in PvP): they roll whether it lands, with their own defense
+static void Roam__SendHitPlayer(const int target, const bool pvp, const int attack_rating, const int level,
+                                const int damage) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (writer == NULL) {
+        return;
+    }
+    NetWriter_Begin(writer);
+    NetWriter_U8(writer, (uint8_t)target);
+    NetWriter_U8(writer, pvp ? 1 : 0);
+    NetWriter_I32(writer, attack_rating);
+    NetWriter_I32(writer, level);
+    NetWriter_I32(writer, damage);
+    NetClient_Send(MSG_HIT_PLAYER, writer);
+    free(writer);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1053,20 +1174,16 @@ static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
 }
 
 // Puts an item on the ground by the player: on the nearest free spot (not on another item, not in a wall)
-static bool Roam__DropItem(SceneRoam *roam, const Item *item, const uint64_t now) {
-    if (roam->ground_count >= MAX_GROUND_ITEMS) {
-        Roam__ShowMessage(roam, "There are too many items on the ground already.");
-        return false;
-    }
-    const int key    = Roam__MapKey(roam);
-    const int cx     = (int)roam->player.x;
-    const int cy     = (int)roam->player.y;
-    float     best_x = roam->player.x;
-    float     best_y = roam->player.y;
-    bool      found  = false;
-    for (int ring = 0; ring <= 8 && !found; ring++) {
-        for (int dy = -ring; dy <= ring && !found; dy++) {
-            for (int dx = -ring; dx <= ring && !found; dx++) {
+// The nearest free spot to the player for something dropped: not on another item, not in a wall
+static void Roam__FreeSpot(const SceneRoam *roam, float *spot_x, float *spot_y) {
+    const int key = Roam__MapKey(roam);
+    const int cx  = (int)roam->player.x;
+    const int cy  = (int)roam->player.y;
+    *spot_x       = roam->player.x;
+    *spot_y       = roam->player.y;
+    for (int ring = 0; ring <= 8; ring++) {
+        for (int dy = -ring; dy <= ring; dy++) {
+            for (int dx = -ring; dx <= ring; dx++) {
                 if (abs(dx) != ring && abs(dy) != ring) {
                     continue; // only the ring's edge (the inside was looked at already)
                 }
@@ -1081,25 +1198,37 @@ static bool Roam__DropItem(SceneRoam *roam, const Item *item, const uint64_t now
                             fabsf(roam->ground[g].y - y) < 0.9f;
                 }
                 if (!taken) {
-                    best_x = x;
-                    best_y = y;
-                    found  = true;
+                    *spot_x = x;
+                    *spot_y = y;
+                    return;
                 }
             }
         }
     }
-    GroundItem *ground = &roam->ground[roam->ground_count++];
-    memset(ground, 0, sizeof(GroundItem));
-    ground->item       = *item;
-    ground->map_key    = key;
-    ground->x          = best_x;
-    ground->y          = best_y;
-    ground->dropped_at = now;
-    Sounds_Play("item_flippy", SOUND_KIND_SFX);
-    return true;
 }
 
-// The item on the cursor onto the ground
+// An item lying on the ground: fresh ones flip out (with a sound when it's on our map)
+static void Roam__AddGroundItem(SceneRoam *roam, const Item *item, const int map_key, const float x, const float y,
+                                const bool fresh, const uint32_t net_id) {
+    if (roam->ground_count >= MAX_GROUND_ITEMS) {
+        return;
+    }
+    const uint64_t now    = SDL_GetTicks64();
+    GroundItem    *ground = &roam->ground[roam->ground_count++];
+    memset(ground, 0, sizeof(GroundItem));
+    ground->item       = *item;
+    ground->map_key    = map_key;
+    ground->x          = x;
+    ground->y          = y;
+    ground->net_id     = net_id;
+    ground->dropped_at = fresh ? now : (now > 60000 ? now - 60000 : 0);
+    ground->landed     = !fresh;
+    if (fresh && map_key == Roam__MapKey(roam)) {
+        Sounds_Play("item_flippy", SOUND_KIND_SFX);
+    }
+}
+
+// The item on the cursor onto the ground (multiplayer: the server puts it there, for everyone)
 static void Roam__DropHeld(SceneRoam *roam) {
     if (roam->ground_count >= MAX_GROUND_ITEMS) {
         Roam__ShowMessage(roam, "There are too many items on the ground already.");
@@ -1107,11 +1236,32 @@ static void Roam__DropHeld(SceneRoam *roam) {
     }
     Item item;
     bool equipment_changed = false;
-    if (GameInventory_Drop(roam->inventory_ui, roam->character, &item, &equipment_changed)) {
-        Roam__DropItem(roam, &item, SDL_GetTicks64());
-        if (equipment_changed) {
-            Roam__ApplyCharacter(roam); // Modern pick-up: it was still worn until now
-        }
+    if (!GameInventory_Drop(roam->inventory_ui, roam->character, &item, &equipment_changed)) {
+        return;
+    }
+    float x;
+    float y;
+    Roam__FreeSpot(roam, &x, &y);
+    if (roam->online) {
+        NetWriter *writer = malloc(sizeof(NetWriter));
+        FAIL_IF_NULL(writer);
+        NetWriter_Begin(writer);
+        NetWriter_I32(writer, Roam__MapKey(roam));
+        NetWriter_F32(writer, x);
+        NetWriter_F32(writer, y);
+        NetWriter_String(writer, item.code);
+        NetWriter_I32(writer, item.defense);
+        NetWriter_I32(writer, item.quantity);
+        NetClient_Send(MSG_ITEM_DROP, writer);
+        free(writer);
+    } else {
+        Roam__AddGroundItem(roam, &item, Roam__MapKey(roam), x, y, true, 0);
+    }
+    if (equipment_changed) {
+        Roam__ApplyCharacter(roam); // Modern pick-up: it was still worn until now
+    }
+    if (roam->online && NetClient_ServerKeepsCharacters()) {
+        Roam__StoreCharacter(roam); // the server's copy of the character without it, at once
     }
 }
 
@@ -1121,22 +1271,57 @@ static void Roam__RemoveGroundItem(SceneRoam *roam, const int index) {
     roam->hover_item    = -1;
 }
 
-// Picks a ground item up: onto the cursor with the inventory open, otherwise into the belt (potions) or the inventory
-static void Roam__PickUp(SceneRoam *roam, const int index) {
-    GroundItem     *ground = &roam->ground[index];
-    const ItemBase *base   = Items_Find(ground->item.code);
+// An item comes to us: onto the cursor with the inventory open, otherwise into the belt (potions) or the inventory.
+// False when there's no room.
+static bool Roam__GiveItem(SceneRoam *roam, const Item *item) {
+    const ItemBase *base = Items_Find(item->code);
     if (roam->inventory_panel && !GameInventory_Holding(roam->inventory_ui)) {
-        GameInventory_Hold(roam->inventory_ui, &ground->item);
-    } else {
-        bool placed = base != NULL && base->beltable && Inventory_AddToBelt(roam->character, &ground->item);
-        placed      = placed || Inventory_Add(roam->character, &ground->item);
-        if (!placed) {
-            Roam__ShowMessage(roam, "There's no room for that in your inventory.");
-            Sounds_Play("cursor_error", SOUND_KIND_UI);
-            roam->item_target = -1;
-            return;
-        }
+        GameInventory_Hold(roam->inventory_ui, item);
+        return true;
     }
+    if (base != NULL && base->beltable && Inventory_AddToBelt(roam->character, item)) {
+        return true;
+    }
+    return Inventory_Add(roam->character, item);
+}
+
+// Whether an item would fit (without taking it)
+static bool Roam__HasRoomFor(SceneRoam *roam, const Item *item) {
+    if (roam->inventory_panel && !GameInventory_Holding(roam->inventory_ui)) {
+        return true;
+    }
+    Character *copy = malloc(sizeof(Character));
+    FAIL_IF_NULL(copy);
+    *copy                = *roam->character;
+    const ItemBase *base = Items_Find(item->code);
+    const bool room = (base != NULL && base->beltable && Inventory_AddToBelt(copy, item)) || Inventory_Add(copy, item);
+    free(copy);
+    return room;
+}
+
+// Picks a ground item up (multiplayer: asks the server for it; the first to ask gets it)
+static void Roam__PickUp(SceneRoam *roam, const int index) {
+    GroundItem *ground = &roam->ground[index];
+    if (!Roam__HasRoomFor(roam, &ground->item)) {
+        Roam__ShowMessage(roam, "There's no room for that in your inventory.");
+        Sounds_Play("cursor_error", SOUND_KIND_UI);
+        roam->item_target = -1;
+        return;
+    }
+    if (roam->online) {
+        if (!ground->asked) {
+            ground->asked     = true;
+            NetWriter *writer = malloc(sizeof(NetWriter));
+            FAIL_IF_NULL(writer);
+            NetWriter_Begin(writer);
+            NetWriter_U32(writer, ground->net_id);
+            NetClient_Send(MSG_ITEM_PICK, writer);
+            free(writer);
+        }
+        roam->item_target = -1;
+        return;
+    }
+    Roam__GiveItem(roam, &ground->item);
     Sounds_Play("item_pickup", SOUND_KIND_SFX);
     Roam__RemoveGroundItem(roam, index);
 }
@@ -1279,6 +1464,11 @@ static void Roam__FindSpawn(SceneRoam *roam) {
 
 // Units for the map's NPCs, monsters and objects; then the player at the spawn point
 static void Roam__Populate(SceneRoam *roam) {
+    if (roam->online) {
+        // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,
+        // so their numbers match between games
+        srand(NetClient_Seed() ^ ((uint32_t)Roam__MapKey(roam) * 2654435761u));
+    }
     roam->unit_count = 0;
     roam->hovered    = -1;
     roam->hover_exit = -1;
@@ -1297,6 +1487,9 @@ static void Roam__Populate(SceneRoam *roam) {
     Roam__UpdateBlocking(roam);
     Roam__FindSpawn(roam);
     Roam__ResetPlayer(roam);
+    if (roam->online) {
+        srand((unsigned)SDL_GetTicks64()); // back to our own luck
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1463,8 +1656,9 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     if (place == NULL) {
         return;
     }
-    roam->item_target = -1;
-    roam->hover_item  = -1;
+    roam->item_target  = -1;
+    roam->hover_item   = -1;
+    roam->attack_other = 0;
     // Already on the map (an act's outdoors are one map): just go there
     const MapArea *area = roam->map != NULL && !roam->borrowed && roam->map->seed == World_GetSeed()
                               ? Map_FindArea(roam->map, place->level_id)
@@ -1712,6 +1906,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
 
     SceneRoam *roam = calloc(1, sizeof(SceneRoam));
     FAIL_IF_NULL(roam);
+    MonsterStats_SetDifficulty(0); // (a multiplayer game sets its own below)
     roam->free_roam       = free_roam || game;
     roam->game            = game;
     roam->renderer        = MapRenderer_Create();
@@ -1723,6 +1918,7 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     roam->use_target      = -1;
     roam->item_target     = -1;
     roam->hover_item      = -1;
+    roam->hover_other     = -1;
     roam->item_sprite_act = -1;
     roam->step_frame      = -1;
     roam->hovered         = -1;
@@ -1766,6 +1962,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->character    = Character_Current();
         roam->player_class = (int)roam->character->class_id;
         roam->online       = NetClient_Stage() == NETC_IN_GAME;
+        // Monsters as tough as the game's Difficulty (multiplayer; Single Player is Normal for now)
+        MonsterStats_SetDifficulty(roam->online ? NetClient_Settings()->difficulty : 0);
         roam->spread_place = -1;
         if (roam->online) {
             roam->chat_box = TextBox_Create(FONTS_FONT16, 120, 500, 560, 22, "Say something (Enter sends, Esc stops)");
@@ -1970,8 +2168,23 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
                           Character_HitChance(player->attack_rating, player->level, target->defense, target->level)) {
         return; // missed
     }
+    const int damage = Roam__Roll(player->damage_min, player->damage_max);
+    if (!Roam__RunsMonsters(roam)) {
+        // Multiplayer: the map's owner takes it off (and says if it died: then the experience is ours)
+        NetWriter *writer = malloc(sizeof(NetWriter));
+        if (writer != NULL) {
+            NetWriter_Begin(writer);
+            NetWriter_I32(writer, Roam__MapKey(roam));
+            NetWriter_U16(writer, (uint16_t)(target - roam->units));
+            NetWriter_I32(writer, damage);
+            NetClient_Send(MSG_HIT_MONSTER, writer);
+            free(writer);
+        }
+        Roam__UnitSound(roam, target, MONSTER_SOUND_HIT);
+        return;
+    }
     const bool was_alive = Roam__IsAlive(target);
-    Roam__Damage(roam, target, Roam__Roll(player->damage_min, player->damage_max), now);
+    Roam__Damage(roam, target, damage, now);
     if (was_alive && !Roam__IsAlive(target)) {
         Roam__GainExperience(roam, target);
     }
@@ -2083,8 +2296,16 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                     Roam__PlayerStrikes(roam, target, now);
                 }
             }
+            const Unit *other = NULL;
+            if (roam->attack_other > 0 && Roam__PvP(roam) && Roam__OtherById(roam, roam->attack_other, &other) &&
+                Roam__Distance(player->x, player->y, other->x, other->y) <= ATTACK_RANGE + 0.5f) {
+                // PvP: they roll whether it lands, with their defense
+                Roam__SendHitPlayer(roam->attack_other, true, player->attack_rating, player->level,
+                                    Roam__Roll(player->damage_min, player->damage_max));
+            }
             if (roam->attack_in_place) {
                 roam->attack_target   = -1; // one swing, no chasing
+                roam->attack_other    = 0;
                 roam->attack_in_place = false;
             }
             Roam__SetState(player, UNIT_IDLE, now);
@@ -2113,6 +2334,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         roam->use_target    = -1;
         roam->attack_target = -1;
         roam->item_target   = -1;
+        roam->attack_other  = 0;
         roam->moving        = false;
         Roam__ClearPath(player);
         const float step = Roam__PlayerSpeed(roam) * seconds *
@@ -2162,6 +2384,25 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             }
             player->target_x = target->x;
             player->target_y = target->y;
+            roam->moving     = true;
+        }
+    }
+
+    // PvP: walk up to the other player, then swing
+    if (!key_walking && roam->attack_other > 0) {
+        const Unit *other = NULL;
+        if (!Roam__PvP(roam) || !Roam__OtherById(roam, roam->attack_other, &other) || !Roam__OtherAlive(other)) {
+            roam->attack_other = 0;
+        } else if (Roam__Distance(player->x, player->y, other->x, other->y) <= ATTACK_RANGE) {
+            Roam__TurnTowards(&player->turn, player->x, player->y, other->x, other->y);
+            roam->moving = false;
+            Roam__ClearPath(player);
+            Roam__SetState(player, UNIT_ATTACK, now);
+            Roam__UnitSound(roam, player, MONSTER_SOUND_ATTACK);
+            return;
+        } else {
+            player->target_x = other->x;
+            player->target_y = other->y;
             roam->moving     = true;
         }
     }
@@ -2256,23 +2497,47 @@ static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const
 }
 
 static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64_t now) {
-    Unit      *player       = &roam->player;
-    const bool player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
+    Unit          *player       = &roam->player;
+    const bool     player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
+    const bool     runs         = Roam__RunsMonsters(roam); // multiplayer: or the map's owner does, and tells us
+    const uint64_t real         = SDL_GetTicks64();
 
     for (int i = 0; i < roam->unit_count; i++) {
         Unit *unit = &roam->units[i];
-        // Like the game's rooms: only what's near you is awake. The rest of the act waits where it is (and picks up
-        // again when you come near), so a joined-up act of hundreds of monsters costs only what's around you.
-        if (Roam__Distance(unit->x, unit->y, player->x, player->y) > ACTIVE_DISTANCE && unit->state != UNIT_DYING &&
+        // Like the game's rooms: only what's near a player is awake. The rest of the act waits where it is (and picks
+        // up again when someone comes near), so a joined-up act of hundreds of monsters costs only what's around.
+        if (Roam__NearestPlayer(roam, unit->x, unit->y) > ACTIVE_DISTANCE && unit->state != UNIT_DYING &&
             i != roam->attack_target) {
             continue;
         }
+        if (!runs && !unit->is_object) {
+            // Multiplayer, someone else runs this map's monsters: moving smoothly to where they last said, and
+            // animating; what happens to them (and what they do to us) comes from the owner
+            if (unit->net_at > 0) {
+                const float step = fminf((float)(real - unit->net_at) / (1000.0f / NET_STATE_HZ), 1.0f);
+                unit->x          = unit->net_from_x + ((unit->net_to_x - unit->net_from_x) * step);
+                unit->y          = unit->net_from_y + ((unit->net_to_y - unit->net_from_y) * step);
+            }
+            if (Roam__Animate(roam, unit, now)) { // a swing, a flinch or a death finished
+                Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
+            }
+            continue;
+        }
         if (Roam__Animate(roam, unit, now)) {
-            if (unit->state == UNIT_ATTACK && player_alive && Roam__Combat(roam) &&
-                Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
-                (!roam->game || Roam__Roll(1, 100) <= Character_HitChance(unit->attack_rating, unit->level,
-                                                                          player->defense, player->level))) {
-                Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
+            if (unit->state == UNIT_ATTACK && Roam__Combat(roam)) {
+                const Unit *other = NULL;
+                if (unit->net_target == 0) {
+                    if (player_alive && Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
+                        (!roam->game || Roam__Roll(1, 100) <= Character_HitChance(unit->attack_rating, unit->level,
+                                                                                  player->defense, player->level))) {
+                        Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
+                    }
+                } else if (Roam__OtherById(roam, unit->net_target, &other) && Roam__OtherAlive(other) &&
+                           Roam__Distance(unit->x, unit->y, other->x, other->y) <= ATTACK_RANGE + 1.0f) {
+                    // Another player: they roll whether it lands
+                    Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level,
+                                        Roam__Roll(unit->damage_min, unit->damage_max));
+                }
             }
             if (unit->state == UNIT_OPERATE) {
                 Roam__FinishOperate(roam, unit, now);
@@ -2284,7 +2549,11 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
 
-        if (!Roam__Combat(roam) || !player_alive || Roam__IsPeaceful(roam, unit)) {
+        float      target_x  = 0.0f;
+        float      target_y  = 0.0f;
+        int        target_id = 0;
+        const bool target    = Roam__MonsterTarget(roam, unit, player_alive, &target_x, &target_y, &target_id);
+        if (!Roam__Combat(roam) || !target || Roam__IsPeaceful(roam, unit)) {
             unit->provoked = false;
             Roam__Wander(roam, unit, seconds, now);
             continue;
@@ -2296,18 +2565,19 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
 
-        // Combat: everyone nearby that can fight (NPCs included) comes for the player
-        const float distance = Roam__Distance(unit->x, unit->y, player->x, player->y);
+        // Combat: everyone nearby that can fight (NPCs included) comes for the nearest player
+        const float distance = Roam__Distance(unit->x, unit->y, target_x, target_y);
         if (distance > AGGRO_RANGE && !unit->provoked) {
             Roam__Wander(roam, unit, seconds, now);
             continue;
         }
         unit->wandering = false;
         if (distance <= ATTACK_RANGE) {
-            Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
+            Roam__TurnTowards(&unit->turn, unit->x, unit->y, target_x, target_y);
             Roam__ClearPath(unit);
             if (now >= unit->next_attack) {
                 unit->next_attack = now + ATTACK_COOLDOWN;
+                unit->net_target  = target_id;
                 Roam__SetState(unit, UNIT_ATTACK, now);
                 Roam__UnitSound(roam, unit, MONSTER_SOUND_ATTACK);
             } else {
@@ -2317,13 +2587,12 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             // Chase: straight at the player when nothing's in the way, otherwise around the walls. Re-planning is
             // spread over time (each monster at its own moment) so a crowd doesn't all search in the same frame.
             bool moved;
-            if (Map_HasClearLine(roam->map, unit->x, unit->y, player->x, player->y)) {
+            if (Map_HasClearLine(roam->map, unit->x, unit->y, target_x, target_y)) {
                 Roam__ClearPath(unit);
-                Roam__TurnTowards(&unit->turn, unit->x, unit->y, player->x, player->y);
-                moved = Roam__Step(roam->map, unit, player->x, player->y, unit->speed, seconds);
+                Roam__TurnTowards(&unit->turn, unit->x, unit->y, target_x, target_y);
+                moved = Roam__Step(roam->map, unit, target_x, target_y, unit->speed, seconds);
             } else {
-                Roam__PlanPath(roam->map, unit, player->x, player->y, now,
-                               REPATH_MONSTER_MS + (uint64_t)((i % 8) * 37));
+                Roam__PlanPath(roam->map, unit, target_x, target_y, now, REPATH_MONSTER_MS + (uint64_t)((i % 8) * 37));
                 moved = Roam__FollowPath(roam->map, unit, unit->speed, seconds);
             }
             Roam__SetState(unit, moved ? UNIT_WALK : UNIT_IDLE, now);
@@ -3076,7 +3345,7 @@ static void Roam__UpdateOthers(SceneRoam *roam, const uint64_t now) {
     int            kept_count = 0;
     for (int p = 0; p < count && kept_count < NET_MAX_PLAYERS; p++) {
         const NetPlayer *player = &players[p];
-        if (!player->has_state || player->place != roam->place) {
+        if (!player->has_state || player->place != Roam__MapKey(roam)) {
             continue; // somewhere else
         }
         Unit unit;
@@ -3118,6 +3387,198 @@ static void Roam__UpdateOthers(SceneRoam *roam, const uint64_t now) {
     roam->other_count = kept_count;
 }
 
+// The map's owner, 15 times a second: where the monsters near any player are, how they are, what they're doing
+static void Roam__SendMonsters(SceneRoam *roam) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    FAIL_IF_NULL(writer);
+    NetWriter_Begin(writer);
+    NetWriter_I32(writer, Roam__MapKey(roam));
+    const int count_at = writer->size;
+    NetWriter_U16(writer, 0);
+    int count = 0;
+    for (int i = 0; i < roam->unit_count && count < 2500; i++) {
+        const Unit *unit = &roam->units[i];
+        if (unit->is_object || Roam__NearestPlayer(roam, unit->x, unit->y) > MONSTER_SYNC_DISTANCE) {
+            continue;
+        }
+        NetWriter_U16(writer, (uint16_t)i);
+        NetWriter_F32(writer, unit->x);
+        NetWriter_F32(writer, unit->y);
+        NetWriter_I32(writer, unit->hp);
+        NetWriter_I32(writer, unit->max_hp);
+        NetWriter_U8(writer, (uint8_t)unit->state);
+        NetWriter_U8(writer, (uint8_t)unit->turn);
+        NetWriter_U8(writer, unit->vanished ? 1 : 0);
+        count++;
+    }
+    writer->data[count_at]     = (uint8_t)(count & 0xFF);
+    writer->data[count_at + 1] = (uint8_t)(count >> 8);
+    if (count > 0) {
+        NetClient_Send(MSG_MONSTERS, writer);
+    }
+    free(writer);
+}
+
+// What the owner says about the monsters: moved, hurt, attacking, dying
+static void Roam__ApplyMonsters(SceneRoam *roam, NetReader *reader, const uint64_t now) {
+    const uint64_t real  = SDL_GetTicks64();
+    const int      count = NetReader_U16(reader);
+    for (int n = 0; n < count && !reader->failed; n++) {
+        const int       index    = NetReader_U16(reader);
+        const float     x        = NetReader_F32(reader);
+        const float     y        = NetReader_F32(reader);
+        const int       hp       = NetReader_I32(reader);
+        const int       max_hp   = NetReader_I32(reader);
+        const UnitState state    = (UnitState)NetReader_U8(reader);
+        const int       turn     = NetReader_U8(reader);
+        const bool      vanished = NetReader_U8(reader) != 0;
+        if (reader->failed || index >= roam->unit_count || roam->units[index].is_object || state > UNIT_OPERATE) {
+            continue;
+        }
+        Unit      *unit   = &roam->units[index];
+        const bool jumped = unit->net_at == 0 || Roam__Distance(unit->x, unit->y, x, y) > 8.0f;
+        unit->net_from_x  = jumped ? x : unit->x;
+        unit->net_from_y  = jumped ? y : unit->y;
+        unit->net_to_x    = x;
+        unit->net_to_y    = y;
+        unit->net_at      = real;
+        unit->turn        = turn;
+        unit->max_hp      = max_hp;
+        if (hp < unit->hp && hp > 0 && unit->state != UNIT_HIT) {
+            Roam__UnitSound(roam, unit, MONSTER_SOUND_HIT);
+        }
+        unit->hp = hp;
+        if ((int)state != unit->net_state) { // something new: show it from the start
+            const bool was_alive = Roam__IsAlive(unit);
+            unit->net_state      = (int)state;
+            Roam__SetState(unit, state, now);
+            if (state == UNIT_ATTACK) {
+                Roam__UnitSound(roam, unit, MONSTER_SOUND_ATTACK);
+            } else if (was_alive && !Roam__IsAlive(unit)) {
+                Roam__UnitSound(roam, unit, MONSTER_SOUND_DEATH);
+            }
+        }
+        unit->vanished = vanished;
+    }
+}
+
+// The items, monsters and blows other games send (through the server)
+static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetReader *reader, const uint64_t now) {
+    const int key = Roam__MapKey(roam);
+    switch (type) {
+    case MSG_ITEM_ADD: {
+        const uint32_t id      = NetReader_U32(reader);
+        const int      dropper = NetReader_U8(reader);
+        const int      map     = NetReader_I32(reader);
+        const float    x       = NetReader_F32(reader);
+        const float    y       = NetReader_F32(reader);
+        Item           item;
+        memset(&item, 0, sizeof(item));
+        NetReader_String(reader, item.code, sizeof(item.code));
+        item.defense  = NetReader_I32(reader);
+        item.quantity = NetReader_I32(reader);
+        if (!reader->failed && Items_Find(item.code) != NULL) {
+            Roam__AddGroundItem(roam, &item, map, x, y, dropper != 0, id);
+        }
+        break;
+    }
+    case MSG_ITEM_GONE: {
+        const uint32_t id     = NetReader_U32(reader);
+        const int      picker = NetReader_U8(reader);
+        for (int g = 0; g < roam->ground_count; g++) {
+            if (roam->ground[g].net_id != id) {
+                continue;
+            }
+            const Item item = roam->ground[g].item;
+            Roam__RemoveGroundItem(roam, g);
+            if (picker == NetClient_MyId()) { // ours
+                if (!Roam__GiveItem(roam, &item)) {
+                    if (!GameInventory_Holding(roam->inventory_ui)) {
+                        GameInventory_Hold(roam->inventory_ui, &item); // filled up meanwhile: on the cursor
+                    }
+                }
+                Sounds_Play("item_pickup", SOUND_KIND_SFX);
+                if (NetClient_ServerKeepsCharacters()) {
+                    Roam__StoreCharacter(roam);
+                }
+            }
+            break;
+        }
+        break;
+    }
+    case MSG_MONSTERS_FROM: {
+        NetReader_U8(reader); // from (the map's owner)
+        if (NetReader_I32(reader) == key && !Roam__RunsMonsters(roam)) {
+            Roam__ApplyMonsters(roam, reader, now);
+        }
+        break;
+    }
+    case MSG_HIT_MONSTER_FROM: {
+        const int from   = NetReader_U8(reader);
+        const int map    = NetReader_I32(reader);
+        const int index  = NetReader_U16(reader);
+        const int damage = NetReader_I32(reader);
+        if (map != key || !Roam__RunsMonsters(roam) || index >= roam->unit_count || reader->failed) {
+            break;
+        }
+        Unit      *unit      = &roam->units[index];
+        const bool was_alive = Roam__IsAlive(unit);
+        if (!was_alive || unit->is_object) {
+            break;
+        }
+        unit->provoked   = true;
+        unit->net_target = from;
+        Roam__Damage(roam, unit, damage, now);
+        if (!Roam__IsAlive(unit)) { // theirs: they get the experience
+            NetWriter *writer = malloc(sizeof(NetWriter));
+            FAIL_IF_NULL(writer);
+            NetWriter_Begin(writer);
+            NetWriter_I32(writer, key);
+            NetWriter_U16(writer, (uint16_t)index);
+            NetWriter_U8(writer, (uint8_t)from);
+            NetClient_Send(MSG_MONSTER_KILLED, writer);
+            free(writer);
+        }
+        break;
+    }
+    case MSG_MONSTER_KILLED_FROM: {
+        NetReader_U8(reader); // from (the owner)
+        const int map   = NetReader_I32(reader);
+        const int index = NetReader_U16(reader);
+        if (map == key && index < roam->unit_count && !reader->failed) {
+            Roam__GainExperience(roam, &roam->units[index]);
+        }
+        break;
+    }
+    case MSG_HIT_YOU: {
+        const int  from          = NetReader_U8(reader);
+        const int  target        = NetReader_U8(reader);
+        const bool pvp           = NetReader_U8(reader) != 0;
+        const int  attack_rating = NetReader_I32(reader);
+        const int  level         = NetReader_I32(reader);
+        const int  damage        = NetReader_I32(reader);
+        Unit      *player        = &roam->player;
+        if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until ||
+            (pvp && roam->in_town)) {
+            break;
+        }
+        if (Roam__Roll(1, 100) > Character_HitChance(attack_rating, level, player->defense, player->level)) {
+            break; // missed
+        }
+        Roam__Damage(roam, player, damage > 0 ? damage : 1, now);
+        if (pvp && !Roam__IsAlive(player)) {
+            const NetPlayer *killer = NetClient_Player(from);
+            char             text[96];
+            snprintf(text, sizeof(text), "%s killed you.", killer != NULL ? killer->name : "Someone");
+            Roam__ShowMessage(roam, text);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 // Every frame in a multiplayer game: where we are (15 times a second), what's said, whether we're still connected.
 // Returns true when the game ended (the scene changed).
 static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
@@ -3132,7 +3593,7 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     const uint64_t real = SDL_GetTicks64();
     if (real - roam->last_sent >= 1000 / NET_STATE_HZ) {
         roam->last_sent = real;
-        NetClient_SendState(roam->place, roam->player.x, roam->player.y, roam->player.turn,
+        NetClient_SendState(Roam__MapKey(roam), roam->player.x, roam->player.y, roam->player.turn,
                             Roam__Mode(roam, &roam->player));
     }
     char line[NET_CHAT_MAX + 24];
@@ -3153,6 +3614,16 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
         }
     }
     Roam__UpdateOthers(roam, now);
+    uint8_t   type;
+    NetReader reader;
+    while (NetClient_TakeGameMessage(&type, &reader)) {
+        Roam__HandleGameMessage(roam, type, &reader, now);
+    }
+    // Running this map's monsters with others here: tell them
+    if (roam->other_count > 0 && Roam__RunsMonsters(roam) && real - roam->last_monsters >= 1000 / NET_STATE_HZ) {
+        roam->last_monsters = real;
+        Roam__SendMonsters(roam);
+    }
     // Chat: Enter opens the line, Enter sends it, Esc closes it
     if (TextBox_IsFocused(roam->chat_box)) {
         TextBox_Update(roam->chat_box);
@@ -3399,6 +3870,10 @@ static void Roam__Update(SceneRoam *roam) {
     if (roam->hover_item >= 0) {
         roam->hovered = -1;
     }
+    // PvP: another player under the mouse (when no monster or item is)
+    roam->hover_other = over_view && roam->hover_item < 0 && roam->hovered < 0 && Roam__PvP(roam)
+                            ? Roam__OtherAt(roam, sub_x, sub_y)
+                            : -1;
     // An entrance under the mouse (cave mouth, tomb door, stairs): its name is shown, like the game's
     roam->hover_exit = -1;
     for (int e = 0; over_view && roam->hovered < 0 && e < roam->map->exit_count; e++) {
@@ -3420,7 +3895,13 @@ static void Roam__Update(SceneRoam *roam) {
     // Modern: the mouse attacks and opens things within reach, but doesn't walk
     if (gameplay->movement == MOVEMENT_MODERN && over_view && left && !roam->prev_left &&
         Roam__IsAlive(&roam->player)) {
-        if (roam->hover_item >= 0) {
+        if (roam->hover_other >= 0) {
+            const Unit *other = &roam->others[roam->hover_other];
+            if (Roam__Distance(roam->player.x, roam->player.y, other->x, other->y) <= ATTACK_RANGE) {
+                roam->attack_other    = roam->other_ids[roam->hover_other]; // one swing at them
+                roam->attack_in_place = true;
+            }
+        } else if (roam->hover_item >= 0) {
             roam->item_target = roam->hover_item;
             if (!Roam__TryPickUp(roam)) {
                 roam->item_target = -1; // out of reach
@@ -3444,7 +3925,15 @@ static void Roam__Update(SceneRoam *roam) {
 
     // Left: attack what's under the mouse (combat on), otherwise walk there (hold to keep following the mouse)
     if (gameplay->movement != MOVEMENT_MODERN && !stand_still && over_view && left && Roam__IsAlive(&roam->player)) {
-        if (!roam->prev_left && roam->hover_item >= 0) {
+        if (!roam->prev_left && roam->hover_other >= 0) {
+            roam->attack_other    = roam->other_ids[roam->hover_other]; // PvP: go for them
+            roam->attack_in_place = false;
+            roam->attack_target   = -1;
+            roam->use_target      = -1;
+            roam->item_target     = -1;
+            Roam__ClearPath(&roam->player);
+        } else if (!roam->prev_left && roam->hover_item >= 0) {
+            roam->attack_other  = 0;
             roam->item_target   = roam->hover_item; // walk over and pick it up
             roam->use_target    = -1;
             roam->attack_target = -1;
@@ -3461,12 +3950,14 @@ static void Roam__Update(SceneRoam *roam) {
             roam->attack_in_place = false;
             roam->use_target      = -1;
             roam->item_target     = -1;
-        } else if ((roam->use_target >= 0 || roam->item_target >= 0) && roam->prev_left) {
-            // holding the button after clicking an object or item: keep going to it
-        } else if (roam->attack_target < 0 || roam->prev_left == false) {
+            roam->attack_other    = 0;
+        } else if ((roam->use_target >= 0 || roam->item_target >= 0 || roam->attack_other > 0) && roam->prev_left) {
+            // holding the button after clicking an object, item or player: keep going to it
+        } else if ((roam->attack_target < 0 && roam->attack_other == 0) || roam->prev_left == false) {
             roam->use_target      = -1;
             roam->attack_target   = -1;
             roam->item_target     = -1;
+            roam->attack_other    = 0;
             roam->player.target_x = sub_x;
             roam->player.target_y = sub_y;
             roam->moving          = true;
@@ -3502,7 +3993,7 @@ static void Roam__Update(SceneRoam *roam) {
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
     if (roam->game) {
-        Roam__UpdateGroundItems(roam, now);
+        Roam__UpdateGroundItems(roam, SDL_GetTicks64()); // (real time, like their drawing)
     }
 
     // Which area of a joined-up map you're in
@@ -3978,7 +4469,7 @@ static void Roam__DrawOtherPlayers(SceneRoam *roam, const SDL_Rect *view) {
             }
             SDL_RenderDrawLines(sdl_renderer, ring, 33);
         }
-        if (names) {
+        if (names || o == roam->hover_other) {
             int top = sy - (int)(90.0f * roam->camera.zoom);
             if (unit->draw.figure != NULL) {
                 int xmin;
@@ -3990,6 +4481,9 @@ static void Roam__DrawOtherPlayers(SceneRoam *roam, const SDL_Rect *view) {
             }
             Label_SetText(roam->target_label, unit->name);
             Label_SetColor(roam->target_label, r, g, b, 0xFF);
+            if (o == roam->hover_other) {
+                Label_SetColor(roam->target_label, 0xFF, 0x40, 0x40, 0xFF); // PvP: a click attacks them
+            }
             Label_Draw(roam->target_label, sx, top);
         }
     }

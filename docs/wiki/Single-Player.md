@@ -155,7 +155,7 @@ page number under the grid, next to the gold). The square button in its bottom c
   inventory ("There's no room for that" when it's full). With the inventory open it goes onto the mouse instead.
   Modern movement picks up only what's in reach.
 - Like the game, what's on the ground stays there while the game lasts (each area keeps its own), and is gone when you
-  leave the game. In multiplayer only you see what you drop, for now.
+  leave the game. In multiplayer everyone sees what's dropped, and the first to get to an item has it.
 
 ## Skills
 

@@ -42,6 +42,8 @@ void NetWriter_F32(NetWriter *writer, const float value) {
     NetWriter_U32(writer, bits);
 }
 
+void NetWriter_Bytes(NetWriter *writer, const void *data, const int size) { NetWriter__Bytes(writer, data, size); }
+
 void NetWriter_String(NetWriter *writer, const char *text) {
     const size_t length = text != NULL ? strlen(text) : 0;
     const int    count  = length > 0xFFFF ? 0xFFFF : (int)length;

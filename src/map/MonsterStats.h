@@ -23,5 +23,8 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if
 // monstats Id for a DS1 monster preset (act 0..4, index into that act's MonPreset rows); NULL for spawn markers
 const char *MonsterStats_PresetMonster(int act, int index);
 void        MonsterStats_Release(void);
+// Which difficulty's numbers MonsterStats_Get gives: 0 Normal (Single Player), 1 Nightmare, 2 Hell (a multiplayer
+// game's setting)
+void MonsterStats_SetDifficulty(int difficulty);
 
 #endif // ABYSS_MONSTER_STATS_H

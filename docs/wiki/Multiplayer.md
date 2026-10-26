@@ -3,9 +3,10 @@
 **Main menu › Multiplayer.** Our own multiplayer, not compatible with Battle.net or the original game's TCP/IP
 games.
 
-> **What's shared so far:** who's in the game, where everyone is (you see each other walk and run between areas, with
-> names and coloured circles), chat, and the game's settings. Monsters, combat and items are still each player's
-> own (an item you drop only you see): Difficulty and PvP are set and shown, and take effect once those are shared.
+> **What's shared:** who's in the game, where everyone is (you see each other walk and run between areas, with names
+> and coloured circles), chat, the game's settings, the monsters (where they are, their life, who they're after),
+> combat (with the monsters, and with each other when PvP is on), and items on the ground. Not yet: parties (shared
+> experience), chests and doors (each player's own), monster drops.
 
 ## How it works
 
@@ -44,6 +45,26 @@ Save and Exit Game** leaves (and closes the game when you're the host). Losing t
 **Options › Debug › Free Roam in Single Player and Multiplayer** works here too: travel to any area from anywhere,
 and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)).
 
+## Playing together
+
+- **Monsters** are the same in everyone's game: the same monsters in the same places (from the world seed), with the
+  same life. On each map one player's game runs them, the one with the lowest player id there (usually the host),
+  and tells the others 15 times a second where they are, how hurt and what they're doing. When that player leaves
+  the map, the next one takes over where they left off. Monsters go after whoever is nearest.
+- **Hitting a monster** that another game runs: your game rolls whether you hit, then that game takes the life off.
+  Whoever lands the killing blow gets the experience (no party sharing yet).
+- **Getting hit**: your game rolls whether a blow lands, with your own defense, whether it's a monster's or a player's.
+- **Difficulty**: Nightmare and Hell use the game's own numbers for them (`monstats.txt` and `MonLvl.txt`'s (N) and
+  (H) columns): higher levels, much more life and damage, more experience.
+- **PvP** (when the host turns it on): point at another player outside town (their name turns red) and click to
+  attack them, like a monster. There's no fighting in town. "So-and-so killed you" says who.
+- **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On
+  a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
+  around stays for the others until the game ends.
+
+Games from before this (protocol version 1) can't join these ones, or the other way round: everyone needs the same
+build.
+
 ## Game settings
 
 The Host tab (remembered in `host.ini`) and a dedicated server's `server/server.ini`:
@@ -53,13 +74,13 @@ The Host tab (remembered in `host.ini`) and a dedicated server's `server/server.
 | Game name | `Name` | Shown in Browse |
 | Password | `Password` | Empty: anyone can join |
 | Players | `MaxPlayers` | 1 to 255 (8 by default, like Diablo II) |
-| Difficulty | `Difficulty` | Normal, Nightmare, Hell |
+| Difficulty | `Difficulty` | Normal, Nightmare, Hell: the monsters' levels, life, damage and experience ([above](#playing-together)) |
 | Game speed | `Speed` | Diablo's Normal, Fast, Faster, Fastest (20, 30, 40, 50 frames' worth a second): everything runs that much faster |
 | New characters only | `NewCharactersOnly` | Level 1, no experience |
 | Only characters made in my games / here | `MadeHereOnly` | See the table above |
 | Characters | `Hardcore` | Any, Softcore only, Hardcore only |
 | Lowest / highest level | `LevelMin`, `LevelMax` | Diablo II's level range |
-| PvP | `PvP` | Players can hurt each other (D1's friendly fire, D2's hostile) |
+| PvP | `PvP` | Players can hurt each other outside town (D1's friendly fire, D2's hostile) |
 | Inventory pages | `InventoryPages` | 1 to 255 |
 | Port | `Port` | TCP, 4000 by default (Diablo II's own). To play over the internet the host opens it on their router |
 | World seed | `Seed` | Empty / 0: a new world each game. Everyone gets the same world |

@@ -24,6 +24,7 @@ void NetWriter_U32(NetWriter *writer, uint32_t value);
 void NetWriter_I32(NetWriter *writer, int32_t value);
 void NetWriter_F32(NetWriter *writer, float value);
 void NetWriter_String(NetWriter *writer, const char *text);
+void NetWriter_Bytes(NetWriter *writer, const void *data, int size); // as they are (passing a message on)
 
 typedef struct NetReader {
     const uint8_t *data;

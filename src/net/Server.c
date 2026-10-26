@@ -41,8 +41,22 @@ typedef struct Peer {
     char           mode[4];
 } Peer;
 
+// An item lying on the ground somewhere in the game
+typedef struct ServerItem {
+    uint32_t id;
+    int      map;
+    float    x;
+    float    y;
+    char     code[ITEM_CODE_MAX];
+    int      defense;
+    int      quantity;
+} ServerItem;
+
 struct NetServer {
     NetSettings settings;
+    ServerItem  items[NET_GROUND_ITEMS_MAX];
+    int         item_count;
+    uint32_t    next_item_id;
     bool        dedicated;
     char        realm[NET_ID_MAX];
     NetSocket   listener;
@@ -396,6 +410,17 @@ static void Server__Chat(NetServer *server, const int from, const char *text, co
     Server__Broadcast(server, MSG_CHAT_FROM, &writer, except);
 }
 
+static void Server__WriteItem(NetWriter *writer, const ServerItem *item, const int dropper) {
+    NetWriter_U32(writer, item->id);
+    NetWriter_U8(writer, (uint8_t)dropper);
+    NetWriter_I32(writer, item->map);
+    NetWriter_F32(writer, item->x);
+    NetWriter_F32(writer, item->y);
+    NetWriter_String(writer, item->code);
+    NetWriter_I32(writer, item->defense);
+    NetWriter_I32(writer, item->quantity);
+}
+
 static void Server__WritePlayer(NetWriter *writer, const Peer *peer) {
     NetWriter_U8(writer, (uint8_t)peer->id);
     NetWriter_String(writer, peer->character.name);
@@ -513,6 +538,11 @@ static void Server__Enter(NetServer *server, Peer *peer) {
     Server__WritePlayer(&writer, peer);
     Server__Broadcast(server, MSG_PLAYER, &writer, peer);
     Server__TellWaiting(server, MSG_PLAYER, &writer);
+    for (int i = 0; i < server->item_count; i++) { // what's lying around already
+        NetWriter_Begin(&writer);
+        Server__WriteItem(&writer, &server->items[i], 0);
+        Server__Send(peer, MSG_ITEM_ADD, &writer);
+    }
     char text[96];
     snprintf(text, sizeof(text), "%s (%s) joined the game.", peer->character.name,
              Character_ClassName(peer->character.class_id));
@@ -735,6 +765,71 @@ static void Server__ChatFrom(NetServer *server, Peer *peer, NetReader *reader) {
     Server__Chat(server, peer->id, text, NULL);
 }
 
+// Items on the ground
+static void Server__ItemDrop(NetServer *server, Peer *peer, NetReader *reader) {
+    if (peer->stage != STAGE_IN_GAME || server->item_count >= NET_GROUND_ITEMS_MAX) {
+        return;
+    }
+    ServerItem item;
+    memset(&item, 0, sizeof(item));
+    item.map = NetReader_I32(reader);
+    item.x   = NetReader_F32(reader);
+    item.y   = NetReader_F32(reader);
+    NetReader_String(reader, item.code, sizeof(item.code));
+    item.defense  = NetReader_I32(reader);
+    item.quantity = NetReader_I32(reader);
+    if (reader->failed || item.code[0] == '\0' || item.x != item.x || item.y != item.y || item.x < 0.0f ||
+        item.y < 0.0f || item.x > 100000.0f || item.y > 100000.0f) {
+        return;
+    }
+    item.id                             = ++server->next_item_id;
+    server->items[server->item_count++] = item;
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    Server__WriteItem(&writer, &item, peer->id);
+    Server__Broadcast(server, MSG_ITEM_ADD, &writer, NULL);
+}
+
+static void Server__ItemPick(NetServer *server, Peer *peer, NetReader *reader) {
+    const uint32_t id = NetReader_U32(reader);
+    if (peer->stage != STAGE_IN_GAME) {
+        return;
+    }
+    for (int i = 0; i < server->item_count; i++) {
+        if (server->items[i].id == id) {
+            server->items[i] = server->items[--server->item_count]; // theirs: the first to ask
+            NetWriter writer;
+            NetWriter_Begin(&writer);
+            NetWriter_U32(&writer, id);
+            NetWriter_U8(&writer, (uint8_t)peer->id);
+            Server__Broadcast(server, MSG_ITEM_GONE, &writer, NULL);
+            return;
+        }
+    }
+}
+
+// What a player sent, passed on as it is with their id in front: to everyone on a map, or to one player
+static void Server__PassOn(NetServer *server, const Peer *from, const uint8_t type, const NetReader *reader,
+                           const int map, const int to_id) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (writer == NULL) {
+        return;
+    }
+    NetWriter_Begin(writer);
+    NetWriter_U8(writer, (uint8_t)from->id);
+    NetWriter_Bytes(writer, reader->data, reader->size);
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *peer = &server->peers[p];
+        if (peer->connection == NULL || peer->stage != STAGE_IN_GAME || peer == from) {
+            continue;
+        }
+        if (to_id > 0 ? peer->id == to_id : (peer->has_state && peer->place == map)) {
+            Server__Send(peer, type, writer);
+        }
+    }
+    free(writer);
+}
+
 static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, NetReader *reader) {
     if (peer->stage == STAGE_HELLO && type != MSG_HELLO) {
         Server__Reject(peer, "Say hello first.");
@@ -772,6 +867,41 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
         break;
     case MSG_LEAVE:
         peer->connection->closed = true;
+        break;
+    case MSG_ITEM_DROP:
+        Server__ItemDrop(server, peer, reader);
+        break;
+    case MSG_ITEM_PICK:
+        Server__ItemPick(server, peer, reader);
+        break;
+    case MSG_MONSTERS:
+    case MSG_HIT_MONSTER:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            Server__PassOn(server, peer, type == MSG_MONSTERS ? MSG_MONSTERS_FROM : MSG_HIT_MONSTER_FROM, reader,
+                           NetReader_I32(&peek), 0);
+        }
+        break;
+    case MSG_MONSTER_KILLED:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            NetReader_I32(&peek); // map
+            NetReader_U16(&peek); // monster
+            const int killer = NetReader_U8(&peek);
+            if (killer > 0) {
+                Server__PassOn(server, peer, MSG_MONSTER_KILLED_FROM, reader, 0, killer);
+            }
+        }
+        break;
+    case MSG_HIT_PLAYER:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader  peek   = *reader;
+            const int  target = NetReader_U8(&peek);
+            const bool pvp    = NetReader_U8(&peek) != 0;
+            if (target > 0 && (!pvp || server->settings.pvp)) { // no fighting each other unless the game allows it
+                Server__PassOn(server, peer, MSG_HIT_YOU, reader, 0, target);
+            }
+        }
         break;
     default:
         break;

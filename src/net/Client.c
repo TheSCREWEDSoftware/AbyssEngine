@@ -8,6 +8,7 @@
 
 #define CONNECT_TIMEOUT_MS 8000
 #define CHAT_QUEUE         32
+#define GAME_QUEUE         512 // game messages waiting for the scene
 #define MAX_REMOTE         NET_MAX_PLAYERS
 
 static struct {
@@ -38,7 +39,58 @@ static struct {
     char      chat[CHAT_QUEUE][NET_CHAT_MAX + CHARACTER_NAME_MAX + 4];
     int       chat_head;
     int       chat_count;
-} client;
+    // The game's own messages (items, monsters, hits), for the game scene to read in order
+    uint8_t *game_data[GAME_QUEUE];
+    int      game_size[GAME_QUEUE];
+    uint8_t  game_type[GAME_QUEUE];
+    int      game_head;
+    int      game_count;
+    uint8_t *game_taken;                       // the last one handed out (freed on the next)
+} client = {.connecting = NET_INVALID_SOCKET}; // (not 0: that would close standard input)
+
+static void NetClient__ClearGame(void) {
+    while (client.game_count > 0) {
+        free(client.game_data[client.game_head]);
+        client.game_head = (client.game_head + 1) % GAME_QUEUE;
+        client.game_count--;
+    }
+    free(client.game_taken);
+    client.game_taken = NULL;
+    client.game_head  = 0;
+}
+
+static void NetClient__QueueGame(const uint8_t type, const NetReader *reader) {
+    if (client.game_count == GAME_QUEUE) { // nobody's reading: forget the oldest
+        free(client.game_data[client.game_head]);
+        client.game_head = (client.game_head + 1) % GAME_QUEUE;
+        client.game_count--;
+    }
+    uint8_t *copy = malloc((size_t)(reader->size > 0 ? reader->size : 1));
+    if (copy == NULL) {
+        return;
+    }
+    memcpy(copy, reader->data, (size_t)reader->size);
+    const int slot          = (client.game_head + client.game_count) % GAME_QUEUE;
+    client.game_data[slot]  = copy;
+    client.game_size[slot]  = reader->size;
+    client.game_type[slot]  = type;
+    client.game_count      += 1;
+}
+
+bool NetClient_TakeGameMessage(uint8_t *type, NetReader *reader) {
+    free(client.game_taken);
+    client.game_taken = NULL;
+    if (client.game_count == 0) {
+        return false;
+    }
+    const int slot   = client.game_head;
+    client.game_head = (client.game_head + 1) % GAME_QUEUE;
+    client.game_count--;
+    client.game_taken = client.game_data[slot];
+    *type             = client.game_type[slot];
+    NetReader_Begin(reader, client.game_taken, client.game_size[slot]);
+    return true;
+}
 
 static void NetClient__Fail(const char *reason) {
     snprintf(client.error, sizeof(client.error), "%s", reason);
@@ -93,6 +145,7 @@ void NetClient_Disconnect(void) {
     client.player_count    = 0;
     client.chat_count      = 0;
     client.stage           = NETC_OFF;
+    NetClient__ClearGame();
     Character_SetSaveHook(NULL);
 }
 
@@ -273,6 +326,14 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
         NetClient__AddChat(line);
         break;
     }
+    case MSG_ITEM_ADD:
+    case MSG_ITEM_GONE:
+    case MSG_MONSTERS_FROM:
+    case MSG_HIT_MONSTER_FROM:
+    case MSG_MONSTER_KILLED_FROM:
+    case MSG_HIT_YOU:
+        NetClient__QueueGame(type, reader);
+        break;
     default:
         break;
     }
@@ -409,6 +470,12 @@ void NetClient_SendChat(const char *text) {
 int NetClient_Players(NetPlayer **players) {
     *players = client.players;
     return client.player_count;
+}
+
+void NetClient_Send(const uint8_t type, const NetWriter *writer) {
+    if (client.stage == NETC_IN_GAME) {
+        NetClient__Send(type, writer);
+    }
 }
 
 int NetClient_PlayersVersion(void) { return client.players_version; }

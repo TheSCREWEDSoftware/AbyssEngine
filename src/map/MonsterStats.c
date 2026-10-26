@@ -27,14 +27,22 @@ static bool       loaded       = false;
 static int c_id;
 static int c_velocity;
 static int c_npc;
-static int c_min_hp;
-static int c_max_hp;
-static int c_damage_min;
-static int c_damage_max;
-static int c_level;
-static int c_defense;
-static int c_attack_rating;
-static int c_experience;
+
+static int difficulty = 0; // 0 Normal, 1 Nightmare, 2 Hell
+
+void MonsterStats_SetDifficulty(const int which) { difficulty = which >= 0 && which <= 2 ? which : 0; }
+
+// A column for the difficulty: "Level", "Level(N)", "Level(H)" (Normal's life columns are spelt "minHP" / "maxHP")
+static int MonsterStats__Column(const DataTable *table, const char *normal, const char *other) {
+    static const char *suffix[3] = {"", "(N)", "(H)"};
+    if (difficulty == 0) {
+        return DataTable_GetColumnIndex(table, normal);
+    }
+    char name[32];
+    snprintf(name, sizeof(name), "%s%s", other, suffix[difficulty]);
+    const int column = DataTable_GetColumnIndex(table, name);
+    return column >= 0 ? column : DataTable_GetColumnIndex(table, normal);
+}
 
 static void MonsterStats__Load(void) {
     if (loaded) {
@@ -46,17 +54,9 @@ static void MonsterStats__Load(void) {
     superuniques = DataTable_Load(EXCEL_SUPERUNIQUES);
     monlvl       = DataTable_Load(EXCEL_MONLVL);
     if (monstats != NULL) {
-        c_id            = DataTable_GetColumnIndex(monstats, "Id");
-        c_velocity      = DataTable_GetColumnIndex(monstats, "Velocity");
-        c_npc           = DataTable_GetColumnIndex(monstats, "npc");
-        c_min_hp        = DataTable_GetColumnIndex(monstats, "minHP");
-        c_max_hp        = DataTable_GetColumnIndex(monstats, "maxHP");
-        c_damage_min    = DataTable_GetColumnIndex(monstats, "A1MinD");
-        c_damage_max    = DataTable_GetColumnIndex(monstats, "A1MaxD");
-        c_level         = DataTable_GetColumnIndex(monstats, "Level");
-        c_defense       = DataTable_GetColumnIndex(monstats, "AC");
-        c_attack_rating = DataTable_GetColumnIndex(monstats, "A1TH");
-        c_experience    = DataTable_GetColumnIndex(monstats, "Exp");
+        c_id       = DataTable_GetColumnIndex(monstats, "Id");
+        c_velocity = DataTable_GetColumnIndex(monstats, "Velocity");
+        c_npc      = DataTable_GetColumnIndex(monstats, "npc");
     }
 }
 
@@ -76,30 +76,41 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         int base_defense = 0;
         int base_to_hit  = 0;
         int base_exp     = 0;
+        // Nightmare and Hell (multiplayer games' Difficulty): the game's own columns for them, higher levels and more
+        const int level = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "Level", "Level"));
         if (monlvl != NULL) {
-            const int level = DataTable_GetInt(monstats, row, c_level);
             const int c_lvl = DataTable_GetColumnIndex(monlvl, "Level");
-            const int c_hp  = DataTable_GetColumnIndex(monlvl, "HP");
-            const int c_dm  = DataTable_GetColumnIndex(monlvl, "DM");
+            const int c_hp  = MonsterStats__Column(monlvl, "HP", "HP");
+            const int c_dm  = MonsterStats__Column(monlvl, "DM", "DM");
+            const int c_ac  = MonsterStats__Column(monlvl, "AC", "AC");
+            const int c_th  = MonsterStats__Column(monlvl, "TH", "TH");
+            const int c_xp  = MonsterStats__Column(monlvl, "XP", "XP");
             for (int l = 0; l < DataTable_GetRowCount(monlvl); l++) {
                 if (DataTable_GetInt(monlvl, l, c_lvl) == level) {
                     base_hp      = DataTable_GetInt(monlvl, l, c_hp);
                     base_damage  = DataTable_GetInt(monlvl, l, c_dm);
-                    base_defense = DataTable_GetInt(monlvl, l, DataTable_GetColumnIndex(monlvl, "AC"));
-                    base_to_hit  = DataTable_GetInt(monlvl, l, DataTable_GetColumnIndex(monlvl, "TH"));
-                    base_exp     = DataTable_GetInt(monlvl, l, DataTable_GetColumnIndex(monlvl, "XP"));
+                    base_defense = DataTable_GetInt(monlvl, l, c_ac);
+                    base_to_hit  = DataTable_GetInt(monlvl, l, c_th);
+                    base_exp     = DataTable_GetInt(monlvl, l, c_xp);
                     break;
                 }
             }
         }
-        stats->level         = DataTable_GetInt(monstats, row, c_level);
-        stats->hp_min        = base_hp * DataTable_GetInt(monstats, row, c_min_hp) / 100;
-        stats->hp_max        = base_hp * DataTable_GetInt(monstats, row, c_max_hp) / 100;
-        stats->damage_min    = base_damage * DataTable_GetInt(monstats, row, c_damage_min) / 100;
-        stats->damage_max    = base_damage * DataTable_GetInt(monstats, row, c_damage_max) / 100;
-        stats->defense       = base_defense * DataTable_GetInt(monstats, row, c_defense) / 100;
-        stats->attack_rating = base_to_hit * DataTable_GetInt(monstats, row, c_attack_rating) / 100;
-        stats->experience    = base_exp * DataTable_GetInt(monstats, row, c_experience) / 100;
+        const int min_hp     = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "minHP", "MinHP"));
+        const int max_hp     = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "maxHP", "MaxHP"));
+        const int damage_min = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "A1MinD", "A1MinD"));
+        const int damage_max = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "A1MaxD", "A1MaxD"));
+        const int defense    = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "AC", "AC"));
+        const int to_hit     = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "A1TH", "A1TH"));
+        const int experience = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "Exp", "Exp"));
+        stats->level         = level;
+        stats->hp_min        = base_hp * min_hp / 100;
+        stats->hp_max        = base_hp * max_hp / 100;
+        stats->damage_min    = base_damage * damage_min / 100;
+        stats->damage_max    = base_damage * damage_max / 100;
+        stats->defense       = base_defense * defense / 100;
+        stats->attack_rating = base_to_hit * to_hit / 100;
+        stats->experience    = base_exp * experience / 100;
         stats->velocity      = DataTable_GetInt(monstats, row, c_velocity);
         stats->npc           = DataTable_GetInt(monstats, row, c_npc) != 0;
         return true;

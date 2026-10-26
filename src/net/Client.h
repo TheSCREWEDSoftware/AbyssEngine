@@ -63,8 +63,12 @@ void       NetClient_SendChat(const char *text);
 int        NetClient_Players(NetPlayer **players);   // the others in the game
 bool       NetClient_TakeChat(char *text, int size); // the next line to show ("Name: hello"), false when none
 NetPlayer *NetClient_Player(int id);
-int        NetClient_PlayersVersion(void); // goes up when someone joins or leaves
-bool       NetClient_NameInGame(
-          const char *name); // someone's playing a character of this name (seen from the character screen too)
+// The game's own messages (Protocol.h: items, monsters, hits): sending, and reading what came in, in order (the
+// reader is good until the next call)
+void NetClient_Send(uint8_t type, const NetWriter *writer);
+bool NetClient_TakeGameMessage(uint8_t *type, NetReader *reader);
+int  NetClient_PlayersVersion(void); // goes up when someone joins or leaves
+bool NetClient_NameInGame(
+    const char *name); // someone's playing a character of this name (seen from the character screen too)
 
 #endif // ABYSS_CLIENT_H
