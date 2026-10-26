@@ -3,6 +3,7 @@ target_sources(${PROJECT_NAME}
         Character.c Character.h
         Inventory.c Inventory.h
         Items.c Items.h
+        Treasure.c Treasure.h
         Controls.c Controls.h
         ControlPresets.c ControlPresets.h
         ControlsExport.c ControlsExport.h

@@ -38,6 +38,10 @@ typedef struct ItemBase {
     char flippy_file[32];   // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
     char drop_sound[32];    // sounds.txt: landing on the ground
     int  drop_sound_frame;  // ... played at this frame of the flip
+    int  level;             // its item level: which drops it can be in (weap3 has the weapons up to level 3)
+    bool spawnable;         // can drop
+    char kinds[8][8];       // its type and what that counts as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
+    int  kind_count;
     bool slots[EQUIP_COUNT];
     int  min_damage; // one hand (or the only damage)
     int  max_damage;
@@ -64,6 +68,9 @@ typedef struct ItemBase {
 } ItemBase;
 
 const ItemBase *Items_Find(const char *code); // NULL if there's no such item
+int             Items_Count(void);
+const ItemBase *Items_Get(int index);
+bool            Items_IsA(const ItemBase *base, const char *type); // its type, or one it counts as ("mele", "armo")
 const char     *Items_SlotName(EquipSlot slot);
 bool            Items_IsPotion(const ItemBase *base);
 void            Items_Release(void);

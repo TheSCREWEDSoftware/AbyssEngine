@@ -65,6 +65,7 @@ sources = [
     'game/ControlsExport.c',
     'game/Inventory.c',
     'game/Items.c',
+    'game/Treasure.c',
     'game/Settings.c',
     'game/Skills.c',
 

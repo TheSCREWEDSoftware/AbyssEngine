@@ -6,7 +6,8 @@ games.
 > **What's shared:** who's in the game, where everyone is (you see each other walk and run between areas, with names
 > and coloured circles), chat, the game's settings, the monsters (where they are, their life, who they're after),
 > combat (with the monsters, and with each other when PvP is on), and items on the ground. Not yet: parties (shared
-> experience), chests and doors (each player's own), monster drops.
+> experience), chests and doors (each player's own: they drop nothing in multiplayer yet, or each player could
+> empty the same one). What monsters drop is shared: the one running the monsters rolls it.
 
 ## How it works
 

@@ -19,6 +19,7 @@
 #include "../game/Inventory.h"
 #include "../game/Settings.h"
 #include "../game/Skills.h"
+#include "../game/Treasure.h"
 #include "../managers/InputManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
@@ -159,6 +160,7 @@ typedef struct Unit {
     int         defense;       // armor class
     int         attack_rating; // to-hit
     int         experience;    // given for killing it
+    char        treasure[48];  // what it drops (TreasureClassEx.txt)
     float       speed;
     bool        npc;
     bool        dropped;  // added in the Testing Grounds (Clear removes these)
@@ -213,6 +215,7 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define ITEM_FLIP_MS     40   // the flip through the air, a frame each (the game's 25 a second)
 #define PICKUP_RANGE     2.0f // how close the player must be to pick one up
 #define ITEM_SPRITES     48   // flippy pictures kept loaded
+#define PLACEHOLDER_ID   0xFFFFFFFFu
 
 typedef struct GroundItem {
     Item     item;
@@ -639,6 +642,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         unit->defense       = stats.defense;
         unit->attack_rating = stats.attack_rating > 0 ? stats.attack_rating : 10;
         unit->experience    = stats.experience;
+        snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure);
     } else if (strcmp(base, "chars") == 0) {
         unit->max_hp     = 50;
         unit->damage_min = 2;
@@ -817,13 +821,20 @@ static void Roam__Footstep(const SceneRoam *roam) {
     Sounds_Play(name, SOUND_KIND_SFX);
 }
 
+static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, int level, float x, float y);
+static int  Roam__Act(const SceneRoam *roam);
+static bool Roam__RunsMonsters(const SceneRoam *roam);
+
 static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
     }
     unit->hp -= amount;
     if (unit->hp <= 0) {
-        unit->hp         = 0;
+        unit->hp = 0;
+        if (roam->game && unit != &roam->player && Roam__RunsMonsters(roam)) {
+            Roam__DropTreasure(roam, unit->treasure, unit->level, unit->x, unit->y); // what it had
+        }
         const bool dying = Roam__HasMode(roam, unit, "dt");
         unit->vanished   = !dying && !Roam__HasMode(roam, unit, "dd");
         Roam__SetState(unit, dying ? UNIT_DYING : UNIT_DEAD, now);
@@ -1045,6 +1056,14 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     }
     unit->used = true;
     Roam__ObjectSound(unit);
+    // Chests, caskets, urns, barrels, crates, corpses and racks have something in them (Single Player for now: a
+    // multiplayer game's chests aren't shared yet, so each player could empty the same one)
+    const int fn = unit->object.operate_fn;
+    if (roam->game && !roam->online && (fn == 1 || fn == 3 || fn == 4 || fn == 5 || fn == 14 || fn == 19 || fn == 20)) {
+        char treasure[32];
+        snprintf(treasure, sizeof(treasure), "Act %d Chest A", Roam__Act(roam) + 1);
+        Roam__DropTreasure(roam, treasure, roam->character->level, unit->x, unit->y);
+    }
     if (unit->object.has_mode[1] && unit->object.frame_count[1] > 0 &&
         MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op") != NULL) {
         Roam__SetState(unit, UNIT_OPERATE, now);
@@ -1174,13 +1193,14 @@ static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
 }
 
 // Puts an item on the ground by the player: on the nearest free spot (not on another item, not in a wall)
-// The nearest free spot to the player for something dropped: not on another item, not in a wall
-static void Roam__FreeSpot(const SceneRoam *roam, float *spot_x, float *spot_y) {
+// The nearest free spot to a place for something dropped: not on another item, not in a wall
+static void Roam__FreeSpotNear(const SceneRoam *roam, const float near_x, const float near_y, float *spot_x,
+                               float *spot_y) {
     const int key = Roam__MapKey(roam);
-    const int cx  = (int)roam->player.x;
-    const int cy  = (int)roam->player.y;
-    *spot_x       = roam->player.x;
-    *spot_y       = roam->player.y;
+    const int cx  = (int)near_x;
+    const int cy  = (int)near_y;
+    *spot_x       = near_x;
+    *spot_y       = near_y;
     for (int ring = 0; ring <= 8; ring++) {
         for (int dy = -ring; dy <= ring; dy++) {
             for (int dx = -ring; dx <= ring; dx++) {
@@ -1207,6 +1227,10 @@ static void Roam__FreeSpot(const SceneRoam *roam, float *spot_x, float *spot_y) 
     }
 }
 
+static void Roam__FreeSpot(const SceneRoam *roam, float *spot_x, float *spot_y) {
+    Roam__FreeSpotNear(roam, roam->player.x, roam->player.y, spot_x, spot_y);
+}
+
 // An item lying on the ground: fresh ones flip out (with a sound when it's on our map)
 static void Roam__AddGroundItem(SceneRoam *roam, const Item *item, const int map_key, const float x, const float y,
                                 const bool fresh, const uint32_t net_id) {
@@ -1228,6 +1252,48 @@ static void Roam__AddGroundItem(SceneRoam *roam, const Item *item, const int map
     }
 }
 
+// An item onto the ground at a spot (multiplayer: the server puts it there, for everyone)
+static void Roam__PutOnGround(SceneRoam *roam, const Item *item, const float x, const float y) {
+    if (!roam->online) {
+        Roam__AddGroundItem(roam, item, Roam__MapKey(roam), x, y, true, 0);
+        return;
+    }
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    FAIL_IF_NULL(writer);
+    NetWriter_Begin(writer);
+    NetWriter_I32(writer, Roam__MapKey(roam));
+    NetWriter_F32(writer, x);
+    NetWriter_F32(writer, y);
+    NetWriter_String(writer, item->code);
+    NetWriter_I32(writer, item->defense);
+    NetWriter_I32(writer, item->quantity);
+    NetClient_Send(MSG_ITEM_DROP, writer);
+    free(writer);
+}
+
+// What a monster or chest had: rolled from its treasure class, scattered around where it was
+static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, const int level, const float x, const float y) {
+    Item      items[TREASURE_MAX_DROPS];
+    const int count = Treasure_Roll(treasure, level, items);
+    for (int i = 0; i < count; i++) {
+        float spot_x;
+        float spot_y;
+        Roam__FreeSpotNear(roam, x, y, &spot_x, &spot_y);
+        if (!roam->online) {
+            Roam__AddGroundItem(roam, &items[i], Roam__MapKey(roam), spot_x, spot_y, true, 0);
+        } else {
+            // The server adds it in a moment: meanwhile a stand-in keeps the next one off this spot
+            Roam__PutOnGround(roam, &items[i], spot_x, spot_y);
+            Roam__AddGroundItem(roam, &items[i], Roam__MapKey(roam), spot_x, spot_y, false, PLACEHOLDER_ID);
+        }
+    }
+    for (int g = roam->ground_count - 1; g >= 0; g--) { // the stand-ins go again
+        if (roam->ground[g].net_id == PLACEHOLDER_ID) {
+            roam->ground[g] = roam->ground[--roam->ground_count];
+        }
+    }
+}
+
 // The item on the cursor onto the ground (multiplayer: the server puts it there, for everyone)
 static void Roam__DropHeld(SceneRoam *roam) {
     if (roam->ground_count >= MAX_GROUND_ITEMS) {
@@ -1242,21 +1308,7 @@ static void Roam__DropHeld(SceneRoam *roam) {
     float x;
     float y;
     Roam__FreeSpot(roam, &x, &y);
-    if (roam->online) {
-        NetWriter *writer = malloc(sizeof(NetWriter));
-        FAIL_IF_NULL(writer);
-        NetWriter_Begin(writer);
-        NetWriter_I32(writer, Roam__MapKey(roam));
-        NetWriter_F32(writer, x);
-        NetWriter_F32(writer, y);
-        NetWriter_String(writer, item.code);
-        NetWriter_I32(writer, item.defense);
-        NetWriter_I32(writer, item.quantity);
-        NetClient_Send(MSG_ITEM_DROP, writer);
-        free(writer);
-    } else {
-        Roam__AddGroundItem(roam, &item, Roam__MapKey(roam), x, y, true, 0);
-    }
+    Roam__PutOnGround(roam, &item, x, y);
     if (equipment_changed) {
         Roam__ApplyCharacter(roam); // Modern pick-up: it was still worn until now
     }
@@ -1273,7 +1325,16 @@ static void Roam__RemoveGroundItem(SceneRoam *roam, const int index) {
 
 // An item comes to us: onto the cursor with the inventory open, otherwise into the belt (potions) or the inventory.
 // False when there's no room.
+// Gold you can carry: the game's 10,000 a level
+static int Roam__GoldLimit(const SceneRoam *roam) { return roam->character->level * 10000; }
+
 static bool Roam__GiveItem(SceneRoam *roam, const Item *item) {
+    if (strcmp(item->code, "gld") == 0) {
+        const int limit = Roam__GoldLimit(roam);
+        roam->character->gold =
+            roam->character->gold + item->quantity > limit ? limit : roam->character->gold + item->quantity;
+        return true;
+    }
     const ItemBase *base = Items_Find(item->code);
     if (roam->inventory_panel && !GameInventory_Holding(roam->inventory_ui)) {
         GameInventory_Hold(roam->inventory_ui, item);
@@ -1287,6 +1348,9 @@ static bool Roam__GiveItem(SceneRoam *roam, const Item *item) {
 
 // Whether an item would fit (without taking it)
 static bool Roam__HasRoomFor(SceneRoam *roam, const Item *item) {
+    if (strcmp(item->code, "gld") == 0) {
+        return roam->character->gold < Roam__GoldLimit(roam);
+    }
     if (roam->inventory_panel && !GameInventory_Holding(roam->inventory_ui)) {
         return true;
     }
@@ -1303,7 +1367,8 @@ static bool Roam__HasRoomFor(SceneRoam *roam, const Item *item) {
 static void Roam__PickUp(SceneRoam *roam, const int index) {
     GroundItem *ground = &roam->ground[index];
     if (!Roam__HasRoomFor(roam, &ground->item)) {
-        Roam__ShowMessage(roam, "There's no room for that in your inventory.");
+        Roam__ShowMessage(roam, strcmp(ground->item.code, "gld") == 0 ? "You can't carry any more gold."
+                                                                      : "There's no room for that in your inventory.");
         Sounds_Play("cursor_error", SOUND_KIND_UI);
         roam->item_target = -1;
         return;
@@ -1322,7 +1387,7 @@ static void Roam__PickUp(SceneRoam *roam, const int index) {
         return;
     }
     Roam__GiveItem(roam, &ground->item);
-    Sounds_Play("item_pickup", SOUND_KIND_SFX);
+    Sounds_Play(strcmp(ground->item.code, "gld") == 0 ? "item_gold" : "item_pickup", SOUND_KIND_SFX);
     Roam__RemoveGroundItem(roam, index);
 }
 
@@ -3497,7 +3562,7 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
                         GameInventory_Hold(roam->inventory_ui, &item); // filled up meanwhile: on the cursor
                     }
                 }
-                Sounds_Play("item_pickup", SOUND_KIND_SFX);
+                Sounds_Play(strcmp(item.code, "gld") == 0 ? "item_gold" : "item_pickup", SOUND_KIND_SFX);
                 if (NetClient_ServerKeepsCharacters()) {
                     Roam__StoreCharacter(roam);
                 }
@@ -4209,7 +4274,9 @@ static void Roam__DrawItemLabels(SceneRoam *roam) {
         }
         const ItemBase *base = Items_Find(ground->item.code);
         char            text[80];
-        if (base != NULL && base->stackable && ground->item.quantity > 1) {
+        if (strcmp(ground->item.code, "gld") == 0) {
+            snprintf(text, sizeof(text), "%d Gold", ground->item.quantity);
+        } else if (base != NULL && base->stackable && ground->item.quantity > 1) {
             snprintf(text, sizeof(text), "%s (%d)", base->name, ground->item.quantity);
         } else {
             snprintf(text, sizeof(text), "%s", base != NULL ? base->name : ground->item.code);

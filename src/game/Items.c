@@ -75,6 +75,9 @@ static void Items__TypeInfo(const DataTable *types, const char *code, ItemBase *
     if (row < 0) {
         return;
     }
+    if (base->kind_count < 8) {
+        snprintf(base->kinds[base->kind_count++], sizeof(base->kinds[0]), "%s", code);
+    }
     base->beltable = base->beltable || DataTable_GetInt(types, row, c_belt) == 1;
     if (DataTable_GetInt(types, row, c_body) == 1) {
         for (int l = 0; l < 2; l++) {
@@ -102,7 +105,8 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
               c_block = COL("block"), c_str = COL("reqstr"), c_dex = COL("reqdex"), c_lvl = COL("levelreq"),
               c_belt = COL("belt"), c_stack = COL("stackable"), c_maxstack = COL("maxstack"), c_stat1 = COL("stat1"),
               c_sound = COL("usesound"), c_calc1 = COL("calc1"), c_stat2 = COL("stat2"), c_len = COL("len"),
-              c_flippy = COL("flippyfile"), c_drop = COL("dropsound"), c_drop_frame = COL("dropsfxframe");
+              c_flippy = COL("flippyfile"), c_drop = COL("dropsound"), c_drop_frame = COL("dropsfxframe"),
+              c_level = COL("level"), c_spawnable = COL("spawnable");
 #undef COL
     const int rows  = DataTable_GetRowCount(t);
     ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
@@ -126,6 +130,8 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
         snprintf(base->flippy_file, sizeof(base->flippy_file), "%s", DataTable_GetString(t, row, c_flippy));
         snprintf(base->drop_sound, sizeof(base->drop_sound), "%s", DataTable_GetString(t, row, c_drop));
         base->drop_sound_frame   = DataTable_GetInt(t, row, c_drop_frame);
+        base->level              = DataTable_GetInt(t, row, c_level);
+        base->spawnable          = DataTable_GetInt(t, row, c_spawnable) == 1;
         base->width              = DataTable_GetInt(t, row, c_w) > 0 ? DataTable_GetInt(t, row, c_w) : 1;
         base->height             = DataTable_GetInt(t, row, c_h) > 0 ? DataTable_GetInt(t, row, c_h) : 1;
         base->min_damage         = DataTable_GetInt(t, row, c_min);
@@ -198,6 +204,25 @@ const ItemBase *Items_Find(const char *code) {
         }
     }
     return NULL;
+}
+
+int Items_Count(void) {
+    Items__Load();
+    return base_count;
+}
+
+const ItemBase *Items_Get(const int index) {
+    Items__Load();
+    return index >= 0 && index < base_count ? &bases[index] : NULL;
+}
+
+bool Items_IsA(const ItemBase *base, const char *type) {
+    for (int k = 0; base != NULL && k < base->kind_count; k++) {
+        if (strcmp(base->kinds[k], type) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Items_Release(void) {

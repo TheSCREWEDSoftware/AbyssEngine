@@ -113,6 +113,9 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         stats->experience    = base_exp * experience / 100;
         stats->velocity      = DataTable_GetInt(monstats, row, c_velocity);
         stats->npc           = DataTable_GetInt(monstats, row, c_npc) != 0;
+        snprintf(
+            stats->treasure, sizeof(stats->treasure), "%s",
+            DataTable_GetString(monstats, row, MonsterStats__Column(monstats, "TreasureClass1", "TreasureClass1")));
         return true;
     }
     return false;

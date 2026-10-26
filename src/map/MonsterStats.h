@@ -17,6 +17,7 @@ typedef struct MonsterStats {
     int  experience;    // given for killing it
     int  velocity;      // walk speed
     bool npc;           // town NPCs: never fight unless combat is forced on
+    char treasure[48];  // what it drops (TreasureClassEx.txt), for the difficulty
 } MonsterStats;
 
 bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if unknown

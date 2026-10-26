@@ -1,7 +1,7 @@
 # Single Player
 
 **Main menu › Single Player** opens the character list. This is the start of the real game: characters are kept
-between sessions, gain experience and levels, carry, wear and drop items and learn skills. There's no casting, no monster drops
+between sessions, gain experience and levels, carry, wear and drop items and learn skills. There's no casting, no magic items
 and no quests yet (see [Feature Status](Feature-Status.md)).
 
 ## Character list
@@ -157,6 +157,18 @@ page number under the grid, next to the gold). The square button in its bottom c
 - Like the game, what's on the ground stays there while the game lasts (each area keeps its own), and is gone when you
   leave the game. In multiplayer everyone sees what's dropped, and the first to get to an item has it.
 
+### Drops and gold
+
+- **Monsters drop things** when they die, the game's way: each names a treasure class (`monstats.txt`
+  TreasureClass1, e.g. "Act 1 H2H A") and `TreasureClassEx.txt` says what it picks, maybe nothing: gold, potions,
+  scrolls, keys, arrows, weapons and armor of about the monster's level (the game's own "weap3", "armo6" groups,
+  from the items' levels). Up to six things a monster. Only normal items for now: no magic, rare, set or unique ones,
+  and no gems or jewelry worth having yet (rings and amulets drop plain).
+- **Chests, caskets, urns, barrels, crates, corpses and racks** drop the act's chest treasure ("Act 1 Chest A") when
+  opened.
+- **Gold** shows as "35 Gold" on the ground and goes straight to your gold when picked up; you can carry 10,000 a
+  level ("You can't carry any more gold").
+
 ## Skills
 
 **T** (or the mini panel, or **New Skills**) opens the class's skill tree on the right: its three trees on tabs, with
@@ -172,6 +184,6 @@ page number under the grid, next to the gold). The square button in its bottom c
 
 ## Not yet
 
-Casting skills, magic items, monster drops, gold from monsters, the stash, quests, NPC dialogue and
+Casting skills, magic items, the stash, quests, NPC dialogue and
 trading, hirelings, items shown on the character, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.
