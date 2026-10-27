@@ -27,12 +27,12 @@ static SkillKind SkillData__Kind(const SkillRow *s) {
         return SKILL_KIND_TELEPORT;
     case 22:
         return SKILL_KIND_NOVA; // Frost Nova, Nova, Poison Nova, Howl
-    case 77: // Leap: through the air to the spot, knocking back what's round where you land
+    case 77:                    // Leap: through the air to the spot, knocking back what's round where you land
         return SKILL_KIND_OTHER;
-    case 28:                    // Meteor, Blizzard, Eruption
-    case 80:                    // Fist of the Heavens
-    case 55:                    // Corpse Explosion
-    case 123:                   // Volcano: comes up where you point and spews fire for a while
+    case 28:  // Meteor, Blizzard, Eruption
+    case 80:  // Fist of the Heavens
+    case 55:  // Corpse Explosion
+    case 123: // Volcano: comes up where you point and spews fire for a while
         return SKILL_KIND_AREA;
     case 18: // the armors, Quickness, Fade, Venom
     case 23: // Blaze, Energy Shield

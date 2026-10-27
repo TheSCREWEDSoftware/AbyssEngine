@@ -122,7 +122,19 @@ typedef struct Item {
     int16_t durability;
     int16_t max_durability;
     bool    unidentified; // magic found on the ground: its magic is unknown (and does nothing) until identified
+    // Plain weapons and armor can be of low quality (LowQualityItems.txt row + 1: Crude, Cracked, Damaged, Low
+    // Quality) or superior (ITEM_GRADE_SUPERIOR: QualityItems.txt's magic on it); any can be ethereal (half again the
+    // damage or defense, can't be repaired, easier to wear)
+    uint8_t grade;
+    bool    ethereal;
 } Item;
+
+#define ITEM_GRADE_SUPERIOR 9
+static inline bool Item_IsLowQuality(const Item *item) { return item->grade >= 1 && item->grade <= 4; }
+// What its grade does to a weapon's damage, in percent (ethereal +50, low quality -25)
+static inline int Item_GradeDamagePct(const Item *item) {
+    return (item->ethereal ? 50 : 0) + (Item_IsLowQuality(item) ? -25 : 0);
+}
 
 static inline bool Item_IsBroken(const Item *item) { return item->max_durability > 0 && item->durability <= 0; }
 // Whether what's worn counts: not broken, and its magic only once it's identified

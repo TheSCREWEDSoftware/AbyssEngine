@@ -335,8 +335,9 @@ void Character_Damage(const Character *character, int *minimum, int *maximum) {
     // The weapon's own enhanced damage and added damage
     const Item *held        = Character__WeaponItem(character);
     const int   weapon_pct  = held != NULL ? Affixes_ItemTotal(held, MOD_DAMAGE_PCT) : 0;
-    weapon_min             += weapon_min * weapon_pct / 100;
-    weapon_max             += weapon_max * weapon_pct / 100;
+    const int   grade_pct   = held != NULL ? Item_GradeDamagePct(held) : 0; // (ethereal, low quality)
+    weapon_min             += weapon_min * (weapon_pct + grade_pct) / 100;
+    weapon_max             += weapon_max * (weapon_pct + grade_pct) / 100;
     // Strength (and for some weapons dexterity) adds a percentage to the weapon's damage, and so does enhanced damage
     // on other things worn
     const int str_bonus = weapon != NULL && weapon->str_bonus > 0 ? weapon->str_bonus : 100;

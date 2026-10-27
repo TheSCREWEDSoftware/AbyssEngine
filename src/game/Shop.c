@@ -269,8 +269,9 @@ static long Shop__RepairOne(const Item *item, const int repair_mult) {
             recharge += (long)(mod->extra - ItemMod_Charges(mod)) * (10 + (ItemMod_ChargeLevel(mod) * 15));
         }
     }
-    if (item->code[0] == '\0' || item->max_durability <= 0 || item->durability >= item->max_durability) {
-        return recharge;
+    if (item->code[0] == '\0' || item->max_durability <= 0 || item->durability >= item->max_durability ||
+        item->ethereal) {
+        return recharge; // (ethereal items can't be repaired)
     }
     const long value   = Shop__Value(item);
     const long missing = item->max_durability - item->durability;
@@ -292,11 +293,15 @@ int Shop_RepairCost(const char *npc_id, const Character *character) {
 
 void Shop_RepairAll(Character *character) {
     for (int s = 0; s < EQUIP_COUNT; s++) {
-        character->equipped[s].durability = character->equipped[s].max_durability;
+        if (!character->equipped[s].ethereal) { // (ethereal items can't be repaired)
+            character->equipped[s].durability = character->equipped[s].max_durability;
+        }
         Affixes_Recharge(&character->equipped[s]);
     }
     for (int i = 0; i < character->inventory_count; i++) {
-        character->inventory[i].item.durability = character->inventory[i].item.max_durability;
+        if (!character->inventory[i].item.ethereal) {
+            character->inventory[i].item.durability = character->inventory[i].item.max_durability;
+        }
         Affixes_Recharge(&character->inventory[i].item);
     }
 }

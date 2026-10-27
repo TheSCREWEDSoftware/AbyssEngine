@@ -931,6 +931,97 @@ static int magic_find = 0; // Affixes_SetMagicFind
 
 void Affixes_SetMagicFind(const int percent) { magic_find = percent > 0 ? percent : 0; }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Low quality, superior and ethereal
+
+// LowQualityItems.txt's names (Crude, Cracked, Damaged, Low Quality), by grade (row + 1)
+static const char *Affixes__LowQualityName(const int grade) {
+    static char        names[4][32];
+    static bool        loaded      = false;
+    static const char *fallback[4] = {"Crude", "Cracked", "Damaged", "Low Quality"};
+    if (!loaded) {
+        loaded           = true;
+        DataTable *table = DataTable_Load("/data/global/excel/LowQualityItems.txt");
+        for (int r = 0; r < 4; r++) {
+            const char *name = table != NULL && r < DataTable_GetRowCount(table)
+                                   ? DataTable_GetString(table, r, DataTable_GetColumnIndex(table, "Name"))
+                                   : "";
+            snprintf(names[r], sizeof(names[r]), "%s", name[0] != '\0' ? name : fallback[r]);
+        }
+        DataTable_Destroy(&table);
+    }
+    return grade >= 1 && grade <= 4 ? names[grade - 1] : "";
+}
+
+// A plain weapon or armor made worse: a quarter less defense (weapons: damage, Item_GradeDamagePct), a third less
+// durability, one of LowQualityItems.txt's names
+static void Affixes__MakeLow(Item *item) {
+    item->grade    = (uint8_t)(1 + (rand() % 4));
+    item->defense -= item->defense / 4;
+    if (item->max_durability > 3) {
+        item->max_durability = (int16_t)(item->max_durability - (item->max_durability / 3));
+        item->durability     = item->max_durability;
+    }
+}
+
+// A plain weapon or armor made better: one of QualityItems.txt's rows for its kind (improved damage, defense, to
+// hit, durability), as magic on it
+static void Affixes__MakeSuperior(Item *item, const ItemBase *base) {
+    static DataTable *table = NULL;
+    if (table == NULL) {
+        table = DataTable_Load("/data/global/excel/QualityItems.txt");
+    }
+    item->grade = ITEM_GRADE_SUPERIOR;
+    if (table == NULL) {
+        return;
+    }
+    const bool  shield = Items_IsA(base, "shld");
+    const char *kind   = base->kind == ITEM_KIND_WEAPON ? "weapon" : (shield ? "shield" : "armor");
+    const int   c_ok   = DataTable_GetColumnIndex(table, kind);
+    int         rows[32];
+    int         count = 0;
+    for (int r = 0; r < DataTable_GetRowCount(table) && count < 32; r++) {
+        if (c_ok >= 0 && DataTable_GetInt(table, r, c_ok) != 0) {
+            rows[count++] = r;
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+    const int row = rows[rand() % count];
+    for (int m = 1; m <= 2; m++) {
+        char column[16];
+        snprintf(column, sizeof(column), "mod%dcode", m);
+        const char *code = DataTable_GetString(table, row, DataTable_GetColumnIndex(table, column));
+        if (code[0] == '\0') {
+            continue;
+        }
+        snprintf(column, sizeof(column), "mod%dmin", m);
+        const int low = DataTable_GetInt(table, row, DataTable_GetColumnIndex(table, column));
+        snprintf(column, sizeof(column), "mod%dmax", m);
+        const int high = DataTable_GetInt(table, row, DataTable_GetColumnIndex(table, column));
+        if (strcmp(code, "dur%") == 0) {
+            if (item->max_durability > 0) { // more durability: on the item itself
+                const int pct        = low + (high > low ? rand() % (high - low + 1) : 0);
+                item->max_durability = (int16_t)(item->max_durability + (item->max_durability * pct / 100));
+                item->durability     = item->max_durability;
+            }
+        } else {
+            Affixes_AddProperty(item, code, low, high);
+        }
+    }
+}
+
+// Ethereal: half again the defense (weapons: damage, Item_GradeDamagePct), half the durability; it can't be repaired
+static void Affixes__MakeEthereal(Item *item) {
+    item->ethereal  = true;
+    item->defense  += item->defense / 2;
+    if (item->max_durability > 1) {
+        item->max_durability = (int16_t)((item->max_durability / 2) + 1);
+        item->durability     = item->max_durability;
+    }
+}
+
 void Affixes_Roll(Item *item, const int item_level) {
     Affixes__Load();
     const ItemBase *base = Items_Find(item->code);
@@ -963,6 +1054,20 @@ void Affixes_Roll(Item *item, const int item_level) {
     }
     if (roll < magic || jewelry) { // (jewelry is never plain)
         Affixes__MakeMagic(item, base, level);
+    }
+    // Weapons and armor: plain ones are sometimes superior (1 in 8) or, at lower levels, of low quality (1 in 8);
+    // any but uniques and sets are now and then ethereal (1 in 20)
+    const bool gear = base->kind == ITEM_KIND_WEAPON || base->kind == ITEM_KIND_ARMOR;
+    if (gear && item->quality == ITEM_NORMAL) {
+        const int grade = rand() % 8;
+        if (grade == 0) {
+            Affixes__MakeSuperior(item, base);
+        } else if (grade == 1 && level < 40) {
+            Affixes__MakeLow(item);
+        }
+    }
+    if (gear && item->quality != ITEM_UNIQUE && item->quality != ITEM_SET && base->durability > 0 && rand() % 20 == 0) {
+        Affixes__MakeEthereal(item);
     }
 }
 
@@ -1012,7 +1117,13 @@ void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2
         return;
     }
     default:
-        snprintf(line1, size1, "%s", base_name);
+        if (item->grade == ITEM_GRADE_SUPERIOR) {
+            snprintf(line1, size1, "Superior %s", base_name);
+        } else if (Item_IsLowQuality(item)) {
+            snprintf(line1, size1, "%s %s", Affixes__LowQualityName(item->grade), base_name);
+        } else {
+            snprintf(line1, size1, "%s", base_name);
+        }
         return;
     }
 }
@@ -1031,6 +1142,9 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b) 
     *r          = colors[q][0];
     *g          = colors[q][1];
     *b          = colors[q][2];
+    if (q == ITEM_NORMAL && (item->ethereal || item->sockets > 0)) {
+        *r = *g = *b = 0x90; // plain but ethereal or socketed: grey, like the game
+    }
 }
 
 // The game's words for a class's skills: "to Amazon Skill Levels", its trees' "+%d to Bow and Crossbow Skills" (in the
@@ -1484,7 +1598,7 @@ int Affixes_Total(const Character *character, const ItemModType type) {
 void Affixes_Format(const Item *item, char *text, const size_t size) {
     text[0] = '\0';
     if (item->quality == ITEM_NORMAL && item->sockets == 0 && item->mod_count == 0 && item->max_durability == 0 &&
-        !item->unidentified) {
+        !item->unidentified && item->grade == 0 && !item->ethereal) {
         return;
     }
     size_t used = (size_t)snprintf(text, size, " %d %d %d ", item->quality, item->name1, item->name2);
@@ -1512,7 +1626,13 @@ void Affixes_Format(const Item *item, char *text, const size_t size) {
         used += (size_t)snprintf(text + used, size - used, " d%d/%d", item->durability, item->max_durability);
     }
     if (item->unidentified && used < size) {
-        snprintf(text + used, size - used, " u");
+        used += (size_t)snprintf(text + used, size - used, " u");
+    }
+    if (item->grade != 0 && used < size) {
+        used += (size_t)snprintf(text + used, size - used, " q%d", item->grade); // low quality, superior
+    }
+    if (item->ethereal && used < size) {
+        snprintf(text + used, size - used, " e");
     }
 }
 
@@ -1550,6 +1670,10 @@ void Affixes_Parse(Item *item, const char *text) {
             item->durability     = (int16_t)(a < 0 ? 0 : (a > b ? b : a));
         } else if (strcmp(word, "u") == 0) {
             item->unidentified = true;
+        } else if (word[0] == 'q' && sscanf(word + 1, "%d", &a) == 1 && a >= 0 && a <= ITEM_GRADE_SUPERIOR) {
+            item->grade = (uint8_t)a;
+        } else if (strcmp(word, "e") == 0) {
+            item->ethereal = true;
         }
     }
     if (item->socketed_count > item->sockets) {

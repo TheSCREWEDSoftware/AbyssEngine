@@ -179,6 +179,11 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
   the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
   own music.
+- **Superior, low quality and ethereal items**: plain weapons and armor are sometimes *Superior* (one of
+  `QualityItems.txt`'s improvements: damage, defense, attack rating or durability) or, below level 40, *Crude*,
+  *Cracked*, *Damaged* or *Low Quality* (a quarter less damage or defense, a third less durability). Weapons and armor
+  that aren't unique or set are now and then *Ethereal*: half again the damage or defense, half the durability, 10 less
+  strength and dexterity needed, and they can't be repaired. Ethereal and socketed plain items are named in grey.
 - **Charms** (small, large and grand) give their magic from anywhere in the inventory, like the game (not from the
   stash or the cube).
 - **Two weapon sets** (expansion characters): **W** or the **I** / **II** tabs above the hands in the inventory swap

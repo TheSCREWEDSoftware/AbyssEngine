@@ -2013,7 +2013,7 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         GameInventory__AddLine(lines, colors, &count, qr, qg, qb, name2);
     }
     // Damage and defense with the item's own magic in (blue when it changes them, like the game)
-    const int  dmg_pct  = Affixes_ItemTotal(item, MOD_DAMAGE_PCT);
+    const int  dmg_pct  = Affixes_ItemTotal(item, MOD_DAMAGE_PCT) + Item_GradeDamagePct(item);
     const int  dmg_min  = Affixes_ItemTotal(item, MOD_DAMAGE_MIN);
     const int  dmg_max  = Affixes_ItemTotal(item, MOD_DAMAGE_MAX);
     const bool dmg_blue = dmg_pct != 0 || dmg_min != 0 || dmg_max != 0;
@@ -2078,6 +2078,9 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
     }
     if (item->unidentified) {
         GameInventory__AddLine(lines, colors, &count, 0xFF, 0x40, 0x40, "Unidentified");
+    }
+    if (item->ethereal) {
+        GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, "Ethereal (Cannot be Repaired)");
     }
     // The magic, in blue
     for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX && !item->unidentified; m++) {

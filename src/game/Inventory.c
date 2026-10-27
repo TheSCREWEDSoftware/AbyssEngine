@@ -154,7 +154,10 @@ int Inventory_Requirement(const Item *item, const int stat) {
                      : stat == STAT_DEXTERITY ? base->required_dexterity
                                               : base->required_level;
     const int pct  = Affixes_ItemTotal(item, MOD_REQUIREMENTS); // "Requirements -20%"
-    const int less = need + (need * pct / 100);
+    int       less = need + (need * pct / 100);
+    if (item->ethereal && stat >= 0 && less > 0) {
+        less -= 10; // ethereal: 10 less strength and dexterity
+    }
     return less > 0 ? less : 0;
 }
 
