@@ -368,6 +368,7 @@ void AudioManager_StopSounds(void) {
     }
     audio_manager->speech.sound   = NULL;
     audio_manager->ambience.sound = NULL;
+    audio_manager->weather.sound  = NULL;
     if (audio_manager->audio_available) {
         SDL_UnlockAudioDevice(audio_manager->audio_device_id);
     }

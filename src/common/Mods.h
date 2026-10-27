@@ -38,8 +38,10 @@ void       Mods_Save(void);                // the load order, to mods/load_order
 bool       Mods_Changed(void);             // since the game started (a restart takes them in)
 // The file in the first mod on that has it (path: the MPQ path, lower case with '/'), false if none
 bool Mods_FindFile(const char *path, char *out, int size);
-// The mods on, in order (folder and version each): multiplayer games need everyone's to match. "" for none.
-void        Mods_Signature(char *out, int size);
+// The mods on in the Options, in order (folder and version each). "" for none.
+void Mods_Signature(char *out, int size);
+// The same for the mods the game is playing with (on when it started): multiplayer games need everyone's to match
+void        Mods_ActiveSignature(char *out, int size);
 const char *Mods_Folder(void); // <config>/mods
 
 #endif // ABYSS_MODS_H

@@ -669,7 +669,7 @@ static void Server__Hello(NetServer *server, Peer *peer, NetReader *reader) {
         return;
     }
     char ours[512];
-    Mods_Signature(ours, sizeof(ours));
+    Mods_ActiveSignature(ours, sizeof(ours));
     if (strcmp(mods, ours) != 0) {
         // Everyone's game has to read the same tables and maps (or the monsters and items wouldn't match)
         char why[600];
@@ -1061,7 +1061,9 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
             // Kept for whoever joins later (closed: forgotten), and passed on to everyone
             const bool open   = reader->size > 0 && reader->data[0] != 0;
             peer->portal_size = open ? reader->size : 0;
-            memcpy(peer->portal, reader->data, (size_t)reader->size);
+            if (reader->size > 0) {
+                memcpy(peer->portal, reader->data, (size_t)reader->size);
+            }
             NetWriter *writer = malloc(sizeof(NetWriter));
             if (writer != NULL) {
                 NetWriter_Begin(writer);

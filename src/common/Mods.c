@@ -15,6 +15,11 @@
 static Mod  mods[MODS_MAX];
 static int  mod_count = 0;
 static char started_signature[1024]; // the mods on when the game started
+// The mods the files come from: those on when the game started, in order. Options > Mods changes mods[] (what's saved
+// for next time), not these: the tables are read once, so a change only takes effect on a restart
+static char active[MODS_MAX][64];
+static int  active_count = 0;
+static bool started      = false;
 static char folder_path[4096];
 
 const char *Mods_Folder(void) {
@@ -79,7 +84,11 @@ static int Mods__Find(const char *folder) {
 }
 
 static void Mods__Add(const char *folder) {
-    if (mod_count >= MODS_MAX || folder[0] == '.' || Mods__Find(folder) >= 0) {
+    if (mod_count >= MODS_MAX || folder[0] == '.' || strlen(folder) >= sizeof(mods[0].folder) ||
+        Mods__Find(folder) >= 0) {
+        if (strlen(folder) >= sizeof(mods[0].folder)) {
+            LOG_WARN("Mod folder name too long (63 letters at most): '%s'", folder);
+        }
         return;
     }
     Mod *mod = &mods[mod_count++];
@@ -145,9 +154,15 @@ void Mods_Load(void) {
         closedir(dir);
     }
 #endif
+    if (started) {
+        return; // (Options going back to what's saved: the files keep coming from the mods the game started with)
+    }
+    started = true;
     Mods_Signature(started_signature, sizeof(started_signature));
+    active_count = 0;
     for (int m = 0; m < mod_count; m++) {
         if (mods[m].enabled) {
+            snprintf(active[active_count++], sizeof(active[0]), "%s", mods[m].folder);
             LOG_INFO("Mod on: %s (%s%s%s)", mods[m].name, mods[m].folder, mods[m].version[0] != '\0' ? ", " : "",
                      mods[m].version);
         }
@@ -201,11 +216,8 @@ bool Mods_Changed(void) {
 }
 
 bool Mods_FindFile(const char *path, char *out, const int size) {
-    for (int m = 0; m < mod_count; m++) {
-        if (!mods[m].enabled) {
-            continue;
-        }
-        snprintf(out, (size_t)size, "%s/%s/%s", Mods_Folder(), mods[m].folder, path);
+    for (int m = 0; m < active_count; m++) {
+        snprintf(out, (size_t)size, "%s/%s/%s", Mods_Folder(), active[m], path);
         FILE *probe = fopen(out, "rb");
         if (probe != NULL) {
             fclose(probe);
@@ -214,6 +226,8 @@ bool Mods_FindFile(const char *path, char *out, const int size) {
     }
     return false;
 }
+
+void Mods_ActiveSignature(char *out, const int size) { snprintf(out, (size_t)size, "%s", started_signature); }
 
 void Mods_Signature(char *out, const int size) {
     int at = 0;

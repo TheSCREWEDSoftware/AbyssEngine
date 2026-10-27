@@ -17,7 +17,18 @@ static Unit *Roam__AddPortalUnit(SceneRoam *roam, const int owner, const float x
     float spot_x;
     float spot_y;
     Roam__ArrivalSpot(roam->map, x, y, &spot_x, &spot_y);
-    Unit *unit = Roam__AddUnit(roam, "objects", PORTAL_TOKEN, spot_x, spot_y);
+    // A closed portal's place in the units is used again (they'd pile up otherwise)
+    Unit *unit = NULL;
+    for (int i = 0; i < roam->unit_count && unit == NULL; i++) {
+        Unit *old = &roam->units[i];
+        if (old->is_object && old->object.operate_fn == 15 && old->vanished && strcmp(old->id, PORTAL_TOKEN) == 0 &&
+            Roam__InitUnit(old, "objects", PORTAL_TOKEN, spot_x, spot_y)) {
+            unit = old;
+        }
+    }
+    if (unit == NULL) {
+        unit = Roam__AddUnit(roam, "objects", PORTAL_TOKEN, spot_x, spot_y);
+    }
     if (unit == NULL) {
         return NULL;
     }
@@ -60,12 +71,16 @@ static void Roam__PlacePortal(SceneRoam *roam, const int owner) {
     if (!roam->game || !portal->open || roam->map == NULL || roam->map->seed != portal->seed) {
         return;
     }
-    const uint64_t now = SDL_GetTicks64();
+    const uint64_t now  = Roam__Now(roam);
+    const MapArea *town = Map_FindArea(roam->map, town_level_ids[portal->act]);
     if (roam->area_level == town_level_ids[portal->act] &&
         !(portal->town_set && Roam__PortalNear(roam, owner, portal->town_x, portal->town_y))) {
+        // By where you come into the town (each player's a little apart)
         const int   id   = owner > 0 ? owner : Roam__MyPortalId(roam);
         const float side = (float)((id % 6) * 2);
-        Unit       *unit = Roam__AddPortalUnit(roam, owner, roam->spawn_x + 3.0f + side, roam->spawn_y + 3.0f, now);
+        const float bx   = town != NULL ? (float)town->start_x : roam->spawn_x;
+        const float by   = town != NULL ? (float)town->start_y : roam->spawn_y;
+        Unit       *unit = Roam__AddPortalUnit(roam, owner, bx + 3.0f + side, by + 3.0f, now);
         if (unit != NULL) {
             portal->town_x   = unit->x;
             portal->town_y   = unit->y;
@@ -80,7 +95,6 @@ static void Roam__PlacePortal(SceneRoam *roam, const int owner) {
 static void Roam__PlacePortals(SceneRoam *roam) {
     for (int owner = 0; owner <= NET_MAX_PLAYERS; owner++) {
         if (roam->portals[owner].open) {
-            roam->portals[owner].town_set = false; // (a new map: placed again)
             Roam__PlacePortal(roam, owner);
         }
     }
@@ -161,7 +175,7 @@ static void Roam__OpenTownPortal(SceneRoam *roam) {
     }
     Roam__HidePortals(roam, 0);
     RoamPortal    *portal = &roam->portals[0];
-    const uint64_t now    = SDL_GetTicks64();
+    const uint64_t now    = Roam__Now(roam);
     portal->open          = true;
     portal->act           = Roam__Act(roam);
     portal->place         = roam->place;

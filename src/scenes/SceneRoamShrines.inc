@@ -166,14 +166,21 @@ static void Roam__GemShrine(SceneRoam *roam, const Unit *shrine) {
         }
     }
     const int c_code     = DataTable_GetColumnIndex(gems, "code");
+    const int c_name     = DataTable_GetColumnIndex(gems, "name");
     int       kinds      = DataTable_GetRowCount(gems) / 5;
     kinds                = kinds > 7 ? 7 : kinds;
     Character *character = roam->character;
     for (int i = 0; i < character->inventory_count; i++) {
         Item *item = &character->inventory[i].item;
         for (int row = 0; row < kinds * 5; row++) {
-            if ((row % 5) < 4 && strcmp(item->code, DataTable_GetString(gems, row, c_code)) == 0) {
-                snprintf(item->code, sizeof(item->code), "%s", DataTable_GetString(gems, row + 1, c_code));
+            // The next row is the next grade of the same gem ("Flawed Amethyst" -> "Amethyst": the same last word)
+            const char *name = DataTable_GetString(gems, row, c_name);
+            const char *next = DataTable_GetString(gems, row + 1, c_name);
+            const char *kind = strrchr(name, ' ') != NULL ? strrchr(name, ' ') + 1 : name;
+            const char *also = strrchr(next, ' ') != NULL ? strrchr(next, ' ') + 1 : next;
+            if ((row % 5) < 4 && strcmp(kind, also) == 0 &&
+                strcmp(item->code, DataTable_GetString(gems, row, c_code)) == 0) {
+                *item = Inventory_NewItem(DataTable_GetString(gems, row + 1, c_code)); // (a new gem in its place)
                 Roam__ShowMessage(roam, "Gem Shrine: one of your gems is better now.");
                 return;
             }
@@ -198,8 +205,7 @@ static void Roam__UseShrine(SceneRoam *roam, Unit *shrine, const uint64_t now) {
     shrine_reset_minutes = 0;
     Roam__ShrineRow(code, &arg0, &arg1, &frames, &rarity);
     // Some come back after a few minutes, like the game's (Single Player: the server keeps a multiplayer game's)
-    shrine->ready_at =
-        !roam->online && shrine_reset_minutes > 0 ? SDL_GetTicks64() + ((uint64_t)shrine_reset_minutes * 60000) : 0;
+    shrine->ready_at = !roam->online && shrine_reset_minutes > 0 ? now + ((uint64_t)shrine_reset_minutes * 60000) : 0;
     Character  *character = roam->character;
     const float max_mana  = (float)Character_MaxMana(character);
     char        message[96];

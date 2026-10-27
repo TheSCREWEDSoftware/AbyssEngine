@@ -159,24 +159,30 @@ void Sounds_PlayAmbience(const char *name) {
     AudioManager_PlayAmbience(effect, (float)volume / 255.0f * 0.6f);
 }
 
+// (Sounds_PlayWeather is called every frame: its row is looked up once per name, and forgotten with the table)
+static char weather_name[48] = "";
+static int  weather_row      = -1;
+
 void Sounds_PlayWeather(const char *name, const float loudness) {
     // (called every frame: the row is looked up once per name)
-    static char last_name[48] = "";
-    static int  last_row      = -1;
-    int         row           = -1;
+    int row = -1;
     if (name != NULL && name[0] != '\0' && loudness > 0.0f) {
-        if (strcmp(name, last_name) != 0) {
-            snprintf(last_name, sizeof(last_name), "%s", name);
-            last_row = Sounds__FindRow(name);
+        if (strcmp(name, weather_name) != 0 || weather_row < 0) {
+            snprintf(weather_name, sizeof(weather_name), "%s", name);
+            weather_row = Sounds__FindRow(name);
         }
-        row = last_row;
+        row = weather_row;
     }
     const int rate = AudioManager_GetOutputRate();
     if (row < 0 || rate <= 0) {
         AudioManager_PlayWeather(NULL, 0.0f);
         return;
     }
-    load_rate                 = load_rate == 0 ? rate : load_rate;
+    if (load_rate != 0 && load_rate != rate) {
+        AudioManager_PlayWeather(NULL, 0.0f); // (the device changed rate: Sounds_Play decodes them again)
+        return;
+    }
+    load_rate                 = rate;
     const SoundEffect *effect = Sounds__Effect(row, rate);
     const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
     AudioManager_PlayWeather(effect, (float)volume / 255.0f * 0.6f * loudness);
@@ -275,11 +281,13 @@ void Sounds_Release(void) {
     free(effects);
     free(missing);
     free(by_name);
-    effects   = NULL;
-    missing   = NULL;
-    by_name   = NULL;
-    row_count = 0;
-    load_rate = 0;
+    effects         = NULL;
+    missing         = NULL;
+    by_name         = NULL;
+    row_count       = 0;
+    load_rate       = 0;
+    weather_row     = -1;
+    weather_name[0] = '\0';
     DataTable_Destroy(&sounds);
     DataTable_Destroy(&monsounds);
     DataTable_Destroy(&monstats);

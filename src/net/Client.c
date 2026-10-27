@@ -396,7 +396,7 @@ void NetClient_Update(const uint64_t now) {
         NetWriter_String(&writer, client.password);
         NetWriter_U8(&writer, (uint8_t)AbyssConfiguration_GetPlayerColor()); // how the others see us
         char mods[512];
-        Mods_Signature(mods, sizeof(mods)); // the mods we play with: they have to be the game's
+        Mods_ActiveSignature(mods, sizeof(mods)); // the mods we play with: they have to be the game's
         NetWriter_String(&writer, mods);
         NetClient__Send(MSG_HELLO, &writer);
     }

@@ -697,6 +697,12 @@ static void Roam__TurnTowards(int *turn, const float from_x, const float from_y,
 
 static bool Roam__IsPlayer(const SceneRoam *roam, const Unit *unit) { return unit == &roam->player; }
 
+// The game's time now (what Roam__Update's "now" is: faster than real time at Fast and up in multiplayer), for
+// timers set and checked outside the update
+static uint64_t Roam__Now(const SceneRoam *roam) {
+    return roam->online && roam->clock != 0 ? roam->clock : SDL_GetTicks64();
+}
+
 // (a monster under the ground counts as gone until it comes up: it can't be seen, hit or targeted)
 static bool Roam__IsAlive(const Unit *unit) {
     return unit->state != UNIT_DYING && unit->state != UNIT_DEAD && !unit->burrowed;
@@ -715,7 +721,7 @@ static bool Roam__IsRunning(const SceneRoam *roam) {
 // "damageresist" for Amplify Damage, "velocitypercent" for Decrepify), in percent; 0 when not cursed
 static int Roam__PlayerCurse(const SceneRoam *roam, const char *stat) {
     const Unit *player = &roam->player;
-    if (!roam->game || player->curse == NULL || SDL_GetTicks64() >= player->curse_until) {
+    if (!roam->game || player->curse == NULL || Roam__Now(roam) >= player->curse_until) {
         return 0;
     }
     int total = 0;
@@ -724,7 +730,7 @@ static int Roam__PlayerCurse(const SceneRoam *roam, const char *stat) {
             total += SkillData_Eval(roam->character, player->curse, player->curse_level, player->curse->aura_calc[a]);
         }
     }
-    return total;
+    return total < -300 ? -300 : (total > 300 ? 300 : total); // (a curse's percent, whatever its level)
 }
 
 static float Roam__PlayerSpeed(const SceneRoam *roam) {
@@ -733,7 +739,7 @@ static float Roam__PlayerSpeed(const SceneRoam *roam) {
     }
     const float speed = Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED;
     // Faster Run/Walk on what's worn; slower under Decrepify, or chilled (a monster's cold, Holy Freeze)
-    const float chilled = roam->game && SDL_GetTicks64() < roam->player.chill_until ? 0.6f : 1.0f;
+    const float chilled = roam->game && Roam__Now(roam) < roam->player.chill_until ? 0.6f : 1.0f;
     return roam->game ? speed * chilled *
                             fmaxf(0.1f, 1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
                                                         roam->character->bonus[BONUS_SPEED_PCT] +
@@ -1031,12 +1037,12 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
             if (strcmp(name, "Amplify Damage") == 0 || strcmp(name, "Weaken") == 0 || strcmp(name, "Decrepify") == 0 ||
                 strcmp(name, "MonCurseCast") == 0) {
                 const SkillRow *row = SkillData_Get(strcmp(name, "MonCurseCast") == 0 ? "Amplify Damage" : name);
-                if (unit->hex != NULL && unit->hex2 == NULL) {
-                    unit->hex2 = row;
-                } else {
+                if (unit->hex == NULL) {
                     unit->hex = row;
+                } else if (unit->hex2 == NULL) {
+                    unit->hex2 = row; // (two at most)
                 }
-                unit->hex_any   = strcmp(name, "MonCurseCast") == 0;
+                unit->hex_any   = unit->hex_any || strcmp(name, "MonCurseCast") == 0;
                 unit->hex_level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
             } else if (strcmp(name, "MonTeleport") == 0 || strcmp(name, "Imp Teleport") == 0 ||
                        strcmp(name, "Teleport 2") == 0) {
@@ -1610,7 +1616,8 @@ static void Roam__SpringTrap(SceneRoam *roam, Unit *object, const uint64_t now) 
 }
 
 // A key for a locked chest: one off the stack (the Assassin needs none)
-static bool Roam__Unlock(SceneRoam *roam) {
+// use: take the key (false: only whether there is one)
+static bool Roam__Unlock(SceneRoam *roam, const bool use) {
     if (!roam->game || roam->character == NULL || roam->character->class_id == CHARACTER_ASSASSIN) {
         return true;
     }
@@ -1618,6 +1625,9 @@ static bool Roam__Unlock(SceneRoam *roam) {
     for (int i = 0; i < c->inventory_count; i++) {
         Item *item = &c->inventory[i].item;
         if (strcmp(item->code, "key") == 0) {
+            if (!use) {
+                return true;
+            }
             if (item->quantity > 1) {
                 item->quantity--;
             } else {
@@ -1701,6 +1711,16 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
         return;
     }
     unit->used = true;
+    if (unit->locked) {
+        // Its key: ours if we open it (someone else's game opened it with theirs)
+        if (!roam->online || roam->use_is_ours) {
+            Roam__Unlock(roam, true);
+        }
+        unit->locked = false;
+        if (strncmp(unit->name, "Locked ", 7) == 0) {
+            memmove(unit->name, unit->name + 7, strlen(unit->name + 7) + 1);
+        }
+    }
     Roam__ObjectSound(unit);
     if (Roam__QuestObject(roam, unit)) {
         Roam__FinishOperate(roam, unit, now);
@@ -2203,16 +2223,10 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
-    if (object->locked) {
-        if (!Roam__Unlock(roam)) {
-            Roam__ShowMessage(roam, "It's locked: you need a key.");
-            Sounds_Play("cursor_error", SOUND_KIND_UI);
-            return true;
-        }
-        object->locked = false;
-        if (strncmp(object->name, "Locked ", 7) == 0) {
-            memmove(object->name, object->name + 7, strlen(object->name + 7) + 1);
-        }
+    if (object->locked && !Roam__Unlock(roam, false)) {
+        Roam__ShowMessage(roam, "It's locked: you need a key.");
+        Sounds_Play("cursor_error", SOUND_KIND_UI);
+        return true; // (the key's taken when it opens: in multiplayer, only by the one the server lets open it)
     }
     if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32 &&
         object->object.operate_fn != 15 && object->object.operate_fn != 27) { // (a portal, a pad: your own)
@@ -2399,9 +2413,11 @@ static void Roam__LockAndTrap(SceneRoam *roam, Unit *unit, const int index) {
     unit->locked  = unit->object.lockable && (h % 100) < 15;
     unit->trapped = unit->object.trap_prob > 0 && ((h >> 8) % 100) < (uint32_t)unit->object.trap_prob;
     if (unit->locked) { // (a trap gives no sign, like the game's)
-        char name[sizeof(unit->name)];
-        snprintf(name, sizeof(name), "Locked %s", unit->name);
-        snprintf(unit->name, sizeof(unit->name), "%s", name);
+        const size_t length = strlen(unit->name);
+        if (length + 7 < sizeof(unit->name)) { // "Locked " before its name
+            memmove(unit->name + 7, unit->name, length + 1);
+            memcpy(unit->name, "Locked ", 7);
+        }
     }
 }
 
@@ -2873,10 +2889,10 @@ static void Roam__UpdateAtmosphere(SceneRoam *roam) {
 // The area's odd sounds now and then (birds, drips, distant howls): SoundEnviron.txt's event, about every Event Delay
 static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
     if (roam->game && !roam->online) {
-        Roam__RechargeShrines(roam, SDL_GetTicks64());
+        Roam__RechargeShrines(roam, now);
     }
     // The rain's sound, as loud as the shower is heavy (snow falls quietly)
-    const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, now);
+    const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, SDL_GetTicks64()); // (as drawn)
     Sounds_PlayWeather(rain > 0.02f ? "scene_rain" : NULL, rain);
     // Night falls or the day breaks: the background changes over
     const bool night = Roam__NightSounds(roam);
@@ -2929,6 +2945,7 @@ static void Roam__EnteredArea(SceneRoam *roam, const int level_id, const bool ca
     }
     Roam__UpdateAtmosphere(roam);
     Roam__UpdateButtons(roam);
+    Roam__PlacePortals(roam); // (walking into town on an act's joined map: a Town Portal's end there)
 }
 
 // The name of where you are: the area you're standing in on a joined-up map
@@ -3286,7 +3303,7 @@ static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
         return;
     }
     // The Experience Shrine: half as much again
-    const int boosted = roam->shrine_code == 15 && SDL_GetTicks64() < roam->shrine_until
+    const int boosted = roam->shrine_code == 15 && Roam__Now(roam) < roam->shrine_until
                             ? amount + (amount * roam->shrine_arg0 / 100)
                             : amount;
     const int levels  = Character_AddExperience(roam->character, (uint32_t)boosted);
@@ -3919,11 +3936,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         if (unit->aura != NULL && strcmp(unit->aura->id, "Might") == 0) {
                             damage += damage / 2; // its Might
                         }
-                        if (unit->element == ELEMENT_COLD) {
-                            player->chill_until = now + 2000; // its cold slows you
-                        }
                         // Amplify Damage / Decrepify on you: more of it gets through
-                        damage = damage * (100 - Roam__PlayerCurse(roam, "damageresist")) / 100;
+                        const int taken = 100 - Roam__PlayerCurse(roam, "damageresist");
+                        damage          = damage * (taken > 0 ? taken : 0) / 100;
                         if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
                             damage = 0; // dodged
                         } else if (Roam__Blocks(roam, false)) {
@@ -3931,6 +3946,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         }
                         damage = Roam__AbsorbDamage(roam, damage); // Bone Armor
                         if (damage > 0) {
+                            if (unit->element == ELEMENT_COLD) {
+                                player->chill_until = now + 2000; // its cold slows you
+                            }
                             Roam__Damage(roam, player, damage, now);
                         }
                         const int thorns = roam->game ? Affixes_Total(roam->character, MOD_THORNS) : 0;
@@ -3957,9 +3975,6 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         damage[ELEMENT_PHYSICAL] += damage[ELEMENT_PHYSICAL] / 2; // its Might
                     }
                     Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level, damage);
-                    if (unit->element == ELEMENT_COLD) {
-                        Roam__SendAfflict(unit->net_target, NULL, 1, 2000); // its cold slows them
-                    }
                 }
             }
             if (unit->state == UNIT_OPERATE) {
@@ -5334,7 +5349,11 @@ static void Roam__ApplyMonsters(SceneRoam *roam, NetReader *reader, const uint64
         }
         unit->vanished = vanished;
         unit->burrowed = (flags & 2) != 0;
-        unit->aura     = aura != 0xFFFF ? SkillData_ByRow(aura) : NULL;
+        if (aura == 0xFFFF) {
+            unit->aura = NULL;
+        } else if (unit->aura == NULL || unit->aura->row != aura) {
+            unit->aura = SkillData_ByRow(aura); // (looked up when it changes, not 15 times a second)
+        }
     }
 }
 
@@ -5491,12 +5510,16 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until) {
             break;
         }
+        // Only what monsters do (another game could send anything): a chill of a few seconds, or one of the curses
+        // monsters cast, at a monster's level, for as long as theirs last
+        const SkillRow *curse = row != 0xFFFF ? SkillData_ByRow(row) : NULL;
         if (row == 0xFFFF) {
-            player->chill_until = SDL_GetTicks64() + (uint64_t)ms;
-        } else if (SkillData_ByRow(row) != NULL) {
-            player->curse       = SkillData_ByRow(row);
-            player->curse_level = level > 0 ? level : 1;
-            player->curse_until = SDL_GetTicks64() + (uint64_t)ms;
+            player->chill_until = Roam__Now(roam) + (uint64_t)(ms < 3000 ? ms : 3000);
+        } else if (curse != NULL && (strcmp(curse->id, "Amplify Damage") == 0 || strcmp(curse->id, "Weaken") == 0 ||
+                                     strcmp(curse->id, "Decrepify") == 0)) {
+            player->curse       = curse;
+            player->curse_level = level < 1 ? 1 : (level > 20 ? 20 : level);
+            player->curse_until = Roam__Now(roam) + (uint64_t)(ms < 30000 ? ms : 30000);
         }
         break;
     }
@@ -5507,9 +5530,11 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         const int  attack_rating = NetReader_I32(reader);
         const int  level         = NetReader_I32(reader);
         int        damage        = 0;
+        bool       cold          = false;
         for (int e = 0; e < ELEMENT_COUNT; e++) { // physical as it is; the rest against our resistances
             const int part  = NetReader_I32(reader);
             damage         += e == ELEMENT_PHYSICAL ? part : Roam__ElementTaken(roam, (Element)e, part);
+            cold            = cold || (e == ELEMENT_COLD && part > 0);
         }
         Unit *player = &roam->player;
         if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until ||
@@ -5518,6 +5543,9 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         }
         if (Roam__Roll(1, 100) > Character_HitChance(attack_rating, level, player->defense, player->level)) {
             break; // missed
+        }
+        if (cold) {
+            player->chill_until = now + 2000; // cold slows (a monster's blow, a cold spell)
         }
         Roam__Damage(roam, player, damage > 0 ? damage : 1, now);
         if (pvp && !Roam__IsAlive(player)) {
@@ -6417,7 +6445,7 @@ static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable
         if (unit->aura != NULL && unit->aura->state[0] != '\0' && Roam__IsAlive(unit)) {
             snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->aura->state); // a unique's aura
         }
-        if (unit->curse != NULL && SDL_GetTicks64() < unit->curse_until && Roam__IsAlive(unit) &&
+        if (unit->curse != NULL && Roam__Now(roam) < unit->curse_until && Roam__IsAlive(unit) &&
             unit->curse->target_state[0] != '\0') {
             snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->curse->target_state);
         }

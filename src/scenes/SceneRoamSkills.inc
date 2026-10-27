@@ -148,7 +148,7 @@ static int Roam__PlayerStates(const SceneRoam *roam, char states[][32], const in
             snprintf(states[count++], 32, "%s", roam->buffs[b].skill->state);
         }
     }
-    const uint64_t    now    = SDL_GetTicks64();
+    const uint64_t    now    = Roam__Now(roam);
     const ShrineInfo *shrine = Roam__ShrineInfo(Roam__ShrineBoost(roam, now));
     if (shrine != NULL && shrine->state != NULL && count < max) {
         snprintf(states[count++], 32, "%s", shrine->state);

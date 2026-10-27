@@ -470,7 +470,9 @@ int main(int argc, char **argv) {
     }
 
     LOG_DEBUG("Initializing file manager...");
-    Mods_Load(); // (before the files: a mod's come first)
+    if (extract_folder == NULL) {
+        Mods_Load(); // (before the files: a mod's come first; --extract copies the game's own)
+    }
     FileManager_CreateSingleton();
     FileManager_SetLenient(text_mode); // (text mode can run from an extracted folder: no pictures needed)
 

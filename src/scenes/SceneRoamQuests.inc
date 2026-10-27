@@ -131,7 +131,8 @@ static void Roam__CheckQuests(SceneRoam *roam, const uint64_t now) {
                 if (quest->spawn && !roam->online) { // (multiplayer games share their monsters: not yet)
                     Roam__SpawnQuestBoss(roam, quest, area);
                 }
-            } else if (!Roam__IsAlive(&roam->units[boss])) {
+            } else if (!Roam__IsAlive(&roam->units[boss]) &&
+                       !roam->units[boss].burrowed) { // (not just under the ground)
                 Roam__QuestDone(roam, q);
             }
             break;
@@ -143,8 +144,8 @@ static void Roam__CheckQuests(SceneRoam *roam, const uint64_t now) {
             int left = 0;
             for (int i = 0; i < roam->unit_count; i++) {
                 const Unit *unit  = &roam->units[i];
-                left             += Roam__IsAlive(unit) && Roam__IsCombatant(unit) && !unit->npc && !unit->ally &&
-                                Roam__InArea(area, unit->x, unit->y)
+                left             += (Roam__IsAlive(unit) || unit->burrowed) && Roam__IsCombatant(unit) && !unit->npc &&
+                                !unit->ally && Roam__InArea(area, unit->x, unit->y)
                                         ? 1
                                         : 0;
             }
