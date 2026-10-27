@@ -10,6 +10,7 @@
 #include "../drawing/Label.h"
 #include "../drawing/TabBar.h"
 #include "../managers/InputManager.h"
+#include "../map/MonsterStats.h"
 #include "CatalogTheme.h"
 #include <ctype.h>
 #include <stdarg.h>
@@ -18,7 +19,7 @@
 #include <string.h>
 
 #define CHARACTERS_MAX_MODES     20
-#define CHARACTERS_STAT_LINES    3
+#define CHARACTERS_STAT_LINES    7
 #define CHARACTERS_TEXT_LEN      96
 #define CHARACTERS_MAX_SCALE     2.0f
 #define CHARACTERS_PALETTE       PALETTE_ACT_1
@@ -32,8 +33,8 @@ static int characters_speed = CHARACTERS_DEFAULT_SPEED; // kept while browsing
 // Detail panel layout, relative to the panel
 #define CHAR_NAME_Y     16
 #define CHAR_PREVIEW_Y  32
-#define CHAR_PREVIEW_H  240
-#define CHAR_INFO_Y     284
+#define CHAR_PREVIEW_H  170
+#define CHAR_INFO_Y     212
 #define CHAR_INFO_LINE  16
 #define CHAR_BUTTONS_Y  342
 #define CHAR_BUTTONS_Y2 378
@@ -372,6 +373,26 @@ static void Characters__LoadMonsters(CatalogCharacters *characters, int *capacit
         }
         if (DataTable_HasValue(stats, row, c_type)) {
             Characters__AddStat(entry, 2, "Type: %s", DataTable_GetString(stats, row, c_type));
+        }
+        // Its numbers in each difficulty (at its own level: the expansion's areas raise most monsters to theirs)
+        if (max_hp > 0) {
+            static const char *const names[3] = {"Normal", "NM", "Hell"};
+            int                      res[3][5];
+            for (int d = 0; d < 3; d++) {
+                MonsterStats s;
+                MonsterStats_SetDifficulty(d);
+                if (MonsterStats_Get(entry->id, &s)) {
+                    Characters__AddStat(entry, 3 + d, "%s: life %d-%d  dmg %d-%d  def %d  exp %d", names[d], s.hp_min,
+                                        s.hp_max, s.damage_min, s.damage_max, s.defense, s.experience);
+                    memcpy(res[d], s.resist, sizeof(res[d]));
+                } else {
+                    memset(res[d], 0, sizeof(res[d]));
+                }
+            }
+            MonsterStats_SetDifficulty(0);
+            Characters__AddStat(entry, 6, "Resist F/C/L/P: %d/%d/%d/%d  %d/%d/%d/%d  %d/%d/%d/%d", res[0][1], res[0][2],
+                                res[0][3], res[0][4], res[1][1], res[1][2], res[1][3], res[1][4], res[2][1], res[2][2],
+                                res[2][3], res[2][4]);
         }
 
         bool flags[MODE_COUNT(monster_modes)];
