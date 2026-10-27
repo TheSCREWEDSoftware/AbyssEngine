@@ -159,6 +159,29 @@ void Sounds_PlayAmbience(const char *name) {
     AudioManager_PlayAmbience(effect, (float)volume / 255.0f * 0.6f);
 }
 
+void Sounds_PlayWeather(const char *name, const float loudness) {
+    // (called every frame: the row is looked up once per name)
+    static char last_name[48] = "";
+    static int  last_row      = -1;
+    int         row           = -1;
+    if (name != NULL && name[0] != '\0' && loudness > 0.0f) {
+        if (strcmp(name, last_name) != 0) {
+            snprintf(last_name, sizeof(last_name), "%s", name);
+            last_row = Sounds__FindRow(name);
+        }
+        row = last_row;
+    }
+    const int rate = AudioManager_GetOutputRate();
+    if (row < 0 || rate <= 0) {
+        AudioManager_PlayWeather(NULL, 0.0f);
+        return;
+    }
+    load_rate                 = load_rate == 0 ? rate : load_rate;
+    const SoundEffect *effect = Sounds__Effect(row, rate);
+    const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
+    AudioManager_PlayWeather(effect, (float)volume / 255.0f * 0.6f * loudness);
+}
+
 static bool Sounds__Play(const char *name, SoundKind kind, float loudness, float pan);
 
 bool Sounds_Play(const char *name, const SoundKind kind) { return Sounds__Play(name, kind, 1.0f, 0.0f); }

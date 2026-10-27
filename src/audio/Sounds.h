@@ -23,6 +23,8 @@ int  Sounds_PlaySpeech(const char *name);
 void Sounds_StopSpeech(void);
 // The area's background loop (sounds.txt name; NULL or "": none)
 void Sounds_PlayAmbience(const char *name);
+// Rain over it (sounds.txt name; NULL, "" or loudness 0: none), loudness 0 to 1 as the shower comes and goes
+void Sounds_PlayWeather(const char *name, float loudness);
 // The name of a monster's sound (monstats.txt "MonSound" -> MonSounds.txt), NULL if it has none
 const char *Sounds_MonsterSound(const char *monstats_id, MonsterSound which);
 void        Sounds_Release(void);

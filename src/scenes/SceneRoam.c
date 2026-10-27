@@ -2433,13 +2433,17 @@ static void Roam__ToWaypoint(SceneRoam *roam);
 static void Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
 
 // Rain (snow in Act V) in the areas Levels.txt says it falls in: showers that come and go, a few minutes each
-static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
+static float Roam__WeatherLevel(const SceneRoam *roam, const uint64_t now) { // 0 dry .. 1 the heaviest
     if ((!roam->atmosphere.rain && !roam->atmosphere.snow) || roam->atmosphere.inside) {
-        return;
+        return 0.0f;
     }
+    const float cycle = (float)((now / 1000) % 360) / 360.0f; // a six-minute cycle: two of rain, four dry
+    return cycle < 0.33f ? sinf(cycle / 0.33f * 3.14159f) : 0.0f;
+}
+
+static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
     const uint64_t now   = SDL_GetTicks64();
-    const float    cycle = (float)((now / 1000) % 360) / 360.0f; // a six-minute cycle: two of rain, four dry
-    const float    level = cycle < 0.33f ? sinf(cycle / 0.33f * 3.14159f) : 0.0f;
+    const float    level = Roam__WeatherLevel(roam, now);
     const int      drops = (int)(level * (roam->atmosphere.snow ? 220.0f : 320.0f));
     if (drops <= 0) {
         return;
@@ -2645,6 +2649,9 @@ static void Roam__UpdateAtmosphere(SceneRoam *roam) {
 
 // The area's odd sounds now and then (birds, drips, distant howls): SoundEnviron.txt's event, about every Event Delay
 static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
+    // The rain's sound, as loud as the shower is heavy (snow falls quietly)
+    const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, now);
+    Sounds_PlayWeather(rain > 0.02f ? "scene_rain" : NULL, rain);
     // Night falls or the day breaks: the background changes over
     const bool night = Roam__NightSounds(roam);
     if (night != roam->night_sounds) {
@@ -3023,6 +3030,7 @@ static void Roam__Free(void **scene_ref) {
     }
     free(roam->gamble);
     Sounds_PlayAmbience(NULL); // (the area's background stops with the game)
+    Sounds_PlayWeather(NULL, 0.0f);
     free(roam->trade);
     roam->shop_count = 0;
     Label_Destroy(&roam->panel_label);

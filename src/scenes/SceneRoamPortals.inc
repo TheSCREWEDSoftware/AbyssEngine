@@ -92,7 +92,8 @@ static void Roam__OpenTownPortal(SceneRoam *roam) {
                                             roam->player.y + (cosf(angle) * 2.0f) + 1.0f, now);
     roam->portal.x    = unit != NULL ? unit->x : roam->player.x;
     roam->portal.y    = unit != NULL ? unit->y : roam->player.y;
-    Sounds_Play("object_portal_open", SOUND_KIND_SFX);
+    Sounds_Play("player_townportal_cast", SOUND_KIND_SFX);
+    Sounds_Play("object_townportal", SOUND_KIND_SFX);
 }
 
 // Putting the player down by (x, y)
@@ -112,7 +113,7 @@ static void Roam__TakePortal(SceneRoam *roam) {
     if (!roam->game || !roam->portal.open) {
         return;
     }
-    Sounds_Play("object_portal_enter", SOUND_KIND_SFX);
+    Sounds_Play("player_townportal_enter", SOUND_KIND_SFX);
     if (!roam->in_town) {
         Roam__GoToTown(roam, roam->portal.act); // (its end there is placed as you arrive)
         Roam__ArriveAt(roam, roam->portal.town_x, roam->portal.town_y);
