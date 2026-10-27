@@ -65,16 +65,23 @@ static const char *default_mpqs[] = {"Patch_D2.mpq", "d2exp.MPQ",   "d2xmusic.MP
 #define MAX_LINE_LEN       4096
 #define IS_STR_EQUAL(X, Y) (strcmp(X, Y) == 0)
 
-#define SET_PARAM_STR(X, Y)                                                                                            \
-    if ((X) != NULL) {                                                                                                 \
-        free(X);                                                                                                       \
-    }                                                                                                                  \
-    (X) = malloc(sizeof(char) * (strlen(Y) + 1));                                                                      \
-    if ((X) == NULL) {                                                                                                 \
-        LOG_FATAL("Failed to allocate memory.");                                                                       \
-    }                                                                                                                  \
-    memset(X, 0, sizeof(char) * (strlen(Y) + 1));                                                                      \
-    strcat(X, Y)
+// Replaces a string setting with a copy of value. The copy is made before the old string is freed, so value may
+// point into the old one (setting it to what it already is)
+static void Config__SetString(char **field, const char *value) {
+    const size_t length = value != NULL ? strlen(value) : 0;
+    char        *copy   = malloc(length + 1);
+    if (copy == NULL) {
+        LOG_FATAL("Failed to allocate memory.");
+        return;
+    }
+    if (length > 0) {
+        memcpy(copy, value, length);
+    }
+    copy[length] = '\0';
+    free(*field);
+    *field = copy;
+}
+#define SET_PARAM_STR(X, Y) Config__SetString(&(X), (Y))
 
 static const char *valid_categories[] = {"general", "mpqs", "graphics", "audio", "input", "network", NULL};
 
@@ -194,10 +201,6 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
         }
     } else if (IS_STR_EQUAL(category, "graphics")) {
         if (IS_STR_EQUAL(key, "scalequality")) {
-            if (strlen(abyss_configuration.graphics.scale_quality) != 0) {
-                memset(abyss_configuration.graphics.scale_quality, 0,
-                       sizeof(char) * strlen(abyss_configuration.graphics.scale_quality));
-            }
             SET_PARAM_STR(abyss_configuration.graphics.scale_quality, value);
             LOG_DEBUG("Setting scale quality to '%s'", abyss_configuration.graphics.scale_quality);
         } else if (IS_STR_EQUAL(key, "initialscale")) {
@@ -418,17 +421,25 @@ void AbyssConfiguration_LoadSingleton(const char *file_path) {
 }
 
 void AbyssConfiguration_DestroySingleton(void) {
+    // Each pointer is cleared as it's freed, so loading again afterwards starts clean (no freeing twice)
     free(abyss_configuration.base_path);
+    abyss_configuration.base_path = NULL;
     free(abyss_configuration.config_folder);
+    abyss_configuration.config_folder = NULL;
     free(abyss_configuration.ini_path);
+    abyss_configuration.ini_path = NULL;
     free(abyss_configuration.locale);
+    abyss_configuration.locale = NULL;
     free(abyss_configuration.graphics.scale_quality);
+    abyss_configuration.graphics.scale_quality = NULL;
 
     for (int i = 0; i < abyss_configuration.num_mpqs; i++) {
         free(abyss_configuration.mpqs[i]);
     }
 
     free(abyss_configuration.mpqs);
+    abyss_configuration.mpqs     = NULL;
+    abyss_configuration.num_mpqs = 0;
 }
 
 void AbyssConfiguration_AddMpq(const char *mpq_file) {

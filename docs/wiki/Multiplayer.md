@@ -78,7 +78,7 @@ The Host tab (remembered in `host.ini`) and a dedicated server's `server/server.
 | Setting | `server.ini` | |
 |---|---|---|
 | Game name | `Name` | Shown in Browse |
-| Password | `Password` | Empty: anyone can join |
+| Password | `Password` | Empty: anyone can join. The Host tab doesn't remember it (it would be kept as plain text in `host.ini`): type it for each game. A dedicated server reads it from `server.ini`, so keep that file private |
 | Players | `MaxPlayers` | 1 to 255 (8 by default, like Diablo II) |
 | Difficulty | `Difficulty` | Normal, Nightmare, Hell: the monsters' levels, life, damage and experience ([above](#playing-together)) |
 | Game speed | `Speed` | Diablo's Normal, Fast, Faster, Fastest (20, 30, 40, 50 frames' worth a second): everything runs that much faster |

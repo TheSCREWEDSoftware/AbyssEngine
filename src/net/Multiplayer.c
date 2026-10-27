@@ -123,9 +123,10 @@ void Multiplayer_SaveHostSettings(const NetSettings *s) {
     if (file == NULL) {
         return;
     }
-    fprintf(file, "# Multiplayer > Host: the settings last used (the Host tab writes this)\n");
-    fprintf(file, "Name=%s\nPassword=%s\nMaxPlayers=%d\nDifficulty=%d\nNewCharactersOnly=%d\nMadeHereOnly=%d\n",
-            s->name, s->password, s->max_players, s->difficulty, s->new_characters_only, s->made_here_only);
+    // The game's password isn't kept: it would sit in the file as plain text. It's typed again for each game.
+    fprintf(file, "# Multiplayer > Host: the settings last used (the Host tab writes this; not the password)\n");
+    fprintf(file, "Name=%s\nMaxPlayers=%d\nDifficulty=%d\nNewCharactersOnly=%d\nMadeHereOnly=%d\n", s->name,
+            s->max_players, s->difficulty, s->new_characters_only, s->made_here_only);
     fprintf(file, "Hardcore=%d\nLevelMin=%d\nLevelMax=%d\nPvP=%d\nSpeed=%d\nInventoryPages=%d\nSeed=%u\n", s->hardcore,
             s->level_min, s->level_max, s->pvp, s->speed, s->inventory_pages, (unsigned)s->seed);
     fprintf(file, "Public=%d\nLAN=%d\nPort=%u\n", s->public_game, s->lan, (unsigned)s->port);
