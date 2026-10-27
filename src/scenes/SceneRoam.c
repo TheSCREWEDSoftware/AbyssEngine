@@ -729,6 +729,28 @@ static Figure *Roam__LooksFigure(SceneRoam *roam, const Unit *unit, const char *
 
 // The figure for the unit's current animation, falling back to standing still when it has no such animation
 static Figure *Roam__Figure(SceneRoam *roam, const Unit *unit) {
+    // The Druid in a shape (Werewolf, Werebear): the wolf's or bear's pictures, in their animations
+    for (int b = 0; unit == &roam->player && roam->game && b < roam->buff_count; b++) {
+        if (roam->buffs[b].skill->do_func != 116) {
+            continue;
+        }
+        const char *shape  = strcmp(roam->buffs[b].skill->id, "Wearbear") == 0 ? "bear" : "wolf";
+        const char *mode   = Roam__Mode(roam, unit);
+        const char *as     = strcmp(mode, "tn") == 0   ? "nu"
+                             : strcmp(mode, "tw") == 0 ? "wl"
+                             : strcmp(mode, "sc") == 0 ? "a1"
+                                                       : mode;
+        Figure     *figure = MapUnits_GetFigure(roam->units_cache, "monsters", shape, as);
+        if (figure == NULL && strcmp(as, "rn") == 0) {
+            figure = MapUnits_GetFigure(roam->units_cache, "monsters", shape, "wl");
+        }
+        if (figure == NULL) {
+            figure = MapUnits_GetFigure(roam->units_cache, "monsters", shape, "nu");
+        }
+        if (figure != NULL) {
+            return figure;
+        }
+    }
     if (unit->has_looks) {
         const char *mode   = Roam__Mode(roam, unit);
         Figure     *figure = Roam__LooksFigure(roam, unit, mode, false);

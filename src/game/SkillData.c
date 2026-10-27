@@ -36,6 +36,7 @@ static SkillKind SkillData__Kind(const SkillRow *s) {
     case 25: // Enchant
     case 29: // Thunder Storm
     case 124:
+    case 116: // the Druid's shapes: Werewolf, Werebear (a buff that changes how you look)
         return SKILL_KIND_BUFF;
     case 68: // the warcries: Shout, Battle Orders and Battle Command last; Battle Cry and War Cry hit the monsters
         return s->aura_stat[0][0] != '\0' && strcmp(s->id, "Battle Cry") != 0 ? SKILL_KIND_BUFF : SKILL_KIND_NOVA;

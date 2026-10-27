@@ -306,7 +306,12 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
     Amazon's and Barbarian's masteries), auras that pulse, curses (Weaken, Amplify Damage, ...), Teleport.
   - Summons (Raise Skeleton, the Valkyrie, Hydra, ...): allies that follow you, fight what's near and run out when
     their skill says so.
-  Not yet: the Druid's and Assassin's shapes and traps, Whirlwind and leaps, some rarer skills (they say so).
+  - The Druid's shapes (Werewolf, Werebear: the wolf's or bear's pictures and the form's bonuses; cast it again to
+    change back), Whirlwind (you spin to the spot, striking each monster on the way), Leap Attack, Charge and Dragon
+    Flight (there in an instant, and the blow), Static Field (a quarter of each nearby monster's life), Telekinesis,
+    Psychic Hammer, Mind Blast, Revive (a corpse fights for you for three minutes).
+  Not yet: Attract, Bone Prison, Taunt, Double Throw; the Assassin's traps act like summons that fight. Skills that
+  aren't in say so and cost no mana.
 
 ## Town folk
 

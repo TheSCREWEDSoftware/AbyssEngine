@@ -873,6 +873,18 @@ static void Roam__AreaSkill(SceneRoam *roam, const SkillRow *s, const int level,
 }
 
 static void Roam__AddBuff(SceneRoam *roam, const SkillRow *s, const int level, const uint64_t now) {
+    // The Druid's shapes: one at a time, and casting the one you're in changes you back
+    for (int b = 0; b < roam->buff_count && s->do_func == 116; b++) {
+        if (roam->buffs[b].skill->do_func == 116) {
+            const bool same = roam->buffs[b].skill == s;
+            roam->buffs[b]  = roam->buffs[--roam->buff_count];
+            Roam__ApplyCharacter(roam);
+            if (same) {
+                return; // back to yourself
+            }
+            break;
+        }
+    }
     const int frames = s->aura_length[0] != '\0' ? SkillData_Eval(roam->character, s, level, s->aura_length) : 0;
     RoamBuff *buff   = NULL;
     for (int b = 0; b < roam->buff_count && buff == NULL; b++) {
@@ -1077,6 +1089,150 @@ static void Roam__ShowCast(SceneRoam *roam, const int row, const int level, cons
     }
 }
 
+// The skills that don't fit the kinds above, by what they do (skills.txt srvdofunc). True when it's one of them.
+static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int level, const float tx, const float ty,
+                               const uint64_t now) {
+    Unit *player = &roam->player;
+    Unit *target =
+        roam->cast_target >= 0 && roam->cast_target < roam->unit_count ? &roam->units[roam->cast_target] : NULL;
+    if (target != NULL && (!Roam__IsAlive(target) || target->is_object || target->npc || target->ally)) {
+        target = NULL;
+    }
+    int damage[ELEMENT_COUNT];
+    int cold   = 0;
+    int poison = 0;
+    switch (s->do_func) {
+    case 20: { // Static Field: a quarter of what's left of each monster's life around you
+        const float radius = 5.0f + ((float)level * 0.7f);
+        Roam__SpawnEffect(roam, "staticfield", player->x, player->y, 1.0f, 0.0f);
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *unit = &roam->units[i];
+            if (!Roam__IsAlive(unit) || unit->is_object || unit->npc || unit->ally || unit->hp <= 1 ||
+                Roam__Distance(unit->x, unit->y, player->x, player->y) > radius) {
+                continue;
+            }
+            memset(damage, 0, sizeof(damage));
+            damage[ELEMENT_LIGHTNING] = unit->hp / 4 > 0 ? unit->hp / 4 : 1;
+            Roam__SkillHit(roam, unit, damage, 0, 0, true, now);
+        }
+        return true;
+    }
+    case 21: // Telekinesis
+    case 33: // Psychic Hammer
+        if (target != NULL) {
+            Roam__SkillDamage(roam, s, level, damage, &cold, &poison);
+            if (s->do_func == 33 && damage[ELEMENT_PHYSICAL] <= 0) {
+                damage[ELEMENT_PHYSICAL] = Roam__Roll(1 + level, 4 + (level * 2));
+            }
+            Roam__SkillHit(roam, target, damage, cold, poison, true, now);
+        }
+        return true;
+    case 51: { // Mind Blast: everything round the spot is struck
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *unit = &roam->units[i];
+            if (Roam__IsAlive(unit) && !unit->is_object && !unit->npc && !unit->ally &&
+                Roam__Distance(unit->x, unit->y, tx, ty) <= 4.0f) {
+                Roam__SkillDamage(roam, s, level, damage, &cold, &poison);
+                damage[ELEMENT_PHYSICAL] += Roam__Roll(1 + level, 3 + (level * 2));
+                Roam__SkillHit(roam, unit, damage, cold, poison, true, now);
+            }
+        }
+        return true;
+    }
+    case 52:   // Dragon Flight: there in a blink, and a kick
+    case 67:   // Charge: a rush and a blow
+    case 78: { // Leap Attack: a leap and a blow
+        if (target == NULL) {
+            return true;
+        }
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, target->x - ((target->x - player->x) * 0.15f),
+                          target->y - ((target->y - player->y) * 0.15f), &x, &y);
+        if (Map_IsWalkable(roam->map, (int)x, (int)y) && Roam__Distance(x, y, player->x, player->y) <= 40.0f) {
+            player->x = player->target_x = x;
+            player->y = player->target_y = y;
+            roam->moving                 = false;
+            Roam__ClearPath(player);
+        }
+        roam->melee_skill = s;
+        roam->melee_level = level;
+        Roam__PlayerStrikes(roam, target, now);
+        roam->melee_skill = NULL;
+        return true;
+    }
+    case 76: { // Whirlwind: spinning through to the spot, each monster on the way struck
+        const float dx   = tx - player->x;
+        const float dy   = ty - player->y;
+        const float len  = sqrtf((dx * dx) + (dy * dy));
+        const float step = 1.0f;
+        float       x    = player->x;
+        float       y    = player->y;
+        for (float d = 0.0f; d < fminf(len, 20.0f); d += step) {
+            const float nx = player->x + (dx / (len > 0.0f ? len : 1.0f) * d);
+            const float ny = player->y + (dy / (len > 0.0f ? len : 1.0f) * d);
+            if (!Map_IsWalkable(roam->map, (int)nx, (int)ny)) {
+                break;
+            }
+            x = nx;
+            y = ny;
+        }
+        bool struck[MAX_UNITS];
+        memset(struck, 0, sizeof(struck));
+        roam->melee_skill = s;
+        roam->melee_level = level;
+        for (float t = 0.0f; t <= 1.0f; t += 0.1f) {
+            const float px = player->x + ((x - player->x) * t);
+            const float py = player->y + ((y - player->y) * t);
+            for (int i = 0; i < roam->unit_count; i++) {
+                Unit *unit = &roam->units[i];
+                if (!struck[i] && Roam__IsAlive(unit) && !unit->is_object && !unit->npc && !unit->ally &&
+                    Roam__IsCombatant(unit) && Roam__Distance(unit->x, unit->y, px, py) <= 3.0f) {
+                    struck[i] = true;
+                    Roam__PlayerStrikes(roam, unit, now);
+                }
+            }
+        }
+        roam->melee_skill = NULL;
+        player->x = player->target_x = x;
+        player->y = player->target_y = y;
+        roam->moving                 = false;
+        Roam__ClearPath(player);
+        return true;
+    }
+    case 58: { // Revive: the corpse nearest the spot fights for you a while
+        int   best = -1;
+        float near = 6.0f;
+        for (int i = 0; i < roam->unit_count; i++) {
+            const Unit *unit = &roam->units[i];
+            const float d    = Roam__Distance(unit->x, unit->y, tx, ty);
+            if (!unit->is_object && !unit->npc && !unit->ally && unit->state == UNIT_DEAD && !unit->vanished &&
+                !unit->boss && unit->rank != RANK_UNIQUE && unit->rank != RANK_SUPER_UNIQUE && unit->max_hp > 0 &&
+                d < near) {
+                near = d;
+                best = i;
+            }
+        }
+        if (best < 0) {
+            Roam__ShowMessage(roam, "Revive needs a corpse.");
+            return true;
+        }
+        Unit *revived        = &roam->units[best];
+        revived->ally        = true;
+        revived->summoned_by = s;
+        revived->hp          = revived->max_hp * 2;
+        revived->max_hp      = revived->hp;
+        revived->ally_until  = now + 180000; // three minutes
+        revived->experience  = 0;
+        revived->treasure[0] = '\0';
+        Roam__SetState(revived, UNIT_IDLE, now);
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 // The skill's effect, half way through the animation
 static void Roam__ApplyCast(SceneRoam *roam, const uint64_t now) {
     const SkillRow *s     = roam->cast_skill;
@@ -1132,12 +1288,9 @@ static void Roam__ApplyCast(SceneRoam *roam, const uint64_t now) {
             Roam__ClearPath(&roam->player);
         }
         break;
-    default: {
-        char text[96];
-        snprintf(text, sizeof(text), "%s isn't in the engine yet.", s->id);
-        Roam__ShowMessage(roam, text);
+    default:
+        Roam__SpecialSkill(roam, s, level, tx, ty, now);
         break;
-    }
     }
 }
 
@@ -1175,6 +1328,13 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         return false;
     } else if (s->kind == SKILL_KIND_PASSIVE || s->kind == SKILL_KIND_AURA) {
         return false; // always on / on while it's chosen: the click walks
+    } else if (s->kind == SKILL_KIND_OTHER && s->do_func != 20 && s->do_func != 21 && s->do_func != 33 &&
+               s->do_func != 51 && s->do_func != 52 && s->do_func != 67 && s->do_func != 76 && s->do_func != 78 &&
+               s->do_func != 58) {
+        char text[96];
+        snprintf(text, sizeof(text), "%s isn't in the engine yet.", s->id);
+        Roam__ShowMessage(roam, text);
+        return true; // (and no mana spent)
     }
     const int level = skill == SKILL_ATTACK ? 0 : Roam__SkillPoints(roam, skill);
     if (roam->in_town && s != NULL && s->kind != SKILL_KIND_TELEPORT) {
