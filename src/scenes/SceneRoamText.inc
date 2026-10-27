@@ -340,6 +340,57 @@ static void Roam__TextStoreKey(SceneRoam *roam, const int key) {
     Roam__ShowMessage(roam, text);
 }
 
+// m: the area a tile a letter, only what you've seen ('#' walls, '.' ground, '>' a way out, 'W' a waypoint, '&' the
+// others, '@' you), centred on you
+static void Roam__TextAutomap(SceneRoam *roam, TextCell *grid, const int cols, const int map_rows) {
+    const int ptx  = (int)(roam->player.x / MAP_SUBTILES);
+    const int pty  = (int)(roam->player.y / MAP_SUBTILES);
+    const int left = ptx - (cols / 2);
+    const int top  = pty - (map_rows / 2);
+    for (int r = 0; r < map_rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            const int tx   = left + c;
+            const int ty   = top + r;
+            TextCell *cell = &grid[(r * cols) + c];
+            *cell          = (TextCell){' ', 0};
+            if (tx < 0 || ty < 0 || tx >= roam->map->width || ty >= roam->map->height ||
+                !Automap_TileSeen(roam->automap, tx, ty)) {
+                continue;
+            }
+            int open = 0;
+            for (int sy = 0; sy < MAP_SUBTILES; sy++) {
+                for (int sx = 0; sx < MAP_SUBTILES; sx++) {
+                    open += Map_IsWalkable(roam->map, (tx * MAP_SUBTILES) + sx, (ty * MAP_SUBTILES) + sy) ? 1 : 0;
+                }
+            }
+            const float cx = ((float)tx + 0.5f) * MAP_SUBTILES;
+            const float cy = ((float)ty + 0.5f) * MAP_SUBTILES;
+            if (Map_ExitAt(roam->map, cx, cy) != NULL) {
+                *cell = (TextCell){'>', 95};
+            } else {
+                *cell = open >= 8 ? (TextCell){'.', 90} : (TextCell){'#', 37};
+            }
+        }
+    }
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        const int   c    = (int)(unit->x / MAP_SUBTILES) - left;
+        const int   r    = (int)(unit->y / MAP_SUBTILES) - top;
+        if (unit->is_object && unit->object.operate_fn == 23 && c >= 0 && r >= 0 && c < cols && r < map_rows &&
+            grid[(r * cols) + c].ch != ' ') {
+            grid[(r * cols) + c] = (TextCell){'W', 96};
+        }
+    }
+    for (int o = 0; o < roam->other_count; o++) {
+        const int c = (int)(roam->others[o].x / MAP_SUBTILES) - left;
+        const int r = (int)(roam->others[o].y / MAP_SUBTILES) - top;
+        if (c >= 0 && r >= 0 && c < cols && r < map_rows) {
+            grid[(r * cols) + c] = (TextCell){'&', 92};
+        }
+    }
+    grid[((map_rows / 2) * cols) + (cols / 2)] = (TextCell){'@', 97};
+}
+
 int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int rows) {
     SceneRoam *roam    = scene_ref;
     roam->text_mode    = true;
@@ -351,11 +402,15 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
         free(grid);
         return snprintf(out, (size_t)size, "Loading...\n");
     }
-    const int left  = (int)roam->player.x - (cols / 2);
-    const int top   = (int)roam->player.y - (map_rows / 2);
+    Automap_Reveal(roam->automap, roam->player.x, roam->player.y); // (what's been seen: m shows it)
     const int sub_w = roam->map->width * MAP_SUBTILES;
     const int sub_h = roam->map->height * MAP_SUBTILES;
-    for (int r = 0; r < map_rows; r++) {
+    if (roam->text_automap) {
+        Roam__TextAutomap(roam, grid, cols, map_rows);
+    }
+    const int left = (int)roam->player.x - (cols / 2);
+    const int top  = (int)roam->player.y - (map_rows / 2);
+    for (int r = 0; r < map_rows && !roam->text_automap; r++) {
         for (int c = 0; c < cols; c++) {
             const int x    = left + c;
             const int y    = top + r;
@@ -379,30 +434,40 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
             grid[(tr_ * cols) + tc_] = (value);                                                                        \
         }                                                                                                              \
     } while (0)
-    for (int g = 0; g < roam->ground_count; g++) {
+    for (int g = 0; g < roam->ground_count && !roam->text_automap; g++) {
         const GroundItem *ground = &roam->ground[g];
         if (ground->map_key == Roam__MapKey(roam)) {
             TEXT_PUT(ground->x, ground->y, ((TextCell){strcmp(ground->item.code, "gld") == 0 ? '$' : '*', 97}));
         }
     }
-    for (int i = 0; i < roam->unit_count; i++) {
+    for (int i = 0; i < roam->unit_count && !roam->text_automap; i++) {
         const Unit *unit = &roam->units[i];
         if ((unit->is_object && !unit->object.selectable) || unit->vanished) {
             continue;
         }
         TEXT_PUT(unit->x, unit->y, Roam__TextUnit(roam, unit));
     }
-    for (int o = 0; o < roam->other_count; o++) {
+    for (int o = 0; o < roam->other_count && !roam->text_automap; o++) {
         TEXT_PUT(roam->others[o].x, roam->others[o].y, ((TextCell){'&', 92}));
     }
-    if (roam->corpse_key != 0 && roam->corpse_key == Roam__MapKey(roam)) {
+    if (roam->corpse_key != 0 && roam->corpse_key == Roam__MapKey(roam) && !roam->text_automap) {
         TEXT_PUT(roam->corpse.x, roam->corpse.y, ((TextCell){'%', 97}));
     }
-    TEXT_PUT(roam->player.x, roam->player.y, ((TextCell){'@', 97}));
+    if (!roam->text_automap) {
+        TEXT_PUT(roam->player.x, roam->player.y, ((TextCell){'@', 97}));
+    }
 #undef TEXT_PUT
 
+    // The bell: when you've been hit, and now and then while your life is low (b turns it off)
+    const bool hit = roam->game && roam->player.hp < roam->text_last_hp && Roam__IsAlive(&roam->player);
+    const bool low = roam->game && Roam__IsAlive(&roam->player) && roam->player.hp * 4 < roam->player.max_hp &&
+                     SDL_GetTicks64() - roam->text_warned > 3000;
+    roam->text_last_hp = roam->player.hp;
+    if (low) {
+        roam->text_warned = SDL_GetTicks64();
+    }
     // The grid, with a colour code only where it changes (or the list that's open in its place)
-    int at    = snprintf(out, (size_t)size, "\x1b[H");
+    int at    = snprintf(out, (size_t)size, "%s\x1b[H", (hit || low) && !roam->text_quiet ? "\a" : "");
     int color = -1;
     if (roam->text_view == TEXT_VIEW_STORE && !GameInventory_ShopOpen(roam->inventory_ui)) {
         roam->text_view = TEXT_VIEW_MAP; // (walked away from the store)
@@ -461,7 +526,7 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
             ? (roam->text_pick >= 0
                    ? "w wear   u use   x drop   s sell   p to the stash   b to the cube   other: none"
                    : "a-z pick   A-Z take from the stash   1-9 from the cube   0 transmute   i/Esc back")
-            : "wasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  i items  t town  Q quit";
+            : "wasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  i items  m map  t town  Q quit";
     at += snprintf(out + at, (size_t)(size - at), "\x1b[90m%s\x1b[0m\x1b[K\n\x1b[J", keys);
     return at;
 }
@@ -583,6 +648,13 @@ void Game_TextKey(void *scene_ref, const int key) {
         }
         break;
     }
+    case 'm':
+        roam->text_automap = !roam->text_automap;
+        break;
+    case 'b':
+        roam->text_quiet = !roam->text_quiet;
+        Roam__ShowMessage(roam, roam->text_quiet ? "The bell is off." : "The bell is on.");
+        break;
     case 't':
         if (roam->game && !roam->in_town && Roam__IsAlive(player)) {
             Roam__GoToTown(roam, roam->character->act);

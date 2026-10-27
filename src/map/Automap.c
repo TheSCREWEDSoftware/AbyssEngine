@@ -367,6 +367,12 @@ void Automap_Reveal(Automap *automap, const float subtile_x, const float subtile
     }
 }
 
+bool Automap_TileSeen(Automap *automap, const int tile_x, const int tile_y) {
+    const SeenArea *seen = Automap__Seen(automap);
+    return seen != NULL && tile_x >= 0 && tile_y >= 0 && tile_x < seen->width && tile_y < seen->height &&
+           seen->tiles[(tile_y * seen->width) + tile_x] != 0;
+}
+
 void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,
                         const AutomapMark *marks, const int mark_count, const int shrink) {
     // shrink: 1 the game's size, 2 half (the corner map)

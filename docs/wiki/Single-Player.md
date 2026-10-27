@@ -515,6 +515,8 @@ players and items. Under it are your life, mana, gold and where you are, and the
 | `u` | use what's next to you: talk to someone, open a chest or door, take a waypoint |
 | `g` | pick up the nearest item |
 | `1`-`4` | drink from the belt; in someone's menu, the choice with that number |
+| `m` | the map a tile a letter: what you've seen of the area (`>` ways out, `W` waypoints, `&` the others); `m` again goes back |
+| `b` | the bell on or off: it rings when you're hit, and every few seconds while your life is under a quarter |
 | `t` | go back to town |
 | `i` | your items: a letter picks one, then `w` wears it, `u` uses it (potions), `x` drops it, `s` sells it (while a store is open), `p` puts it in the stash (in town), `b` in the Horadric Cube. In town the stash is listed too (`A`-`Z` takes an item out), and the cube's inside when you carry it (`1`-`9` takes one out, `0` transmutes). `i` or Esc goes back to the map |
 | `Q` | save and quit |

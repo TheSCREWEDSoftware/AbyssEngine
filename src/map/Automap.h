@@ -22,6 +22,8 @@ void     Automap_Destroy(Automap **automap);
 void Automap_SetArea(Automap *automap, const Map *map, int level_id, uint32_t world_seed);
 // Marks what's around (subtile_x, subtile_y) as seen
 void Automap_Reveal(Automap *automap, float subtile_x, float subtile_y);
+// Has this tile been seen (the area being shown)?
+bool Automap_TileSeen(Automap *automap, int tile_x, int tile_y);
 // An object's mark on the automap (waypoints, shrines, wells, stairs, ...): where it is, and which piece of the act's
 // MaxiMap.dc6 (objects.txt AutoMap). Shown once its tile has been seen.
 typedef struct AutomapMark {
