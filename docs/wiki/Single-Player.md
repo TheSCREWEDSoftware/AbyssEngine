@@ -333,7 +333,7 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   putting an item from the mouse on the store, or right clicking it in the inventory: what they pay and charge is
   `npc.txt`'s (with its most they'll pay at each difficulty), and what you sell joins their wares. Their stock is
   kept while the game lasts. Walking away, closing the inventory or the store's close button ends it.
-- **Gamble** (Gheed, Elzix, Alkor, Jamella, Nihlathak, and Anya once she's back): the store's screen with plain-looking items from `gamble.txt`
+- **Gamble** (Gheed, Elzix, Alkor, Jamella, Nihlathak until he leaves for the Halls of Vaught once Anya is back, then Anya): the store's screen with plain-looking items from `gamble.txt`
   (the ones up to about your level; rings and amulets always), at their gamble price (`misc.txt`, `armor.txt` and
   `weapons.txt` "gamble cost", times `npc.txt`'s sell mult). What you buy turns out magic, or rare (1 in 10), set (1
   in 500) or unique (1 in 1,000), its item level within five of yours; the message says what you got. New items each
@@ -368,7 +368,7 @@ waiting, gold when done. Each difficulty has its own. What's in:
 | Den of Evil | every monster in the Den is dead (it counts down the last five) | Akara: a skill point |
 | Sisters' Burial Grounds | Blood Raven is dead (she's put in the Burial Grounds) | Kashya: a hireling, free |
 | Tools of the Trade | the Smith in the Barracks is dead | Charsi: imbues the plain weapon in your hand (or your body armor) with rare magic |
-| The Search for Cain | you reach Tristram | Akara: a magic ring |
+| The Search for Cain | you reach Tristram | Akara: a magic ring; Deckard Cain then waits in the Rogue Encampment (and identifies items) |
 | The Forgotten Tower | the Countess is dead (put in the Tower Cellar's last level) | her own treasure class (runes) |
 | Sisters to the Slaughter, Radament's Lair (Atma: a skill point), Arcane Sanctuary, The Summoner, The Seven Tombs | the boss is dead, or you're there | |
 | Lam Esen's Tome | you reach the Ruined Temple | Alkor: 5 stat points |

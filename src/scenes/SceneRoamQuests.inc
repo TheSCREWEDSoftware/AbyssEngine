@@ -735,6 +735,7 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
         {75,  "hratli", "asheara", 10.0f,  4.0f, 0, 0},
         {109, "larzuk", "malah",   -10.0f, 8.0f, 0, 0},
         {109, "drehya", "malah",   6.0f,   6.0f, 4, 3},
+        {1,   "cain5",  "akara",   8.0f,   5.0f, 0, 4}, // Deckard Cain, once he's rescued from Tristram
     };
     for (size_t f = 0; f < sizeof(folk) / sizeof(folk[0]); f++) {
         if (Roam__MapAreaFor(roam, folk[f].level) == NULL) {
@@ -761,6 +762,17 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
         Unit *unit = Roam__AddUnit(roam, "monsters", folk[f].id, x, y);
         if (unit != NULL) {
             unit->npc = true;
+        }
+    }
+    // Nihlathak leaves Harrogath once Anya is back (Prison of Ice), for the Halls of Vaught
+    const int ice = Roam__QuestIndex(4, 3);
+    for (int i = 0; roam->game && ice >= 0 && *Roam__QuestState(roam, ice) != QUEST_OPEN && i < roam->unit_count; i++) {
+        Unit *unit = &roam->units[i];
+        if (unit->npc && strcasecmp(unit->id, "nihlathak") == 0 && Roam__MapAreaFor(roam, 109) != NULL) {
+            unit->vanished = true;
+            unit->hp       = 0;
+            unit->npc      = false;
+            Roam__SetState(unit, UNIT_DEAD, SDL_GetTicks64());
         }
     }
 }
