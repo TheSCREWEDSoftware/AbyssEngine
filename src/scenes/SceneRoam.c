@@ -267,6 +267,9 @@ typedef struct Unit {
     bool            burrowed;     // under the ground (Submerge / Emerge: frog demons, tentacles)
     uint8_t         portal_owner; // a Town Portal's: 0 ours, else the player id whose it is
     uint8_t         champion;     // CHAMPION_*: what kind of champion (shown under its name)
+    bool            spectral;     // a unique's Spectral Hit: each blow fire, cold or lightning, picked each time
+    bool            mana_burn;    // a unique's Mana Burn: its blows take mana as well as life
+    char            power[48];    // a unique's powers, shown under its name ("Extra Strong, Cursed")
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -454,13 +457,15 @@ typedef struct SceneRoam {
     float    spawn_x;
     float    spawn_y;
     uint64_t respawn_at;
-    Unit     corpse;         // Single Player: where you fell, with what you wore (the character's corpse_*)
-    int      corpse_key;     // the map it's on (Roam__MapKey), 0 = none
-    uint64_t safe_until;     // grace period after respawning
-    uint64_t stamina_until;  // a stamina potion: running doesn't tire you until then
-    uint64_t antidote_until; // an antidote potion: +50 poison resistance (most 75%) until then
-    uint64_t thawing_until;  // a thawing potion: +50 cold resistance, can't be chilled, until then
-    int      step_frame;     // walk frame the last footstep was played on, -1 = none
+    Unit     corpse;           // Single Player: where you fell, with what you wore (the character's corpse_*)
+    int      corpse_key;       // the map it's on (Roam__MapKey), 0 = none
+    uint64_t safe_until;       // grace period after respawning
+    uint64_t stamina_until;    // a stamina potion: running doesn't tire you until then
+    uint64_t antidote_until;   // an antidote potion: +50 poison resistance (most 75%) until then
+    uint64_t thawing_until;    // a thawing potion: +50 cold resistance, can't be chilled, until then
+    uint64_t conviction_until; // near a unique's Conviction: your resistances lowered by conviction until then
+    int      conviction;
+    int      step_frame; // walk frame the last footstep was played on, -1 = none
 
     Unit units[MAX_UNITS];
     int  unit_count;
@@ -1471,6 +1476,9 @@ static int Roam__ElementTaken(const SceneRoam *roam, const Element element, cons
         return damage;
     }
     int resist = Character_Resist(roam->character, element, Roam__ResistPenalty(roam));
+    if (element != ELEMENT_PHYSICAL && Roam__Now(roam) < roam->conviction_until) {
+        resist -= roam->conviction; // (a monster's Conviction)
+    }
     if ((element == ELEMENT_POISON && Roam__Now(roam) < roam->antidote_until) ||
         (element == ELEMENT_COLD && Roam__Now(roam) < roam->thawing_until)) { // (antidote / thawing potions)
         resist = resist >= 75 ? resist : (resist + 50 < 75 ? resist + 50 : 75);
@@ -2396,6 +2404,71 @@ static void Roam__UniqueName(char *out, const size_t size) {
 }
 
 // Champions, uniques (with a power or two) and their minions, super uniques: tougher, worth more, better drops
+// A unique's power (MonUMod.txt): what it does, and its name added to what's shown under the unique's name
+static void Roam__UniquePower(Unit *unit, const int power) {
+    static const char *const names[12] = {"Extra Strong",   "Extra Fast",          "Stone Skin",     "Fire Enchanted",
+                                          "Cold Enchanted", "Lightning Enchanted", "Aura Enchanted", "Magic Resistant",
+                                          "Cursed",         "Mana Burn",           "Spectral Hit",   "Teleportation"};
+    switch (power) {
+    case 0:
+        unit->damage_min += unit->damage_min / 2;
+        unit->damage_max += unit->damage_max / 2;
+        break;
+    case 1:
+        unit->speed *= 1.4f;
+        break;
+    case 2:
+        unit->defense *= 3;
+        break;
+    case 3:
+    case 4:
+    case 5: { // fire, cold or lightning enchanted
+        const int element     = ELEMENT_FIRE + (power - 3);
+        unit->element         = element;
+        unit->element_chance  = 100;
+        unit->element_min     = unit->damage_min;
+        unit->element_max     = unit->damage_max;
+        unit->resist[element] = unit->resist[element] > 75 ? unit->resist[element] : 75;
+        break;
+    }
+    case 6: { // aura enchanted (Conviction too, like the game's)
+        static const char *const auras[5] = {"Might", "Holy Fire", "Holy Freeze", "Holy Shock", "Conviction"};
+        unit->aura                        = SkillData_Get(auras[rand() % 5]);
+        unit->aura_level                  = 1 + (unit->level / 4);
+        break;
+    }
+    case 7: // magic resistant: +40% fire, cold and lightning resistance
+        for (int e = ELEMENT_FIRE; e <= ELEMENT_LIGHTNING; e++) {
+            unit->resist[e] =
+                unit->resist[e] + 40 < 95 ? unit->resist[e] + 40 : (unit->resist[e] > 95 ? unit->resist[e] : 95);
+        }
+        break;
+    case 8: // cursed: Amplify Damage when it comes for you
+        if (unit->hex == NULL) {
+            unit->hex       = SkillData_Get("Amplify Damage");
+            unit->hex_level = 1 + (unit->level / 6);
+        }
+        break;
+    case 9:
+        unit->mana_burn = true;
+        break;
+    case 10:
+        unit->spectral       = true;
+        unit->element        = ELEMENT_FIRE;
+        unit->element_chance = 100;
+        unit->element_min    = 1 + (unit->damage_min / 2);
+        unit->element_max    = 1 + (unit->damage_max / 2);
+        break;
+    default: // teleportation
+        if (unit->move_skill == MOVE_SKILL_NONE) {
+            unit->move_skill = MOVE_SKILL_TELEPORT;
+        }
+        break;
+    }
+    const size_t used = strlen(unit->power);
+    snprintf(unit->power + used, sizeof(unit->power) - used, "%s%s", used == 0 ? "" : ", ", names[power % 12]);
+}
+
 static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
     MonsterStats stats;
     const bool   have = MonsterStats_GetAtLevel(unit->id, 0, &stats);
@@ -2461,33 +2534,15 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
         unit->attack_rating += unit->attack_rating / 3;
         unit->experience    *= 5;
         unit->level         += 3;
-        // One of the game's powers (MonUMod.txt's commonest)
-        switch (rand() % 7) {
-        case 6: { // aura enchanted
-            static const char *const auras[4] = {"Might", "Holy Fire", "Holy Freeze", "Holy Shock"};
-            unit->aura                        = SkillData_Get(auras[rand() % 4]);
-            unit->aura_level                  = 1 + (unit->level / 4);
-            break;
-        }
-        case 0: // extra strong
-            unit->damage_min += unit->damage_min / 2;
-            unit->damage_max += unit->damage_max / 2;
-            break;
-        case 1: // extra fast
-            unit->speed *= 1.4f;
-            break;
-        case 2: // stone skin
-            unit->defense *= 3;
-            break;
-        default: { // fire, cold or lightning enchanted
-            static const int elements[3] = {ELEMENT_FIRE, ELEMENT_COLD, ELEMENT_LIGHTNING};
-            unit->element                = elements[rand() % 3];
-            unit->element_chance         = 100;
-            unit->element_min            = unit->damage_min;
-            unit->element_max            = unit->damage_max;
-            unit->resist[unit->element]  = 75;
-            break;
-        }
+        // Two of the game's powers (MonUMod.txt's), different ones
+        int first = -1;
+        for (int p = 0; p < 2; p++) {
+            int power = rand() % 12;
+            if (power == first) {
+                power = (power + 1) % 12;
+            }
+            first = power;
+            Roam__UniquePower(unit, power);
         }
         if (have && stats.treasure_unique[0] != '\0') {
             snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure_unique);
@@ -4096,6 +4151,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             if (unit->state == UNIT_ATTACK && unit->ranged_swing) {
                 unit->ranged_swing = false; // a shot or a spell: what it threw does the damage
             } else if (unit->state == UNIT_ATTACK && Roam__Combat(roam)) {
+                if (unit->spectral) { // Spectral Hit: a different element each blow
+                    unit->element = ELEMENT_FIRE + (rand() % 3);
+                }
                 const Unit *other = NULL;
                 Unit       *ally  = unit->fight_ally > 0 && unit->fight_ally <= roam->unit_count
                                         ? &roam->units[unit->fight_ally - 1]
@@ -4134,6 +4192,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         if (damage > 0) {
                             if (unit->element == ELEMENT_COLD) {
                                 Roam__ChillMe(roam, 2000, now); // its cold slows you
+                            }
+                            if (unit->mana_burn && roam->game) { // Mana Burn: as much mana as life
+                                roam->mana = fmaxf(0.0f, roam->mana - (float)damage);
                             }
                             Roam__Damage(roam, player, damage, now);
                         }
@@ -6764,6 +6825,8 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
         if (unit->rank == RANK_CHAMPION && unit->champion != CHAMPION_PLAIN) {
             static const char *const kinds[] = {"", "Fanatic", "Berserker", "Ghostly", "Possessed"};
             snprintf(text, sizeof(text), "%s", kinds[unit->champion < 5 ? unit->champion : 0]);
+        } else if (unit->rank == RANK_UNIQUE && unit->power[0] != '\0') {
+            snprintf(text, sizeof(text), "%s", unit->power);
         }
         for (int e = 0; e < ELEMENT_COUNT; e++) {
             if (unit->resist[e] >= 100) {

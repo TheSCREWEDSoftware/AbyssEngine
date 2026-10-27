@@ -202,6 +202,9 @@ static void Roam__MonsterAura(SceneRoam *roam, Unit *unit, const uint64_t now) {
     }
     if (strcmp(id, "Holy Freeze") == 0) {
         Roam__ChillMe(roam, 1100, now);
+    } else if (strcmp(id, "Conviction") == 0) { // your resistances lowered while you're near it
+        roam->conviction_until = now + 1100;
+        roam->conviction       = 25 + (5 * level) < 85 ? 25 + (5 * level) : 85;
     } else if (strcmp(id, "Holy Fire") == 0 || strcmp(id, "Holy Shock") == 0) {
         const Element element = strcmp(id, "Holy Fire") == 0 ? ELEMENT_FIRE : ELEMENT_LIGHTNING;
         const int     damage  = Roam__ElementTaken(roam, element, Roam__Roll(level * 2, (level * 5) + 2));
