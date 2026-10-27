@@ -67,8 +67,11 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On
   a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
   around stays for the others until the game ends.
+- **Skills**: the others see your missiles, novas and the spots your area skills land on, coming from where you
+  stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
+  Buffs, auras, curses and summons aren't shown to the others yet.
 
-Each of these changed what games send each other (now protocol version 5: magic items go over the network too, and blows carry their elemental damage):
+Each of these changed what games send each other (now protocol version 6: skills cast are sent to the others in the area):
 everyone needs the same build, or the game says the host runs a different version.
 
 ## Game settings

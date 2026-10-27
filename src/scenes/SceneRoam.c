@@ -11,6 +11,7 @@
 #include "../drawing/Label.h"
 #include "../drawing/ListBox.h"
 #include "../drawing/LoadingScreen.h"
+#include "../drawing/MissileSprite.h"
 #include "../drawing/Screenshot.h"
 #include "../drawing/Sprite.h"
 #include "../drawing/TextBox.h"
@@ -18,7 +19,9 @@
 #include "../game/Character.h"
 #include "../game/Controls.h"
 #include "../game/Inventory.h"
+#include "../game/MissileData.h"
 #include "../game/Settings.h"
+#include "../game/SkillData.h"
 #include "../game/Skills.h"
 #include "../game/Treasure.h"
 #include "../managers/AudioManager.h"
@@ -132,7 +135,16 @@ static const struct {
 #define LIGHT_LEVEL_COUNT (int)(sizeof(light_levels) / sizeof(light_levels[0]))
 static int light_level = 0; // kept between visits
 
-typedef enum UnitState { UNIT_IDLE, UNIT_WALK, UNIT_ATTACK, UNIT_HIT, UNIT_DYING, UNIT_DEAD, UNIT_OPERATE } UnitState;
+typedef enum UnitState {
+    UNIT_IDLE,
+    UNIT_WALK,
+    UNIT_ATTACK,
+    UNIT_HIT,
+    UNIT_DYING,
+    UNIT_DEAD,
+    UNIT_OPERATE,
+    UNIT_CAST, // using a skill (its own animation: SC, A1, TH, S1, ...)
+} UnitState;
 
 typedef struct DrawContext {
     Figure *figure;
@@ -192,15 +204,69 @@ typedef struct Unit {
     int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
     // Multiplayer monsters
-    int         net_target; // the map's owner: the player it's after (0: the owner's own)
-    float       net_from_x; // the others: shown moving smoothly to where the owner last said it is
-    float       net_from_y;
-    float       net_to_x;
-    float       net_to_y;
-    uint64_t    net_at;
-    int         net_state; // the state the owner last said it's in (-1: not told yet)
-    DrawContext draw;
+    int      net_target; // the map's owner: the player it's after (0: the owner's own)
+    float    net_from_x; // the others: shown moving smoothly to where the owner last said it is
+    float    net_from_y;
+    float    net_to_x;
+    float    net_to_y;
+    uint64_t net_at;
+    int      net_state;    // the state the owner last said it's in (-1: not told yet)
+    char     cast_mode[4]; // UNIT_CAST: the animation ("sc", "a1", ...)
+    // Skills
+    bool            ally;        // summoned by the player: fights the monsters
+    const SkillRow *summoned_by; // the skill that called it
+    uint64_t        ally_until;  // gone at this time (0: stays)
+    int             fight_ally;  // a monster: the ally it's after (index + 1), 0 = a player
+    const SkillRow *curse;       // the curse on it (one at a time, like the game)
+    int             curse_level;
+    uint64_t        curse_until;
+    uint64_t        chill_until; // cold: slowed down until then
+    float           poison_left; // poison still to do, and how fast
+    float           poison_rate;
+    float           poison_carry; // parts of a point done so far
+    bool            poison_ours;  // our poison (the kill is ours)
+    DrawContext     draw;
 } Unit;
+
+// Missiles: what skills (and the bow) fire, flying until they hit something or run out; explosions and the spots
+// where an area skill (Meteor, Blizzard) lands are missiles too, standing still
+#define MAX_MISSILES 384
+#define MAX_BUFFS    12
+typedef struct Missile {
+    bool               active;
+    const MissileInfo *info;
+    MissileSprite     *sprite;
+    float              x; // sub-tiles
+    float              y;
+    float              dx; // direction (length 1)
+    float              dy;
+    float              speed; // sub-tiles a second
+    float              age;   // seconds
+    float              life;
+    bool               ours;     // ours (or an ally's): hurts monsters; otherwise a monster's: hurts us
+    bool               harmless; // just to be seen (nova rings, explosions, other players' missiles)
+    bool               remote;   // another player's: stops (bursting) at the first monster it reaches
+    int                damage[ELEMENT_COUNT];
+    int                cold_frames;   // how long its cold slows
+    int                poison_frames; // over how long its poison works
+    float              radius;        // hits everything this close when it goes off (0: just what it hits)
+    float              delay;         // an area skill: goes off after this long (stands still until then)
+    int                pierce;        // goes through this many more
+    int                hits[8];       // units already hit (pierce, novas)
+    int                hit_count;
+    int                chain; // Chain Lightning: jumps left
+    float              ticks; // repeats every this many seconds (Blizzard, fire walls), 0 = once
+    float              tick_at;
+    float              ar_bonus; // attack rating percent (arrows)
+    bool               uses_ar;  // can miss (arrows and javelins)
+    const SkillRow    *skill;
+} Missile;
+
+typedef struct RoamBuff {
+    const SkillRow *skill;
+    int             level;
+    uint64_t        until;
+} RoamBuff;
 
 typedef enum RoamPanel { PANEL_NONE, PANEL_MONSTERS, PANEL_PLACES } RoamPanel;
 
@@ -416,6 +482,22 @@ typedef struct SceneRoam {
     int         item_sprite_count;
     int         item_sprite_act; // the palette they were loaded with
     Label      *item_label;
+
+    // Skills
+    Missile         missiles[MAX_MISSILES];
+    RoamBuff        buffs[MAX_BUFFS];
+    int             buff_count;
+    const SkillRow *cast_skill; // being cast now (NULL: the basic attack or nothing)
+    int             cast_level;
+    float           cast_x; // where it's aimed (sub-tiles)
+    float           cast_y;
+    int             cast_target; // the monster aimed at, -1 = none
+    bool            cast_fired;  // its effect has happened (half way through the animation)
+    const SkillRow *melee_skill; // the skill the swing under way uses (Bash, Jab, ...), NULL = a plain attack
+    int             melee_level;
+    float           bone_armor; // damage it still soaks up
+    uint64_t        aura_tick;  // the aura's next pulse (Prayer's healing, Holy Fire's damage, ...)
+    uint64_t        next_cast;  // holding the button: when to cast again
 } SceneRoam;
 
 static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);
@@ -476,7 +558,10 @@ static float Roam__PlayerSpeed(const SceneRoam *roam) {
     }
     const float speed = Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED;
     // Faster Run/Walk on what's worn
-    return roam->game ? speed * (1.0f + ((float)Affixes_Total(roam->character, MOD_FASTER_RUN) / 100.0f)) : speed;
+    return roam->game ? speed * (1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
+                                                 roam->character->bonus[BONUS_SPEED_PCT]) /
+                                         100.0f))
+                      : speed;
 }
 
 // How fast you're going, over the last half second: over the ground (sub-tiles) and on screen (pixels)
@@ -546,6 +631,8 @@ static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
         return "dd";
     case UNIT_OPERATE:
         return "op";
+    case UNIT_CAST:
+        return unit->cast_mode[0] != '\0' ? unit->cast_mode : "sc";
     case UNIT_IDLE:
         break;
     }
@@ -597,14 +684,14 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     Figure *figure = Roam__Figure(roam, unit);
     if (figure == NULL) {
         return unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING ||
-               unit->state == UNIT_OPERATE;
+               unit->state == UNIT_OPERATE || unit->state == UNIT_CAST;
     }
     int       first  = 0; // (where the frames start doesn't matter for timing)
     const int frames = Roam__FrameRange(unit, figure, &first);
     (void)first;
     const int  ms       = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
     const bool one_shot = unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING ||
-                          unit->state == UNIT_OPERATE;
+                          unit->state == UNIT_OPERATE || unit->state == UNIT_CAST;
     if (unit->state == UNIT_DEAD) {
         unit->frame = frames > 0 ? frames - 1 : 0;
         return false;
@@ -1940,6 +2027,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     }
     Roam__Populate(roam);
     Roam__ApplyUsedObjects(roam);
+    memset(roam->missiles, 0, sizeof(roam->missiles)); // what was flying stays behind
     // The automap of an act's outdoors is kept under its lowest level Id (the town), whichever area you came in by
     int automap_key = place->level_id;
     for (int a = 0; a < roam->map->area_count; a++) {
@@ -2428,14 +2516,42 @@ static void Roam__SendKilled(SceneRoam *roam, const int index, const int killer)
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
-    const Unit *player = &roam->player;
-    if (roam->game && Roam__Roll(1, 100) >
-                          Character_HitChance(player->attack_rating, player->level, target->defense, target->level)) {
+    const Unit     *player = &roam->player;
+    const SkillRow *skill  = roam->game ? roam->melee_skill : NULL; // Bash, Jab, Power Strike, ...
+    const int       level  = roam->melee_level;
+    int             ar     = player->attack_rating;
+    if (skill != NULL) {
+        ar += ar * SkillData_ToHit(skill, level) / 100;
+    }
+    if (roam->game && Roam__Roll(1, 100) > Character_HitChance(ar, player->level, target->defense, target->level)) {
         return; // missed
     }
     // Each kind of damage against the monster's resistance to it (an immune monster takes none of that kind)
     int rolled[ELEMENT_COUNT];
     Roam__RollPlayerDamage(roam, rolled);
+    if (skill != NULL) {
+        // The skill's extra damage (Zeal, Fury and Fend keep it in their second calc), and what it adds
+        const int percent = SkillData_Eval(roam->character, skill, level, skill->calc[skill->do_func == 13 ? 1 : 0]);
+        rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * percent / 100;
+        int low                   = 0;
+        int high                  = 0;
+        int frames                = 0;
+        SkillData_ElementalDamage(roam->character, skill, level, &low, &high, &frames);
+        if (skill->element > ELEMENT_PHYSICAL && high > 0) {
+            rolled[skill->element] += Roam__Roll(low, high);
+            if (skill->element == ELEMENT_COLD) {
+                target->chill_until = now + (uint64_t)(frames * 40);
+            } else if (skill->element == ELEMENT_POISON && frames > 0) {
+                target->poison_left    = (float)Roam__Resisted(rolled[ELEMENT_POISON], target->resist[ELEMENT_POISON]);
+                target->poison_rate    = target->poison_left * 25.0f / (float)frames;
+                target->poison_ours    = true;
+                rolled[ELEMENT_POISON] = 0; // over time instead
+            }
+        }
+    }
+    if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_CRITICAL]) {
+        rolled[ELEMENT_PHYSICAL] *= 2; // Critical Strike
+    }
     int damage = 0;
     for (int e = 0; e < ELEMENT_COUNT; e++) {
         damage += Roam__Resisted(rolled[e], target->resist[e]);
@@ -2510,6 +2626,8 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
     Roam__UnitSound(roam, player, MONSTER_SOUND_ATTACK);
 }
 
+#include "SceneRoamSkills.inc"
+
 static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit *player = &roam->player;
 
@@ -2573,8 +2691,15 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             roam->exhausted = false;
         }
     }
+    Roam__UpdateCast(roam, now);
     if (Roam__Animate(roam, player, now)) {
-        if (player->state == UNIT_ATTACK) {
+        if (player->state == UNIT_CAST) {
+            if (!roam->cast_fired) {
+                Roam__ApplyCast(roam, now);
+            }
+            roam->cast_skill = NULL;
+            Roam__SetState(player, UNIT_IDLE, now);
+        } else if (player->state == UNIT_ATTACK) {
             // The blow lands at the end of the swing
             if (roam->attack_target >= 0) {
                 Unit *target = &roam->units[roam->attack_target];
@@ -2596,6 +2721,10 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 roam->attack_other    = 0;
                 roam->attack_in_place = false;
             }
+            if (roam->melee_skill != NULL) {
+                roam->melee_skill   = NULL; // one blow with the skill; then plain ones
+                roam->attack_target = -1;
+            }
             Roam__SetState(player, UNIT_IDLE, now);
         } else if (player->state == UNIT_DYING) {
             Roam__SetState(player, UNIT_DEAD, now);
@@ -2612,7 +2741,8 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             Roam__SetState(player, UNIT_IDLE, now);
         }
     }
-    if (player->state == UNIT_DYING || player->state == UNIT_ATTACK || player->state == UNIT_HIT) {
+    if (player->state == UNIT_DYING || player->state == UNIT_ATTACK || player->state == UNIT_HIT ||
+        player->state == UNIT_CAST) {
         return;
     }
 
@@ -2798,6 +2928,13 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             i != roam->attack_target) {
             continue;
         }
+        if (unit->ally) {
+            Roam__UpdateAlly(roam, unit, seconds, now); // our summons: fighting for us, wherever the monsters are run
+            continue;
+        }
+        if (runs) {
+            Roam__UpdateAilments(roam, unit, seconds, now); // poison working
+        }
         if (!runs && !unit->is_object) {
             // Multiplayer, someone else runs this map's monsters: moving smoothly to where they last said, and
             // animating; what happens to them (and what they do to us) comes from the owner
@@ -2814,7 +2951,18 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
         if (Roam__Animate(roam, unit, now)) {
             if (unit->state == UNIT_ATTACK && Roam__Combat(roam)) {
                 const Unit *other = NULL;
-                if (unit->net_target == 0) {
+                Unit       *ally  = unit->fight_ally > 0 && unit->fight_ally <= roam->unit_count
+                                        ? &roam->units[unit->fight_ally - 1]
+                                        : NULL;
+                if (ally != NULL) {
+                    // One of our summons
+                    if (Roam__IsAlive(ally) &&
+                        Roam__Distance(unit->x, unit->y, ally->x, ally->y) <= ATTACK_RANGE + 0.5f &&
+                        Roam__Roll(1, 100) <=
+                            Character_HitChance(unit->attack_rating, unit->level, ally->defense, ally->level)) {
+                        Roam__Damage(roam, ally, Roam__Roll(unit->damage_min, unit->damage_max), now);
+                    }
+                } else if (unit->net_target == 0) {
                     if (player_alive && Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
                         (!roam->game || Roam__Roll(1, 100) <= Character_HitChance(unit->attack_rating, unit->level,
                                                                                   player->defense, player->level))) {
@@ -2826,7 +2974,20 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                                                           : 0;
                             damage += Roam__Resisted(Roam__Roll(unit->element_min, unit->element_max), resist);
                         }
-                        Roam__Damage(roam, player, damage, now);
+                        damage = damage * Roam__MonsterDamageFactor(roam, unit, now) / 100; // Weaken
+                        if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
+                            damage = 0; // dodged
+                        }
+                        damage = Roam__AbsorbDamage(roam, damage); // Bone Armor
+                        if (damage > 0) {
+                            Roam__Damage(roam, player, damage, now);
+                        }
+                        if (damage > 0 && roam->game && roam->character->bonus[BONUS_THORNS_PCT] > 0) {
+                            // Thorns: some of it back
+                            const int back     = damage * roam->character->bonus[BONUS_THORNS_PCT] / 100;
+                            const int dealt[5] = {back, 0, 0, 0, 0};
+                            Roam__SkillHit(roam, unit, dealt, 0, 0, true, now);
+                        }
                     }
                 } else if (Roam__OtherById(roam, unit->net_target, &other) && Roam__OtherAlive(other) &&
                            Roam__Distance(unit->x, unit->y, other->x, other->y) <= ATTACK_RANGE + 1.0f) {
@@ -2850,10 +3011,21 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
 
-        float      target_x  = 0.0f;
-        float      target_y  = 0.0f;
-        int        target_id = 0;
-        const bool target    = Roam__MonsterTarget(roam, unit, player_alive, &target_x, &target_y, &target_id);
+        float target_x  = 0.0f;
+        float target_y  = 0.0f;
+        int   target_id = 0;
+        bool  target    = Roam__MonsterTarget(roam, unit, player_alive, &target_x, &target_y, &target_id);
+        // Our summons are fought too, when they're nearer than the player
+        const int nearer_ally =
+            Roam__AllyNear(roam, unit, target ? Roam__Distance(unit->x, unit->y, target_x, target_y) : AGGRO_RANGE);
+        unit->fight_ally = 0;
+        if (nearer_ally >= 0) {
+            target           = true;
+            target_x         = roam->units[nearer_ally].x;
+            target_y         = roam->units[nearer_ally].y;
+            target_id        = 0;
+            unit->fight_ally = nearer_ally + 1;
+        }
         if (!Roam__Combat(roam) || !target || Roam__IsPeaceful(roam, unit)) {
             unit->provoked = false;
             Roam__Wander(roam, unit, seconds, now);
@@ -2891,10 +3063,12 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             if (Map_HasClearLine(roam->map, unit->x, unit->y, target_x, target_y)) {
                 Roam__ClearPath(unit);
                 Roam__TurnTowards(&unit->turn, unit->x, unit->y, target_x, target_y);
-                moved = Roam__Step(roam->map, unit, target_x, target_y, unit->speed, seconds);
+                moved = Roam__Step(roam->map, unit, target_x, target_y,
+                                   unit->speed * Roam__UnitSpeedFactor(roam, unit, now), seconds);
             } else {
                 Roam__PlanPath(roam->map, unit, target_x, target_y, now, REPATH_MONSTER_MS + (uint64_t)((i % 8) * 37));
-                moved = Roam__FollowPath(roam->map, unit, unit->speed, seconds);
+                moved =
+                    Roam__FollowPath(roam->map, unit, unit->speed * Roam__UnitSpeedFactor(roam, unit, now), seconds);
             }
             Roam__SetState(unit, moved ? UNIT_WALK : UNIT_IDLE, now);
         }
@@ -3688,14 +3862,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         dropped = true; // the click was for that, not for walking
     }
     const bool holding = GameInventory_Holding(roam->inventory_ui);
-    // Right click in the world with a skill on the right: there's no casting yet
-    if (right_click && !over_panels && !holding && character->right_skill != SKILL_ATTACK) {
-        char text[128];
-        snprintf(text, sizeof(text), "%s: casting skills isn't in the engine yet.",
-                 Skills_ForClass(character->class_id)->skills[character->right_skill].name);
-        Roam__ShowMessage(roam, text);
-    }
-    const bool took = closed_panel || skills_took || picker_was_open || item_events != INVENTORY_EVENT_NONE ||
+    const bool took    = closed_panel || skills_took || picker_was_open || item_events != INVENTORY_EVENT_NONE ||
                       holding || dropped || ((left_click || right_click) && over_panels);
     roam->ui_owns_press = (left_down || right_down) && (roam->ui_owns_press || took);
     return took || roam->ui_owns_press;
@@ -3864,8 +4031,8 @@ static void Roam__SendMonsters(SceneRoam *roam) {
     int count = 0;
     for (int i = 0; i < roam->unit_count && count < 2500; i++) {
         const Unit *unit = &roam->units[i];
-        if (unit->is_object || Roam__NearestPlayer(roam, unit->x, unit->y) > MONSTER_SYNC_DISTANCE) {
-            continue;
+        if (unit->is_object || unit->ally || Roam__NearestPlayer(roam, unit->x, unit->y) > MONSTER_SYNC_DISTANCE) {
+            continue; // (our summons are ours alone)
         }
         NetWriter_U16(writer, (uint16_t)i);
         NetWriter_F32(writer, unit->x);
@@ -3973,6 +4140,20 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         NetReader_U8(reader); // from (the map's owner)
         if (NetReader_I32(reader) == key && !Roam__RunsMonsters(roam)) {
             Roam__ApplyMonsters(roam, reader, now);
+        }
+        break;
+    }
+    case MSG_CAST_FROM: {
+        NetReader_U8(reader); // who (seen through their missiles)
+        const int   map   = NetReader_I32(reader);
+        const int   row   = NetReader_U16(reader);
+        const int   level = NetReader_U8(reader);
+        const float x     = NetReader_F32(reader);
+        const float y     = NetReader_F32(reader);
+        const float tx    = NetReader_F32(reader);
+        const float ty    = NetReader_F32(reader);
+        if (map == key && !reader->failed) {
+            Roam__ShowCast(roam, row, level, x, y, tx, ty);
         }
         break;
     }
@@ -4410,6 +4591,29 @@ static void Roam__Update(SceneRoam *roam) {
     }
     // Stand still (Shift): clicks attack where you stand instead of walking
     const bool stand_still = Controls_Held(ACTION_STAND_STILL);
+
+    // Single Player: the right skill (held down: again and again), and the left one at a monster or with Shift
+    bool used_skill = false;
+    if (roam->game && over_view && Roam__IsAlive(&roam->player) && roam->player.state != UNIT_CAST &&
+        now >= roam->next_cast) {
+        const bool at_monster = roam->hovered >= 0 && Roam__IsCombatant(&roam->units[roam->hovered]) &&
+                                !Roam__IsPeaceful(roam, &roam->units[roam->hovered]) &&
+                                !roam->units[roam->hovered].ally;
+        if (right && !roam->ui_owns_press) {
+            used_skill =
+                Roam__UseSkill(roam, roam->character->right_skill, sub_x, sub_y, at_monster ? roam->hovered : -1, now);
+        } else if (left && (at_monster || stand_still) && roam->hover_item < 0 && roam->hover_other < 0 &&
+                   (roam->character->left_skill != SKILL_ATTACK || Roam__WeaponMissile(roam) != NULL)) {
+            used_skill =
+                Roam__UseSkill(roam, roam->character->left_skill, sub_x, sub_y, at_monster ? roam->hovered : -1, now);
+        }
+        if (used_skill) {
+            roam->next_cast = now + SKILL_HOLD_MS;
+        }
+    }
+    if (used_skill) {
+        left = false; // the click was the skill's
+    }
     if (gameplay->movement != MOVEMENT_MODERN && stand_still && over_view && left && !roam->prev_left &&
         Roam__IsAlive(&roam->player)) {
         Roam__AttackInPlace(roam, roam->hovered, sub_x, sub_y, now);
@@ -4482,8 +4686,11 @@ static void Roam__Update(SceneRoam *roam) {
     roam->prev_left  = left;
     roam->prev_right = right;
 
+    Roam__UpdateSkillBonuses(roam, now);
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
+    Roam__UpdateMissiles(roam, seconds, now);
+    Roam__SkillPulse(roam, now);
     if (roam->game) {
         Roam__UpdateGroundItems(roam, SDL_GetTicks64()); // (real time, like their drawing)
     }
@@ -5023,7 +5230,7 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_SetRenderDrawColor(sdl_renderer, 10, 10, 14, 255);
     SDL_RenderClear(sdl_renderer);
 
-    static MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS + MAX_GROUND_ITEMS];
+    static MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS + MAX_GROUND_ITEMS + MAX_MISSILES];
     int                count = 0;
     const uint64_t     now   = SDL_GetTicks64();
     for (int g = 0; g < roam->ground_count; g++) { // items on the ground first: under whoever stands there
@@ -5044,6 +5251,7 @@ static void Roam__Render(SceneRoam *roam) {
     if (Roam__PrepareDraw(roam, &roam->player, &drawables[count])) {
         count++;
     }
+    count += Roam__PrepareMissiles(roam, &drawables[count], MAX_MISSILES);
     MapRenderer_SetViewer(roam->renderer, roam->player.x, roam->player.y); // roofs fade over the player
     MapRenderer_SetSeeThrough(roam->renderer, Roam__Gameplay(roam)->see_through);
     MapRenderer_Draw(roam->renderer, roam->map, &roam->camera, &view, drawables, count, roam->draw_flags);

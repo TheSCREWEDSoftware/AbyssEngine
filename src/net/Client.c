@@ -347,6 +347,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
     case MSG_MONSTER_KILLED_FROM:
     case MSG_HIT_YOU:
     case MSG_OBJECT_USED:
+    case MSG_CAST_FROM:
         NetClient__QueueGame(type, reader);
         break;
     case MSG_PARTY_INVITED: {

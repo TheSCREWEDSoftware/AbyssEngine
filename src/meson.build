@@ -69,6 +69,8 @@ sources = [
     'game/Affixes.c',
     'game/Settings.c',
     'game/Skills.c',
+    'game/SkillData.c',
+    'game/MissileData.c',
 
     'drawing/Button.c',
     'drawing/Checkbox.c',
@@ -76,6 +78,7 @@ sources = [
     'drawing/Cursor.c',
     'drawing/Dropdown.c',
     'drawing/Figure.c',
+    'drawing/MissileSprite.c',
     'drawing/Label.c',
     'drawing/ListBox.c',
     'drawing/LoadingScreen.c',

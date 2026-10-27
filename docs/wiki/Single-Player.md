@@ -1,8 +1,7 @@
 # Single Player
 
 **Main menu › Single Player** opens the character list. This is the start of the real game: characters are kept
-between sessions, gain experience and levels, carry, wear and drop items and learn skills. There's no casting, no magic items
-and no quests yet (see [Feature Status](Feature-Status.md)).
+between sessions, gain experience and levels, carry, wear and drop items and learn and cast skills. There are no quests yet (see [Feature Status](Feature-Status.md)).
 
 ## Character list
 
@@ -82,7 +81,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Run (hold) | - | `Left Ctrl` | - | Run (or walk, when running is on) while held |
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
-| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet) |
+| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill, cast where the cursor is (held: again and again) |
 | Skill tree | - | `T` | - | Single Player: the skill tree (spend skill points) |
 | Use belt 1 | - | `1` | - | Drink what's in belt slot 1 |
 | Use belt 2 | - | `2` | - | Drink what's in belt slot 2 |
@@ -221,11 +220,23 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
   dimmed; point at one to see why, and its description, level and mana cost.
 - **Left and right skill**: click the skill on either side of the control panel to pick from Attack and the skills you
   know (passives can't be picked; the left button takes only the skills the game allows there).
-- Casting isn't in yet: the skills you pick show on the panel and are saved, but attacking is still the weapon's
-  attack, and right clicking with a skill says so.
+- **Casting**: hold the right mouse button to use the right skill where the cursor is (again and again while you
+  hold it); the left skill is used when you click a monster, or anywhere with **Shift**. Skills cost mana
+  (`skills.txt`, less for each level) and work from the game's own numbers: damage by skill level, the missiles from
+  `Missiles.txt` with their pictures and glow, synergies and the calcs the game uses. What's in:
+  - Missiles (Fire Bolt, Fire Ball, Ice Bolt, Charged Bolt with its scatter, Bone Spear, Teeth, Holy Bolt, Blessed
+    Hammer, Multiple Shot's fan, Lightning Fury, ...), with bursts over an area, chaining and piercing.
+  - Novas (Frost Nova, Nova, Poison Nova), area skills (Blizzard, Meteor, Corpse Explosion), Frozen Orb's shards,
+    Glacial Spike and Ice Blast's freeze, chill and poison over time.
+  - Weapon skills (Bash, Jab, Critical Strike, ...): the skill's attack rating and damage bonus on the next blow.
+  - Buffs and warcries (Shout, Battle Orders, Bone Armor that soaks up damage, Thorns), passives (Dodge, the
+    Amazon's and Barbarian's masteries), auras that pulse, curses (Weaken, Amplify Damage, ...), Teleport.
+  - Summons (Raise Skeleton, the Valkyrie, Hydra, ...): allies that follow you, fight what's near and run out when
+    their skill says so.
+  Not yet: the Druid's and Assassin's shapes and traps, Whirlwind and leaps, some rarer skills (they say so).
 
 ## Not yet
 
-Casting skills, magic items, the stash, quests, NPC dialogue and
+Some skills (see above), magic items, the stash, quests, NPC dialogue and
 trading, hirelings, items shown on the character, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.

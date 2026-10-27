@@ -210,30 +210,40 @@ static int Character__Grow(const int start, const int points, const int per_poin
 }
 
 int Character_Stat(const Character *character, const CharacterStat stat) {
-    static const ItemModType mods[STAT_COUNT] = {MOD_STRENGTH, MOD_DEXTERITY, MOD_VITALITY, MOD_ENERGY};
-    return stat < STAT_COUNT ? character->stats[stat] + Affixes_Total(character, mods[stat]) : 0;
+    static const ItemModType    mods[STAT_COUNT]    = {MOD_STRENGTH, MOD_DEXTERITY, MOD_VITALITY, MOD_ENERGY};
+    static const CharacterBonus bonuses[STAT_COUNT] = {BONUS_STRENGTH, BONUS_DEXTERITY, BONUS_COUNT, BONUS_COUNT};
+    if (stat >= STAT_COUNT) {
+        return 0;
+    }
+    return character->stats[stat] + Affixes_Total(character, mods[stat]) +
+           (bonuses[stat] < BONUS_COUNT ? character->bonus[bonuses[stat]] : 0);
 }
 
 int Character_MaxLife(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    return Character__Grow(info->stats[STAT_VITALITY] + info->hp_add,
-                           Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
-                           info->life_per_vitality, character->level - 1, info->life_per_level) +
-           Affixes_Total(character, MOD_LIFE);
+    const int        life = Character__Grow(info->stats[STAT_VITALITY] + info->hp_add,
+                                            Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
+                                            info->life_per_vitality, character->level - 1, info->life_per_level) +
+                     Affixes_Total(character, MOD_LIFE);
+    return life + (life * character->bonus[BONUS_LIFE_PCT] / 100); // Battle Orders
 }
 
 int Character_MaxMana(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    return Character__Grow(info->stats[STAT_ENERGY], Character_Stat(character, STAT_ENERGY) - info->stats[STAT_ENERGY],
-                           info->mana_per_energy, character->level - 1, info->mana_per_level) +
-           Affixes_Total(character, MOD_MANA);
+    const int        mana =
+        Character__Grow(info->stats[STAT_ENERGY], Character_Stat(character, STAT_ENERGY) - info->stats[STAT_ENERGY],
+                        info->mana_per_energy, character->level - 1, info->mana_per_level) +
+        Affixes_Total(character, MOD_MANA);
+    return mana + (mana * character->bonus[BONUS_MANA_PCT] / 100);
 }
 
 int Character_MaxStamina(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    return Character__Grow(info->stamina, Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
-                           info->stamina_per_vitality, character->level - 1, info->stamina_per_level) +
-           Affixes_Total(character, MOD_STAMINA);
+    const int        stamina =
+        Character__Grow(info->stamina, Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
+                        info->stamina_per_vitality, character->level - 1, info->stamina_per_level) +
+        Affixes_Total(character, MOD_STAMINA);
+    return stamina + (stamina * character->bonus[BONUS_STAMINA_PCT] / 100);
 }
 
 int Character_ItemDefense(const Item *item) {
@@ -246,14 +256,16 @@ int Character_Defense(const Character *character) {
     for (int s = 0; s < EQUIP_COUNT; s++) {
         defense += character->equipped[s].code[0] != '\0' ? Character_ItemDefense(&character->equipped[s]) : 0;
     }
-    return defense + Affixes_Total(character, MOD_DEFENSE);
+    defense += Affixes_Total(character, MOD_DEFENSE);
+    return defense + (defense * character->bonus[BONUS_DEFENSE_PCT] / 100); // Frozen Armor, Shout, Iron Skin, ...
 }
 
 int Character_AttackRating(const Character *character) {
     const ClassInfo *info = Character__Info(character);
     int              ar   = (Character_Stat(character, STAT_DEXTERITY) * 5) - 35 + info->to_hit_factor +
              Affixes_Total(character, MOD_ATTACK_RATING);
-    ar += ar * Affixes_Total(character, MOD_ATTACK_RATING_PCT) / 100;
+    ar += character->bonus[BONUS_ATTACK];
+    ar += ar * (Affixes_Total(character, MOD_ATTACK_RATING_PCT) + character->bonus[BONUS_ATTACK_PCT]) / 100;
     return ar > 1 ? ar : 1;
 }
 
@@ -289,7 +301,7 @@ void Character_Damage(const Character *character, int *minimum, int *maximum) {
     const int dex_bonus = weapon != NULL ? weapon->dex_bonus : 0;
     const int bonus     = ((Character_Stat(character, STAT_STRENGTH) * str_bonus) / 100) +
                       ((Character_Stat(character, STAT_DEXTERITY) * dex_bonus) / 100) +
-                      (Affixes_Total(character, MOD_DAMAGE_PCT) - weapon_pct);
+                      (Affixes_Total(character, MOD_DAMAGE_PCT) - weapon_pct) + character->bonus[BONUS_DAMAGE_PCT];
     // Added damage (fire, cold, lightning and poison are their own: Character_ElementDamage)
     *minimum = weapon_min + ((weapon_min * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MIN);
     *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX);
@@ -310,8 +322,8 @@ void Character_ElementDamage(const Character *character, const Element element, 
     if (element <= ELEMENT_PHYSICAL || element >= ELEMENT_COUNT) {
         return;
     }
-    *minimum = Affixes_Total(character, mods[element][0]);
-    *maximum = Affixes_Total(character, mods[element][1]);
+    *minimum = Affixes_Total(character, mods[element][0]) + character->bonus[BONUS_FIRE_MIN + ((element - 1) * 2)];
+    *maximum = Affixes_Total(character, mods[element][1]) + character->bonus[BONUS_FIRE_MAX + ((element - 1) * 2)];
     *maximum = *maximum > *minimum ? *maximum : *minimum;
 }
 
@@ -321,8 +333,10 @@ int Character_Resist(const Character *character, const Element element, const in
     if (element <= ELEMENT_PHYSICAL || element >= ELEMENT_COUNT) {
         return 0;
     }
-    const int resist = Affixes_Total(character, mods[element]) + Affixes_Total(character, MOD_RES_ALL) - penalty;
-    return resist < RESIST_MAX ? resist : RESIST_MAX;
+    const int resist = Affixes_Total(character, mods[element]) + Affixes_Total(character, MOD_RES_ALL) - penalty +
+                       character->bonus[BONUS_RESIST_FIRE + element - 1];
+    const int most = RESIST_MAX + character->bonus[BONUS_MAX_RESIST_FIRE + element - 1];
+    return resist < most ? resist : most;
 }
 
 const char *Character_WeaponName(const Character *character) {
@@ -330,7 +344,12 @@ const char *Character_WeaponName(const Character *character) {
     return weapon != NULL ? weapon->name : "Bare hands";
 }
 
-int Character_ManaRegenSeconds(const Character *character) { return Character__Info(character)->mana_regen; }
+int Character_ManaRegenSeconds(const Character *character) {
+    // Faster with Warmth or Meditation (mana recovery bonus, percent)
+    const int seconds = Character__Info(character)->mana_regen;
+    return seconds * 100 /
+           (100 + (character->bonus[BONUS_MANA_REGEN_PCT] > 0 ? character->bonus[BONUS_MANA_REGEN_PCT] : 0));
+}
 
 int Character_RunDrain(const Character *character) { return Character__Info(character)->run_drain; }
 

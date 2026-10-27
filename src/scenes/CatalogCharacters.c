@@ -344,6 +344,17 @@ static void Characters__LoadMonsters(CatalogCharacters *characters, int *capacit
             }
         }
 
+        // No variants listed at all (the Valkyrie): the present layers in their usual look
+        bool any_layer = false;
+        for (int c = 0; c < COF_COMPONENT_COUNT; c++) {
+            any_layer = any_layer || entry->spec.armor[c][0] != '\0';
+        }
+        for (int c = 0; c < COF_COMPONENT_COUNT && !any_layer; c++) {
+            if (DataTable_GetInt(gfx, gfx_row, g_present[c]) == 1) {
+                snprintf(entry->spec.armor[c], sizeof(entry->spec.armor[c]), "lit");
+            }
+        }
+
         const int level   = DataTable_GetInt(stats, row, c_level);
         const int level_n = DataTable_GetInt(stats, row, c_level_n);
         const int level_h = DataTable_GetInt(stats, row, c_level_h);
@@ -367,7 +378,17 @@ static void Characters__LoadMonsters(CatalogCharacters *characters, int *capacit
         for (int m = 0; m < MODE_COUNT(monster_modes); m++) {
             flags[m] = g_mode[m] < 0 || DataTable_GetInt(gfx, gfx_row, g_mode[m]) == 1;
         }
+        const int before = characters->entry_count;
         Characters__Commit(characters, entry, monster_modes, MODE_COUNT(monster_modes), flags);
+        // A few (the Valkyrie, the Dopplezon) only have files for another weapon class than monstats2's BaseW
+        static const char *const weapon_classes[] = {"1hs"};
+        for (size_t w = 0; w < sizeof(weapon_classes) / sizeof(weapon_classes[0]) && characters->entry_count == before;
+             w++) {
+            snprintf(entry->spec.weapon_class, sizeof(entry->spec.weapon_class), "%s", weapon_classes[w]);
+            if (Figure_ModeExists(&entry->spec, "nu")) {
+                Characters__Commit(characters, entry, monster_modes, MODE_COUNT(monster_modes), flags);
+            }
+        }
     }
 
     DataTable_Destroy(&gfx);

@@ -10,4 +10,6 @@ target_sources(${PROJECT_NAME}
         ControlsExport.c ControlsExport.h
         Settings.c Settings.h
         Skills.c Skills.h
+        SkillData.c SkillData.h
+        MissileData.c MissileData.h
 )

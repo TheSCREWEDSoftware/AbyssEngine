@@ -1011,6 +1011,12 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
     case MSG_ITEM_PICK:
         Server__ItemPick(server, peer, reader);
         break;
+    case MSG_CAST:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            Server__PassOn(server, peer, MSG_CAST_FROM, reader, NetReader_I32(&peek), 0);
+        }
+        break;
     case MSG_MONSTERS:
     case MSG_HIT_MONSTER:
         if (peer->stage == STAGE_IN_GAME) {

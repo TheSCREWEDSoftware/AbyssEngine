@@ -47,6 +47,48 @@ typedef enum Element {
 
 #define RESIST_MAX 75 // the most a resistance can be, like the game
 
+// What skills add right now (passives, buffs, the aura on): worked out by the game each moment, never saved
+typedef enum CharacterBonus {
+    BONUS_DEFENSE_PCT,
+    BONUS_DAMAGE_PCT,
+    BONUS_ATTACK_PCT,
+    BONUS_ATTACK, // flat attack rating
+    BONUS_LIFE_PCT,
+    BONUS_MANA_PCT,
+    BONUS_STAMINA_PCT,
+    BONUS_SPEED_PCT,    // walking and running
+    BONUS_ATTACK_SPEED, // percent
+    BONUS_RESIST_FIRE,  // the four resistances, in Element order from fire
+    BONUS_RESIST_COLD,
+    BONUS_RESIST_LIGHTNING,
+    BONUS_RESIST_POISON,
+    BONUS_MAX_RESIST_FIRE,
+    BONUS_MAX_RESIST_COLD,
+    BONUS_MAX_RESIST_LIGHTNING,
+    BONUS_MAX_RESIST_POISON,
+    BONUS_MANA_REGEN_PCT,
+    BONUS_BLOCK,
+    BONUS_FIRE_MIN, // added to each blow
+    BONUS_FIRE_MAX,
+    BONUS_COLD_MIN,
+    BONUS_COLD_MAX,
+    BONUS_LIGHTNING_MIN,
+    BONUS_LIGHTNING_MAX,
+    BONUS_POISON_MIN,
+    BONUS_POISON_MAX,
+    BONUS_STRENGTH,
+    BONUS_DEXTERITY,
+    BONUS_THORNS_PCT,     // melee damage taken, given back
+    BONUS_CRITICAL,       // chance of double damage
+    BONUS_DODGE,          // chance to dodge a blow
+    BONUS_AVOID,          // chance to avoid a missile
+    BONUS_PIERCE,         // chance a missile goes on through
+    BONUS_FIRE_SKILL_PCT, // the masteries: more damage from those skills
+    BONUS_LIGHTNING_SKILL_PCT,
+    BONUS_COLD_PIERCE, // lowers monsters' cold resistance
+    BONUS_COUNT
+} CharacterBonus;
+
 // One item a character has (a base item from Items.h, maybe with magic: Affixes.h). code[0] == '\0': none.
 typedef struct Item {
     char    code[ITEM_CODE_MAX];
@@ -95,6 +137,7 @@ typedef struct Character {
     Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
     int           gold;
     uint64_t      waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
+    int           bonus[BONUS_COUNT]; // from skills right now (not saved)
     char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
 

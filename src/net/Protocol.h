@@ -11,8 +11,8 @@
 // they do; the server checks it and tells everyone.
 
 #define NET_PROTOCOL_VERSION                                                                                           \
-    5 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
-      // 5: elemental damage in blows
+    6 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+      // 5: elemental damage in blows; 6: skills cast
 #define NET_DEFAULT_PORT     4000 // Diablo II's own TCP/IP game port
 #define NET_DISCOVERY_PORT   4001 // LAN: "is anyone hosting?" over UDP broadcast
 #define NET_LOBBY_PORT       4002 // abyss-lobby: the list of online games
@@ -52,6 +52,9 @@ typedef enum NetMessageType {
     MSG_PARTY_INVITE, // player id
     MSG_PARTY_ACCEPT, // the inviter's player id
     MSG_PARTY_LEAVE,
+    MSG_CAST, // map, skill (skills.txt row, 0xFFFF: the bow's attack), from x, y, at x, y: the others see it (the
+              // caster
+              // does the damage)
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
@@ -72,6 +75,7 @@ typedef enum NetMessageType {
     MSG_HIT_YOU,             // only to the one hit
     MSG_OBJECT_USED,         // who opened it (0: was open already), map, object index
     MSG_PARTY_INVITED,       // who invites you
+    MSG_CAST_FROM,           // someone's skill, to see
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;

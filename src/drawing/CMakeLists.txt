@@ -10,6 +10,7 @@ target_sources(${PROJECT_NAME}
         TextBox.c TextBox.h
         Cursor.c Cursor.h
         Figure.c Figure.h
+        MissileSprite.c MissileSprite.h
         Label.c Label.h
         Screenshot.c Screenshot.h
         Picture.c Picture.h
