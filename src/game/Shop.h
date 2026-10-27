@@ -7,7 +7,8 @@
 // Town merchants, the game's way: what each sells comes from weapons.txt, armor.txt and misc.txt (their "<Name>Min",
 // "<Name>Max" columns, and "<Name>MagicMin/Max/Lvl" for magic ones), potions and scrolls always in stock
 // (PermStoreItem), and what they pay and charge from npc.txt (buy mult, sell mult, max buy). The stock is rolled when
-// you come to trade, laid out on tabs of 10 x 10 like the game's store.
+// you come to trade, laid out on tabs of 10 x 10 like the game's store. Blacksmiths repair, gamblers gamble and Deckard
+// Cain identifies.
 
 #define SHOP_W     10
 #define SHOP_H     10
@@ -23,6 +24,8 @@ typedef struct ShopStock {
     int           sell_mult; // npc.txt, out of 1024
     int           buy_mult;
     int           max_buy[3];
+    int           repair_mult; // npc.txt's "rep mult", out of 1024
+    bool          gamble;      // a gambler's: plain-looking items, magic (or better) once bought
 } ShopStock;
 
 const char *Shop_Vendor(const char *npc_id); // "Akara" for "akara"; NULL: they don't trade
@@ -33,5 +36,21 @@ void        Shop_Take(ShopStock *stock, const Item *item);        // sold to the
 int         Shop_Price(const ShopStock *stock, const Item *item); // what it costs you
 int         Shop_SellPrice(const ShopStock *stock, const Item *item, int difficulty); // what they give you
 const char *Shop_TabName(int tab);
+
+// Repairs (Charsi, Fara, Hratli, Halbu, Larzuk): what putting everything worn and carried back to full durability
+// costs, and doing it
+bool Shop_Repairs(const char *npc_id);
+int  Shop_RepairCost(const char *npc_id, const Character *character);
+void Shop_RepairAll(Character *character);
+
+// Gambling (Gheed, Elzix, Alkor, Jamella, Nihlathak): gamble.txt's items at their gamble price, looking plain; what
+// you buy turns out magic, rare, set or unique (Shop_Gamble), its level near yours
+bool Shop_Gambles(const char *npc_id);
+void Shop_FillGamble(ShopStock *stock, const char *npc_id, int character_level, int difficulty);
+void Shop_Gamble(Item *item, int character_level);
+
+// Identifying: Deckard Cain does it for nothing (all of them)
+bool Shop_Identifies(const char *npc_id);
+int  Shop_IdentifyAll(Character *character); // how many were
 
 #endif // ABYSS_SHOP_H

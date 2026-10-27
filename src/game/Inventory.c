@@ -17,7 +17,9 @@ Item Inventory_NewItem(const char *code) {
         const int range = base->max_defense - base->min_defense;
         item.defense    = base->min_defense + (range > 0 ? rand() % (range + 1) : 0);
     }
-    item.quantity = base->stackable && base->max_stack > 0 ? base->max_stack : 1;
+    item.quantity       = base->stackable && base->max_stack > 0 ? base->max_stack : 1;
+    item.durability     = (int16_t)base->durability;
+    item.max_durability = (int16_t)base->durability;
     return item;
 }
 
@@ -181,7 +183,7 @@ bool Inventory_CanEquip(const Character *character, const Item *item, const Equi
 const ItemBase *Inventory_Weapon(const Character *character) {
     for (int s = EQUIP_RIGHT_ARM; s <= EQUIP_LEFT_ARM; s++) {
         const Item *item = &character->equipped[s];
-        if (item->code[0] != '\0') {
+        if (Item_Works(item)) { // (a broken weapon: bare hands)
             const ItemBase *base = Items_Find(item->code);
             if (base != NULL && base->kind == ITEM_KIND_WEAPON) {
                 return base;

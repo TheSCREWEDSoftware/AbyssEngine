@@ -5,8 +5,8 @@
 #include <stdint.h>
 
 // The game's base items (weapons.txt, armor.txt, misc.txt, with itemtypes.txt for where they go): what an item is,
-// its size in the inventory, its picture, damage or defense, requirements, and what a potion does. Only normal items
-// for now (no magic properties, sockets or durability).
+// its size in the inventory, its picture, damage or defense, durability, requirements, and what a potion does. Magic is
+// in Affixes.h, sockets in Sockets.h.
 
 #define ITEM_CODE_MAX 8
 
@@ -138,6 +138,8 @@ typedef struct ItemBase {
     int  look_left_pad;
     int  max_sockets; // gemsockets
     int  cost;        // what a merchant asks for it (before npc.txt's multiplier)
+    int  gamble_cost; // what a gambler asks for one (rings and amulets: misc.txt; the rest: their own table)
+    int  durability;  // weapons and armor: how many knocks it takes (0: it doesn't wear down)
     int  belt_rows;   // a belt: rows of four potions it holds
     bool beltable;    // potions and scrolls go in the belt
     bool stackable;

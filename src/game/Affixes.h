@@ -13,6 +13,9 @@
 // A drop's quality and magic: called for each weapon, armor and jewelry dropped, with its item level (the monster's)
 void Affixes_Roll(Item *item, int item_level);
 
+// A chosen quality (gambling): false when the item can't be that (no unique of its kind at that level, ...)
+bool Affixes_RollQuality(Item *item, int item_level, ItemQuality quality);
+
 // The name shown: magic "Jagged Hand Axe of the Fox"; rare "Grim Bite" with the base's name as line2; unique "The
 // Gnasher" with the base's name; normal the base's name (line2 "")
 void Affixes_Name(const Item *item, char *line1, size_t size1, char *line2, size_t size2);

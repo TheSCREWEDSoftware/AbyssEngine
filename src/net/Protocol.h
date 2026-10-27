@@ -11,8 +11,9 @@
 // they do; the server checks it and tells everyone.
 
 #define NET_PROTOCOL_VERSION                                                                                           \
-    8 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
-      // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading
+    9 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+      // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading;
+      // 9: durability, unidentified items
 
 // Trading between players (MSG_TRADE / MSG_TRADE_FROM): the server only passes them on; both games check and make
 // the swap when each has accepted the other's offer as it stands (their versions)

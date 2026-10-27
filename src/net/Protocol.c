@@ -38,6 +38,9 @@ void NetItem_Write(NetWriter *writer, const Item *item) {
     for (int s = 0; s < in; s++) {
         NetWriter_String(writer, item->socketed[s]);
     }
+    NetWriter_U16(writer, (uint16_t)item->durability);
+    NetWriter_U16(writer, (uint16_t)item->max_durability);
+    NetWriter_U8(writer, item->unidentified ? 1 : 0);
 }
 
 void NetItem_Read(NetReader *reader, Item *item) {
@@ -68,6 +71,9 @@ void NetItem_Read(NetReader *reader, Item *item) {
             snprintf(item->socketed[item->socketed_count++], ITEM_CODE_MAX, "%s", code);
         }
     }
+    item->durability     = (int16_t)NetReader_U16(reader);
+    item->max_durability = (int16_t)NetReader_U16(reader);
+    item->unidentified   = NetReader_U8(reader) != 0;
 }
 
 void NetSettings_Write(const NetSettings *settings, NetWriter *writer, const bool with_password) {

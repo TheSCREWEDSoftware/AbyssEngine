@@ -109,7 +109,16 @@ typedef struct Item {
     uint8_t sockets;
     uint8_t socketed_count;
     char    socketed[ITEM_SOCKETS_MAX][ITEM_CODE_MAX];
+    // Durability (weapons and armor): it wears down with use, at 0 it's broken (does nothing until repaired). max 0:
+    // it doesn't wear down
+    int16_t durability;
+    int16_t max_durability;
+    bool    unidentified; // magic found on the ground: its magic is unknown (and does nothing) until identified
 } Item;
+
+static inline bool Item_IsBroken(const Item *item) { return item->max_durability > 0 && item->durability <= 0; }
+// Whether what's worn counts: not broken, and its magic only once it's identified
+static inline bool Item_Works(const Item *item) { return item->code[0] != '\0' && !Item_IsBroken(item); }
 
 typedef struct InventoryItem {
     Item item;

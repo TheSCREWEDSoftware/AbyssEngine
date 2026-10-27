@@ -255,7 +255,7 @@ int Character_ItemDefense(const Item *item) {
 int Character_Defense(const Character *character) {
     int defense = Character_Stat(character, STAT_DEXTERITY) / 4;
     for (int s = 0; s < EQUIP_COUNT; s++) {
-        defense += character->equipped[s].code[0] != '\0' ? Character_ItemDefense(&character->equipped[s]) : 0;
+        defense += Item_Works(&character->equipped[s]) ? Character_ItemDefense(&character->equipped[s]) : 0;
     }
     defense += Affixes_Total(character, MOD_DEFENSE);
     return defense + (defense * character->bonus[BONUS_DEFENSE_PCT] / 100); // Frozen Armor, Shout, Iron Skin, ...
@@ -273,7 +273,7 @@ int Character_AttackRating(const Character *character) {
 // The weapon item held (the weapon hand, or the other hand's when that's empty)
 static const Item *Character__WeaponItem(const Character *character) {
     for (int s = EQUIP_RIGHT_ARM; s <= EQUIP_LEFT_ARM; s++) {
-        const ItemBase *base = character->equipped[s].code[0] != '\0' ? Items_Find(character->equipped[s].code) : NULL;
+        const ItemBase *base = Item_Works(&character->equipped[s]) ? Items_Find(character->equipped[s].code) : NULL;
         if (base != NULL && base->kind == ITEM_KIND_WEAPON) {
             return &character->equipped[s];
         }
@@ -625,6 +625,15 @@ static bool Character__Line(const char **at, char *line, const size_t size) {
     return true;
 }
 
+// Saves from before durability: weapons and armor come in as new
+static void Character__Durability(Item *item) {
+    const ItemBase *base = Items_Find(item->code);
+    if (item->max_durability == 0 && base != NULL && base->durability > 0) {
+        item->durability     = (int16_t)base->durability;
+        item->max_durability = (int16_t)base->durability;
+    }
+}
+
 bool Character_ReadText(const char *text, Character *character) {
     const char *at = text;
     memset(character, 0, sizeof(Character));
@@ -737,6 +746,7 @@ bool Character_ReadText(const char *text, Character *character) {
             if (sscanf(value, "stash %d %d %7s %d %d%n", &a, &b, code, &item.defense, &item.quantity, &used) == 5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 Affixes_Parse(&item, value + used);
+                Character__Durability(&item);
                 Stash_Place(character, &item, a, b);
             } else if (sscanf(value, "inv %d %d %7s %d %d %d%n", &a, &b, code, &item.defense, &item.quantity, &page,
                               &used) >= 5) {
@@ -744,12 +754,14 @@ bool Character_ReadText(const char *text, Character *character) {
                 if (used > 0) {
                     Affixes_Parse(&item, value + used); // magic, after the page
                 }
+                Character__Durability(&item);
                 Inventory_PlaceOnPage(character, &item, a, b, page);
             } else if (sscanf(value, "%7s %d %7s %d %d%n", where, &a, code, &item.defense, &item.quantity, &used) ==
                            5 &&
                        Items_Find(code) != NULL) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 Affixes_Parse(&item, value + used);
+                Character__Durability(&item);
                 if (strcmp(where, "corpse") == 0 && a >= 0 && a < EQUIP_COUNT + BELT_MAX) {
                     Item *slot = a < EQUIP_COUNT ? &character->equipped[a] : &character->belt[a - EQUIP_COUNT];
                     if (slot->code[0] == '\0') {

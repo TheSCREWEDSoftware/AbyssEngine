@@ -84,7 +84,7 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Joining while the others are busy**: a game that's loading an area (which can take seconds) skips monster updates
   until it's caught up, rather than have them pile up until the connection gives up on it.
 
-Each of these changed what games send each other (now protocol version 8: trading):
+Each of these changed what games send each other (now protocol version 9: items carry their durability and whether they are identified):
 everyone needs the same build, or the game says the host runs a different version.
 
 ## Game settings

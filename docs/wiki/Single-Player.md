@@ -203,6 +203,22 @@ its sockets and what's in them ("Socketed (3)"). Fill a plain item's sockets wit
 (`Runes.txt`, for the item types it allows) and it becomes that runeword: the gold name ("Ancients' Pledge") and its
 magic. What's in a socket stays there.
 
+### Durability and identifying
+
+- **Durability**: weapons and armor wear down (`weapons.txt` / `armor.txt` "durability"; stacks like javelins and what
+  the table says lasts don't). A weapon loses a point now and then from blows that land, armor from blows taken (a
+  random worn piece). The tooltip shows "Durability: 12 of 24" (red when it's low); the game warns when something is
+  about to break. At 0 it's **broken**: tinted red, and it does nothing (a broken weapon fights like bare hands, broken
+  armor gives no defense or magic) until it's repaired.
+- **Repair**: the blacksmiths (Charsi, Fara, Hratli, Halbu, Larzuk) have **Repair everything** in their menu, with
+  the price: each item's worth times the part worn away times `npc.txt`'s "rep mult". It covers what you wear and
+  what you carry.
+- **Unidentified**: magic, rare, set and unique items found on the ground come unidentified: the base's name in the
+  quality's colour and "Unidentified" in red, and their magic does nothing yet (the base's damage and defense do).
+  Identify them by **right clicking a Scroll of Identify** (or a Tome, which uses a charge) and then clicking the item
+  (a "?" by the mouse until you do; any other click puts it away), or at **Deckard Cain** (**Identify Items**: all of
+  them, for nothing; he's in the towns from Act 2 on). What merchants sell and what you gamble is identified already.
+
 ### On the ground
 
 - **Dropping**: with an item on the mouse, **click anywhere in the world** (or the Modern panel's drop spot between
@@ -299,6 +315,13 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   putting an item from the mouse on the store, or right clicking it in the inventory: what they pay and charge is
   `npc.txt`'s (with its most they'll pay at each difficulty), and what you sell joins their wares. Their stock is
   kept while the game lasts. Walking away, closing the inventory or the store's close button ends it.
+- **Gamble** (Gheed, Elzix, Alkor, Jamella, Nihlathak): the store's screen with plain-looking items from `gamble.txt`
+  (the ones up to about your level; rings and amulets always), at their gamble price (`misc.txt`, `armor.txt` and
+  `weapons.txt` "gamble cost", times `npc.txt`'s sell mult). What you buy turns out magic, or rare (1 in 10), set (1
+  in 500) or unique (1 in 1,000), its item level within five of yours; the message says what you got. New items each
+  time you choose Gamble. (Exceptional and elite versions aren't offered yet.)
+- **Repair** (the blacksmiths) and **Identify Items** (Deckard Cain): see [Durability and
+  identifying](#durability-and-identifying).
 - **Travel**: Warriv takes you between the Rogue Encampment and Lut Gholein, Meshif between Lut Gholein and the Kurast
   Docks, Tyrael from the Pandemonium Fortress to Harrogath. The town's waypoint is yours from then on.
 - **Hire** (Kashya, Greiz, Asheara, Qual-Kehk): five of the act's hirelings from `hireling.txt` (their kind, a level

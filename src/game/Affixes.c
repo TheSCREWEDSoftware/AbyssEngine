@@ -688,6 +688,28 @@ static bool Affixes__MakeMagic(Item *item, const ItemBase *base, const int level
     return true;
 }
 
+bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality quality) {
+    Affixes__Load();
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL) {
+        return false;
+    }
+    const int level = item_level > 0 ? item_level : 1;
+    item->mod_count = 0;
+    switch (quality) {
+    case ITEM_UNIQUE:
+        return Affixes__MakeUnique(item, base, level);
+    case ITEM_SET:
+        return Affixes__MakeSet(item, base, level);
+    case ITEM_RARE:
+        return Affixes__MakeRare(item, base, level);
+    case ITEM_MAGIC:
+        return Affixes__MakeMagic(item, base, level);
+    default:
+        return quality == ITEM_NORMAL;
+    }
+}
+
 void Affixes_Roll(Item *item, const int item_level) {
     Affixes__Load();
     const ItemBase *base = Items_Find(item->code);
@@ -723,6 +745,10 @@ void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2
     const ItemBase *base      = Items_Find(item->code);
     const char     *base_name = base != NULL ? base->name : item->code;
     line2[0]                  = '\0';
+    if (item->unidentified) {
+        snprintf(line1, size1, "%s", base_name); // (in its quality's colour: what it is shows once identified)
+        return;
+    }
     switch (item->quality) {
     case ITEM_MAGIC: {
         const char *prefix =
@@ -807,6 +833,9 @@ const char *Affixes_InvFile(const Item *item) {
 
 int Affixes_ItemTotal(const Item *item, const ItemModType type) {
     int total = 0;
+    if (item->unidentified) {
+        return 0; // not known yet: it does nothing
+    }
     for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
         total += item->mods[m].type == type ? item->mods[m].value : 0;
     }
@@ -831,7 +860,8 @@ static int Affixes__SetTotal(const Character *character, const ItemModType type)
     int total = 0;
     for (int s = 0; s < EQUIP_COUNT; s++) {
         const Item *item = &character->equipped[s];
-        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count) {
+        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count || !Item_Works(item) ||
+            item->unidentified) {
             continue;
         }
         const SetItem *piece = &set_items[item->name1 - 1];
@@ -843,7 +873,8 @@ static int Affixes__SetTotal(const Character *character, const ItemModType type)
     // The sets' own (once per set: counted at its first piece)
     for (int s = 0; s < EQUIP_COUNT; s++) {
         const Item *item = &character->equipped[s];
-        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count) {
+        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count || !Item_Works(item) ||
+            item->unidentified) {
             continue;
         }
         const char *name  = set_items[item->name1 - 1].set;
@@ -877,11 +908,11 @@ int Affixes_SetPiecesWorn(const Character *character, const char *set) {
     Affixes__Load();
     int worn = 0;
     for (int s = 0; s < EQUIP_COUNT; s++) {
-        const Item *item  = &character->equipped[s];
-        worn             += item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count &&
-                        strcmp(set_items[item->name1 - 1].set, set) == 0
-                                ? 1
-                                : 0;
+        const Item *item = &character->equipped[s];
+        worn += item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count && Item_Works(item) &&
+                        !item->unidentified && strcmp(set_items[item->name1 - 1].set, set) == 0
+                    ? 1
+                    : 0;
     }
     return worn;
 }
@@ -896,7 +927,7 @@ const char *Affixes_SetName(const Item *item) {
 int Affixes_Total(const Character *character, const ItemModType type) {
     int total = 0;
     for (int s = 0; s < EQUIP_COUNT; s++) {
-        if (character->equipped[s].code[0] != '\0') {
+        if (Item_Works(&character->equipped[s])) { // (a broken item does nothing)
             total += Affixes_ItemTotal(&character->equipped[s], type);
         }
     }
@@ -910,7 +941,8 @@ int Affixes_Total(const Character *character, const ItemModType type) {
 // Plain items without sockets: nothing.
 void Affixes_Format(const Item *item, char *text, const size_t size) {
     text[0] = '\0';
-    if (item->quality == ITEM_NORMAL && item->sockets == 0 && item->mod_count == 0) {
+    if (item->quality == ITEM_NORMAL && item->sockets == 0 && item->mod_count == 0 && item->max_durability == 0 &&
+        !item->unidentified) {
         return;
     }
     size_t used = (size_t)snprintf(text, size, " %d %d %d ", item->quality, item->name1, item->name2);
@@ -928,6 +960,12 @@ void Affixes_Format(const Item *item, char *text, const size_t size) {
             used += (size_t)snprintf(text + used, size - used, "%s%s", s == 0 ? " g:" : ",", item->socketed[s]);
         }
     }
+    if (item->max_durability > 0 && used < size) {
+        used += (size_t)snprintf(text + used, size - used, " d%d/%d", item->durability, item->max_durability);
+    }
+    if (item->unidentified && used < size) {
+        snprintf(text + used, size - used, " u");
+    }
 }
 
 void Affixes_Parse(Item *item, const char *text) {
@@ -941,20 +979,33 @@ void Affixes_Parse(Item *item, const char *text) {
         quality >= ITEM_QUALITY_COUNT) {
         return;
     }
-    // Sockets after the mods: " s3 g:gcv,r01"
-    if (read > 0) {
-        int  sockets = 0;
-        char in[128];
-        in[0]         = '\0';
-        const int got = sscanf(text + read, " s%d g:%127s", &sockets, in);
-        if (got >= 1 && sockets > 0) {
-            item->sockets        = (uint8_t)(sockets > ITEM_SOCKETS_MAX ? ITEM_SOCKETS_MAX : sockets);
+    // After the mods: sockets " s3 g:gcv,r01", durability " d12/24", unidentified " u"
+    const char *rest = read > 0 ? text + read : "";
+    char        word[128];
+    int         used = 0;
+    while (sscanf(rest, "%127s%n", word, &used) == 1) {
+        rest  += used;
+        int a  = 0;
+        int b  = 0;
+        if (word[0] == 's' && sscanf(word + 1, "%d", &a) == 1 && a > 0) {
+            item->sockets = (uint8_t)(a > ITEM_SOCKETS_MAX ? ITEM_SOCKETS_MAX : a);
+        } else if (strncmp(word, "g:", 2) == 0) {
             item->socketed_count = 0;
-            for (char *part = strtok(in, ","); part != NULL && item->socketed_count < item->sockets;
-                 part       = strtok(NULL, ",")) {
-                snprintf(item->socketed[item->socketed_count++], ITEM_CODE_MAX, "%.7s", part);
+            for (const char *part = word + 2; *part != '\0' && item->socketed_count < ITEM_SOCKETS_MAX;) {
+                const char *comma = strchr(part, ',');
+                const int   len   = comma != NULL ? (int)(comma - part) : (int)strlen(part);
+                snprintf(item->socketed[item->socketed_count++], ITEM_CODE_MAX, "%.*s", len < 7 ? len : 7, part);
+                part += len + (comma != NULL ? 1 : 0);
             }
+        } else if (word[0] == 'd' && sscanf(word + 1, "%d/%d", &a, &b) == 2 && b > 0) {
+            item->max_durability = (int16_t)b;
+            item->durability     = (int16_t)(a < 0 ? 0 : (a > b ? b : a));
+        } else if (strcmp(word, "u") == 0) {
+            item->unidentified = true;
         }
+    }
+    if (item->socketed_count > item->sockets) {
+        item->socketed_count = item->sockets;
     }
     item->quality   = (uint8_t)quality;
     item->name1     = (int16_t)name1;

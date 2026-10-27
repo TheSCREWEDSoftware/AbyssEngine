@@ -1,6 +1,7 @@
 // SceneRoam: talking to the town folk (included by SceneRoam.c). Click one and walk up: a menu of what they do:
-// trade (their store, from the item tables and npc.txt), travel to the next town (Warriv, Meshif, Tyrael), and the
-// healers (Akara, Fara, Ormus, Jamella, Malah) heal you as you come to them, the game's way.
+// trade (their store, from the item tables and npc.txt), gamble, repair, identify (Deckard Cain), travel to the next
+// town (Warriv, Meshif, Tyrael), hire, and the healers (Akara, Fara, Ormus, Jamella, Malah) heal you as you come to
+// them, the game's way.
 
 #define NPC_MENU_W   440
 #define NPC_MENU_ROW 26
@@ -8,7 +9,18 @@
 #define NPC_RANGE    4.0f // how close you stay to them while trading
 
 // NPC_OFFER + n: hire offer n; NPC_QUEST + n: quest n's reward
-enum { NPC_TRADE, NPC_TRAVEL, NPC_HIRE, NPC_REVIVE, NPC_CANCEL, NPC_OFFER = 10, NPC_QUEST = 40 };
+enum {
+    NPC_TRADE,
+    NPC_TRAVEL,
+    NPC_HIRE,
+    NPC_REVIVE,
+    NPC_CANCEL,
+    NPC_GAMBLE,
+    NPC_REPAIR,
+    NPC_IDENTIFY,
+    NPC_OFFER = 10,
+    NPC_QUEST = 40
+};
 static int  Roam__QuestsFor(SceneRoam *roam, const Unit *unit, int *out, int most);
 static void Roam__ClaimQuest(SceneRoam *roam, int index);
 
@@ -77,9 +89,19 @@ static ShopStock *Roam__ShopFor(SceneRoam *roam, const Unit *unit) {
     return stock;
 }
 
-static void Roam__OpenShop(SceneRoam *roam, const int npc) {
-    ShopStock *stock = Roam__ShopFor(roam, &roam->units[npc]);
-    roam->shop_npc   = npc;
+static void Roam__OpenShop(SceneRoam *roam, const int npc, const bool gamble) {
+    ShopStock *stock = NULL;
+    if (gamble) {
+        if (roam->gamble == NULL) {
+            roam->gamble = malloc(sizeof(ShopStock));
+            FAIL_IF_NULL(roam->gamble);
+        }
+        Shop_FillGamble(roam->gamble, roam->units[npc].id, roam->character->level, Roam__Difficulty(roam));
+        stock = roam->gamble;
+    } else {
+        stock = Roam__ShopFor(roam, &roam->units[npc]);
+    }
+    roam->shop_npc = npc;
     GameInventory_SetStash(roam->inventory_ui, false);
     GameInventory_SetShop(roam->inventory_ui, stock, Roam__Difficulty(roam));
     roam->inventory_panel = true;
@@ -107,6 +129,15 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
     if (Shop_Vendor(unit->id) != NULL) {
         roam->npc_options[roam->npc_option_count++] = NPC_TRADE;
     }
+    if (roam->game && Shop_Gambles(unit->id)) {
+        roam->npc_options[roam->npc_option_count++] = NPC_GAMBLE;
+    }
+    if (roam->game && Shop_Repairs(unit->id)) {
+        roam->npc_options[roam->npc_option_count++] = NPC_REPAIR;
+    }
+    if (roam->game && Shop_Identifies(unit->id)) {
+        roam->npc_options[roam->npc_option_count++] = NPC_IDENTIFY;
+    }
     const int travel = Roam__NpcTravel(unit);
     if (travel >= 0) {
         roam->npc_options[roam->npc_option_count++] = NPC_TRAVEL;
@@ -128,7 +159,8 @@ static bool Roam__CanTalk(const Unit *unit) {
     }
     return unit->npc && !unit->is_object &&
            (Shop_Vendor(unit->id) != NULL || Roam__NpcTravel(unit) >= 0 || Roam__NpcHeals(unit) ||
-            Hirelings_Sells(unit->id) || gives);
+            Hirelings_Sells(unit->id) || Shop_Gambles(unit->id) || Shop_Repairs(unit->id) ||
+            Shop_Identifies(unit->id) || gives);
 }
 
 static SDL_Rect Roam__NpcMenuRow(const int row) {
@@ -159,6 +191,19 @@ static const char *Roam__NpcOptionText(SceneRoam *roam, const int option) {
         return text;
     case NPC_TRADE:
         return "Trade";
+    case NPC_GAMBLE:
+        return "Gamble";
+    case NPC_REPAIR: {
+        const int cost = Shop_RepairCost(roam->units[roam->npc_menu].id, roam->character);
+        if (cost > 0) {
+            snprintf(text, sizeof(text), "Repair everything: %d gold", cost);
+        } else {
+            snprintf(text, sizeof(text), "Repair (nothing needs it)");
+        }
+        return text;
+    }
+    case NPC_IDENTIFY:
+        return "Identify Items";
     case NPC_TRAVEL: {
         const int travel = Roam__NpcTravel(&roam->units[roam->npc_menu]);
         return travel >= 0 ? npc_travel[travel].label : "Travel";
@@ -205,8 +250,44 @@ static void Roam__NpcChoose(SceneRoam *roam, const int option) {
         Roam__ReviveHireling(roam);
         break;
     case NPC_TRADE:
-        Roam__OpenShop(roam, npc);
+        Roam__OpenShop(roam, npc, false);
         break;
+    case NPC_GAMBLE:
+        Roam__OpenShop(roam, npc, true);
+        break;
+    case NPC_REPAIR: {
+        const int cost = Shop_RepairCost(roam->units[npc].id, roam->character);
+        if (cost <= 0) {
+            Roam__ShowMessage(roam, "Nothing needs repairing.");
+        } else if (cost > roam->character->gold) {
+            Roam__ShowMessage(roam, "You don't have enough gold for the repairs.");
+        } else {
+            roam->character->gold -= cost;
+            Shop_RepairAll(roam->character);
+            Roam__ApplyCharacter(roam); // broken things work again
+            Sounds_Play("cursor_repair_item", SOUND_KIND_SFX);
+            Roam__ShowMessage(roam, "Everything is repaired.");
+            if (roam->online && NetClient_ServerKeepsCharacters()) {
+                Roam__StoreCharacter(roam);
+            }
+        }
+        break;
+    }
+    case NPC_IDENTIFY: {
+        const int count = Shop_IdentifyAll(roam->character);
+        if (count > 0) {
+            Roam__ApplyCharacter(roam);
+            Sounds_Play("cursor_identify_item", SOUND_KIND_SFX);
+            if (roam->online && NetClient_ServerKeepsCharacters()) {
+                Roam__StoreCharacter(roam);
+            }
+        }
+        char text[80];
+        snprintf(text, sizeof(text), count > 0 ? "Identified %d item%s." : "You have nothing to identify.", count,
+                 count == 1 ? "" : "s");
+        Roam__ShowMessage(roam, text);
+        break;
+    }
     case NPC_TRAVEL: {
         const int travel = Roam__NpcTravel(&roam->units[npc]);
         if (travel < 0) {

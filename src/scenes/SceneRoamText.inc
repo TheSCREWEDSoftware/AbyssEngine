@@ -210,7 +210,7 @@ void Game_TextKey(void *scene_ref, const int key) {
     if (roam->npc_menu >= 0 && key >= '1' && key <= '9') {
         const int option = key - '1';
         if (option < roam->npc_option_count) {
-            if (roam->npc_options[option] == NPC_TRADE) {
+            if (roam->npc_options[option] == NPC_TRADE || roam->npc_options[option] == NPC_GAMBLE) {
                 roam->npc_menu = -1;
                 Roam__ShowMessage(roam, "Trading needs the game's screen (not in text mode yet).");
             } else {

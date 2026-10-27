@@ -451,10 +451,11 @@ typedef struct SceneRoam {
     int            difficulty;    // Single Player: 0 Normal, 1 Nightmare, 2 Hell (multiplayer: the game's setting)
     // Town folk (SceneRoamNpc.inc): the menu of what the one you walked up to does, merchants' stock, the store open
     int        npc_menu; // unit index, -1 = none
-    int        npc_options[HIRE_OFFERS + 4];
+    int        npc_options[HIRE_OFFERS + 12];
     int        npc_option_count;
     ShopStock *shops[ROAM_SHOPS];
     int        shop_count;
+    ShopStock *gamble;   // a gambler's (rolled again each time)
     int        shop_npc; // trading with (unit index), -1 = none
     // Trading with another player (SceneRoamTrade.inc)
     int        trade_state;
@@ -1034,11 +1035,51 @@ static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, int level,
 static int  Roam__Act(const SceneRoam *roam);
 static bool Roam__RunsMonsters(const SceneRoam *roam);
 
+static void Roam__ApplyCharacter(SceneRoam *roam);
+static void Roam__ShowMessage(SceneRoam *roam, const char *text);
+
+// Durability: the weapon wears with blows that land (1 in 25), what's worn with blows taken (1 in 10, a random piece)
+static void Roam__Wear(SceneRoam *roam, const bool weapon) {
+    if (!roam->game || Roam__Roll(1, weapon ? 25 : 10) != 1) {
+        return;
+    }
+    static const EquipSlot armor[]   = {EQUIP_HEAD, EQUIP_TORSO, EQUIP_LEFT_ARM, EQUIP_GLOVES, EQUIP_FEET, EQUIP_BELT};
+    Item                  *item      = NULL;
+    Character             *character = roam->character;
+    if (weapon) {
+        for (int s = EQUIP_RIGHT_ARM; s <= EQUIP_LEFT_ARM && item == NULL; s++) {
+            const ItemBase *base = Items_Find(character->equipped[s].code);
+            item                 = base != NULL && base->kind == ITEM_KIND_WEAPON ? &character->equipped[s] : NULL;
+        }
+    } else {
+        const EquipSlot slot = armor[Roam__Roll(0, (int)(sizeof(armor) / sizeof(armor[0])) - 1)];
+        const ItemBase *base = Items_Find(character->equipped[slot].code);
+        item                 = base != NULL && base->kind == ITEM_KIND_ARMOR ? &character->equipped[slot] : NULL;
+    }
+    if (item == NULL || item->max_durability <= 0 || item->durability <= 0) {
+        return;
+    }
+    item->durability--;
+    char name1[96];
+    char name2[96];
+    Affixes_Name(item, name1, sizeof(name1), name2, sizeof(name2));
+    char text[160];
+    if (item->durability == 0) {
+        snprintf(text, sizeof(text), "Your %s has broken: a blacksmith in town can repair it.", name1);
+        Roam__ShowMessage(roam, text);
+        Roam__ApplyCharacter(roam); // it does nothing now
+    } else if (item->durability * 10 == item->max_durability || (item->max_durability < 10 && item->durability == 1)) {
+        snprintf(text, sizeof(text), "Your %s is about to break.", name1);
+        Roam__ShowMessage(roam, text);
+    }
+}
+
 static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
     }
     if (roam->game && unit == &roam->player) {
+        Roam__Wear(roam, false);
         const int reduced = Affixes_Total(roam->character, MOD_DAMAGE_REDUCED); // "Damage Reduced by N"
         amount            = amount - reduced > 1 ? amount - reduced : 1;
     }
@@ -2708,6 +2749,7 @@ static void Roam__Free(void **scene_ref) {
     for (int s = 0; s < roam->shop_count; s++) {
         free(roam->shops[s]);
     }
+    free(roam->gamble);
     free(roam->trade);
     roam->shop_count = 0;
     Label_Destroy(&roam->panel_label);
@@ -2781,6 +2823,7 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (roam->game && Roam__Roll(1, 100) > Character_HitChance(ar, player->level, target->defense, target->level)) {
         return; // missed
     }
+    Roam__Wear(roam, true);
     // Each kind of damage against the monster's resistance to it (an immune monster takes none of that kind)
     int rolled[ELEMENT_COUNT];
     Roam__RollPlayerDamage(roam, rolled);

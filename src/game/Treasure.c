@@ -152,6 +152,7 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
     if (Treasure__Auto(name, &item)) {
         Affixes_Roll(&item, level); // magic, rare or unique, maybe
         Sockets_Roll(&item, level);
+        item.unidentified = item.quality != ITEM_NORMAL; // found: what it does is found out later
         items[(*count)++] = item;
         return;
     }
@@ -168,6 +169,7 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
     } else {
         Affixes_Roll(&item, level); // rings and amulets, armor and weapons named in the class itself
         Sockets_Roll(&item, level);
+        item.unidentified = item.quality != ITEM_NORMAL;
     }
     items[(*count)++] = item;
 }

@@ -113,6 +113,11 @@ struct GameInventory {
     bool   still_worn;   // Modern: the carried item is still worn (in origin_index's slot) until it's put down
     char   sound[32];    // what was last put down sounds like
     bool   no_room;      // the panel closed and the carried item had nowhere to go: it stays on the cursor
+    // Identifying with a scroll or tome: the next item clicked; where the scroll is (the belt slot, or the grid's
+    // cell x + y * INVENTORY_W + page * INVENTORY_PAGE)
+    bool identifying;
+    bool id_from_belt;
+    int  id_where;
 };
 
 const char *GameInventory_Sound(const GameInventory *inventory) { return inventory->sound; }
@@ -190,7 +195,7 @@ static void GameInventory__DrawItem(GameInventory *inventory, const Item *item, 
     if (icon == NULL) {
         return;
     }
-    if (!usable) {
+    if (!usable || Item_IsBroken(item)) {
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 140, 0, 0, 110);
         SDL_RenderFillRect(sdl_renderer, box);
@@ -549,6 +554,98 @@ void GameInventory_Hold(GameInventory *inventory, const Item *item) {
     GameInventory__Take(inventory, item, ORIGIN_GROUND, 0);
 }
 
+// Scrolls and tomes of identify
+static bool GameInventory__Identifies(const Item *item) {
+    return strcmp(item->code, "isc") == 0 || strcmp(item->code, "ibk") == 0;
+}
+
+static bool GameInventory__AnyUnidentified(const Character *character) {
+    for (int i = 0; i < character->inventory_count; i++) {
+        if (character->inventory[i].item.unidentified) {
+            return true;
+        }
+    }
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        if (character->equipped[s].unidentified) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Right click on a scroll or tome of identify: the next item clicked is identified with it
+static bool GameInventory__StartIdentify(GameInventory *inventory, const Character *character, const Item *scroll,
+                                         const bool from_belt, const int where, const char **message) {
+    if (!GameInventory__Identifies(scroll)) {
+        return false;
+    }
+    if (strcmp(scroll->code, "ibk") == 0 && scroll->quantity <= 0) {
+        *message = "The tome is empty: Akara and the other healers sell scrolls to fill it.";
+    } else if (!GameInventory__AnyUnidentified(character)) {
+        *message = "You have nothing to identify.";
+    } else {
+        inventory->identifying  = true;
+        inventory->id_from_belt = from_belt;
+        inventory->id_where     = where;
+        *message                = "Click the item to identify.";
+    }
+    return true;
+}
+
+// The scroll used up (a tome: one charge)
+static void GameInventory__UseIdentifyScroll(GameInventory *inventory, Character *character) {
+    Item *scroll = NULL;
+    int   index  = -1;
+    if (inventory->id_from_belt) {
+        scroll = &character->belt[inventory->id_where];
+    } else {
+        const int page = inventory->id_where / INVENTORY_PAGE;
+        const int cell = inventory->id_where % INVENTORY_PAGE;
+        for (int i = 0; i < character->inventory_count; i++) {
+            const InventoryItem *it = &character->inventory[i];
+            if (it->page == page && it->x == cell % INVENTORY_W && it->y == cell / INVENTORY_W) {
+                scroll = &character->inventory[i].item;
+                index  = i;
+            }
+        }
+    }
+    if (scroll == NULL || !GameInventory__Identifies(scroll)) {
+        return;
+    }
+    if (strcmp(scroll->code, "ibk") == 0) {
+        scroll->quantity = scroll->quantity > 0 ? scroll->quantity - 1 : 0;
+    } else if (inventory->id_from_belt) {
+        memset(scroll, 0, sizeof(Item));
+        Inventory_SettleBelt(character);
+    } else {
+        Inventory_Remove(character, index);
+    }
+}
+
+// While identifying: a click on an unidentified item identifies it; anything else puts the scroll away
+static int GameInventory__Identify(GameInventory *inventory, Character *character, const int mouse_x, const int mouse_y,
+                                   const bool left_click, const char **message) {
+    Item *target = NULL;
+    int   cell_x;
+    int   cell_y;
+    if (left_click && GameInventory__CellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+        const int under = Inventory_ItemAt(character, cell_x, cell_y);
+        target          = under >= 0 ? &character->inventory[under].item : NULL;
+    } else if (left_click) {
+        const int slot = GameInventory__SlotAt(mouse_x, mouse_y);
+        target         = slot >= 0 ? &character->equipped[slot] : NULL;
+    }
+    inventory->identifying = false;
+    if (target == NULL || !target->unidentified) {
+        return INVENTORY_EVENT_NONE;
+    }
+    target->unidentified = false;
+    GameInventory__UseIdentifyScroll(inventory, character);
+    snprintf(inventory->sound, sizeof(inventory->sound), "cursor_identify_item");
+    *message = "Identified.";
+    return INVENTORY_EVENT_EQUIPMENT | INVENTORY_EVENT_MOVED; // (its magic counts now, if it's worn)
+}
+
 static bool GameInventory__Drink(Item *item, Item *drunk) {
     const ItemBase *base = Items_Find(item->code);
     if (!Items_IsPotion(base)) {
@@ -579,12 +676,28 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     if (open || !inventory->holding) {
         inventory->no_room = false;
     }
+    if (inventory->identifying) {
+        if (!open || inventory->holding) {
+            inventory->identifying = false;
+        } else if (left_click || right_click) {
+            return GameInventory__Identify(inventory, character, mouse_x, mouse_y, left_click, message);
+        }
+    }
 
     // The belt (on the control panel): right click drinks; with the inventory open, left click picks up / puts down
     const int belt_slot = GameInventory__BeltSlotAt(mouse_x, mouse_y);
     if (belt_slot >= 0) {
         if (right_click && GameInventory_DrinkBelt(character, belt_slot, drunk)) {
             return INVENTORY_EVENT_DRINK;
+        }
+        if (right_click && GameInventory__Identifies(&character->belt[belt_slot])) {
+            if (!open) {
+                *message = "Open the inventory (I) to identify with it.";
+            } else {
+                GameInventory__StartIdentify(inventory, character, &character->belt[belt_slot], true, belt_slot,
+                                             message);
+            }
+            return events;
         }
         if (!open && left_click && character->belt[belt_slot].code[0] != '\0') {
             *message = "Right click drinks it; open the inventory (I) to move belt items around.";
@@ -712,11 +825,14 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         if (under < 0) {
             return events;
         }
-        const Item item  = inventory->shop->items[under].item;
-        const int  price = Shop_Price(inventory->shop, &item);
+        Item      item  = inventory->shop->items[under].item;
+        const int price = Shop_Price(inventory->shop, &item);
         if (price > character->gold) {
             *message = "You don't have enough gold for that.";
             return events;
+        }
+        if (inventory->shop->gamble) {
+            Shop_Gamble(&item, character->level); // what it really is (the same size: if there's no room, no harm)
         }
         const ItemBase *base   = Items_Find(item.code);
         const bool      placed = (shift && base != NULL && base->beltable && Inventory_AddToBelt(character, &item)) ||
@@ -724,6 +840,14 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         if (!placed) {
             *message = "You don't have room for that.";
             return events;
+        }
+        if (inventory->shop->gamble) {
+            static char got[200]; // what the gamble turned out to be
+            char        name1[96];
+            char        name2[96];
+            Affixes_Name(&item, name1, sizeof(name1), name2, sizeof(name2));
+            snprintf(got, sizeof(got), "%s%s%s", name1, name2[0] != '\0' ? " - " : "", name2);
+            *message = got;
         }
         character->gold -= price;
         Shop_Remove(inventory->shop, under);
@@ -808,6 +932,13 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             Inventory_Remove(character, under);
             GameInventory__Sell(inventory, character, &item, message);
             return events | INVENTORY_EVENT_MOVED;
+        }
+        if (right_click && under >= 0 && !inventory->holding) {
+            const InventoryItem *it = &character->inventory[under];
+            if (GameInventory__StartIdentify(inventory, character, &it->item, false,
+                                             it->x + (it->y * INVENTORY_W) + (it->page * INVENTORY_PAGE), message)) {
+                return events;
+            }
         }
         if (right_click && under >= 0) {
             if (GameInventory__Drink(&character->inventory[under].item, drunk)) {
@@ -1332,12 +1463,20 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
             GameInventory__AddLine(lines, colors, &count, 0xFF, met ? 0xFF : 0x40, met ? 0xFF : 0x40, text);
         }
     }
+    if (item->max_durability > 0) {
+        snprintf(text, sizeof(text), "Durability: %d of %d", item->durability, item->max_durability);
+        const bool low = item->durability * 10 <= item->max_durability;
+        GameInventory__AddLine(lines, colors, &count, 0xFF, low ? 0x40 : 0xFF, low ? 0x40 : 0xFF, text);
+    }
+    if (item->unidentified) {
+        GameInventory__AddLine(lines, colors, &count, 0xFF, 0x40, 0x40, "Unidentified");
+    }
     // The magic, in blue
-    for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+    for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX && !item->unidentified; m++) {
         Affixes_ModText(&item->mods[m], text, sizeof(text));
         GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);
     }
-    const char *set = Affixes_SetName(item);
+    const char *set = item->unidentified ? NULL : Affixes_SetName(item);
     if (set != NULL) {
         snprintf(text, sizeof(text), "%s (%d worn)", set, Affixes_SetPiecesWorn(character, set));
         GameInventory__AddLine(lines, colors, &count, 0xC7, 0xB3, 0x77, text);
@@ -1354,6 +1493,8 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, inventory->tip_extra);
     } else if (Items_IsPotion(base)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to drink");
+    } else if (GameInventory__Identifies(item)) {
+        GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to identify an item");
     }
 
     // A dark box, centred above the item, kept on the screen
@@ -1412,6 +1553,13 @@ static void GameInventory__DrawSockets(GameInventory *inventory, const Item *ite
 
 void GameInventory_DrawOverlay(GameInventory *inventory, const Character *character, const bool open, const int mouse_x,
                                const int mouse_y) {
+    if (inventory->identifying) {
+        // The identify pointer: a question mark by the mouse
+        Label_SetText(inventory->text, "?");
+        Label_SetColor(inventory->text, 0xFF, 0xD0, 0x40, 0xFF);
+        Label_SetAlignment(inventory->text, LABEL_ALIGN_BEGIN, LABEL_ALIGN_BEGIN);
+        Label_Draw(inventory->text, mouse_x + 14, mouse_y + 4);
+    }
     if (inventory->holding) {
         const ItemBase *base = Items_Find(inventory->held.code);
         const SDL_Rect  box  = {mouse_x - ((base != NULL ? base->width : 1) * CELL / 2),
