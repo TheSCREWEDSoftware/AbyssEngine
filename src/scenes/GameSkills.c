@@ -5,6 +5,7 @@
 #include "../common/ResourcePaths.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
+#include "../game/Affixes.h"
 #include "../game/Skills.h"
 #include "GameInventory.h"
 #include <SDL2/SDL.h>
@@ -286,11 +287,13 @@ void GameSkills_DrawTree(GameSkills *skills, const Character *character, const i
         }
         const SDL_Rect rect  = GameSkills__IconRect(skill);
         const int      level = character->skill_levels[s];
-        const bool     ready = level > 0 || Skills_CanRaise(character, s, NULL);
+        const int      bonus = Affixes_SkillBonus(character, s); // +skills from what's worn
+        const bool     ready = level > 0 || bonus > 0 || Skills_CanRaise(character, s, NULL);
         GameSkills__DrawIcon(skills, s, rect.x, rect.y, !ready);
-        if (level > 0) {
-            snprintf(text, sizeof(text), "%d", level);
-            GameSkills__Text(skills->text, text, rect.x + rect.w + 8, rect.y + rect.h - 6, 0xFF, 0xFF, 0xFF);
+        if (level + bonus > 0) {
+            snprintf(text, sizeof(text), "%d", level + bonus);
+            GameSkills__Text(skills->text, text, rect.x + rect.w + 8, rect.y + rect.h - 6, bonus > 0 ? 0x69 : 0xFF,
+                             bonus > 0 ? 0x69 : 0xFF, 0xFF); // (blue when items add to it, like the game)
         }
         if (s == hovered) {
             SDL_SetRenderDrawColor(sdl_renderer, 230, 200, 110, 255);
@@ -380,7 +383,8 @@ static void GameSkills__SkillTip(GameSkills *skills, const Character *character,
         return;
     }
     const SkillDef *def   = &skills->table->skills[skill];
-    const int       level = character->skill_levels[skill];
+    const int       bonus = Affixes_SkillBonus(character, skill);
+    const int       level = character->skill_levels[skill] + bonus;
     GameSkills__AddLine(lines, colors, &count, def->name, 0x60, 0xE0, 0x60);
     if (def->short_desc[0] != '\0') {
         GameSkills__AddWrapped(skills, lines, colors, &count, def->short_desc);

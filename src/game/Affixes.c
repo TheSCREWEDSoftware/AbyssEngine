@@ -1,9 +1,12 @@
 #include "Affixes.h"
 #include "Sockets.h"
 static void Affixes__AddMod(Item *item, int type, int value);
+static void Affixes__AddModParam(Item *item, int type, int value, int param);
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
 #include "../data/StringTable.h"
+#include "SkillData.h"
+#include "Skills.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,45 +28,68 @@ typedef struct ModInfo {
 } ModInfo;
 
 static const ModInfo mod_info[MOD_TYPE_COUNT] = {
-    [MOD_STRENGTH]             = {"str",       "+%d to Strength"                          },
-    [MOD_DEXTERITY]            = {"dex",       "+%d to Dexterity"                         },
-    [MOD_VITALITY]             = {"vit",       "+%d to Vitality"                          },
-    [MOD_ENERGY]               = {"enr",       "+%d to Energy"                            },
-    [MOD_LIFE]                 = {"hp",        "+%d to Life"                              },
-    [MOD_MANA]                 = {"mana",      "+%d to Mana"                              },
-    [MOD_STAMINA]              = {"stam",      "+%d Maximum Stamina"                      },
-    [MOD_ATTACK_RATING]        = {"att",       "+%d to Attack Rating"                     },
-    [MOD_ATTACK_RATING_PCT]    = {"att%",      "%d%% Bonus to Attack Rating"              },
-    [MOD_DEFENSE]              = {"ac",        "+%d Defense"                              },
-    [MOD_DEFENSE_PCT]          = {"ac%",       "+%d%% Enhanced Defense"                   },
-    [MOD_DAMAGE_PCT]           = {"dmg%",      "+%d%% Enhanced Damage"                    },
-    [MOD_DAMAGE_MIN]           = {"dmg-min",   "+%d to Minimum Damage"                    },
-    [MOD_DAMAGE_MAX]           = {"dmg-max",   "+%d to Maximum Damage"                    },
-    [MOD_FIRE_MIN]             = {"fire-min",  "+%d to Minimum Fire Damage"               },
-    [MOD_FIRE_MAX]             = {"fire-max",  "+%d to Maximum Fire Damage"               },
-    [MOD_COLD_MIN]             = {"cold-min",  "+%d to Minimum Cold Damage"               },
-    [MOD_COLD_MAX]             = {"cold-max",  "+%d to Maximum Cold Damage"               },
-    [MOD_LIGHTNING_MIN]        = {"ltng-min",  "+%d to Minimum Lightning Damage"          },
-    [MOD_LIGHTNING_MAX]        = {"ltng-max",  "+%d to Maximum Lightning Damage"          },
-    [MOD_POISON]               = {"pois",      "+%d Poison Damage"                        },
-    [MOD_RES_FIRE]             = {"res-fire",  "Fire Resist +%d%%"                        },
-    [MOD_RES_COLD]             = {"res-cold",  "Cold Resist +%d%%"                        },
-    [MOD_RES_LIGHTNING]        = {"res-ltng",  "Lightning Resist +%d%%"                   },
-    [MOD_RES_POISON]           = {"res-pois",  "Poison Resist +%d%%"                      },
-    [MOD_RES_ALL]              = {"res-all",   "All Resistances +%d"                      },
-    [MOD_LIFE_STEAL]           = {"lifesteal", "%d%% Life Stolen per Hit"                 },
-    [MOD_MANA_STEAL]           = {"manasteal", "%d%% Mana Stolen per Hit"                 },
-    [MOD_MAGIC_FIND]           = {"mag%",      "%d%% Better Chance of Getting Magic Items"},
-    [MOD_GOLD_FIND]            = {"gold%",     "%d%% Extra Gold from Monsters"            },
-    [MOD_REPLENISH_LIFE]       = {"regen",     "Replenish Life +%d"                       },
-    [MOD_FASTER_RUN]           = {"move",      "+%d%% Faster Run/Walk"                    },
-    [MOD_ATTACK_SPEED]         = {"swing",     "+%d%% Increased Attack Speed"             },
-    [MOD_HIT_RECOVERY]         = {"balance",   "+%d%% Faster Hit Recovery"                },
-    [MOD_BLOCK]                = {"block",     "%d%% Increased Chance of Blocking"        },
-    [MOD_LIGHT_RADIUS]         = {"light",     "+%d to Light Radius"                      },
-    [MOD_THORNS]               = {"thorns",    "Attacker Takes Damage of %d"              },
-    [MOD_DAMAGE_REDUCED]       = {"red-dmg",   "Damage Reduced by %d"                     },
-    [MOD_MAGIC_DAMAGE_REDUCED] = {"red-mag",   "Magic Damage Reduced by %d"               },
+    [MOD_STRENGTH]             = {"str",          "+%d to Strength"                                 },
+    [MOD_DEXTERITY]            = {"dex",          "+%d to Dexterity"                                },
+    [MOD_VITALITY]             = {"vit",          "+%d to Vitality"                                 },
+    [MOD_ENERGY]               = {"enr",          "+%d to Energy"                                   },
+    [MOD_LIFE]                 = {"hp",           "+%d to Life"                                     },
+    [MOD_MANA]                 = {"mana",         "+%d to Mana"                                     },
+    [MOD_STAMINA]              = {"stam",         "+%d Maximum Stamina"                             },
+    [MOD_ATTACK_RATING]        = {"att",          "+%d to Attack Rating"                            },
+    [MOD_ATTACK_RATING_PCT]    = {"att%",         "%d%% Bonus to Attack Rating"                     },
+    [MOD_DEFENSE]              = {"ac",           "+%d Defense"                                     },
+    [MOD_DEFENSE_PCT]          = {"ac%",          "+%d%% Enhanced Defense"                          },
+    [MOD_DAMAGE_PCT]           = {"dmg%",         "+%d%% Enhanced Damage"                           },
+    [MOD_DAMAGE_MIN]           = {"dmg-min",      "+%d to Minimum Damage"                           },
+    [MOD_DAMAGE_MAX]           = {"dmg-max",      "+%d to Maximum Damage"                           },
+    [MOD_FIRE_MIN]             = {"fire-min",     "+%d to Minimum Fire Damage"                      },
+    [MOD_FIRE_MAX]             = {"fire-max",     "+%d to Maximum Fire Damage"                      },
+    [MOD_COLD_MIN]             = {"cold-min",     "+%d to Minimum Cold Damage"                      },
+    [MOD_COLD_MAX]             = {"cold-max",     "+%d to Maximum Cold Damage"                      },
+    [MOD_LIGHTNING_MIN]        = {"ltng-min",     "+%d to Minimum Lightning Damage"                 },
+    [MOD_LIGHTNING_MAX]        = {"ltng-max",     "+%d to Maximum Lightning Damage"                 },
+    [MOD_POISON]               = {"pois",         "+%d Poison Damage"                               },
+    [MOD_RES_FIRE]             = {"res-fire",     "Fire Resist +%d%%"                               },
+    [MOD_RES_COLD]             = {"res-cold",     "Cold Resist +%d%%"                               },
+    [MOD_RES_LIGHTNING]        = {"res-ltng",     "Lightning Resist +%d%%"                          },
+    [MOD_RES_POISON]           = {"res-pois",     "Poison Resist +%d%%"                             },
+    [MOD_RES_ALL]              = {"res-all",      "All Resistances +%d"                             },
+    [MOD_LIFE_STEAL]           = {"lifesteal",    "%d%% Life Stolen per Hit"                        },
+    [MOD_MANA_STEAL]           = {"manasteal",    "%d%% Mana Stolen per Hit"                        },
+    [MOD_MAGIC_FIND]           = {"mag%",         "%d%% Better Chance of Getting Magic Items"       },
+    [MOD_GOLD_FIND]            = {"gold%",        "%d%% Extra Gold from Monsters"                   },
+    [MOD_REPLENISH_LIFE]       = {"regen",        "Replenish Life +%d"                              },
+    [MOD_FASTER_RUN]           = {"move",         "+%d%% Faster Run/Walk"                           },
+    [MOD_ATTACK_SPEED]         = {"swing",        "+%d%% Increased Attack Speed"                    },
+    [MOD_HIT_RECOVERY]         = {"balance",      "+%d%% Faster Hit Recovery"                       },
+    [MOD_BLOCK]                = {"block",        "%d%% Increased Chance of Blocking"               },
+    [MOD_LIGHT_RADIUS]         = {"light",        "+%d to Light Radius"                             },
+    [MOD_THORNS]               = {"thorns",       "Attacker Takes Damage of %d"                     },
+    [MOD_DAMAGE_REDUCED]       = {"red-dmg",      "Damage Reduced by %d"                            },
+    [MOD_MAGIC_DAMAGE_REDUCED] = {"red-mag",      "Magic Damage Reduced by %d"                      },
+    [MOD_ALL_SKILLS]           = {"allskills",    "+%d to All Skills"                               },
+    [MOD_CLASS_SKILLS]         = {"clskills",     "+%d to Class Skills"                             },
+    [MOD_TAB_SKILLS]           = {"skilltab",     "+%d to Skills"                                   },
+    [MOD_SKILL]                = {"skill",        "+%d to a Skill"                                  },
+    [MOD_OSKILL]               = {"oskill",       "+%d to a Skill"                                  },
+    [MOD_DURABILITY]           = {"dur",          "+%d Maximum Durability"                          },
+    [MOD_INDESTRUCTIBLE]       = {"indestruct",   "Indestructible"                                  },
+    [MOD_MANA_REGEN]           = {"regen-mana",   "Regenerate Mana %d%%"                            },
+    [MOD_MANA_PCT]             = {"mana%",        "Increase Maximum Mana %d%%"                      },
+    [MOD_DEFENSE_PER_LEVEL]    = {"ac/lvl",       "+%d Defense (Based on Character Level)"          },
+    [MOD_MAX_DAMAGE_PER_LEVEL] = {"dmg/lvl",      "+%d to Maximum Damage (Based on Character Level)"},
+    [MOD_DAMAGE_UNDEAD]        = {"dmg-undead",   "+%d%% Damage to Undead"                          },
+    [MOD_DAMAGE_DEMON]         = {"dmg-demon",    "+%d%% Damage to Demons"                          },
+    [MOD_ATTACK_UNDEAD]        = {"att-undead",   "+%d to Attack Rating against Undead"             },
+    [MOD_ATTACK_DEMON]         = {"att-demon",    "+%d to Attack Rating against Demons"             },
+    [MOD_CRUSHING_BLOW]        = {"crush",        "%d%% Chance of Crushing Blow"                    },
+    [MOD_DEADLY_STRIKE]        = {"deadly",       "%d%% Deadly Strike"                              },
+    [MOD_IGNORE_DEFENSE]       = {"ignore-ac",    "Ignore Target's Defense"                         },
+    [MOD_MANA_PER_KILL]        = {"mana-kill",    "+%d to Mana after each Kill"                     },
+    [MOD_LIFE_PER_KILL]        = {"heal-kill",    "+%d Life after each Kill"                        },
+    [MOD_DAMAGE_TO_MANA]       = {"dmg-to-mana",  "%d%% Damage Taken Goes To Mana"                  },
+    [MOD_DAMAGE_REDUCED_PCT]   = {"red-dmg%",     "Damage Reduced by %d%%"                          },
+    [MOD_LIGHTNING_THORNS]     = {"light-thorns", "Attacker Takes Lightning Damage of %d"           },
 };
 
 // Properties.txt codes we know: one property, or a pair (minimum to the first, maximum to the second). IGNORE: fine
@@ -74,59 +100,117 @@ static const struct {
     int         type;
     int         pair; // -1: one value
 } codes[] = {
-    {"str",       MOD_STRENGTH,             -1               },
-    {"dex",       MOD_DEXTERITY,            -1               },
-    {"vit",       MOD_VITALITY,             -1               },
-    {"enr",       MOD_ENERGY,               -1               },
-    {"hp",        MOD_LIFE,                 -1               },
-    {"mana",      MOD_MANA,                 -1               },
-    {"stam",      MOD_STAMINA,              -1               },
-    {"att",       MOD_ATTACK_RATING,        -1               },
-    {"att%",      MOD_ATTACK_RATING_PCT,    -1               },
-    {"ac",        MOD_DEFENSE,              -1               },
-    {"ac%",       MOD_DEFENSE_PCT,          -1               },
-    {"dmg%",      MOD_DAMAGE_PCT,           -1               },
-    {"dmg-min",   MOD_DAMAGE_MIN,           -1               },
-    {"dmg-max",   MOD_DAMAGE_MAX,           -1               },
-    {"dmg-norm",  MOD_DAMAGE_MIN,           MOD_DAMAGE_MAX   },
-    {"fire-min",  MOD_FIRE_MIN,             -1               },
-    {"fire-max",  MOD_FIRE_MAX,             -1               },
-    {"dmg-fire",  MOD_FIRE_MIN,             MOD_FIRE_MAX     },
-    {"cold-min",  MOD_COLD_MIN,             -1               },
-    {"cold-max",  MOD_COLD_MAX,             -1               },
-    {"dmg-cold",  MOD_COLD_MIN,             MOD_COLD_MAX     },
-    {"ltng-min",  MOD_LIGHTNING_MIN,        -1               },
-    {"ltng-max",  MOD_LIGHTNING_MAX,        -1               },
-    {"dmg-ltng",  MOD_LIGHTNING_MIN,        MOD_LIGHTNING_MAX},
-    {"dmg-pois",  MOD_POISON,               -1               },
-    {"pois-min",  MOD_POISON,               -1               },
-    {"res-fire",  MOD_RES_FIRE,             -1               },
-    {"res-cold",  MOD_RES_COLD,             -1               },
-    {"res-ltng",  MOD_RES_LIGHTNING,        -1               },
-    {"res-pois",  MOD_RES_POISON,           -1               },
-    {"res-all",   MOD_RES_ALL,              -1               },
-    {"lifesteal", MOD_LIFE_STEAL,           -1               },
-    {"manasteal", MOD_MANA_STEAL,           -1               },
-    {"mag%",      MOD_MAGIC_FIND,           -1               },
-    {"gold%",     MOD_GOLD_FIND,            -1               },
-    {"regen",     MOD_REPLENISH_LIFE,       -1               },
-    {"move1",     MOD_FASTER_RUN,           -1               },
-    {"move2",     MOD_FASTER_RUN,           -1               },
-    {"move3",     MOD_FASTER_RUN,           -1               },
-    {"swing1",    MOD_ATTACK_SPEED,         -1               },
-    {"swing2",    MOD_ATTACK_SPEED,         -1               },
-    {"swing3",    MOD_ATTACK_SPEED,         -1               },
-    {"balance1",  MOD_HIT_RECOVERY,         -1               },
-    {"balance2",  MOD_HIT_RECOVERY,         -1               },
-    {"balance3",  MOD_HIT_RECOVERY,         -1               },
-    {"block",     MOD_BLOCK,                -1               },
-    {"light",     MOD_LIGHT_RADIUS,         -1               },
-    {"thorns",    MOD_THORNS,               -1               },
-    {"red-dmg",   MOD_DAMAGE_REDUCED,       -1               },
-    {"red-mag",   MOD_MAGIC_DAMAGE_REDUCED, -1               },
-    {"cold-len",  IGNORE,                   -1               },
-    {"pois-len",  IGNORE,                   -1               },
+    {"str",          MOD_STRENGTH,             -1               },
+    {"dex",          MOD_DEXTERITY,            -1               },
+    {"vit",          MOD_VITALITY,             -1               },
+    {"enr",          MOD_ENERGY,               -1               },
+    {"hp",           MOD_LIFE,                 -1               },
+    {"mana",         MOD_MANA,                 -1               },
+    {"stam",         MOD_STAMINA,              -1               },
+    {"att",          MOD_ATTACK_RATING,        -1               },
+    {"att%",         MOD_ATTACK_RATING_PCT,    -1               },
+    {"ac",           MOD_DEFENSE,              -1               },
+    {"ac%",          MOD_DEFENSE_PCT,          -1               },
+    {"dmg%",         MOD_DAMAGE_PCT,           -1               },
+    {"dmg-min",      MOD_DAMAGE_MIN,           -1               },
+    {"dmg-max",      MOD_DAMAGE_MAX,           -1               },
+    {"dmg-norm",     MOD_DAMAGE_MIN,           MOD_DAMAGE_MAX   },
+    {"fire-min",     MOD_FIRE_MIN,             -1               },
+    {"fire-max",     MOD_FIRE_MAX,             -1               },
+    {"dmg-fire",     MOD_FIRE_MIN,             MOD_FIRE_MAX     },
+    {"cold-min",     MOD_COLD_MIN,             -1               },
+    {"cold-max",     MOD_COLD_MAX,             -1               },
+    {"dmg-cold",     MOD_COLD_MIN,             MOD_COLD_MAX     },
+    {"ltng-min",     MOD_LIGHTNING_MIN,        -1               },
+    {"ltng-max",     MOD_LIGHTNING_MAX,        -1               },
+    {"dmg-ltng",     MOD_LIGHTNING_MIN,        MOD_LIGHTNING_MAX},
+    {"dmg-pois",     MOD_POISON,               -1               },
+    {"pois-min",     MOD_POISON,               -1               },
+    {"res-fire",     MOD_RES_FIRE,             -1               },
+    {"res-cold",     MOD_RES_COLD,             -1               },
+    {"res-ltng",     MOD_RES_LIGHTNING,        -1               },
+    {"res-pois",     MOD_RES_POISON,           -1               },
+    {"res-all",      MOD_RES_ALL,              -1               },
+    {"lifesteal",    MOD_LIFE_STEAL,           -1               },
+    {"manasteal",    MOD_MANA_STEAL,           -1               },
+    {"mag%",         MOD_MAGIC_FIND,           -1               },
+    {"gold%",        MOD_GOLD_FIND,            -1               },
+    {"regen",        MOD_REPLENISH_LIFE,       -1               },
+    {"move1",        MOD_FASTER_RUN,           -1               },
+    {"move2",        MOD_FASTER_RUN,           -1               },
+    {"move3",        MOD_FASTER_RUN,           -1               },
+    {"swing1",       MOD_ATTACK_SPEED,         -1               },
+    {"swing2",       MOD_ATTACK_SPEED,         -1               },
+    {"swing3",       MOD_ATTACK_SPEED,         -1               },
+    {"balance1",     MOD_HIT_RECOVERY,         -1               },
+    {"balance2",     MOD_HIT_RECOVERY,         -1               },
+    {"balance3",     MOD_HIT_RECOVERY,         -1               },
+    {"block",        MOD_BLOCK,                -1               },
+    {"light",        MOD_LIGHT_RADIUS,         -1               },
+    {"thorns",       MOD_THORNS,               -1               },
+    {"red-dmg",      MOD_DAMAGE_REDUCED,       -1               },
+    {"red-mag",      MOD_MAGIC_DAMAGE_REDUCED, -1               },
+    {"cold-len",     IGNORE,                   -1               },
+    {"pois-len",     IGNORE,                   -1               },
+    {"allskills",    MOD_ALL_SKILLS,           -1               },
+    {"ama",          MOD_CLASS_SKILLS,         -1               }, // (the class from the code: Affixes__Param)
+    {"sor",          MOD_CLASS_SKILLS,         -1               },
+    {"nec",          MOD_CLASS_SKILLS,         -1               },
+    {"pal",          MOD_CLASS_SKILLS,         -1               },
+    {"bar",          MOD_CLASS_SKILLS,         -1               },
+    {"dru",          MOD_CLASS_SKILLS,         -1               },
+    {"ass",          MOD_CLASS_SKILLS,         -1               },
+    {"skilltab",     MOD_TAB_SKILLS,           -1               },
+    {"skill",        MOD_SKILL,                -1               },
+    {"oskill",       MOD_OSKILL,               -1               },
+    {"dur",          MOD_DURABILITY,           -1               },
+    {"indestruct",   MOD_INDESTRUCTIBLE,       -1               },
+    {"sock",         IGNORE,                   -1               }, // (sockets: made part of the item, Affixes__Apply)
+    {"regen-mana",   MOD_MANA_REGEN,           -1               },
+    {"mana%",        MOD_MANA_PCT,             -1               },
+    {"ac/lvl",       MOD_DEFENSE_PER_LEVEL,    -1               },
+    {"dmg/lvl",      MOD_MAX_DAMAGE_PER_LEVEL, -1               },
+    {"dmg-undead",   MOD_DAMAGE_UNDEAD,        -1               },
+    {"dmg-demon",    MOD_DAMAGE_DEMON,         -1               },
+    {"att-undead",   MOD_ATTACK_UNDEAD,        -1               },
+    {"att-demon",    MOD_ATTACK_DEMON,         -1               },
+    {"crush",        MOD_CRUSHING_BLOW,        -1               },
+    {"deadly",       MOD_DEADLY_STRIKE,        -1               },
+    {"ignore-ac",    MOD_IGNORE_DEFENSE,       -1               },
+    {"mana-kill",    MOD_MANA_PER_KILL,        -1               },
+    {"heal-kill",    MOD_LIFE_PER_KILL,        -1               },
+    {"dmg-to-mana",  MOD_DAMAGE_TO_MANA,       -1               },
+    {"red-dmg%",     MOD_DAMAGE_REDUCED_PCT,   -1               },
+    {"light-thorns", MOD_LIGHTNING_THORNS,     -1               },
 };
+
+static const char *const class_codes[CHARACTER_CLASS_COUNT] = {"ama", "sor", "nec", "pal", "bar", "dru", "ass"};
+
+// A property's parameter (the table's "param" / "par" column) for what the engine keeps: the class of a class-skills
+// property (from its code), the tree, the skill (by number or by name); per-level ones keep theirs as the value
+static int Affixes__Param(const char *code, const int type, const char *param) {
+    switch (type) {
+    case MOD_CLASS_SKILLS:
+        for (int c = 0; c < CHARACTER_CLASS_COUNT; c++) {
+            if (strcmp(code, class_codes[c]) == 0) {
+                return c;
+            }
+        }
+        return 0;
+    case MOD_TAB_SKILLS:
+        return atoi(param);
+    case MOD_SKILL:
+    case MOD_OSKILL: {
+        if (param[0] >= '0' && param[0] <= '9') {
+            return atoi(param);
+        }
+        const SkillRow *skill = SkillData_Get(param);
+        return skill != NULL ? skill->row : -1;
+    }
+    default:
+        return 0;
+    }
+}
 
 static int Affixes__Code(const char *code, int *pair) {
     *pair = -1;
@@ -147,6 +231,7 @@ static int Affixes__Code(const char *code, int *pair) {
 
 typedef struct Prop {
     char code[16];
+    char param[32]; // "par" / "param": a skill, a tree, a per-level amount
     int  min;
     int  max;
 } Prop;
@@ -293,6 +378,9 @@ static void Affixes__LoadAffixes(const char *path, AffixTable *table) {
             }
             Prop *prop = &affix->props[affix->prop_count++];
             snprintf(prop->code, sizeof(prop->code), "%s", code);
+            snprintf(column, sizeof(column), "mod%dparam", m);
+            snprintf(prop->param, sizeof(prop->param), "%s",
+                     DataTable_GetString(t, row, DataTable_GetColumnIndex(t, column)));
             snprintf(column, sizeof(column), "mod%dmin", m);
             prop->min = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, column));
             snprintf(column, sizeof(column), "mod%dmax", m);
@@ -353,6 +441,9 @@ static void Affixes__LoadUniques(void) {
             }
             Prop *prop = &unique->props[unique->prop_count++];
             snprintf(prop->code, sizeof(prop->code), "%s", code);
+            snprintf(column, sizeof(column), "par%d", p);
+            snprintf(prop->param, sizeof(prop->param), "%s",
+                     DataTable_GetString(t, row, DataTable_GetColumnIndex(t, column)));
             snprintf(column, sizeof(column), "min%d", p);
             prop->min = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, column));
             snprintf(column, sizeof(column), "max%d", p);
@@ -362,9 +453,10 @@ static void Affixes__LoadUniques(void) {
     DataTable_Destroy(&t);
 }
 
-static void Affixes__ReadProp(const DataTable *t, const int row, Prop *prop, const char *code, const char *min,
-                              const char *max) {
+static void Affixes__ReadProp(const DataTable *t, const int row, Prop *prop, const char *code, const char *param,
+                              const char *min, const char *max) {
     snprintf(prop->code, sizeof(prop->code), "%s", DataTable_GetString(t, row, DataTable_GetColumnIndex(t, code)));
+    snprintf(prop->param, sizeof(prop->param), "%s", DataTable_GetString(t, row, DataTable_GetColumnIndex(t, param)));
     prop->min = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, min));
     prop->max = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, max));
 }
@@ -381,6 +473,7 @@ static void Affixes__LoadSets(void) {
     char a[24];
     char b[24];
     char c[24];
+    char d[24];
     for (int row = 0; row < rows; row++) {
         SetItem *item = &set_items[row];
         Affixes__Text(item->name, sizeof(item->name),
@@ -397,8 +490,9 @@ static void Affixes__LoadSets(void) {
             snprintf(a, sizeof(a), "prop%d", p);
             snprintf(b, sizeof(b), "min%d", p);
             snprintf(c, sizeof(c), "max%d", p);
+            snprintf(d, sizeof(d), "par%d", p);
             Prop prop;
-            Affixes__ReadProp(t, row, &prop, a, b, c);
+            Affixes__ReadProp(t, row, &prop, a, d, b, c);
             if (prop.code[0] != '\0') {
                 item->props[item->prop_count++] = prop;
             }
@@ -408,7 +502,8 @@ static void Affixes__LoadSets(void) {
                 snprintf(a, sizeof(a), "aprop%d%c", n, 'a' + s);
                 snprintf(b, sizeof(b), "amin%d%c", n, 'a' + s);
                 snprintf(c, sizeof(c), "amax%d%c", n, 'a' + s);
-                Affixes__ReadProp(t, row, &item->worn[n - 1][s], a, b, c);
+                snprintf(d, sizeof(d), "apar%d%c", n, 'a' + s);
+                Affixes__ReadProp(t, row, &item->worn[n - 1][s], a, d, b, c);
             }
         }
     }
@@ -429,15 +524,17 @@ static void Affixes__LoadSets(void) {
                 snprintf(a, sizeof(a), "PCode%d%c", n, 'a' + s);
                 snprintf(b, sizeof(b), "PMin%d%c", n, 'a' + s);
                 snprintf(c, sizeof(c), "PMax%d%c", n, 'a' + s);
-                Affixes__ReadProp(t, row, &set->partial[n - 2][s], a, b, c);
+                snprintf(d, sizeof(d), "PParam%d%c", n, 'a' + s);
+                Affixes__ReadProp(t, row, &set->partial[n - 2][s], a, d, b, c);
             }
         }
         for (int f = 1; f <= 8; f++) {
             snprintf(a, sizeof(a), "FCode%d", f);
             snprintf(b, sizeof(b), "FMin%d", f);
             snprintf(c, sizeof(c), "FMax%d", f);
+            snprintf(d, sizeof(d), "FParam%d", f);
             Prop prop;
-            Affixes__ReadProp(t, row, &prop, a, b, c);
+            Affixes__ReadProp(t, row, &prop, a, d, b, c);
             if (prop.code[0] != '\0') {
                 set->full[set->full_count++] = prop;
             }
@@ -480,49 +577,75 @@ static bool Affixes__Fits(const ItemBase *base, char itypes[][8], const int ityp
     return any;
 }
 
-void Affixes_AddMod(Item *item, const int type, const int value) { Affixes__AddMod(item, type, value); }
+void Affixes_AddMod(Item *item, const int type, const int value) { Affixes__AddModParam(item, type, value, 0); }
 
-static void Affixes__AddMod(Item *item, const int type, const int value) {
-    if (type < 0 || item->mod_count >= ITEM_MODS_MAX || value == 0) {
+static void Affixes__AddMod(Item *item, const int type, const int value) { Affixes__AddModParam(item, type, value, 0); }
+
+static void Affixes__AddModParam(Item *item, const int type, const int value, const int param) {
+    if (type < 0 || item->mod_count >= ITEM_MODS_MAX ||
+        (value == 0 && type != MOD_INDESTRUCTIBLE && type != MOD_IGNORE_DEFENSE)) {
         return;
     }
     for (int m = 0; m < item->mod_count; m++) { // two affixes giving the same thing add up
-        if (item->mods[m].type == type) {
+        if (item->mods[m].type == type && item->mods[m].param == param) {
             item->mods[m].value = (int16_t)(item->mods[m].value + value);
             return;
         }
     }
     item->mods[item->mod_count].type    = (uint8_t)type;
+    item->mods[item->mod_count].param   = (int16_t)param;
     item->mods[item->mod_count++].value = (int16_t)(value > 32000 ? 32000 : (value < -32000 ? -32000 : value));
 }
 
-void Affixes_AddProperty(Item *item, const char *code, const int min, const int max) {
+// One property onto an item: most become a mod; durability, indestructible and sockets change the item itself
+static void Affixes__ApplyOne(Item *item, const char *code, const char *param, const int min, const int max) {
     int       pair = -1;
     const int type = Affixes__Code(code, &pair);
-    if (type < 0) {
+    if (strcmp(code, "sock") == 0) {
+        const int sockets = param[0] != '\0' ? atoi(param) : Affixes__Roll(min, max);
+        item->sockets     = (uint8_t)(sockets > ITEM_SOCKETS_MAX ? ITEM_SOCKETS_MAX : (sockets > 0 ? sockets : 1));
         return;
+    }
+    if (type < 0) {
+        return; // unknown (uniques keep the rest) or nothing to show
     }
     if (pair >= 0) {
         Affixes__AddMod(item, type, min);
         Affixes__AddMod(item, pair, max);
-    } else {
-        Affixes__AddMod(item, type, Affixes__Roll(min, max));
+        return;
     }
+    int value = Affixes__Roll(min, max);
+    if (type == MOD_DEFENSE_PER_LEVEL || type == MOD_MAX_DAMAGE_PER_LEVEL) {
+        value = atoi(param); // eighths a level
+    } else if (type == MOD_IGNORE_DEFENSE || type == MOD_INDESTRUCTIBLE) {
+        value = 1;
+    }
+    const int which = Affixes__Param(code, type, param);
+    if ((type == MOD_SKILL || type == MOD_OSKILL) && which < 0) {
+        return; // a skill we don't know
+    }
+    if (type == MOD_DURABILITY && item->max_durability > 0) {
+        item->max_durability = (int16_t)(item->max_durability + value);
+        item->durability     = item->max_durability;
+    }
+    if (type == MOD_INDESTRUCTIBLE) {
+        item->max_durability = 0; // never wears down
+        item->durability     = 0;
+    }
+    Affixes__AddModParam(item, type, value, which);
+}
+
+void Affixes_AddProperty(Item *item, const char *code, const int min, const int max) {
+    Affixes__ApplyOne(item, code, "", min, max);
+}
+
+void Affixes_AddPropertyParam(Item *item, const char *code, const char *param, const int min, const int max) {
+    Affixes__ApplyOne(item, code, param != NULL ? param : "", min, max);
 }
 
 static void Affixes__Apply(Item *item, const Prop *props, const int count) {
     for (int p = 0; p < count; p++) {
-        int       pair = -1;
-        const int type = Affixes__Code(props[p].code, &pair);
-        if (type < 0) {
-            continue; // unknown (uniques keep the rest) or nothing to show
-        }
-        if (pair >= 0) {
-            Affixes__AddMod(item, type, props[p].min);
-            Affixes__AddMod(item, pair, props[p].max);
-        } else {
-            Affixes__AddMod(item, type, Affixes__Roll(props[p].min, props[p].max));
-        }
+        Affixes__ApplyOne(item, props[p].code, props[p].param, props[p].min, props[p].max);
     }
 }
 
@@ -813,12 +936,125 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b) 
     *b          = colors[q][2];
 }
 
+// The game's words for a class's skills: "to Amazon Skill Levels", its trees' "+%d to Bow and Crossbow Skills" (in the
+// skill tree's page order) and "(Amazon Only)"
+static const char *const class_skill_keys[CHARACTER_CLASS_COUNT]  = {"ModStr3a", "ModStr3d",  "ModStr3c", "ModStr3b",
+                                                                     "ModStr3e", "ModStre8a", "ModStre8b"};
+static const int         class_tab_keys[CHARACTER_CLASS_COUNT][3] = {
+    {3,  2,  1 },
+    {15, 14, 13},
+    {8,  7,  9 },
+    {6,  5,  4 },
+    {11, 12, 10},
+    {16, 17, 18},
+    {19, 20, 21}
+};
+static const char *const class_only_keys[CHARACTER_CLASS_COUNT] = {"AmaOnly", "SorOnly", "NecOnly", "PalOnly",
+                                                                   "BarOnly", "DruOnly", "AssOnly"};
+
+static const char *Affixes__String(const char *key, const char *fallback) {
+    const char *text = StringTable_Find(key);
+    return text != NULL ? text : fallback;
+}
+
+// The skill's name and its class (-1: none) from its skills.txt row
+static int Affixes__SkillName(const int row, char *name, const size_t size) {
+    const SkillRow *skill = SkillData_ByRow(row);
+    snprintf(name, size, "%s", skill != NULL ? skill->id : "a skill");
+    for (int c = 0; c < CHARACTER_CLASS_COUNT && skill != NULL; c++) {
+        const SkillClass *skills = Skills_ForClass((CharacterClass)c);
+        const int         k      = Skills_Find(skills, skill->id);
+        if (k >= 0) {
+            snprintf(name, size, "%s", skills->skills[k].name);
+            return c;
+        }
+    }
+    return -1;
+}
+
 void Affixes_ModText(const ItemMod *mod, char *text, const size_t size) {
     if (mod->type >= MOD_TYPE_COUNT) {
         snprintf(text, size, "?");
         return;
     }
-    snprintf(text, size, mod_info[mod->type].text, mod->value);
+    const int cls = mod->param >= 0 && mod->param < CHARACTER_CLASS_COUNT ? mod->param : 0;
+    switch (mod->type) {
+    case MOD_CLASS_SKILLS:
+        snprintf(text, size, "+%d %s", mod->value, Affixes__String(class_skill_keys[cls], "to Class Skills"));
+        return;
+    case MOD_TAB_SKILLS: {
+        const int tab_class = mod->param / 3 >= 0 && mod->param / 3 < CHARACTER_CLASS_COUNT ? mod->param / 3 : 0;
+        char      key[24];
+        snprintf(key, sizeof(key), "StrSklTabItem%d", class_tab_keys[tab_class][mod->param % 3]);
+        char line[96];
+        snprintf(line, sizeof(line), Affixes__String(key, "+%d to Skills"), mod->value);
+        snprintf(text, size, "%s %s", line, Affixes__String(class_only_keys[tab_class], ""));
+        return;
+    }
+    case MOD_SKILL:
+    case MOD_OSKILL: {
+        char      name[64];
+        const int owner = Affixes__SkillName(mod->param, name, sizeof(name));
+        if (mod->type == MOD_SKILL && owner >= 0) {
+            snprintf(text, size, "+%d to %s %s", mod->value, name, Affixes__String(class_only_keys[owner], ""));
+        } else {
+            snprintf(text, size, "+%d to %s", mod->value, name);
+        }
+        return;
+    }
+    case MOD_DEFENSE_PER_LEVEL:
+    case MOD_MAX_DAMAGE_PER_LEVEL: {
+        const Character *c = Character_Current();
+        snprintf(text, size, mod_info[mod->type].text, mod->value * (c != NULL && c->level > 0 ? c->level : 1) / 8);
+        return;
+    }
+    default:
+        snprintf(text, size, mod_info[mod->type].text, mod->value);
+        return;
+    }
+}
+
+// What worn items add to a skill's level: All Skills, its class's, its tree's, the skill itself (only while you have a
+// point in it; "oskill" gives it anyway)
+int Affixes_SkillBonus(const Character *character, const int skill) {
+    const SkillClass *skills = Skills_ForClass(character->class_id);
+    if (skill < 0 || skill >= skills->count) {
+        return 0;
+    }
+    const SkillRow *row     = SkillData_Get(skills->skills[skill].id);
+    const int       tab     = ((int)character->class_id * 3) + skills->skills[skill].page - 1;
+    const bool      learned = skill < CHARACTER_SKILLS && character->skill_levels[skill] > 0;
+    int             bonus   = 0;
+    int             given   = 0; // oskill
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item *item = &character->equipped[s];
+        if (!Item_Works(item) || item->unidentified) {
+            continue;
+        }
+        for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+            const ItemMod *mod = &item->mods[m];
+            switch (mod->type) {
+            case MOD_ALL_SKILLS:
+                bonus += mod->value;
+                break;
+            case MOD_CLASS_SKILLS:
+                bonus += mod->param == (int)character->class_id ? mod->value : 0;
+                break;
+            case MOD_TAB_SKILLS:
+                bonus += mod->param == tab ? mod->value : 0;
+                break;
+            case MOD_SKILL:
+                bonus += row != NULL && mod->param == row->row ? mod->value : 0;
+                break;
+            case MOD_OSKILL:
+                given += row != NULL && mod->param == row->row ? mod->value : 0;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    return (learned ? bonus : 0) + given;
 }
 
 const char *Affixes_InvFile(const Item *item) {
@@ -964,6 +1200,9 @@ void Affixes_Format(const Item *item, char *text, const size_t size) {
         used += (size_t)snprintf(text + used, size - used, "%s%s:%d", m > 0 ? "," : "",
                                  item->mods[m].type < MOD_TYPE_COUNT ? mod_info[item->mods[m].type].save : "?",
                                  item->mods[m].value);
+        if (item->mods[m].param != 0 && used < size) {
+            used += (size_t)snprintf(text + used, size - used, "@%d", item->mods[m].param); // which skill, tree, class
+        }
     }
     if (item->sockets > 0 && used < size) {
         used += (size_t)snprintf(text + used, size - used, " s%d", item->sockets);
@@ -1030,7 +1269,9 @@ void Affixes_Parse(Item *item, const char *text) {
         *colon = '\0';
         for (int t = 0; t < MOD_TYPE_COUNT; t++) {
             if (strcmp(mod_info[t].save, part) == 0) {
+                const char *at                      = strchr(colon + 1, '@');
                 item->mods[item->mod_count].type    = (uint8_t)t;
+                item->mods[item->mod_count].param   = (int16_t)(at != NULL ? atoi(at + 1) : 0);
                 item->mods[item->mod_count++].value = (int16_t)atoi(colon + 1);
                 break;
             }

@@ -70,7 +70,10 @@ static bool MonsterStats__Get(const char *monstats_id, const int area_level, Mon
         if (MonsterStats__Compare(DataTable_GetString(monstats, row, c_id), monstats_id) != 0) {
             continue;
         }
-        stats->boss = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "boss")) != 0;
+        stats->boss   = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "boss")) != 0;
+        stats->undead = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "lUndead")) != 0 ||
+                        DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "hUndead")) != 0;
+        stats->demon = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "demon")) != 0;
         snprintf(stats->missile, sizeof(stats->missile), "%s",
                  DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "MissA1")));
         for (int s = 0; s < 2; s++) {

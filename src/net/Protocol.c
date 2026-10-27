@@ -31,6 +31,7 @@ void NetItem_Write(NetWriter *writer, const Item *item) {
     for (int m = 0; m < count; m++) {
         NetWriter_U8(writer, item->mods[m].type);
         NetWriter_U16(writer, (uint16_t)item->mods[m].value);
+        NetWriter_U16(writer, (uint16_t)item->mods[m].param);
     }
     NetWriter_U8(writer, item->sockets);
     const int in = item->socketed_count < item->sockets ? item->socketed_count : item->sockets;
@@ -56,8 +57,10 @@ void NetItem_Read(NetReader *reader, Item *item) {
     for (int m = 0; m < count && !reader->failed; m++) {
         const int type  = NetReader_U8(reader);
         const int value = (int16_t)NetReader_U16(reader);
+        const int param = (int16_t)NetReader_U16(reader);
         if (type < MOD_TYPE_COUNT && item->mod_count < ITEM_MODS_MAX) {
             item->mods[item->mod_count].type    = (uint8_t)type;
+            item->mods[item->mod_count].param   = (int16_t)param;
             item->mods[item->mod_count++].value = (int16_t)value;
         }
     }

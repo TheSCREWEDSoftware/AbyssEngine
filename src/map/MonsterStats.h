@@ -21,6 +21,8 @@ typedef struct MonsterStats {
     char treasure_champion[48]; // ... as a champion (TreasureClass2), as a unique (TreasureClass3)
     char treasure_unique[48];
     bool boss;         // Andariel, Duriel, ...: keeps its own level
+    bool undead;       // lUndead / hUndead (skeletons, zombies, ...): holy damage and items against undead
+    bool demon;        // demon (items against demons)
     char missile[32];  // MissA1: what its first attack shoots (archers), "" = a blow
     char skill[2][32]; // Skill1, Skill2 (skills.txt: Shaman fire, Andariel's poison bolts, Frost Nova, ...)
     int  skill_level[2];

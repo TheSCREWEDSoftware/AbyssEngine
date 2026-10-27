@@ -237,7 +237,7 @@ int Character_MaxMana(const Character *character) {
         Character__Grow(info->stats[STAT_ENERGY], Character_Stat(character, STAT_ENERGY) - info->stats[STAT_ENERGY],
                         info->mana_per_energy, character->level - 1, info->mana_per_level) +
         Affixes_Total(character, MOD_MANA);
-    return mana + (mana * character->bonus[BONUS_MANA_PCT] / 100);
+    return mana + (mana * (character->bonus[BONUS_MANA_PCT] + Affixes_Total(character, MOD_MANA_PCT)) / 100);
 }
 
 int Character_MaxStamina(const Character *character) {
@@ -260,6 +260,7 @@ int Character_Defense(const Character *character) {
         defense += Item_Works(&character->equipped[s]) ? Character_ItemDefense(&character->equipped[s]) : 0;
     }
     defense += Affixes_Total(character, MOD_DEFENSE);
+    defense += Affixes_Total(character, MOD_DEFENSE_PER_LEVEL) * character->level / 8; // (eighths a level)
     return defense + (defense * character->bonus[BONUS_DEFENSE_PCT] / 100); // Frozen Armor, Shout, Iron Skin, ...
 }
 
@@ -321,7 +322,8 @@ void Character_Damage(const Character *character, int *minimum, int *maximum) {
                       (Affixes_Total(character, MOD_DAMAGE_PCT) - weapon_pct) + character->bonus[BONUS_DAMAGE_PCT];
     // Added damage (fire, cold, lightning and poison are their own: Character_ElementDamage)
     *minimum = weapon_min + ((weapon_min * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MIN);
-    *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX);
+    *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX) +
+               (Affixes_Total(character, MOD_MAX_DAMAGE_PER_LEVEL) * character->level / 8);
     *minimum = *minimum > 0 ? *minimum : 1;
     *maximum = *maximum > *minimum ? *maximum : *minimum;
 }
@@ -364,8 +366,8 @@ const char *Character_WeaponName(const Character *character) {
 int Character_ManaRegenSeconds(const Character *character) {
     // Faster with Warmth or Meditation (mana recovery bonus, percent)
     const int seconds = Character__Info(character)->mana_regen;
-    return seconds * 100 /
-           (100 + (character->bonus[BONUS_MANA_REGEN_PCT] > 0 ? character->bonus[BONUS_MANA_REGEN_PCT] : 0));
+    const int bonus   = character->bonus[BONUS_MANA_REGEN_PCT] + Affixes_Total(character, MOD_MANA_REGEN);
+    return seconds * 100 / (100 + (bonus > 0 ? bonus : 0));
 }
 
 int Character_RunDrain(const Character *character) { return Character__Info(character)->run_drain; }
@@ -644,6 +646,11 @@ static bool Character__Line(const char **at, char *line, const size_t size) {
 // Saves from before durability: weapons and armor come in as new
 static void Character__Durability(Item *item) {
     const ItemBase *base = Items_Find(item->code);
+    for (int m = 0; m < item->mod_count; m++) {
+        if (item->mods[m].type == MOD_INDESTRUCTIBLE) {
+            return; // never wears down
+        }
+    }
     if (item->max_durability == 0 && base != NULL && base->durability > 0) {
         item->durability     = (int16_t)base->durability;
         item->max_durability = (int16_t)base->durability;

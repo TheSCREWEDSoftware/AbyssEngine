@@ -4,6 +4,7 @@
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
 #include "../data/StringTable.h"
+#include "Affixes.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,8 +277,9 @@ bool Skills_CanAssign(const Character *character, const int skill, const bool le
         return true;
     }
     const SkillClass *skills = Skills_ForClass(character->class_id);
-    if (skill < 0 || skill >= skills->count || character->skill_levels[skill] == 0) {
-        return false;
+    if (skill < 0 || skill >= skills->count ||
+        (character->skill_levels[skill] == 0 && Affixes_SkillBonus(character, skill) <= 0)) {
+        return false; // (a skill an item gives counts as learned)
     }
     const SkillDef *def = &skills->skills[skill];
     return !def->passive && (!left || def->left_ok);

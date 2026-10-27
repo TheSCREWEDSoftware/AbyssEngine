@@ -48,7 +48,7 @@ typedef enum ItemModType {
     MOD_COLD_MAX,
     MOD_LIGHTNING_MIN,
     MOD_LIGHTNING_MAX,
-    MOD_POISON,               // poison damage, added to each blow (all at once for now)
+    MOD_POISON,               // poison damage, added to each blow (over two seconds)
     MOD_RES_FIRE,             // against monsters' attacks
     MOD_RES_COLD,             // against monsters' attacks
     MOD_RES_LIGHTNING,        // against monsters' attacks
@@ -67,6 +67,30 @@ typedef enum ItemModType {
     MOD_THORNS,               // attacker takes damage (melee)
     MOD_DAMAGE_REDUCED,       // each blow taken does this much less
     MOD_MAGIC_DAMAGE_REDUCED, // *
+    // Skills: each worn item's bonus levels (only for skills with a point in them, but "oskill" gives any skill)
+    MOD_ALL_SKILLS,
+    MOD_CLASS_SKILLS, // param: the class (CharacterClass)
+    MOD_TAB_SKILLS,   // param: class x 3 + its tree (0..2, the skill tree's pages in order)
+    MOD_SKILL,        // param: the skill (skills.txt row); the class's own only
+    MOD_OSKILL,       // param: the skill, whoever wears it
+    MOD_DURABILITY,   // more maximum durability (made part of the item)
+    MOD_INDESTRUCTIBLE,
+    MOD_MANA_REGEN,           // percent faster mana regeneration
+    MOD_MANA_PCT,             // percent more maximum mana
+    MOD_DEFENSE_PER_LEVEL,    // eighths of a point a character level
+    MOD_MAX_DAMAGE_PER_LEVEL, // eighths of a point a character level
+    MOD_DAMAGE_UNDEAD,        // percent more damage to undead monsters
+    MOD_DAMAGE_DEMON,         // ... to demons
+    MOD_ATTACK_UNDEAD,        // attack rating against undead monsters
+    MOD_ATTACK_DEMON,         // ... against demons
+    MOD_CRUSHING_BLOW,        // chance a blow takes a quarter of what's left of a monster's life (an eighth: bosses)
+    MOD_DEADLY_STRIKE,        // chance of double damage
+    MOD_IGNORE_DEFENSE,       // blows always land (not on bosses)
+    MOD_MANA_PER_KILL,
+    MOD_LIFE_PER_KILL,
+    MOD_DAMAGE_TO_MANA,     // percent of damage taken coming back as mana
+    MOD_DAMAGE_REDUCED_PCT, // each blow taken does this much less (percent, at most 50)
+    MOD_LIGHTNING_THORNS,   // attacker takes this much lightning damage (melee)
     MOD_TYPE_COUNT
 } ItemModType;
 
@@ -76,6 +100,7 @@ typedef enum ItemModType {
 typedef struct ItemMod {
     uint8_t type; // ItemModType
     int16_t value;
+    int16_t param; // which skill, tree or class (MOD_SKILL, MOD_TAB_SKILLS, MOD_CLASS_SKILLS); 0 for the rest
 } ItemMod;
 
 // Where an item can be worn (bodylocs.txt)

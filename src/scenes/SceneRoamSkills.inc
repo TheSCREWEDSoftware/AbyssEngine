@@ -21,8 +21,12 @@ static void Roam__ApplyCharacter(SceneRoam *roam);
 // ---------------------------------------------------------------------------------------------------------------------
 // What skills add to the character
 
+// The level a skill works at: its points and what worn items add (+skills)
 static int Roam__SkillPoints(const SceneRoam *roam, const int skill) {
-    return roam->character != NULL && skill >= 0 && skill < CHARACTER_SKILLS ? roam->character->skill_levels[skill] : 0;
+    if (roam->character == NULL || skill < 0 || skill >= CHARACTER_SKILLS) {
+        return 0;
+    }
+    return roam->character->skill_levels[skill] + (roam->game ? Affixes_SkillBonus(roam->character, skill) : 0);
 }
 
 // A stat a skill gives (skills.txt's names for them) onto the character's bonus numbers
@@ -154,9 +158,10 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     memset(character->bonus, 0, sizeof(character->bonus));
     const SkillClass *skills = Skills_ForClass(character->class_id);
     for (int k = 0; k < skills->count && k < CHARACTER_SKILLS; k++) {
-        const SkillRow *s = character->skill_levels[k] > 0 ? SkillData_Get(skills->skills[k].id) : NULL;
+        const int       level = character->skill_levels[k] + Affixes_SkillBonus(character, k);
+        const SkillRow *s     = level > 0 ? SkillData_Get(skills->skills[k].id) : NULL;
         if (s != NULL && s->kind == SKILL_KIND_PASSIVE) {
-            Roam__AddSkillStats(character, s, character->skill_levels[k], false, true);
+            Roam__AddSkillStats(character, s, level, false, true);
         }
     }
     // Buffs: their stats while they last (Bone Armor and Cyclone Armor soak up damage instead)

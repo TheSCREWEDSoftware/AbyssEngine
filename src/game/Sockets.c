@@ -13,6 +13,7 @@
 
 typedef struct SocketProp {
     char code[16];
+    char param[32];
     int  min;
     int  max;
 } SocketProp;
@@ -71,6 +72,9 @@ static void Sockets__Load(void) {
                     }
                     SocketProp *out = &gem->props[k][gem->prop_count[k]++];
                     snprintf(out->code, sizeof(out->code), "%s", prop);
+                    snprintf(column, sizeof(column), "%sMod%dParam", kinds[k], p);
+                    snprintf(out->param, sizeof(out->param), "%s",
+                             DataTable_GetString(data, r, DataTable_GetColumnIndex(data, column)));
                     snprintf(column, sizeof(column), "%sMod%dMin", kinds[k], p);
                     out->min = DataTable_GetInt(data, r, DataTable_GetColumnIndex(data, column));
                     snprintf(column, sizeof(column), "%sMod%dMax", kinds[k], p);
@@ -119,6 +123,8 @@ static void Sockets__Load(void) {
             }
             SocketProp *prop = &word->props[word->prop_count++];
             snprintf(prop->code, sizeof(prop->code), "%s", STR(column));
+            snprintf(column, sizeof(column), "T1Param%d", i);
+            snprintf(prop->param, sizeof(prop->param), "%s", STR(column));
             snprintf(column, sizeof(column), "T1Min%d", i);
             prop->min = DataTable_GetInt(data, r, DataTable_GetColumnIndex(data, column));
             snprintf(column, sizeof(column), "T1Max%d", i);
@@ -189,7 +195,8 @@ static void Sockets__Runeword(Item *item, const ItemBase *base) {
         item->quality = ITEM_RUNEWORD;
         item->name1   = (int16_t)(r + 1);
         for (int p = 0; p < word->prop_count; p++) {
-            Affixes_AddProperty(item, word->props[p].code, word->props[p].min, word->props[p].max);
+            Affixes_AddPropertyParam(item, word->props[p].code, word->props[p].param, word->props[p].min,
+                                     word->props[p].max);
         }
         return;
     }
@@ -220,7 +227,8 @@ bool Sockets_Insert(Item *target, const Item *gem, const char **why) {
     const Gem *data = Sockets__Gem(gem->code);
     if (data != NULL) {
         for (int p = 0; p < data->prop_count[kind]; p++) {
-            Affixes_AddProperty(target, data->props[kind][p].code, data->props[kind][p].min, data->props[kind][p].max);
+            Affixes_AddPropertyParam(target, data->props[kind][p].code, data->props[kind][p].param,
+                                     data->props[kind][p].min, data->props[kind][p].max);
         }
     } else {
         for (int m = 0; m < gem->mod_count; m++) { // a jewel: its own magic

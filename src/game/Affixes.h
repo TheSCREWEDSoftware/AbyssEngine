@@ -24,6 +24,8 @@ void Affixes_Name(const Item *item, char *line1, size_t size1, char *line2, size
 void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b); // white, blue, yellow, gold
 // One property as the game words it: "+5 to Strength", "+20% Enhanced Defense"
 void Affixes_ModText(const ItemMod *mod, char *text, size_t size);
+// What worn items add to one of the class's skills (its index in Skills_ForClass): +skills of all kinds
+int Affixes_SkillBonus(const Character *character, int skill);
 // The inventory picture (uniques have their own)
 const char *Affixes_InvFile(const Item *item);
 // The sum of one property over the items worn
@@ -34,6 +36,7 @@ int Affixes_ItemTotal(const Item *item, ItemModType type); // on one item
 // Adds a Properties.txt property (one we know) to the item's magic: rolled between min and max, or a pair (fire
 // damage: min to the minimum, max to the maximum). Gems in sockets and runewords use it.
 void Affixes_AddProperty(Item *item, const char *code, int min, int max);
+void Affixes_AddPropertyParam(Item *item, const char *code, const char *param, int min, int max); // (a skill, ...)
 void Affixes_AddMod(Item *item, int type, int value);
 bool Affixes_MakeRare(
     Item *item,

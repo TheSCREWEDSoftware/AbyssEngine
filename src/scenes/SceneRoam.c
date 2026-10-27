@@ -243,6 +243,9 @@ typedef struct Unit {
     float           poison_rate;
     float           poison_carry; // parts of a point done so far
     bool            poison_ours;  // our poison (the kill is ours)
+    bool            undead;       // monstats lUndead / hUndead, demon: what items against them work on
+    bool            demon;
+    bool            boss;
     DrawContext     draw;
 } Unit;
 
@@ -844,6 +847,9 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         unit->defense       = stats.defense;
         unit->attack_rating = stats.attack_rating > 0 ? stats.attack_rating : 10;
         unit->experience    = stats.experience;
+        unit->undead        = stats.undead;
+        unit->demon         = stats.demon;
+        unit->boss          = stats.boss;
         snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure);
         memcpy(unit->resist, stats.resist, sizeof(unit->resist));
         unit->element        = stats.element;
@@ -1090,8 +1096,16 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
     }
     if (roam->game && unit == &roam->player) {
         Roam__Wear(roam, false);
+        int percent = Affixes_Total(roam->character, MOD_DAMAGE_REDUCED_PCT); // "Damage Reduced by N%" (at most 50)
+        percent     = percent > 50 ? 50 : percent;
+        amount      = amount - (amount * percent / 100);
         const int reduced = Affixes_Total(roam->character, MOD_DAMAGE_REDUCED); // "Damage Reduced by N"
         amount            = amount - reduced > 1 ? amount - reduced : 1;
+        const int to_mana = Affixes_Total(roam->character, MOD_DAMAGE_TO_MANA); // "Damage Taken Goes To Mana"
+        if (to_mana > 0) {
+            roam->mana = fminf((float)Character_MaxMana(roam->character),
+                               roam->mana + ((float)amount * (float)to_mana / 100.0f));
+        }
     }
     unit->hp -= amount;
     if (unit->hp <= 0) {
@@ -2821,6 +2835,13 @@ static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
 
 static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
     Roam__GainExperienceAmount(roam, victim->experience);
+    if (roam->game && Roam__IsAlive(&roam->player)) {
+        // Life and mana after each kill
+        const int life  = Affixes_Total(roam->character, MOD_LIFE_PER_KILL);
+        const int mana  = Affixes_Total(roam->character, MOD_MANA_PER_KILL);
+        roam->player.hp = roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
+        roam->mana      = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
+    }
 }
 
 // Multiplayer: a monster we run died; whoever killed it (and their party nearby) gets the experience, through the
@@ -2846,7 +2867,15 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (skill != NULL) {
         ar += ar * SkillData_ToHit(skill, level) / 100;
     }
-    if (roam->game && Roam__Roll(1, 100) > Character_HitChance(ar, player->level, target->defense, target->level)) {
+    const Character *c   = roam->character;
+    const bool       big = target->boss || target->rank == RANK_UNIQUE || target->rank == RANK_SUPER_UNIQUE;
+    const bool sure_hit  = roam->game && !big && Affixes_Total(c, MOD_IGNORE_DEFENSE) > 0; // Ignore Target's Defense
+    if (roam->game) {
+        ar += (target->undead ? Affixes_Total(c, MOD_ATTACK_UNDEAD) : 0) +
+              (target->demon ? Affixes_Total(c, MOD_ATTACK_DEMON) : 0);
+    }
+    if (roam->game && !sure_hit &&
+        Roam__Roll(1, 100) > Character_HitChance(ar, player->level, target->defense, target->level)) {
         return; // missed
     }
     Roam__Wear(roam, true);
@@ -2873,8 +2902,25 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
             }
         }
     }
-    if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_CRITICAL]) {
-        rolled[ELEMENT_PHYSICAL] *= 2; // Critical Strike
+    if (roam->game) {
+        // Against undead and demons; Critical Strike and Deadly Strike double it (only once)
+        const int against = (target->undead ? Affixes_Total(c, MOD_DAMAGE_UNDEAD) : 0) +
+                            (target->demon ? Affixes_Total(c, MOD_DAMAGE_DEMON) : 0);
+        rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * against / 100;
+        if (Roam__Roll(1, 100) <= c->bonus[BONUS_CRITICAL] + Affixes_Total(c, MOD_DEADLY_STRIKE)) {
+            rolled[ELEMENT_PHYSICAL] *= 2;
+        }
+        // Crushing Blow: a quarter of what's left of its life (an eighth for bosses and uniques)
+        if (Affixes_Total(c, MOD_CRUSHING_BLOW) > 0 && Roam__Roll(1, 100) <= Affixes_Total(c, MOD_CRUSHING_BLOW)) {
+            rolled[ELEMENT_PHYSICAL] += target->hp / (big ? 8 : 4);
+        }
+    }
+    if (rolled[ELEMENT_POISON] > 0 && Roam__RunsMonsters(roam)) {
+        // Poison from what's worn: over two seconds, like the game's (in someone else's map: all at once)
+        target->poison_left    += (float)Roam__Resisted(rolled[ELEMENT_POISON], target->resist[ELEMENT_POISON]);
+        target->poison_rate     = target->poison_left * 25.0f / 50.0f;
+        target->poison_ours     = true;
+        rolled[ELEMENT_POISON]  = 0;
     }
     int damage = 0;
     for (int e = 0; e < ELEMENT_COUNT; e++) {
@@ -3389,10 +3435,13 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                             Roam__Damage(roam, player, damage, now);
                         }
                         const int thorns = roam->game ? Affixes_Total(roam->character, MOD_THORNS) : 0;
-                        if (damage > 0 && roam->game && (roam->character->bonus[BONUS_THORNS_PCT] > 0 || thorns > 0)) {
-                            // Thorns: some of it back (the skill's share, and what's worn: "Attacker Takes Damage")
+                        const int zap    = roam->game ? Affixes_Total(roam->character, MOD_LIGHTNING_THORNS) : 0;
+                        if (damage > 0 && roam->game &&
+                            (roam->character->bonus[BONUS_THORNS_PCT] > 0 || thorns > 0 || zap > 0)) {
+                            // Thorns: some of it back (the skill's share, and what's worn: "Attacker Takes Damage",
+                            // "... Lightning Damage")
                             const int back     = (damage * roam->character->bonus[BONUS_THORNS_PCT] / 100) + thorns;
-                            const int dealt[5] = {back, 0, 0, 0, 0};
+                            const int dealt[5] = {back, 0, 0, zap, 0};
                             Roam__SkillHit(roam, unit, dealt, 0, 0, true, now);
                         }
                     }
