@@ -2145,6 +2145,8 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
     unit->hp    = unit->max_hp;
 }
 
+static void Roam__PlaceQuestObjects(SceneRoam *roam);
+
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     roam->npc_menu     = -1;
@@ -2186,6 +2188,12 @@ static void Roam__Populate(SceneRoam *roam) {
     Roam__UpdateBlocking(roam);
     Roam__FindSpawn(roam);
     Roam__ResetPlayer(roam);
+    if (roam->online && roam->game) {
+        // Multiplayer: the quests' bosses, objects, prisons and town folk go in now, the same for everyone whatever
+        // each one's quests say, so the monsters' numbers keep matching between games
+        Roam__PlaceQuestObjects(roam);
+        roam->quest_objects_key = Roam__MapKey(roam) + 1;
+    }
     if (roam->online) {
         srand((unsigned)SDL_GetTicks64()); // back to our own luck
     }

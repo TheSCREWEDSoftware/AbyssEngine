@@ -74,6 +74,11 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On
   a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
   around stays for the others until the game ends.
+- **Quests** are each player's own, but what they're about is shared: the bosses the maps leave out (Radament, the
+  Summoner, ...), the quests' altars, chests and orbs, the Bloody Foothills' prisons and the Ancients are put in
+  when a map is made, the same for everyone, whatever each player's quests say (the Ancients wait out of sight until
+  someone touches their altar); town folk who come and go with quests (Cain, Anya) are there for everyone, seen by
+  those whose quests have brought them.
 - **Skills**: the others see your missiles, novas and the spots your area skills land on, coming from where you
   stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
   Monsters' arrows and spells are seen by everyone on the map and hurt whoever they reach; hirelings' arrows are seen

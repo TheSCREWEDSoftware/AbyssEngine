@@ -70,7 +70,8 @@ static void Roam__SpawnQuestBoss(SceneRoam *roam, const Quest *quest, const MapA
         float sx;
         float sy;
         Roam__ArrivalSpot(roam->map, left + (w * at[c][0]), top + (h * at[c][1]), &sx, &sy);
-        const float far = Roam__Distance(sx, sy, roam->player.x, roam->player.y);
+        // (multiplayer: the first spot that will do, the same in everyone's game)
+        const float far = roam->online ? (float)(5 - c) : Roam__Distance(sx, sy, roam->player.x, roam->player.y);
         if (Map_IsWalkable(roam->map, (int)sx, (int)sy) && far > best) {
             best = far;
             x    = sx;
@@ -504,6 +505,8 @@ static void Roam__DropQuestItem(SceneRoam *roam, const char *code, const float x
 }
 
 // The quests' objects; true when this one was one of them (and it's been dealt with)
+static void Roam__CallAncients(SceneRoam *roam, const Unit *altar, bool hidden);
+
 static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
     if (!roam->game || roam->character == NULL) {
         return false;
@@ -578,15 +581,40 @@ static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
         return true;
     }
     if (fn == 65) { // the Ancients' altar (Arreat Summit): Talic, Madawc and Korlic come to test you
-        if (!Roam__QuestOpen(roam, 4, 5) || roam->ancients_called) {
+        if ((!Roam__QuestOpen(roam, 4, 5) && !roam->online) || roam->ancients_called) {
             return true;
         }
-        roam->ancients_called                   = true;
-        static const char *const ancients[3][2] = {
-            {"ancientbarb1", "Talic the Defender"  },
-            {"ancientbarb2", "Madawc the Guardian" },
-            {"ancientbarb3", "Korlic the Protector"},
-        };
+        roam->ancients_called = true;
+        if (roam->online) {
+            // Multiplayer: they were put in out of sight when the map was made (the same for everyone): up they come
+            for (int i = 0; i < roam->unit_count; i++) {
+                Unit *ancient = &roam->units[i];
+                if (strncmp(ancient->id, "ancientbarb", 11) == 0 && ancient->vanished && ancient->max_hp > 0) {
+                    ancient->vanished = false;
+                    ancient->npc      = false;
+                    ancient->hp       = ancient->max_hp;
+                    Roam__SetState(ancient, UNIT_IDLE, SDL_GetTicks64());
+                }
+            }
+            Roam__ShowMessage(roam, "The Ancients rise to test your worth.");
+            return true;
+        }
+        Roam__CallAncients(roam, unit, false);
+        Roam__ShowMessage(roam, "The Ancients rise to test your worth.");
+        return true;
+    }
+    return false;
+}
+
+// Talic, Madawc and Korlic by their altar (hidden: out of sight until they're called)
+static void Roam__CallAncients(SceneRoam *roam, const Unit *altar, const bool hidden) {
+    static const char *const ancients[3][2] = {
+        {"ancientbarb1", "Talic the Defender"  },
+        {"ancientbarb2", "Madawc the Guardian" },
+        {"ancientbarb3", "Korlic the Protector"},
+    };
+    {
+        const Unit *unit = altar;
         for (int a = 0; a < 3; a++) {
             float x;
             float y;
@@ -598,12 +626,13 @@ static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
                 ancient->hp          = ancient->max_hp;
                 ancient->experience *= 3;
                 ancient->rank        = RANK_SUPER_UNIQUE;
+                if (hidden) {
+                    ancient->vanished = true;
+                    Roam__SetState(ancient, UNIT_DEAD, SDL_GetTicks64());
+                }
             }
         }
-        Roam__ShowMessage(roam, "The Ancients rise to test your worth.");
-        return true;
     }
-    return false;
 }
 
 // A monster died: what the quests take from it
@@ -694,14 +723,14 @@ static bool Roam__QuestTalk(SceneRoam *roam, const Unit *unit) {
 // Rescue on Mount Arreat: the five prisons in the Frigid Highlands (their doors are monsters to break)
 static void Roam__PlacePrisons(SceneRoam *roam) {
     const MapArea *area = Roam__MapAreaFor(roam, 111);
-    if (area == NULL || !Roam__QuestOpen(roam, 4, 2)) {
-        return;
+    if (area == NULL || (!Roam__QuestOpen(roam, 4, 2) && !roam->online)) {
+        return; // (multiplayer: always, the same for everyone)
     }
     const float left = (float)area->x0 * MAP_SUBTILES;
     const float top  = (float)area->y0 * MAP_SUBTILES;
     const float w    = (float)(area->x1 - area->x0 + 1) * MAP_SUBTILES;
     const float h    = (float)(area->y1 - area->y0 + 1) * MAP_SUBTILES;
-    for (int p = roam->prisons_broken; p < 5; p++) {
+    for (int p = roam->online ? 0 : roam->prisons_broken; p < 5; p++) {
         float x;
         float y;
         Roam__ArrivalSpot(roam->map, left + (w * (0.15f + (0.17f * (float)p))), top + (h * (p % 2 == 0 ? 0.3f : 0.7f)),
@@ -741,10 +770,14 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
         if (Roam__MapAreaFor(roam, folk[f].level) == NULL) {
             continue;
         }
+        bool hidden = false; // (multiplayer: put in anyway, out of sight, so everyone has the same people)
         if (folk[f].after_act > 0) {
             const int q = Roam__QuestIndex(folk[f].after_act, folk[f].after_number);
             if (!roam->game || q < 0 || *Roam__QuestState(roam, q) == QUEST_OPEN) {
-                continue;
+                if (!roam->online) {
+                    continue;
+                }
+                hidden = true;
             }
         }
         const Unit *near  = NULL;
@@ -761,7 +794,9 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
         Roam__ArrivalSpot(roam->map, near->x + folk[f].dx, near->y + folk[f].dy, &x, &y);
         Unit *unit = Roam__AddUnit(roam, "monsters", folk[f].id, x, y);
         if (unit != NULL) {
-            unit->npc = true;
+            unit->npc      = !hidden;
+            unit->vanished = hidden;
+            unit->hp       = hidden ? 0 : unit->hp;
         }
     }
     // Nihlathak leaves Harrogath once Anya is back (Prison of Ice), for the Halls of Vaught
@@ -780,6 +815,21 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
 static void Roam__PlaceQuestObjects(SceneRoam *roam) {
     Roam__PlacePrisons(roam);
     Roam__PlaceTownFolk(roam);
+    // Multiplayer: the Ancients wait out of sight by their altar
+    for (int i = 0; roam->online && i < roam->unit_count; i++) {
+        if (roam->units[i].is_object && roam->units[i].object.operate_fn == 65) {
+            Roam__CallAncients(roam, &roam->units[i], true);
+            break;
+        }
+    }
+    // Multiplayer: the bosses the presets leave out are there from the start, for everyone
+    for (int q = 0; roam->online && q < QUEST_COUNT; q++) {
+        const Quest   *quest = Quests_Get(q);
+        const MapArea *area  = quest->goal == QUEST_KILL && quest->spawn ? Roam__MapAreaFor(roam, quest->level) : NULL;
+        if (area != NULL && Roam__QuestBoss(roam, quest) < 0) {
+            Roam__SpawnQuestBoss(roam, quest, area);
+        }
+    }
     static const struct {
         int         level;
         int         fn;
@@ -815,7 +865,8 @@ static void Roam__PlaceQuestObjects(SceneRoam *roam) {
             float sy;
             Roam__ArrivalSpot(roam->map, left + (w * (float)Roam__Roll(10, 90) / 100.0f),
                               top + (h * (float)Roam__Roll(10, 90) / 100.0f), &sx, &sy);
-            const float far = Roam__Distance(sx, sy, roam->player.x, roam->player.y);
+            const float far =
+                roam->online ? (float)(40 - t) : Roam__Distance(sx, sy, roam->player.x, roam->player.y); // (the same)
             if (Map_IsWalkable(roam->map, (int)sx, (int)sy) && far > best) {
                 best = far;
                 x    = sx;
