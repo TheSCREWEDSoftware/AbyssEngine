@@ -1,4 +1,5 @@
 #include "Sprite.h"
+#include "../common/FileManager.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../types/DC6.h"
@@ -39,6 +40,28 @@ char *get_extension(const char *path) {
     }
 
     return result;
+}
+
+bool Sprite_ItemShift(const int shift, const int color, uint8_t remap[256]) {
+    static const char *const files[] = {NULL,        "grey",    "grey2",    "gold",        "brown",
+                                        "greybrown", "invgrey", "invgrey2", "invgreybrown"};
+    if (shift <= 0 || shift >= (int)(sizeof(files) / sizeof(files[0])) || color < 0) {
+        return false;
+    }
+    char path[96];
+    snprintf(path, sizeof(path), "/data/global/items/Palette/%s.dat", files[shift]);
+    MpqStream *stream = FileManager_FileExists(path) ? FileManager_OpenFile(path) : NULL;
+    if (stream == NULL) {
+        return false;
+    }
+    const uint32_t offset = (uint32_t)color * 256;
+    bool           ok     = MpqStream_GetSize(stream) >= offset + 256;
+    if (ok) {
+        MpqStream_Seek(stream, offset, SEEK_SET);
+        ok = MpqStream_Read(stream, remap, 0, 256) == 256;
+    }
+    MpqStream_Destroy(&stream);
+    return ok;
 }
 
 Sprite *Sprite_Create(const char *path, const char *palette_name) {

@@ -137,6 +137,7 @@ static void CharacterSelect__BuildSlots(SceneCharacterSelect *scene) {
             for (int c = 0; c < COF_COMPONENT_COUNT && c < CHARACTER_LOOK_LAYERS; c++) {
                 const bool hand = c == COF_COMPONENT_RH || c == COF_COMPONENT_LH;
                 snprintf(spec.armor[c], sizeof(spec.armor[c]), "%s", bare && hand ? "" : looks.layer[c]);
+                spec.tint[c] = bare && hand ? 0 : looks.tint[c];
             }
             slot->figure = Figure_Create(&spec, "tn", PALETTE_UNITS);
             if (slot->figure == NULL) {

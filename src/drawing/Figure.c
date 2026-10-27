@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../types/DCC.h"
 #include "../types/Palette.h"
+#include "Sprite.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,8 @@ typedef struct FigureLayer {
     SDL_Texture **textures;
     SDL_BlendMode blend;
     uint8_t       alpha;
+    bool          tinted; // an item's colour: its palette indices through remap first
+    uint8_t       remap[256];
 } FigureLayer;
 
 struct Figure {
@@ -152,6 +155,8 @@ Figure *Figure_Create(const FigureSpec *spec, const char *mode, const char *pale
         out->textures    = calloc((size_t)directions * frames, sizeof(SDL_Texture *));
         FAIL_IF_NULL(out->textures);
         Figure__BlendFor(layer, &out->blend, &out->alpha);
+        const int tint = spec->tint[layer->component];
+        out->tinted    = tint > 0 && Sprite_ItemShift((tint - 1) / 32, (tint - 1) % 32, out->remap);
 
         // Bounds over every frame of this layer
         for (int d = 0; d < DCC_GetDirectionCount(dcc); d++) {
@@ -229,7 +234,8 @@ static SDL_Texture *Figure__Texture(Figure *figure, FigureLayer *layer, const in
     uint32_t *pixels = malloc(sizeof(uint32_t) * (size_t)source->width * source->height);
     FAIL_IF_NULL(pixels);
     for (int i = 0; i < source->width * source->height; i++) {
-        pixels[i] = source->pixels[i] == 0 ? 0 : figure->palette->entries[source->pixels[i]];
+        const uint8_t index = layer->tinted ? layer->remap[source->pixels[i]] : source->pixels[i];
+        pixels[i]           = source->pixels[i] == 0 ? 0 : figure->palette->entries[index];
     }
 
     SDL_Texture *texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC,

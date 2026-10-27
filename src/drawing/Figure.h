@@ -13,6 +13,7 @@ typedef struct FigureSpec {
     char        token[8];                      // e.g. "zm"
     char        weapon_class[4];               // e.g. "hth"
     char        armor[COF_COMPONENT_COUNT][4]; // per layer, e.g. "lit"; empty = don't draw that layer
+    uint16_t    tint[COF_COMPONENT_COUNT];     // per layer: an item's colour, 1 + shift x 32 + colour (0: none)
 } FigureSpec;
 
 typedef struct Figure Figure;

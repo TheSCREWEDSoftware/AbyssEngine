@@ -120,7 +120,8 @@ Figure *MapUnits_GetSpecFigure(MapUnits *units, const FigureSpec *spec, const ch
     char key[160];
     int  at = snprintf(key, sizeof(key), "@%s|%s|%s|%s", spec->base, spec->token, spec->weapon_class, mode);
     for (int c = 0; c < COF_COMPONENT_COUNT && at > 0 && at < (int)sizeof(key); c++) {
-        at += snprintf(key + at, sizeof(key) - (size_t)at, "|%s", spec->armor[c]);
+        at += snprintf(key + at, sizeof(key) - (size_t)at, spec->tint[c] > 0 ? "|%s.%d" : "|%s", spec->armor[c],
+                       spec->tint[c]);
     }
     for (int i = 0; i < units->figure_count; i++) {
         if (strcmp(units->figures[i].key, key) == 0) {

@@ -1281,13 +1281,9 @@ int Affixes_Recharge(Item *item) {
     return used;
 }
 
-bool Affixes_InvTint(const Item *item, int *shift, int *color) {
-    Affixes__Load();
-    const ItemBase *base = Items_Find(item->code);
-    const char     *code = "";
-    if (base == NULL || base->inv_trans <= 0) {
-        return false;
-    }
+// The colour (colors.txt row) a unique, set piece or colouring affix gives an item; -1 none
+static int Affixes__TintColor(const Item *item) {
+    const char *code = "";
     if (item->quality == ITEM_UNIQUE && item->name1 > 0 && item->name1 <= unique_count) {
         code = uniques[item->name1 - 1].tint;
     } else if (item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count) {
@@ -1301,7 +1297,7 @@ bool Affixes_InvTint(const Item *item, int *shift, int *color) {
         }
     }
     if (code[0] == '\0') {
-        return false;
+        return -1;
     }
     static char colors[32][8]; // colors.txt's codes, in order
     static int  color_count = -1;
@@ -1316,12 +1312,25 @@ bool Affixes_InvTint(const Item *item, int *shift, int *color) {
     }
     for (int r = 0; r < color_count; r++) {
         if (strcmp(colors[r], code) == 0) {
-            *shift = base->inv_trans;
-            *color = r;
-            return true;
+            return r;
         }
     }
-    return false;
+    return -1;
+}
+
+bool Affixes_InvTint(const Item *item, int *shift, int *color) {
+    Affixes__Load();
+    const ItemBase *base = Items_Find(item->code);
+    *color               = base != NULL && base->inv_trans > 0 ? Affixes__TintColor(item) : -1;
+    *shift               = base != NULL ? base->inv_trans : 0;
+    return *color >= 0;
+}
+
+int Affixes_WorldTint(const Item *item) {
+    Affixes__Load();
+    const ItemBase *base  = item->code[0] != '\0' ? Items_Find(item->code) : NULL;
+    const int       color = base != NULL && base->transform > 0 ? Affixes__TintColor(item) : -1;
+    return color >= 0 ? 1 + (base->transform * 32) + color : 0;
 }
 
 const char *Affixes_InvFile(const Item *item) {

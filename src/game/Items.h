@@ -139,6 +139,7 @@ typedef struct ItemBase {
     char     inv_file[32];        // data/global/items/<inv_file>.dc6
     char     unique_inv_file[32]; // its picture when unique (empty: the normal one)
     int      inv_trans;     // which colour shift its picture takes (InvTrans: 2 grey2, 5 greybrown, 8 invgreybrown)
+    int      transform;     // ... and on the character (Transform)
     char     use_sound[32]; // sounds.txt: put down in the inventory, worn, drunk
     char flippy_file[32];   // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
     char drop_sound[32];    // sounds.txt: landing on the ground

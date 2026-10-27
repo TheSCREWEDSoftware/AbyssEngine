@@ -1020,8 +1020,14 @@ void Character_Looks(const Character *character, CharacterLooks *looks) {
     const ItemBase *left       = left_item->code[0] != '\0' ? Items_Find(left_item->code) : NULL;
     if (helm != NULL) {
         snprintf(looks->layer[COF_COMPONENT_HD], 4, "%.3s", helm->gfx);
+        looks->tint[COF_COMPONENT_HD] = (uint16_t)Affixes_WorldTint(helm_item);
     }
     if (body != NULL) {
+        const int body_layers[6] = {COF_COMPONENT_TR, COF_COMPONENT_LG, COF_COMPONENT_RA,
+                                    COF_COMPONENT_LA, COF_COMPONENT_S1, COF_COMPONENT_S2};
+        for (int b = 0; b < 6; b++) {
+            looks->tint[body_layers[b]] = (uint16_t)Affixes_WorldTint(body_item);
+        }
         Character__ArmorLook(looks, COF_COMPONENT_TR, body->look_torso);
         Character__ArmorLook(looks, COF_COMPONENT_LG, body->look_legs);
         Character__ArmorLook(looks, COF_COMPONENT_RA, body->look_right_arm);
@@ -1039,10 +1045,13 @@ void Character_Looks(const Character *character, CharacterLooks *looks) {
     if (weapon != NULL && weapon->wclass[0] != '\0') {
         const bool bow = strcmp(weapon->wclass, "bow") == 0 || strcmp(weapon->wclass, "xbw") == 0;
         snprintf(looks->layer[bow ? COF_COMPONENT_LH : COF_COMPONENT_RH], 4, "%.3s", weapon->gfx);
+        looks->tint[bow ? COF_COMPONENT_LH : COF_COMPONENT_RH] =
+            (uint16_t)Affixes_WorldTint(weapon == right ? right_item : left_item);
         const char *wclass = weapon->wclass;
         if (other != NULL && other->wclass[0] != '\0' && !bow) {
             wclass = Character__DualClass(weapon->wclass, other->wclass);
             snprintf(looks->layer[COF_COMPONENT_LH], 4, "%.3s", other->gfx);
+            looks->tint[COF_COMPONENT_LH] = (uint16_t)Affixes_WorldTint(other == left ? left_item : right_item);
         } else if (weapon->one_or_two && weapon->wclass_2h[0] != '\0' && left == NULL &&
                    character->class_id == CHARACTER_BARBARIAN) {
             wclass = weapon->wclass_2h; // a sword in both hands
@@ -1054,6 +1063,7 @@ void Character_Looks(const Character *character, CharacterLooks *looks) {
     shield                 = shield == NULL && right != NULL && right->kind == ITEM_KIND_ARMOR ? right : shield;
     if (shield != NULL) {
         snprintf(looks->layer[COF_COMPONENT_SH], 4, "%.3s", shield->gfx);
+        looks->tint[COF_COMPONENT_SH] = (uint16_t)Affixes_WorldTint(shield == left ? left_item : right_item);
     }
 }
 
@@ -1063,7 +1073,12 @@ void Character_LooksToText(const CharacterLooks *looks, char *text, const int si
         at += snprintf(text + at, (size_t)(size - at), " %s", looks->layer[c][0] != '\0' ? looks->layer[c] : "-");
     }
     if (looks->shape != 0 && at > 0 && at < size) {
-        snprintf(text + at, (size_t)(size - at), " %c", looks->shape); // (older games stop reading before it)
+        at += snprintf(text + at, (size_t)(size - at), " %c", looks->shape); // (older games stop reading before it)
+    }
+    for (int c = 0; c < CHARACTER_LOOK_LAYERS && at > 0 && at < size; c++) {
+        if (looks->tint[c] > 0) {
+            at += snprintf(text + at, (size_t)(size - at), " t%d.%d", c, looks->tint[c]); // the colours
+        }
     }
 }
 
@@ -1106,6 +1121,14 @@ bool Character_LooksFromText(const char *text, CharacterLooks *looks) {
         at++;
     }
     read.shape = (*at == 'w' || *at == 'b') && (at[1] == '\0' || at[1] == ' ') ? *at : 0;
-    *looks     = read;
+    for (const char *t = strstr(at, " t"); t != NULL; t = strstr(t + 1, " t")) {
+        int layer = 0;
+        int tint  = 0;
+        if (sscanf(t + 2, "%d.%d", &layer, &tint) == 2 && layer >= 0 && layer < CHARACTER_LOOK_LAYERS && tint > 0 &&
+            tint < 2048) {
+            read.tint[layer] = (uint16_t)tint;
+        }
+    }
+    *looks = read;
     return true;
 }

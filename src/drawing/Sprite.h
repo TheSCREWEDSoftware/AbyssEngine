@@ -9,7 +9,10 @@ typedef struct Sprite Sprite;
 
 Sprite *Sprite_Create(const char *path, const char *palette_name);
 // With its colours shifted: each pixel's palette index looked up in remap[256] first (an item's tint)
-Sprite  *Sprite_CreateShifted(const char *path, const char *palette_name, const uint8_t *remap);
+Sprite *Sprite_CreateShifted(const char *path, const char *palette_name, const uint8_t *remap);
+// An item colour shift (data/global/items/Palette/*.dat by the item's InvTrans / Transform: 1 grey ... 8
+// invgreybrown) at a colour (colors.txt row): false if there's none
+bool     Sprite_ItemShift(int shift, int color, uint8_t remap[256]);
 void     Sprite_Destroy(Sprite **sprite);
 void     Sprite_SetBlendMode(const Sprite *sprite, SDL_BlendMode blend_mode);
 void     Sprite_SetAlphaMod(const Sprite *sprite, uint8_t alpha); // how much of it is drawn (blended and added)

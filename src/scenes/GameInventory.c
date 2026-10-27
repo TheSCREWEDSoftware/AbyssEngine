@@ -219,29 +219,6 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Pictures
 
-// A colour shift table (data/global/items/Palette/*.dat: 256 entries a colour), by InvTrans, false if none
-static bool GameInventory__Shift(const int shift, const int color, uint8_t remap[256]) {
-    static const char *const files[] = {NULL,        "grey",    "grey2",    "gold",        "brown",
-                                        "greybrown", "invgrey", "invgrey2", "invgreybrown"};
-    if (shift <= 0 || shift >= (int)(sizeof(files) / sizeof(files[0])) || color < 0) {
-        return false;
-    }
-    char path[96];
-    snprintf(path, sizeof(path), "/data/global/items/Palette/%s.dat", files[shift]);
-    MpqStream *stream = FileManager_FileExists(path) ? FileManager_OpenFile(path) : NULL;
-    if (stream == NULL) {
-        return false;
-    }
-    const uint32_t offset = (uint32_t)color * 256;
-    bool           ok     = MpqStream_GetSize(stream) >= offset + 256;
-    if (ok) {
-        MpqStream_Seek(stream, offset, SEEK_SET);
-        ok = MpqStream_Read(stream, remap, 0, 256) == 256;
-    }
-    MpqStream_Destroy(&stream);
-    return ok;
-}
-
 static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file, const int shift, const int color) {
     if (file == NULL || file[0] == '\0') {
         return NULL;
@@ -261,8 +238,8 @@ static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file, c
     IconCache *entry = &inventory->icons[inventory->icon_count++];
     snprintf(entry->file, sizeof(entry->file), "%s", key);
     uint8_t remap[256];
-    entry->sprite = GameInventory__Shift(shift, color, remap) ? Sprite_CreateShifted(path, PALETTE_UNITS, remap)
-                                                              : Sprite_Create(path, PALETTE_UNITS);
+    entry->sprite = Sprite_ItemShift(shift, color, remap) ? Sprite_CreateShifted(path, PALETTE_UNITS, remap)
+                                                          : Sprite_Create(path, PALETTE_UNITS);
     return entry->sprite;
 }
 

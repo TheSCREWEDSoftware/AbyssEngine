@@ -194,9 +194,10 @@ typedef struct Character {
 #define CHARACTER_LOOK_LAYERS 16 // COF_COMPONENT_COUNT
 #define CHARACTER_LOOKS_TEXT  80
 typedef struct CharacterLooks {
-    char weapon_class[4];
-    char layer[CHARACTER_LOOK_LAYERS][4];
-    char shape; // the Druid's: 'w' a wolf, 'b' a bear, 0 none (the game sets it from the buff; sent with the rest)
+    char     weapon_class[4];
+    char     layer[CHARACTER_LOOK_LAYERS][4];
+    char     shape; // the Druid's: 'w' a wolf, 'b' a bear, 0 none (the game sets it from the buff; sent with the rest)
+    uint16_t tint[CHARACTER_LOOK_LAYERS]; // what's worn's colours (Affixes_WorldTint), per layer; 0 none
 } CharacterLooks;
 
 void Character_Looks(const Character *character, CharacterLooks *looks);

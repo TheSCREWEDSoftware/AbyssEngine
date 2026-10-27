@@ -748,6 +748,7 @@ static Figure *Roam__LooksFigure(SceneRoam *roam, const Unit *unit, const char *
     for (int c = 0; c < COF_COMPONENT_COUNT && c < CHARACTER_LOOK_LAYERS; c++) {
         if (!bare || (c != COF_COMPONENT_RH && c != COF_COMPONENT_LH)) {
             snprintf(spec.armor[c], sizeof(spec.armor[c]), "%s", unit->looks.layer[c]);
+            spec.tint[c] = unit->looks.tint[c]; // (what's worn's colour)
         }
     }
     return MapUnits_GetSpecFigure(roam->units_cache, &spec, mode);
@@ -1609,10 +1610,16 @@ static int Roam__Act(const SceneRoam *roam) {
 }
 
 // An item's picture on the ground (items/<flippyfile>.dc6, in the act's colours)
-static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
+static Sprite *Roam__ItemSprite(SceneRoam *roam, const Item *item) {
+    const ItemBase *base = Items_Find(item->code);
     if (base == NULL || base->flippy_file[0] == '\0') {
         return NULL;
     }
+    int        shift  = 0;
+    int        color  = -1;
+    const bool tinted = Affixes_InvTint(item, &shift, &color); // (a unique's colour, like in the inventory)
+    char       key[32];
+    snprintf(key, sizeof(key), tinted ? "%.20s#%d.%d" : "%.20s", base->flippy_file, shift, color);
     const int act = Roam__Act(roam);
     if (act != roam->item_sprite_act) {
         for (int i = 0; i < roam->item_sprite_count; i++) {
@@ -1622,7 +1629,7 @@ static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
         roam->item_sprite_act   = act;
     }
     for (int i = 0; i < roam->item_sprite_count; i++) {
-        if (strcmp(roam->item_sprites[i].file, base->flippy_file) == 0) {
+        if (strcmp(roam->item_sprites[i].file, key) == 0) {
             return roam->item_sprites[i].sprite;
         }
     }
@@ -1632,8 +1639,11 @@ static Sprite *Roam__ItemSprite(SceneRoam *roam, const ItemBase *base) {
     char path[96];
     snprintf(path, sizeof(path), "/data/global/items/%s.dc6", base->flippy_file);
     ItemSprite *entry = &roam->item_sprites[roam->item_sprite_count++];
-    snprintf(entry->file, sizeof(entry->file), "%s", base->flippy_file);
-    entry->sprite = Sprite_Create(path, MapView_ActPalette(act));
+    snprintf(entry->file, sizeof(entry->file), "%s", key);
+    uint8_t remap[256];
+    entry->sprite = tinted && Sprite_ItemShift(shift, color, remap)
+                        ? Sprite_CreateShifted(path, MapView_ActPalette(act), remap)
+                        : Sprite_Create(path, MapView_ActPalette(act));
     return entry->sprite;
 }
 
@@ -5876,7 +5886,7 @@ static bool Roam__PrepareGroundItem(SceneRoam *roam, GroundItem *ground, const u
     if (ground->map_key != Roam__MapKey(roam)) {
         return false;
     }
-    ground->sprite = Roam__ItemSprite(roam, Items_Find(ground->item.code));
+    ground->sprite = Roam__ItemSprite(roam, &ground->item);
     if (ground->sprite != NULL) {
         const int frames = (int)Sprite_GetFrameCount(ground->sprite);
         const int frame  = (int)((now - ground->dropped_at) / ITEM_FLIP_MS);
