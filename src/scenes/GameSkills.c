@@ -536,7 +536,7 @@ static void GameSkills__SkillTip(GameSkills *skills, const Character *character,
 
 // A skill key's name in a picker icon's corner
 static void GameSkills__HotkeyLabel(GameSkills *skills, const int hotkey, const int x, const int y) {
-    char text[8];
+    char text[16];
     snprintf(text, sizeof(text), "F%d", hotkey + 1);
     Label_SetText(skills->small, text);
     Label_SetColor(skills->small, 0xFF, 0xE0, 0x80, 0xFF);

@@ -325,14 +325,19 @@ static void Roam__SkillHit(SceneRoam *roam, Unit *unit, const int damage[ELEMENT
     }
 }
 
-// Poison ticking (ours or an ally's: the kill is ours)
+// Poison and bleeding ticking (ours or an ally's: the kill is ours)
 static void Roam__UpdateAilments(SceneRoam *roam, Unit *unit, const float seconds, const uint64_t now) {
-    if (unit->poison_left <= 0.0f || !Roam__IsAlive(unit) || !Roam__RunsMonsters(roam)) {
+    if ((unit->poison_left <= 0.0f && unit->bleed_left <= 0.0f) || !Roam__IsAlive(unit) || !Roam__RunsMonsters(roam)) {
         return;
     }
     const float amount  = fminf(unit->poison_left, unit->poison_rate * seconds);
+    const float bleed   = fminf(unit->bleed_left, unit->bleed_rate * seconds);
     unit->poison_left  -= amount;
-    unit->poison_carry += amount;
+    unit->bleed_left   -= bleed;
+    unit->poison_carry += amount + bleed;
+    if (bleed > 0.0f) {
+        unit->poison_ours = true; // (Open Wounds is only ever ours)
+    }
     if (unit->poison_carry >= 1.0f) {
         const int  whole      = (int)unit->poison_carry;
         const bool was_alive  = Roam__IsAlive(unit);
@@ -354,7 +359,11 @@ static void Roam__UpdateAilments(SceneRoam *roam, Unit *unit, const float second
 
 // How fast a monster goes: halved while chilled, slowed by Decrepify / Holy Freeze
 static float Roam__UnitSpeedFactor(const SceneRoam *roam, const Unit *unit, const uint64_t now) {
-    float factor = now < unit->chill_until ? 0.5f : 1.0f;
+    if (now < unit->frozen_until) {
+        return 0.0f; // Freezes Target
+    }
+    float factor  = now < unit->chill_until ? 0.5f : 1.0f;
+    factor       *= (float)(100 - unit->slowed) / 100.0f; // Slows Target
     if (unit->curse != NULL && now < unit->curse_until) {
         for (int a = 0; a < SKILL_AURA_STATS; a++) {
             if (strcmp(unit->curse->aura_stat[a], "velocitypercent") == 0) {
@@ -517,7 +526,8 @@ static bool Roam__MissileHitsUnit(SceneRoam *roam, Missile *missile, const int i
     if (missile->uses_ar && roam->game) {
         const int ar =
             roam->player.attack_rating + (int)((float)roam->player.attack_rating * missile->ar_bonus / 100.0f);
-        if (Roam__Roll(1, 100) > Character_HitChance(ar, roam->player.level, unit->defense, unit->level)) {
+        if (Roam__Roll(1, 100) >
+            Character_HitChance(ar, roam->player.level, Roam__DefenseAgainstUs(roam, unit), unit->level)) {
             return false; // missed: flies on
         }
     }

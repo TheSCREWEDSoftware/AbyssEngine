@@ -95,6 +95,16 @@ static const ModInfo mod_info[MOD_TYPE_COUNT] = {
     [MOD_AURA]                 = {"aura",         "An aura when equipped"                           },
     [MOD_REQUIREMENTS]         = {"ease",         "Requirements %+d%%"                              },
     [MOD_CHARGED]              = {"charged",      "A skill with charges"                            },
+    [MOD_OPEN_WOUNDS]          = {"openwounds",   "%d%% Chance of Open Wounds"                      },
+    [MOD_FREEZE]               = {"freeze",       "Freezes Target +%d"                              },
+    [MOD_SLOW]                 = {"slow",         "Slows Target by %d%%"                            },
+    [MOD_KNOCKBACK]            = {"knock",        "Knockback"                                       },
+    [MOD_CANNOT_FREEZE]        = {"nofreeze",     "Cannot Be Frozen"                                },
+    [MOD_HALF_FREEZE]          = {"halffreeze",   "Half Freeze Duration"                            },
+    [MOD_FLEE]                 = {"howl",         "Hit Causes Monster to Flee %d%%"                 },
+    [MOD_PREVENT_HEAL]         = {"noheal",       "Prevent Monster Heal"                            },
+    [MOD_POISON_LENGTH]        = {"poisonlen",    "Poison Length Reduced by %d%%"                   },
+    [MOD_REDUCE_DEFENSE]       = {"reduceac",     "-%d%% Target Defense"                            },
 };
 
 // Properties.txt codes we know: one property, or a pair (minimum to the first, maximum to the second). IGNORE: fine
@@ -192,6 +202,16 @@ static const struct {
     {"gethit-skill", MOD_SKILL_ON_STRUCK,      -1               },
     {"aura",         MOD_AURA,                 -1               },
     {"ease",         MOD_REQUIREMENTS,         -1               },
+    {"openwounds",   MOD_OPEN_WOUNDS,          -1               },
+    {"freeze",       MOD_FREEZE,               -1               },
+    {"slow",         MOD_SLOW,                 -1               },
+    {"knock",        MOD_KNOCKBACK,            -1               },
+    {"nofreeze",     MOD_CANNOT_FREEZE,        -1               },
+    {"half-freeze",  MOD_HALF_FREEZE,          -1               },
+    {"howl",         MOD_FLEE,                 -1               },
+    {"noheal",       MOD_PREVENT_HEAL,         -1               },
+    {"res-pois-len", MOD_POISON_LENGTH,        -1               },
+    {"reduce-ac",    MOD_REDUCE_DEFENSE,       -1               },
 };
 
 static const char *const class_codes[CHARACTER_CLASS_COUNT] = {"ama", "sor", "nec", "pal", "bar", "dru", "ass"};
@@ -937,10 +957,10 @@ void Affixes_SetMagicFind(const int percent) { magic_find = percent > 0 ? percen
 // LowQualityItems.txt's names (Crude, Cracked, Damaged, Low Quality), by grade (row + 1)
 static const char *Affixes__LowQualityName(const int grade) {
     static char        names[4][32];
-    static bool        loaded      = false;
+    static bool        names_read  = false;
     static const char *fallback[4] = {"Crude", "Cracked", "Damaged", "Low Quality"};
-    if (!loaded) {
-        loaded           = true;
+    if (!names_read) {
+        names_read       = true;
         DataTable *table = DataTable_Load("/data/global/excel/LowQualityItems.txt");
         for (int r = 0; r < 4; r++) {
             const char *name = table != NULL && r < DataTable_GetRowCount(table)

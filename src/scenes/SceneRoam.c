@@ -305,6 +305,10 @@ typedef struct Unit {
     float           poison_rate;
     float           poison_carry; // parts of a point done so far
     bool            poison_ours;  // our poison (the kill is ours)
+    float           bleed_left;   // Open Wounds: bleeding still to do, and how fast (the kill is ours)
+    float           bleed_rate;
+    uint64_t        frozen_until; // Freezes Target: doesn't move until then
+    int             slowed;       // Slows Target: percent slower (the most it's been slowed by, at most 50)
     bool            undead;       // monstats lUndead / hUndead, demon: what items against them work on
     bool            demon;
     bool            boss;
@@ -1453,10 +1457,39 @@ static int Roam__ElementTaken(const SceneRoam *roam, const Element element, cons
         return damage;
     }
     int taken = Roam__Resisted(damage, Character_Resist(roam->character, element, Roam__ResistPenalty(roam)));
+    if (element == ELEMENT_POISON) { // Poison Length Reduced: poison here is all at once, so less of it (at most 75%)
+        const int shorter = Affixes_Total(roam->character, MOD_POISON_LENGTH);
+        taken             = taken * (100 - (shorter < 75 ? shorter : 75)) / 100;
+    }
     if (element == ELEMENT_FIRE || element == ELEMENT_COLD || element == ELEMENT_LIGHTNING) {
         taken -= taken > 0 ? Affixes_Total(roam->character, MOD_MAGIC_DAMAGE_REDUCED) : 0;
     }
     return taken > 0 ? taken : 0;
+}
+
+// Chilled or frozen: slowed for so long, unless what's worn says otherwise (Cannot Be Frozen, Half Freeze Duration)
+static void Roam__ChillMe(SceneRoam *roam, int ms, const uint64_t now) {
+    if (roam->game && Affixes_Total(roam->character, MOD_CANNOT_FREEZE) > 0) {
+        return;
+    }
+    if (roam->game && Affixes_Total(roam->character, MOD_HALF_FREEZE) > 0) {
+        ms /= 2;
+    }
+    const uint64_t until = now + (uint64_t)(ms > 0 ? ms : 0);
+    if (until > roam->player.chill_until) {
+        roam->player.chill_until = until;
+    }
+}
+
+// A monster's defense against our blows: -% Target Defense takes some off (at most half, a quarter for bosses)
+static int Roam__DefenseAgainstUs(const SceneRoam *roam, const Unit *target) {
+    if (!roam->game) {
+        return target->defense;
+    }
+    const int most = target->boss || target->rank != 0 ? 25 : 50;
+    int       cut  = Affixes_Total(roam->character, MOD_REDUCE_DEFENSE);
+    cut            = cut < most ? (cut > 0 ? cut : 0) : most;
+    return target->defense * (100 - cut) / 100;
 }
 
 // The player's blow, each kind of damage rolled: physical, then fire, cold, lightning, poison (what's worn)
@@ -3400,6 +3433,52 @@ static void Roam__SendKilled(SceneRoam *roam, const int index, const int killer)
     free(writer);
 }
 
+// What a blow that lands does besides the damage (what's worn): Open Wounds, Freezes / Slows Target, Knockback,
+// Hit Causes Monster to Flee. Only where the monsters are ours to move. big: a boss or unique (less of it)
+static void Roam__HitEffects(SceneRoam *roam, Unit *target, const bool big, const uint64_t now) {
+    const Character *c = roam->character;
+    if (!Roam__IsAlive(target)) {
+        return;
+    }
+    const int wounds = Affixes_Total(c, MOD_OPEN_WOUNDS);
+    if (wounds > 0 && Roam__Roll(1, 100) <= wounds) { // bleeds for 8 seconds, more as you go up
+        target->bleed_left = (float)(10 + (c->level * 3));
+        target->bleed_rate = target->bleed_left / 8.0f;
+    }
+    const int freeze = Affixes_Total(c, MOD_FREEZE);
+    if (freeze > 0) { // the game's frames: +1 is a little over half a second (half for bosses)
+        const uint64_t until = now + (uint64_t)((big ? 300 : 600) + (freeze * (big ? 100 : 200)));
+        target->frozen_until = until > target->frozen_until ? until : target->frozen_until;
+        target->chill_until  = target->frozen_until + 1000;
+    }
+    const int slow = Affixes_Total(c, MOD_SLOW);
+    if (slow > target->slowed) {
+        target->slowed = slow < (big ? 25 : 50) ? slow : (big ? 25 : 50);
+    }
+    if (big) {
+        return; // bosses and uniques don't get pushed or run
+    }
+    const int flee = Affixes_Total(c, MOD_FLEE);
+    if (flee > 0 && Roam__Roll(1, 100) <= flee) {
+        target->flee_until = now + 2000;
+    }
+    if (Affixes_Total(c, MOD_KNOCKBACK) > 0) {
+        const float dx = target->x - roam->player.x;
+        const float dy = target->y - roam->player.y;
+        const float d  = sqrtf((dx * dx) + (dy * dy));
+        if (d > 0.01f) {
+            float x = target->x;
+            float y = target->y;
+            Roam__ArrivalSpot(roam->map, target->x + (dx / d * 1.2f), target->y + (dy / d * 1.2f), &x, &y);
+            if (Roam__Distance(x, y, target->x, target->y) < 2.0f) { // (not through a wall to somewhere else)
+                target->x = x;
+                target->y = y;
+                Roam__ClearPath(target);
+            }
+        }
+    }
+}
+
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
@@ -3418,7 +3497,8 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
               (target->demon ? Affixes_Total(c, MOD_ATTACK_DEMON) : 0);
     }
     if (roam->game && !sure_hit &&
-        Roam__Roll(1, 100) > Character_HitChance(ar, player->level, target->defense, target->level)) {
+        Roam__Roll(1, 100) >
+            Character_HitChance(ar, player->level, Roam__DefenseAgainstUs(roam, target), target->level)) {
         return; // missed
     }
     Roam__Wear(roam, true);
@@ -3457,6 +3537,9 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
         // Crushing Blow: a quarter of what's left of its life (an eighth for bosses and uniques)
         if (Affixes_Total(c, MOD_CRUSHING_BLOW) > 0 && Roam__Roll(1, 100) <= Affixes_Total(c, MOD_CRUSHING_BLOW)) {
             rolled[ELEMENT_PHYSICAL] += target->hp / (big ? 8 : 4);
+        }
+        if (Roam__RunsMonsters(roam)) {
+            Roam__HitEffects(roam, target, big, now);
         }
     }
     if (rolled[ELEMENT_POISON] > 0 && Roam__RunsMonsters(roam)) {
@@ -4003,7 +4086,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         damage = Roam__AbsorbDamage(roam, damage); // Bone Armor
                         if (damage > 0) {
                             if (unit->element == ELEMENT_COLD) {
-                                player->chill_until = now + 2000; // its cold slows you
+                                Roam__ChillMe(roam, 2000, now); // its cold slows you
                             }
                             Roam__Damage(roam, player, damage, now);
                         }
@@ -4462,9 +4545,14 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
         }
         break;
     default: {
-        char text[96];
+        if (button < 0 || button >= CTRL_MINI_COUNT) {
+            break;
+        }
+        const char *name  = ctrl_mini_names[button];
+        const char *paren = strchr(name, '(');
+        char        text[96];
         snprintf(text, sizeof(text), "%.*s isn't in the engine yet.",
-                 (int)(strchr(ctrl_mini_names[button], '(') - ctrl_mini_names[button] - 1), ctrl_mini_names[button]);
+                 paren != NULL && paren > name ? (int)(paren - name - 1) : (int)strlen(name), name);
         Roam__ShowMessage(roam, text);
         break;
     }
@@ -5616,7 +5704,7 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         // monsters cast, at a monster's level, for as long as theirs last
         const SkillRow *curse = row != 0xFFFF ? SkillData_ByRow(row) : NULL;
         if (row == 0xFFFF) {
-            player->chill_until = Roam__Now(roam) + (uint64_t)(ms < 3000 ? ms : 3000);
+            Roam__ChillMe(roam, ms < 3000 ? ms : 3000, Roam__Now(roam));
         } else if (curse != NULL && (strcmp(curse->id, "Amplify Damage") == 0 || strcmp(curse->id, "Weaken") == 0 ||
                                      strcmp(curse->id, "Decrepify") == 0)) {
             player->curse       = curse;
@@ -5647,7 +5735,7 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
             break; // missed
         }
         if (cold) {
-            player->chill_until = now + 2000; // cold slows (a monster's blow, a cold spell)
+            Roam__ChillMe(roam, 2000, now); // cold slows (a monster's blow, a cold spell)
         }
         Roam__Damage(roam, player, damage > 0 ? damage : 1, now);
         if (pvp && !Roam__IsAlive(player)) {
@@ -6600,7 +6688,7 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
     // What it's immune to (resistance 100 or more), and a unique's aura, under its life, like the game
     if (show_bar && roam->game && !unit->npc && !unit->is_object && roam->log_label != NULL) {
         static const char *const elements[ELEMENT_COUNT] = {"Physical", "Fire", "Cold", "Lightning", "Poison"};
-        char                     text[128] = "";
+        char                     text[128]               = "";
         for (int e = 0; e < ELEMENT_COUNT; e++) {
             if (unit->resist[e] >= 100) {
                 const size_t used = strlen(text);
@@ -6907,13 +6995,13 @@ static void Roam__Render(SceneRoam *roam) {
                 roam->automap_size == 0 ? Roam__Gameplay(roam)->corner_automap : roam->automap_size == 2;
             if (corner) {
                 // Small in the top right corner (Options > Gameplay > Automap), on a dark box
-                const SDL_Rect corner = {view.x + view.w - 214, view.y + 34, 204, 154};
+                const SDL_Rect box = {view.x + view.w - 214, view.y + 34, 204, 154};
                 SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
                 SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 150);
-                SDL_RenderFillRect(sdl_renderer, &corner);
+                SDL_RenderFillRect(sdl_renderer, &box);
                 SDL_SetRenderDrawColor(sdl_renderer, 0x80, 0x70, 0x48, 0xFF);
-                SDL_RenderDrawRect(sdl_renderer, &corner);
-                const SDL_Rect inside = {corner.x + 2, corner.y + 2, corner.w - 4, corner.h - 4};
+                SDL_RenderDrawRect(sdl_renderer, &box);
+                const SDL_Rect inside = {box.x + 2, box.y + 2, box.w - 4, box.h - 4};
                 Automap_DrawScaled(roam->automap, &inside, roam->player.x, roam->player.y, marks, mark_count, 2);
             } else {
                 Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
@@ -6934,26 +7022,25 @@ static void Roam__Render(SceneRoam *roam) {
     }
     if (darkness > 0) {
         MapLight lights[64];
-        int      count = 0;
+        int      lit = 0;
         MapView_SubtileToWorld(roam->player.x, roam->player.y, &lights[0].world_x, &lights[0].world_y);
-        lights[0].world_y      -= 30.0f;
-        lights[count++].radius  = radius;
-        for (int o = 0; o < roam->other_count && count < 64; o++) { // the others carry their light too
-            MapView_SubtileToWorld(roam->others[o].x, roam->others[o].y, &lights[count].world_x,
-                                   &lights[count].world_y);
-            lights[count].world_y  -= 30.0f;
-            lights[count++].radius  = 12.0f;
+        lights[0].world_y    -= 30.0f;
+        lights[lit++].radius  = radius;
+        for (int o = 0; o < roam->other_count && lit < 64; o++) { // the others carry their light too
+            MapView_SubtileToWorld(roam->others[o].x, roam->others[o].y, &lights[lit].world_x, &lights[lit].world_y);
+            lights[lit].world_y  -= 30.0f;
+            lights[lit++].radius  = 12.0f;
         }
-        for (int i = 0; i < roam->unit_count && count < 64; i++) {
+        for (int i = 0; i < roam->unit_count && lit < 64; i++) {
             const Unit *unit = &roam->units[i];
             if (unit->is_object && !unit->vanished && Roam__GivesLight(unit) &&
                 Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) < 60.0f) {
-                MapView_SubtileToWorld(unit->x, unit->y, &lights[count].world_x, &lights[count].world_y);
-                lights[count].world_y  -= 20.0f;
-                lights[count++].radius  = 8.0f;
+                MapView_SubtileToWorld(unit->x, unit->y, &lights[lit].world_x, &lights[lit].world_y);
+                lights[lit].world_y  -= 20.0f;
+                lights[lit++].radius  = 8.0f;
             }
         }
-        MapRenderer_DrawLights(roam->renderer, &roam->camera, &view, lights, count, (uint8_t)darkness);
+        MapRenderer_DrawLights(roam->renderer, &roam->camera, &view, lights, lit, (uint8_t)darkness);
     }
     Roam__DrawWeather(roam, &view);
 

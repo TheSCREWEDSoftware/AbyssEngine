@@ -97,6 +97,16 @@ typedef enum ItemModType {
     MOD_AURA,               // param: the aura; value: its level (on while it's worn)
     MOD_REQUIREMENTS,       // percent (negative: less) on the item's own requirements ("ease")
     MOD_CHARGED,            // param: the skill; value: its level x 256 + the charges left; extra: the most charges
+    MOD_OPEN_WOUNDS,        // chance a blow makes the monster bleed (damage over a few seconds)
+    MOD_FREEZE,             // freezes the monster hit (frames, more with more)
+    MOD_SLOW,               // slows the monster hit (percent)
+    MOD_KNOCKBACK,          // the monster hit is knocked back
+    MOD_CANNOT_FREEZE,      // you can't be frozen or chilled
+    MOD_HALF_FREEZE,        // chills and freezes last half as long on you
+    MOD_FLEE,               // chance the monster hit runs away for a moment
+    MOD_PREVENT_HEAL,       // * (monsters don't heal here)
+    MOD_POISON_LENGTH,      // percent shorter poison on you
+    MOD_REDUCE_DEFENSE,     // percent off the monster's defense (it's easier to hit)
     MOD_TYPE_COUNT
 } ItemModType;
 

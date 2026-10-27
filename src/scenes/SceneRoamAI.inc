@@ -201,7 +201,7 @@ static void Roam__MonsterAura(SceneRoam *roam, Unit *unit, const uint64_t now) {
         return;
     }
     if (strcmp(id, "Holy Freeze") == 0) {
-        player->chill_until = now + 1100;
+        Roam__ChillMe(roam, 1100, now);
     } else if (strcmp(id, "Holy Fire") == 0 || strcmp(id, "Holy Shock") == 0) {
         const Element element = strcmp(id, "Holy Fire") == 0 ? ELEMENT_FIRE : ELEMENT_LIGHTNING;
         const int     damage  = Roam__ElementTaken(roam, element, Roam__Roll(level * 2, (level * 5) + 2));
@@ -234,8 +234,10 @@ static void Roam__Burrowed(SceneRoam *roam, Unit *unit, const bool player_alive,
 // The Fallen: when one of theirs falls nearby, the rest scatter for a moment
 static bool Roam__MonsterFlees(SceneRoam *roam, Unit *unit, const float tx, const float ty, const uint64_t now,
                                const float seconds) {
-    if (strncmp(unit->id, "fallen", 6) != 0 || strncmp(unit->id, "fallenshaman", 12) == 0 || unit->rank != 0) {
-        return false;
+    const bool fallen =
+        strncmp(unit->id, "fallen", 6) == 0 && strncmp(unit->id, "fallenshaman", 12) != 0 && unit->rank == 0;
+    if (!fallen && now >= unit->flee_until) {
+        return false; // (anything else only runs from a blow that makes it: Hit Causes Monster to Flee)
     }
     if (now >= unit->flee_until) {
         for (int i = 0; i < roam->unit_count; i++) {
