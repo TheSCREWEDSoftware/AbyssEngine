@@ -54,21 +54,21 @@ own bindings, next to `abyss.ini`.
 | Attack | - | `E` | `Pad Button 1 (Left)` |  |
 | Right skill / drop monster | `Mouse Right` | - | - |  |
 | Swap weapons \* | - | `W` | - |  |
-| Skill 1 \* | - | `F1` | - |  |
-| Skill 2 \* | - | `F2` | - |  |
-| Skill 3 \* | - | `F3` | - |  |
-| Skill 4 \* | - | `F4` | - |  |
-| Skill 5 \* | - | `F5` | - |  |
-| Skill 6 \* | - | `F6` | - |  |
-| Skill 7 \* | - | `F7` | - |  |
-| Skill 8 \* | - | `F8` | - |  |
+| Skill 1 | - | `F1` | - |  |
+| Skill 2 | - | `F2` | - |  |
+| Skill 3 | - | `F3` | - |  |
+| Skill 4 | - | `F4` | - |  |
+| Skill 5 | - | `F5` | - |  |
+| Skill 6 | - | `F6` | - |  |
+| Skill 7 | - | `F7` | - |  |
+| Skill 8 | - | `F8` | - |  |
 | Previous skill \* | - | - | - |  |
 | Next skill \* | - | - | - |  |
 | Skill tree | - | `T` | - |  |
-| Skill speed bar \* | - | `S` | - |  |
+| Skill speed bar | - | `S` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Swap weapons, Skill 1, Skill 2, Skill 3, Skill 4, Skill 5, Skill 6, Skill 7, Skill 8, Previous skill, Next skill, Skill speed bar. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Swap weapons, Previous skill, Next skill. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Belt
 
@@ -78,10 +78,7 @@ own bindings, next to `abyss.ini`.
 | Use belt 2 | - | `2` | - |  |
 | Use belt 3 | - | `3` | - |  |
 | Use belt 4 | - | `4` | - |  |
-| Show belt \* | - | `` ` `` | - |  |
-
-> [!NOTE]
-> \* **Not implemented yet:** Show belt. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+| Show belt | - | `` ` `` | - |  |
 
 ## Screens
 
@@ -90,31 +87,25 @@ own bindings, next to `abyss.ini`.
 | Character screen | - | `A`, `C` | - | `C` also on an action that's never active at the same time |
 | Inventory | - | `B`, `I` | - | `B` also on an action that's never active at the same time |
 | Party screen | - | `P` | - | `P` also on an action that's never active at the same time |
-| Hireling screen \* | - | `O` | - |  |
-| Quest log \* | - | `Q` | - |  |
-| Message log \* | - | `M` | - |  |
-| Help \* | - | `H` | - |  |
+| Hireling screen | - | `O` | - |  |
+| Quest log | - | `Q` | - |  |
+| Message log | - | `M` | - |  |
+| Help | - | `H` | - |  |
 | Clear screen | - | `Space` | - |  |
 | Show items | - | `Left Alt` | - |  |
-| Show portraits \* | - | `Z` | - |  |
+| Show portraits | - | `Z` | - |  |
 | Waypoint / places | - | `V` | - |  |
 | Back to town | - | `Home` | - |  |
-
-> [!NOTE]
-> \* **Not implemented yet:** Hireling screen, Quest log, Message log, Help, Show portraits. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Automap
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
 | Automap | - | `Tab` | - |  |
-| Center automap \* | - | `F9` | - |  |
-| Fade automap \* | - | `F10` | - |  |
-| Party on automap \* | - | `F11` | - |  |
-| Names on automap \* | - | `F12` | - |  |
-
-> [!NOTE]
-> \* **Not implemented yet:** Center automap, Fade automap, Party on automap, Names on automap. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+| Center automap | - | `F9` | - |  |
+| Fade automap | - | `F10` | - |  |
+| Party on automap | - | `F11` | - |  |
+| Names on automap | - | `F12` | - |  |
 
 ## View
 
@@ -130,10 +121,7 @@ own bindings, next to `abyss.ini`.
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
 | Chat | - | `Return` | - |  |
-| Clear messages \* | - | `N` | - | `N` also on an action that's never active at the same time |
-
-> [!NOTE]
-> \* **Not implemented yet:** Clear messages. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+| Clear messages | - | `N` | - | `N` also on an action that's never active at the same time |
 
 ## Free Roam (debug)
 

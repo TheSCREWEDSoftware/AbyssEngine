@@ -129,25 +129,25 @@ they can be set up already; they're marked "not in the engine yet".
 | Attack | E, Pad Button 1 (Left) | ✅ Modern and Combined |
 | Right skill / drop monster | Mouse Right | ✅ Single Player (casts the right skill); Free Roam (drop) |
 | Swap weapons | W | |
-| Skill 1-8 | F1-F8 | |
+| Skill 1-8 | F1-F8 | ✅ Single Player: over a skill in a picker, binds it; otherwise puts it on its button |
 | Previous / next skill | (the game: mouse wheel; here the wheel zooms) | |
 | Skill tree | T | ✅ Single Player |
-| Skill speed bar | S | |
+| Skill speed bar | S | ✅ the bound skills above the right skill |
 | Use belt 1-4 | 1-4 | ✅ Single Player |
-| Show belt | ` | |
+| Show belt | ` | ✅ the belt's upper rows (also while the mouse is over the belt) |
 | Character screen | A, C | ✅ Single Player |
 | Inventory | B or I | ✅ Single Player |
-| Party, hireling, quests, message log, help | P, O, Q, M, H | ✅ Party (multiplayer) and quests; not yet the hireling key (click the portrait), message log, help |
+| Party, hireling, quests, message log, help | P, O, Q, M, H | ✅ |
 | Clear screen | Space | ✅ closes panels |
-| Show items, show portraits | Left Alt, Z | ✅ Show items; not yet show portraits |
+| Show items, show portraits | Left Alt, Z | ✅ |
 | Waypoint / places | V | ✅ |
 | Back to town | Home | ✅ Single Player |
 | Automap | Tab | ✅ |
-| Center / fade / party / names on automap | F9-F12 | |
+| Center / fade / party / names on automap | F9-F12 | ✅ Center switches between the whole view and the corner |
 | Zoom in / out | Wheel Up / Down | ✅ |
 | Day / dusk / night | L | ✅ |
 | Screenshot | Print Screen | ✅ saved in `screenshots` next to `abyss.ini` |
-| Chat, clear messages | Enter, N | ✅ Chat (multiplayer); not yet clear messages |
+| Chat, clear messages | Enter, N | ✅ Chat (multiplayer) |
 | Free Roam: combat, collision view, placement preview, new world | C, B, P, N | ✅ |
 
 **Esc** isn't bindable: it closes what's open, or opens the game menu.

@@ -87,25 +87,45 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Run (hold) | - | `Left Ctrl` | - | Run (or walk, when running is on) while held |
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
-| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill, cast where the cursor is (held: again and again) |
+| Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet) |
+| Skill 1 | - | `F1` | - | Over a skill in a skill picker: bind it to this key; otherwise put it on its button |
+| Skill 2 | - | `F2` | - | (like Skill 1) |
+| Skill 3 | - | `F3` | - | (like Skill 1) |
+| Skill 4 | - | `F4` | - | (like Skill 1) |
+| Skill 5 | - | `F5` | - | (like Skill 1) |
+| Skill 6 | - | `F6` | - | (like Skill 1) |
+| Skill 7 | - | `F7` | - | (like Skill 1) |
+| Skill 8 | - | `F8` | - | (like Skill 1) |
 | Skill tree | - | `T` | - | Single Player: the skill tree (spend skill points) |
+| Skill speed bar | - | `S` | - | The skills bound to F1-F8 in a row above the right skill: click one to use it |
 | Use belt 1 | - | `1` | - | Drink what's in belt slot 1 |
 | Use belt 2 | - | `2` | - | Drink what's in belt slot 2 |
 | Use belt 3 | - | `3` | - | Drink what's in belt slot 3 |
 | Use belt 4 | - | `4` | - | Drink what's in belt slot 4 |
+| Show belt | - | `` ` `` | - | The belt's rows above the bottom one (they show while the mouse is over the belt too) |
 | Character screen | - | `A`, `C` | - | - |
 | Inventory | - | `B`, `I` | - | Single Player: the inventory (items, what you wear) |
 | Party screen | - | `P` | - | Multiplayer: who's in the game; invite them to your party, accept, or leave |
+| Hireling screen | - | `O` | - | Single Player: the hireling's screen (as clicking their portrait) |
+| Quest log | - | `Q` | - | Single Player: the quests, act by act, and where each one stands |
+| Message log | - | `M` | - | The last things said to you: messages and chat |
+| Help | - | `H` | - | The controls and their keys, over the game |
 | Clear screen | - | `Space` | - | Close the open screens and panels |
 | Show items | - | `Left Alt` | - | Show the names of items on the ground while held |
+| Show portraits | - | `Z` | - | Hide or show the hireling's portrait |
 | Waypoint / places | - | `V` | - | Travel by waypoint (in town or next to one); Free Roam: the Places list |
 | Back to town | - | `Home` | - | Single Player: back to the act's town |
 | Automap | - | `Tab` | - | Show or hide the map of the explored area |
+| Center automap | - | `F9` | - | Switch the automap between the whole view and the corner |
+| Fade automap | - | `F10` | - | The automap see-through, or solid |
+| Party on automap | - | `F11` | - | Your party on the automap, or not |
+| Names on automap | - | `F12` | - | The names of the ways out and of players on the automap, or not |
 | Zoom in | `Wheel Up` | - | - | Closer (the automap, and the view in Free Roam and the Map Editor) |
 | Zoom out | `Wheel Down` | - | - | Further out |
 | Day / dusk / night | - | `L` | - | Cycle the light (debug) |
 | Screenshot | - | `PrintScreen` | - | Saves a picture in the screenshots folder next to abyss.ini |
 | Chat | - | `Return` | - | Multiplayer: type a message (Enter sends it, Esc stops) |
+| Clear messages | - | `N` | - | Clear the messages and chat on the screen (the log keeps them) |
 <!-- keys:end -->
 
 - **Combat** is always on. Town folk (Akara, Charsi, Gheed, ...) never fight and can't be attacked. Hits can miss:
