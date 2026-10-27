@@ -6,6 +6,8 @@
 // Combat numbers for monsters and NPCs (monstats.txt percentages of MonLvl.txt base values, normal difficulty), and the
 // per-act preset table the game's DS1 maps use to place their NPCs and bosses (MonPreset.txt, SuperUniques.txt).
 
+#define MONSTER_SKILLS 8
+
 typedef struct MonsterStats {
     int  level;
     int  hp_min;
@@ -20,12 +22,12 @@ typedef struct MonsterStats {
     char treasure[48];          // what it drops (TreasureClassEx.txt), for the difficulty
     char treasure_champion[48]; // ... as a champion (TreasureClass2), as a unique (TreasureClass3)
     char treasure_unique[48];
-    bool boss;         // Andariel, Duriel, ...: keeps its own level
-    bool undead;       // lUndead / hUndead (skeletons, zombies, ...): holy damage and items against undead
-    bool demon;        // demon (items against demons)
-    char missile[32];  // MissA1: what its first attack shoots (archers), "" = a blow
-    char skill[2][32]; // Skill1, Skill2 (skills.txt: Shaman fire, Andariel's poison bolts, Frost Nova, ...)
-    int  skill_level[2];
+    bool boss;                      // Andariel, Duriel, ...: keeps its own level
+    bool undead;                    // lUndead / hUndead (skeletons, zombies, ...): holy damage and items against undead
+    bool demon;                     // demon (items against demons)
+    char missile[32];               // MissA1: what its first attack shoots (archers), "" = a blow
+    char skill[MONSTER_SKILLS][32]; // Skill1..8 (skills.txt: Shaman fire, Andariel's poison bolts, curses, Leap, ...)
+    int  skill_level[MONSTER_SKILLS];
     // Resistances in percent (100 or more: immune): 0 physical, 1 fire, 2 cold, 3 lightning, 4 poison (Character.h's
     // Element order)
     int resist[5];

@@ -145,6 +145,10 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   shoot, stepping away when you get close; casters throw their spells now and then (Skill1/Skill2 with a missile: the
   Fallen Shamans' fire, Andariel's poison, Mephisto's bolts, novas round them), at the spell's own damage; the Fallen
   scatter for a moment when one of them dies near them; and a pack comes all together once one of it has seen you.
+  Some curse you (the Succubus witches: Amplify Damage or Weaken; the Summoner: Weaken; Doom Knights: Decrepify or
+  another): Amplify Damage lets more of their blows through, Weaken takes from your damage, Decrepify does a bit of
+  both and slows you; it shows over your head while it lasts. Zakarum priests and imps teleport next to you, Sand
+  Leapers leap at you. In multiplayer games a curse lands on the host's own player only, for now.
 - **Waypoints**: you start knowing the Rogue Encampment's. Click a waypoint to light it up ("Waypoint found."); it
   then shows in the waypoint list (V in town or next to a waypoint), and travelling to it puts you next to it. Found
   waypoints are kept with the character.

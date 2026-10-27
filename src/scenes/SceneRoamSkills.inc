@@ -153,6 +153,10 @@ static int Roam__PlayerStates(const SceneRoam *roam, char states[][32], const in
     if (shrine != NULL && shrine->state != NULL && count < max) {
         snprintf(states[count++], 32, "%s", shrine->state);
     }
+    const Unit *player = &roam->player; // a monster's curse on us
+    if (player->curse != NULL && now < player->curse_until && player->curse->target_state[0] != '\0' && count < max) {
+        snprintf(states[count++], 32, "%s", player->curse->target_state);
+    }
     int             level = 0;
     const SkillRow *aura  = roam->character != NULL ? Roam__ActiveAura(roam, &level) : NULL;
     if (aura != NULL && aura->state[0] != '\0' && count < max) {

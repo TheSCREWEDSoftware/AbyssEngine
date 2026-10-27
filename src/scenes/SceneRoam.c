@@ -167,6 +167,9 @@ static void Roam__TimeOfDay(int *darkness, float *radius) {
     *radius           = 30.0f - (night * 16.0f);
 }
 
+// How a monster closes in besides walking (monstats skills)
+enum { MOVE_SKILL_NONE, MOVE_SKILL_TELEPORT, MOVE_SKILL_LEAP };
+
 typedef enum UnitState {
     UNIT_IDLE,
     UNIT_WALK,
@@ -249,12 +252,19 @@ typedef struct Unit {
     const SkillRow *spell;
     int             spell_level;
     uint64_t        next_spell;
-    uint64_t        flee_until;
-    bool            ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
-    bool            pack_called;  // provoked: its pack has been called
-    float           reach;        // an ally that attacks from afar (a Rogue Scout's bow): how far, 0 = melee
-    bool            has_looks;    // a player: drawn in what they wear (looks), not the class's plain figure
-    CharacterLooks  looks;
+    const SkillRow *hex;  // a curse it casts on you (Amplify Damage, Weaken, Decrepify); NULL none
+    const SkillRow *hex2; // a second one it picks between (the Succubus witches: Amplify Damage, Weaken)
+
+    bool           hex_any; // MonCurseCast: one of the curses, picked each time
+    int            hex_level;
+    uint8_t        move_skill;   // MOVE_SKILL_*: how it closes in (Teleport, Leap)
+    uint64_t       next_special; // when it can curse or teleport / leap again
+    uint64_t       flee_until;
+    bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
+    bool           pack_called;  // provoked: its pack has been called
+    float          reach;        // an ally that attacks from afar (a Rogue Scout's bow): how far, 0 = melee
+    bool           has_looks;    // a player: drawn in what they wear (looks), not the class's plain figure
+    CharacterLooks looks;
     // Multiplayer monsters
     int      net_target; // the map's owner: the player it's after (0: the owner's own)
     float    net_from_x; // the others: shown moving smoothly to where the owner last said it is
@@ -687,15 +697,32 @@ static bool Roam__IsRunning(const SceneRoam *roam) {
 }
 
 // The player's speed: walking, running or (Free Roam) sprinting
+// What a monster's curse on the player does to one of its stats (skills.txt aura stats: "damagepercent" for Weaken,
+// "damageresist" for Amplify Damage, "velocitypercent" for Decrepify), in percent; 0 when not cursed
+static int Roam__PlayerCurse(const SceneRoam *roam, const char *stat) {
+    const Unit *player = &roam->player;
+    if (!roam->game || player->curse == NULL || SDL_GetTicks64() >= player->curse_until) {
+        return 0;
+    }
+    int total = 0;
+    for (int a = 0; a < SKILL_AURA_STATS; a++) {
+        if (strcmp(player->curse->aura_stat[a], stat) == 0) {
+            total += SkillData_Eval(roam->character, player->curse, player->curse_level, player->curse->aura_calc[a]);
+        }
+    }
+    return total;
+}
+
 static float Roam__PlayerSpeed(const SceneRoam *roam) {
     if (roam->sprinting) {
         return SPRINT_SPEED;
     }
     const float speed = Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED;
-    // Faster Run/Walk on what's worn
-    return roam->game ? speed * (1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
-                                                 roam->character->bonus[BONUS_SPEED_PCT]) /
-                                         100.0f))
+    // Faster Run/Walk on what's worn; slower under Decrepify
+    return roam->game ? speed * fmaxf(0.1f, 1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
+                                                            roam->character->bonus[BONUS_SPEED_PCT] +
+                                                            Roam__PlayerCurse(roam, "velocitypercent")) /
+                                                    100.0f))
                       : speed;
 }
 
@@ -980,6 +1007,26 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
                 MissileData_Get(name) != NULL) {
                 unit->spell       = spell;
                 unit->spell_level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
+            }
+        }
+        // Curses it lays on you, and how it gets to you (monstats Skill1..8)
+        for (int s = 0; s < MONSTER_SKILLS; s++) {
+            const char *name = stats.skill[s];
+            if (strcmp(name, "Amplify Damage") == 0 || strcmp(name, "Weaken") == 0 || strcmp(name, "Decrepify") == 0 ||
+                strcmp(name, "MonCurseCast") == 0) {
+                const SkillRow *row = SkillData_Get(strcmp(name, "MonCurseCast") == 0 ? "Amplify Damage" : name);
+                if (unit->hex != NULL && unit->hex2 == NULL) {
+                    unit->hex2 = row;
+                } else {
+                    unit->hex = row;
+                }
+                unit->hex_any   = strcmp(name, "MonCurseCast") == 0;
+                unit->hex_level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
+            } else if (strcmp(name, "MonTeleport") == 0 || strcmp(name, "Imp Teleport") == 0 ||
+                       strcmp(name, "Teleport 2") == 0) {
+                unit->move_skill = MOVE_SKILL_TELEPORT;
+            } else if (strcmp(name, "Leap") == 0) {
+                unit->move_skill = MOVE_SKILL_LEAP;
             }
         }
     } else if (strcmp(base, "chars") == 0) {
@@ -1376,6 +1423,9 @@ static int Roam__ElementTaken(const SceneRoam *roam, const Element element, cons
 // The player's blow, each kind of damage rolled: physical, then fire, cold, lightning, poison (what's worn)
 static void Roam__RollPlayerDamage(const SceneRoam *roam, int damage[ELEMENT_COUNT]) {
     damage[ELEMENT_PHYSICAL] = Roam__Roll(roam->player.damage_min, roam->player.damage_max);
+    // Weakened (a monster's curse): less of it
+    const int weakened       = 100 + Roam__PlayerCurse(roam, "damagepercent");
+    damage[ELEMENT_PHYSICAL] = damage[ELEMENT_PHYSICAL] * (weakened > 0 ? weakened : 0) / 100;
     for (int e = ELEMENT_FIRE; e < ELEMENT_COUNT; e++) {
         int low  = 0;
         int high = 0;
@@ -3779,6 +3829,8 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                                                          Roam__Roll(unit->element_min, unit->element_max));
                         }
                         damage = damage * Roam__MonsterDamageFactor(roam, unit, now) / 100; // Weaken
+                        // Amplify Damage / Decrepify on you: more of it gets through
+                        damage = damage * (100 - Roam__PlayerCurse(roam, "damageresist")) / 100;
                         if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
                             damage = 0; // dodged
                         } else if (Roam__Blocks(roam, false)) {
@@ -3860,6 +3912,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             Roam__CallPack(roam, unit);
             if (unit->fight_ally == 0 &&
                 (Roam__MonsterFlees(roam, unit, target_x, target_y, now, seconds) ||
+                 Roam__MonsterSpecial(roam, unit, target_x, target_y, distance, target_id == 0, now) ||
                  Roam__MonsterCasts(roam, unit, target_x, target_y, distance, now) ||
                  Roam__MonsterShoots(roam, unit, target_x, target_y, distance, now, seconds))) {
                 unit->net_target = target_id;

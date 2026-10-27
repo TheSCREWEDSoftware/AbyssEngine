@@ -98,6 +98,66 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
     return true;
 }
 
+// The rarer monsters' ways: a curse on you (Succubus witches, the Summoner, Doom Knights: Amplify Damage, Weaken,
+// Decrepify, or one of them), teleporting next to you (Zakarum priests, imps), leaping at you (Sand Leapers).
+// mine: the target is our own player (curses only land on the player whose game runs the monster)
+static bool Roam__MonsterSpecial(SceneRoam *roam, Unit *unit, const float tx, const float ty, const float distance,
+                                 const bool mine, const uint64_t now) {
+    if (now < unit->next_special) {
+        return false;
+    }
+    if (unit->hex != NULL && mine && distance <= AI_CAST_RANGE && Roam__IsAlive(&roam->player) &&
+        (roam->player.curse == NULL || now >= roam->player.curse_until) &&
+        Map_HasClearLine(roam->map, unit->x, unit->y, tx, ty)) {
+        unit->next_special    = now + 5000 + (uint64_t)Roam__Roll(0, 4000);
+        const SkillRow *curse = unit->hex2 != NULL && Roam__Roll(0, 1) == 1 ? unit->hex2 : unit->hex;
+        if (unit->hex_any) {
+            static const char *const curses[3] = {"Amplify Damage", "Weaken", "Decrepify"};
+            const SkillRow          *picked    = SkillData_Get(curses[Roam__Roll(0, 2)]);
+            curse                              = picked != NULL ? picked : curse;
+        }
+        roam->player.curse       = curse;
+        roam->player.curse_level = unit->hex_level;
+        roam->player.curse_until = now + 6000 + ((uint64_t)unit->hex_level * 1000);
+        Roam__TurnTowards(&unit->turn, unit->x, unit->y, tx, ty);
+        Roam__ClearPath(unit);
+        Roam__SetState(unit, UNIT_ATTACK, now);
+        unit->ranged_swing = true;
+        unit->next_attack  = now + ATTACK_COOLDOWN;
+        if (curse->cast_sound[0] != '\0') {
+            Sounds_PlayAt(curse->cast_sound, SOUND_KIND_SFX, unit->x - roam->player.x, unit->y - roam->player.y);
+        }
+        return true;
+    }
+    if (unit->move_skill == MOVE_SKILL_TELEPORT && distance > 5.0f && distance < AI_CAST_RANGE * 2.0f) {
+        // Next to you, in a blink
+        unit->next_special = now + 3000 + (uint64_t)Roam__Roll(0, 3000);
+        const float angle  = (float)Roam__Roll(0, 359) * 0.01745f;
+        float       x;
+        float       y;
+        Roam__ArrivalSpot(roam->map, tx + (cosf(angle) * 2.5f), ty + (sinf(angle) * 2.5f), &x, &y);
+        Roam__SpawnEffect(roam, "teleport", unit->x, unit->y, 0.0f, 1.0f);
+        unit->x = unit->target_x = x;
+        unit->y = unit->target_y = y;
+        Roam__ClearPath(unit);
+        return true;
+    }
+    if (unit->move_skill == MOVE_SKILL_LEAP && distance > 3.0f && distance < 9.0f &&
+        Map_HasClearLine(roam->map, unit->x, unit->y, tx, ty)) {
+        // At you, through the air: lands a step short
+        unit->next_special = now + 4000 + (uint64_t)Roam__Roll(0, 3000);
+        const float step   = (distance - 1.2f) / distance;
+        float       x;
+        float       y;
+        Roam__ArrivalSpot(roam->map, unit->x + ((tx - unit->x) * step), unit->y + ((ty - unit->y) * step), &x, &y);
+        unit->x = unit->target_x = x;
+        unit->y = unit->target_y = y;
+        Roam__ClearPath(unit);
+        return true;
+    }
+    return false;
+}
+
 // The Fallen: when one of theirs falls nearby, the rest scatter for a moment
 static bool Roam__MonsterFlees(SceneRoam *roam, Unit *unit, const float tx, const float ty, const uint64_t now,
                                const float seconds) {

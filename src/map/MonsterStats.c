@@ -76,7 +76,7 @@ static bool MonsterStats__Get(const char *monstats_id, const int area_level, Mon
         stats->demon = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "demon")) != 0;
         snprintf(stats->missile, sizeof(stats->missile), "%s",
                  DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "MissA1")));
-        for (int s = 0; s < 2; s++) {
+        for (int s = 0; s < MONSTER_SKILLS; s++) {
             char column[16];
             snprintf(column, sizeof(column), "Skill%d", s + 1);
             snprintf(stats->skill[s], sizeof(stats->skill[s]), "%s",
