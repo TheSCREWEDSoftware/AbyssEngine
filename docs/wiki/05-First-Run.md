@@ -10,7 +10,10 @@ Start `AbyssEngine` (Windows: `build\RelWithDebInfo\AbyssEngine.exe`, or **F5** 
    `SkipIntroMovies = true`).
 2. The **main menu**, with the title music and the animated Diablo II logo:
    - **Single Player** ([Single Player](Single-Player.md)) and **Multiplayer** ([Multiplayer](Multiplayer.md))
-   - **Credits**, **Cinematics**: shown but greyed out (not implemented yet)
+   - **Credits**: the game's own credits rolling up over its credits picture (the expansion's when it's there), with
+     its credits music; any key or click goes back
+   - **Cinematics**: the game's films (the intro, the acts, the endings, the expansion's); click one to watch it.
+     Ones your game files don't have (`d2video.mpq`) are greyed out
    - **Catalog**: the item / class / sprite / bestiary browser ([Catalog](Catalog.md))
    - **Map Editor**: opens a small menu with **Map Editor**, **Testing Grounds** and **Free Roam**
      ([Map Editor](Map-Editor.md), [Testing Grounds and Free Roam](Testing-Grounds-and-Free-Roam.md))

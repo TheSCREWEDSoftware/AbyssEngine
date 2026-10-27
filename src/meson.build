@@ -115,6 +115,8 @@ sources = [
     'scenes/SceneCatalog.c',
     'scenes/SceneCharacterCreate.c',
     'scenes/SceneCharacterSelect.c',
+    'scenes/SceneCinematics.c',
+    'scenes/SceneCredits.c',
     'scenes/SceneIntroVideos.c',
     'scenes/SceneMainMenu.c',
     'scenes/SceneMapEditor.c',

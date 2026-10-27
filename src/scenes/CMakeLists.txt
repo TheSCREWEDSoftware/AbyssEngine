@@ -15,5 +15,7 @@ target_sources(${PROJECT_NAME}
         GameInventory.c GameInventory.h
         GameSkills.c GameSkills.h
         SceneRoam.c SceneTestingGrounds.h SceneFreeRoam.h SceneGame.h
+        SceneCinematics.c SceneCinematics.h
+        SceneCredits.c SceneCredits.h
         SceneIntroVideos.c SceneIntroVideos.h
 )

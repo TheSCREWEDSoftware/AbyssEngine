@@ -9,6 +9,8 @@
 #include "../map/MapSession.h"
 #include "SceneCatalog.h"
 #include "SceneCharacterSelect.h"
+#include "SceneCinematics.h"
+#include "SceneCredits.h"
 #include "SceneFreeRoam.h"
 #include "SceneMapEditor.h"
 #include "SceneMultiplayer.h"
@@ -44,6 +46,8 @@ typedef struct SceneMainMenu {
 
 static void MainMenu__OnExitClicked(void *user_data);
 static void MainMenu__OnSinglePlayerClicked(void *user_data);
+static void MainMenu__OnCreditsClicked(void *user_data);
+static void MainMenu__OnCinematicsClicked(void *user_data);
 static void MainMenu__OnCatalogClicked(void *user_data);
 static void MainMenu__OnOptionsClicked(void *user_data);
 static void MainMenu__OnMultiplayerClicked(void *user_data);
@@ -137,9 +141,8 @@ void *MainMenu_Create(void) {
     Button_SetPosition(result->exit_button, 264, 535);
     Button_SetClickHandler(result->exit_button, MainMenu__OnExitClicked, NULL);
 
-    // Not implemented yet: shown, but greyed out.
-    Button_SetEnabled(result->credits_button, false);
-    Button_SetEnabled(result->cinematics_button, false);
+    Button_SetClickHandler(result->credits_button, MainMenu__OnCreditsClicked, NULL);
+    Button_SetClickHandler(result->cinematics_button, MainMenu__OnCinematicsClicked, NULL);
 
     result->build_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     Label_SetText(result->build_label, Revision_GetFullVersion());
@@ -206,6 +209,16 @@ void MainMenu_Update(void *scene_ref, const uint64_t delta) {
 static void MainMenu__OnSinglePlayerClicked(void *user_data) {
     (void)(user_data);
     Scene_Set(SCENE_REF(CharacterSelect));
+}
+
+static void MainMenu__OnCreditsClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(Credits));
+}
+
+static void MainMenu__OnCinematicsClicked(void *user_data) {
+    (void)(user_data);
+    Scene_Set(SCENE_REF(Cinematics));
 }
 
 static void MainMenu__OnMultiplayerClicked(void *user_data) {
