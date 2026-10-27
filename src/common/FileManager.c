@@ -184,6 +184,9 @@ bool FileManager_FileExists(const char *file_path) {
 }
 
 static void (*file_read_hook)(void) = NULL;
+static bool lenient                 = false;
+
+void FileManager_SetLenient(const bool on) { lenient = on; }
 
 void FileManager_SetReadHook(void (*hook)(void)) { file_read_hook = hook; }
 
@@ -240,6 +243,12 @@ MpqStream *FileManager_OpenFile(const char *file_path) {
             break;
         }
 
+        if (file_entry == NULL && lenient) {
+            LOG_DEBUG("Not there: '%s' (opened empty)", file_path);
+            MpqStream *empty = MpqStream_CreateFromMemory(path_fixed, calloc(1, 1), 0);
+            free(path_fixed);
+            return empty;
+        }
         if (file_entry == NULL) {
             if (file_manager->mpq_count == 0) {
                 LOG_FATAL("No Diablo II MPQs were found in '%s'.\n\nSet BasePath in %s to your Diablo II folder.",

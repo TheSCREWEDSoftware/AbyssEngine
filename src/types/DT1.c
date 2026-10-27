@@ -14,6 +14,7 @@
 struct DT1 {
     int      tile_count;
     DT1Tile *tiles;
+    bool     pictureless; // no tile has any blocks (an extract made with --small): only the walk flags
 };
 
 typedef struct DT1Block {
@@ -166,18 +167,20 @@ DT1 *DT1_Load(const char *path) {
     dt1->tiles      = calloc(count > 0 ? (size_t)count : 1, sizeof(DT1Tile));
     FAIL_IF_NULL(dt1->tiles);
 
+    dt1->pictureless = count > 0;
     for (int t = 0; t < count; t++) {
-        const uint8_t *h    = data + headers + (t * DT1_TILE_HEADER_SIZE);
-        DT1Tile       *tile = &dt1->tiles[t];
-        tile->direction     = DT1__I32(h + 0);
-        tile->roof_height   = DT1__I16(h + 4);
-        tile->material      = (uint16_t)DT1__I16(h + 6);
-        tile->height        = DT1__I32(h + 8);
-        tile->width         = DT1__I32(h + 12);
-        tile->orientation   = DT1__I32(h + 20);
-        tile->main_index    = DT1__I32(h + 24);
-        tile->sub_index     = DT1__I32(h + 28);
-        tile->rarity        = DT1__I32(h + 32);
+        const uint8_t *h  = data + headers + (t * DT1_TILE_HEADER_SIZE);
+        dt1->pictureless  = dt1->pictureless && DT1__I32(h + 80) == 0;
+        DT1Tile *tile     = &dt1->tiles[t];
+        tile->direction   = DT1__I32(h + 0);
+        tile->roof_height = DT1__I16(h + 4);
+        tile->material    = (uint16_t)DT1__I16(h + 6);
+        tile->height      = DT1__I32(h + 8);
+        tile->width       = DT1__I32(h + 12);
+        tile->orientation = DT1__I32(h + 20);
+        tile->main_index  = DT1__I32(h + 24);
+        tile->sub_index   = DT1__I32(h + 28);
+        tile->rarity      = DT1__I32(h + 32);
         memcpy(tile->subtile_flags, h + 40, sizeof(tile->subtile_flags));
         DT1__DecodeTile(tile, data, size, DT1__I32(h + 72), DT1__I32(h + 80));
     }
@@ -199,6 +202,8 @@ void DT1_Destroy(DT1 **dt1) {
 }
 
 int DT1_GetTileCount(const DT1 *dt1) { return dt1->tile_count; }
+
+bool DT1_IsPictureless(const DT1 *dt1) { return dt1->pictureless; }
 
 const DT1Tile *DT1_GetTile(const DT1 *dt1, const int index) {
     return (index >= 0 && index < dt1->tile_count) ? &dt1->tiles[index] : NULL;

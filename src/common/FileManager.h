@@ -14,5 +14,8 @@ MpqStream *FileManager_OpenFile(const char *file_path);
 int FileManager_GetFileList(const char *const **files);
 // Called whenever a file is opened (the loading screen uses it to keep animating during long loads). NULL to clear.
 void FileManager_SetReadHook(void (*hook)(void));
+// Lenient (text mode): a file that isn't anywhere opens empty instead of stopping the program, so the game runs from
+// an extracted data folder (DataFolder) alone, without the pictures and sounds
+void FileManager_SetLenient(bool lenient);
 
 #endif // ABYSS_FILEMAN_H

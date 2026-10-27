@@ -122,8 +122,9 @@ static void Map__BuildTileIndex(Map *map) {
         }
         for (int t = 0; t < DT1_GetTileCount(map->dt1s[d]); t++) {
             const DT1Tile *tile = DT1_GetTile(map->dt1s[d], t);
-            if (tile->image == NULL || tile->orientation < 0 || tile->orientation > 255 || tile->main_index < 0 ||
-                tile->main_index > 63 || tile->sub_index < 0 || tile->sub_index > 63) {
+            if ((tile->image == NULL && !DT1_IsPictureless(map->dt1s[d])) || tile->orientation < 0 ||
+                tile->orientation > 255 || tile->main_index < 0 || tile->main_index > 63 || tile->sub_index < 0 ||
+                tile->sub_index > 63) {
                 continue;
             }
             MapTileIndex *entry = &map->tile_index[map->tile_index_count++];

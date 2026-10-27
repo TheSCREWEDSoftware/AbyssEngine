@@ -209,7 +209,9 @@ void MpqStream__LoadBlockOffset(MpqStream *mpq_stream) {
 uint32_t MpqStream_Read(MpqStream *mpq_stream, void *buffer, uint32_t offset, uint32_t size) {
     assert(mpq_stream != NULL);
     assert(buffer != NULL);
-    assert(size > 0);
+    if (size == 0) {
+        return 0; // (an empty file: nothing to read)
+    }
 
     if (mpq_stream->memory) {
         const uint32_t start = mpq_stream->position;
@@ -473,8 +475,8 @@ void MpqStream_Seek(MpqStream *mpq_stream, int64_t position, int32_t origin) {
         LOG_FATAL("Invalid origin for seek: %d", origin);
     }
 
-    if (mpq_stream->position >= mpq_stream->block->size_uncompressed) {
-        mpq_stream->position = mpq_stream->block->size_uncompressed;
+    if (mpq_stream->position >= MpqStream_GetSize(mpq_stream)) {
+        mpq_stream->position = MpqStream_GetSize(mpq_stream); // (a loose file's too: no block)
     }
 }
 

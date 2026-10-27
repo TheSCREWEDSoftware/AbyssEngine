@@ -6,6 +6,7 @@
 #include "common/Logging.h"
 #include "common/Revision.h"
 #include "common/Terminal.h"
+#include "data/DataTable.h"
 #include "data/StringTable.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
@@ -53,7 +54,9 @@ static void Main__Usage(void) {
            "                                       no NAME: the last one played). Keys: wasd move, f fight, u use,\n"
            "                                       g pick up, 1-4 potions, t town, Q quit\n"
            "  AbyssEngine --extract DIR            copy the game's data out of the MPQs into DIR: the tables\n"
-           "                                       (.txt), the strings (.tbl), the maps (.ds1) and the tiles (.dt1)\n");
+           "                                       (.txt), the strings (.tbl), the maps (.ds1) and the tiles (.dt1);\n"
+           "                                       --small keeps only the tiles' walk flags (enough for --text)\n"
+           "                                       Run from it alone: [General] DataFolder = DIR in abyss.ini\n");
 }
 
 // --text: the character to play (a saved one by name, the last one played, or a new one) and into the game
@@ -142,7 +145,57 @@ static void Main__MakeFolders(char *path) { // every folder in the path (the las
     }
 }
 
-static int Main__Extract(const char *folder) {
+// One file out (DIR/<its path, lower case>). small: a DT1 keeps only its tiles' headers (the walk flags, what the
+// game needs to be played as text), not their pictures. False if it couldn't be read or written.
+static bool Main__ExtractOne(const char *folder, const char *name, const bool small) {
+    MpqStream *stream = FileManager_OpenFile(name);
+    if (stream == NULL) {
+        return false;
+    }
+    uint32_t size = MpqStream_GetSize(stream);
+    char    *data = malloc(size > 0 ? size : 1);
+    uint32_t got  = data != NULL ? MpqStream_Read(stream, data, 0, size) : 0;
+    MpqStream_Destroy(&stream);
+    const char *dot = strrchr(name, '.');
+    if (small && data != NULL && got == size && dot != NULL && SDL_strcasecmp(dot, ".dt1") == 0 && size >= 276) {
+        // The header and the tile headers, with no blocks
+        int32_t count   = 0;
+        int32_t headers = 0;
+        memcpy(&count, data + 268, 4);
+        memcpy(&headers, data + 272, 4);
+        if (count >= 0 && headers >= 276 && (uint64_t)headers + ((uint64_t)count * 96) <= size) {
+            char *out = malloc((size_t)276 + ((size_t)count * 96));
+            if (out != NULL) {
+                memcpy(out, data, 276);
+                const int32_t at = 276;
+                memcpy(out + 272, &at, 4);
+                for (int t = 0; t < count; t++) {
+                    char *h = out + 276 + (t * 96);
+                    memcpy(h, data + headers + (t * 96), 96);
+                    memset(h + 72, 0, 12); // block headers' place, data length, block count
+                }
+                free(data);
+                data = out;
+                size = got = 276 + ((uint32_t)count * 96);
+            }
+        }
+    }
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/%s", folder, name[0] == '/' || name[0] == '\\' ? name + 1 : name);
+    for (char *c = path + strlen(folder) + 1; *c != '\0'; c++) {
+        *c = *c == '\\' ? '/' : (char)tolower((unsigned char)*c);
+    }
+    Main__MakeFolders(path);
+    FILE      *out = data != NULL && got == size ? fopen(path, "wb") : NULL;
+    const bool ok  = out != NULL && fwrite(data, 1, size, out) == size;
+    if (out != NULL) {
+        fclose(out);
+    }
+    free(data);
+    return ok;
+}
+
+static int Main__Extract(const char *folder, const bool small) {
     const char *const *files = NULL;
     const int          count = FileManager_GetFileList(&files);
     int                saved = 0;
@@ -151,32 +204,56 @@ static int Main__Extract(const char *folder) {
         if (!Main__ExtractWanted(files[i]) || !FileManager_FileExists(files[i])) {
             continue;
         }
-        MpqStream *stream = FileManager_OpenFile(files[i]);
-        if (stream == NULL) {
-            lost++;
-            continue;
+        Main__ExtractOne(folder, files[i], small) ? saved++ : lost++;
+    }
+    // What the MPQs' file lists leave out: the tables the engine reads, the presets' DS1s and the act's DT1s
+    static const char *const tables[] = {
+        "MonLvl",           "MonPreset",    "MonSounds",  "monstats2", "Sets",     "skilldesc",
+        "MonType",          "MonUMod",      "MonProp",    "MonEquip",  "PetType",  "LowQualityItems",
+        "QualityItems",     "ItemStatCost", "Properties", "Inventory", "BodyLocs", "Overlay",
+        "States",           "ObjGroup",     "ObjMode",    "ObjType",   "LvlWarp",  "Experience",
+        "DifficultyLevels", "SoundEnviron", "Sounds",     "Colors"};
+    for (size_t t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
+        char path[96];
+        snprintf(path, sizeof(path), "data\\global\\excel\\%s.txt", tables[t]);
+        if (FileManager_FileExists(path)) {
+            Main__ExtractOne(folder, path, small) ? saved++ : lost++;
         }
-        const uint32_t size = MpqStream_GetSize(stream);
-        char          *data = malloc(size > 0 ? size : 1);
-        const uint32_t got  = data != NULL ? MpqStream_Read(stream, data, 0, size) : 0;
-        MpqStream_Destroy(&stream);
-
-        char path[4096];
-        snprintf(path, sizeof(path), "%s/%s", folder, files[i]);
-        for (char *c = path + strlen(folder) + 1; *c != '\0'; c++) {
-            *c = *c == '\\' ? '/' : (char)tolower((unsigned char)*c);
+    }
+    const char *const lists[2][3] = {
+        {"/data/global/excel/LvlPrest.txt", "File%d",  "/data/global/tiles/%s"},
+        {"/data/global/excel/LvlTypes.txt", "File %d", "/data/global/tiles/%s"},
+    };
+    for (int l = 0; l < 2; l++) {
+        DataTable *table = FileManager_FileExists(lists[l][0]) ? DataTable_Load(lists[l][0]) : NULL;
+        for (int r = 0; table != NULL && r < DataTable_GetRowCount(table); r++) {
+            for (int f = 1; f <= 32; f++) {
+                char column[16];
+                snprintf(column, sizeof(column), lists[l][1], f);
+                const int c = DataTable_GetColumnIndex(table, column);
+                if (c < 0) {
+                    break;
+                }
+                const char *file = DataTable_GetString(table, r, c);
+                char        path[256];
+                snprintf(path, sizeof(path), lists[l][2], file);
+                if (file[0] == '\0' || strcmp(file, "0") == 0 || !FileManager_FileExists(path)) {
+                    continue;
+                }
+                char check[4096];
+                snprintf(check, sizeof(check), "%s%s", folder, path);
+                for (char *ch = check + strlen(folder); *ch != '\0'; ch++) {
+                    *ch = *ch == '\\' ? '/' : (char)tolower((unsigned char)*ch);
+                }
+                FILE *there = fopen(check, "rb");
+                if (there != NULL) {
+                    fclose(there); // (the file list had it)
+                    continue;
+                }
+                Main__ExtractOne(folder, path, small) ? saved++ : lost++;
+            }
         }
-        Main__MakeFolders(path);
-        FILE *out = data != NULL && got == size ? fopen(path, "wb") : NULL;
-        if (out != NULL && fwrite(data, 1, size, out) == size) {
-            saved++;
-        } else {
-            lost++;
-        }
-        if (out != NULL) {
-            fclose(out);
-        }
-        free(data);
+        DataTable_Destroy(&table);
     }
     printf("%d files written into %s", saved, folder);
     printf(lost > 0 ? " (%d could not be read or written)\n" : "\n", lost);
@@ -262,6 +339,7 @@ int main(int argc, char **argv) {
     int         server_port    = 0;
     bool        text_mode      = false;
     const char *extract_folder = NULL;
+    bool        extract_small  = false;
     const char *text_name      = NULL;
     int         text_class     = CHARACTER_BARBARIAN;
     for (int a = 1; a < argc; a++) {
@@ -275,6 +353,8 @@ int main(int argc, char **argv) {
             server_port = atoi(argv[++a]);
         } else if (strcmp(argv[a], "--extract") == 0 && a + 1 < argc) {
             extract_folder = argv[++a];
+        } else if (strcmp(argv[a], "--small") == 0) {
+            extract_small = true; // (--extract: the DT1s without their pictures)
         } else if (strcmp(argv[a], "--text") == 0) {
             text_mode = true;
             if (a + 1 < argc && argv[a + 1][0] != '-') {
@@ -380,9 +460,10 @@ int main(int argc, char **argv) {
 
     LOG_DEBUG("Initializing file manager...");
     FileManager_CreateSingleton();
+    FileManager_SetLenient(text_mode); // (text mode can run from an extracted folder: no pictures needed)
 
     if (extract_folder != NULL) {
-        return Main__Extract(extract_folder);
+        return Main__Extract(extract_folder, extract_small);
     }
 
     LOG_DEBUG("Loading game strings...");

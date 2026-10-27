@@ -92,6 +92,15 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name,
 
     sprite->frame_count     = DC6_GetTotalFrameCount(dc6);
     sprite->direction_count = DC6_GetDirectionCount(dc6);
+    if (sprite->frame_count == 0) {
+        // No picture (text mode without the MPQs): empty frames, so drawing any of them does nothing
+        sprite->frame_count     = 256;
+        sprite->direction_count = 1;
+        sprite->frames          = calloc(sprite->frame_count, sizeof(SpriteFrame));
+        FAIL_IF_NULL(sprite->frames);
+        DC6_Destroy(&dc6);
+        return;
+    }
     sprite->frames          = malloc(sizeof(SpriteFrame) * sprite->frame_count);
     sprite->last_ticks      = SDL_GetTicks64();
     sprite->animation_index = 0;

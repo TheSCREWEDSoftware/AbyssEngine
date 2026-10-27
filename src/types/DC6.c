@@ -2,6 +2,7 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "DC6Frame.h"
+#include <string.h>
 
 #include <assert.h>
 #include <stdlib.h>
@@ -26,6 +27,14 @@ DC6 *DC6_Load(const char *path) {
     FAIL_IF_NULL(result);
 
     MpqStream *stream = FileManager_OpenFile(path);
+    memset(&result->header, 0, sizeof(DC6Header));
+    if (MpqStream_GetSize(stream) < sizeof(DC6Header)) {
+        // Not there (text mode, from an extracted folder): no frames
+        result->frame_pointers = NULL;
+        result->dc6_frames     = NULL;
+        MpqStream_Destroy(&stream);
+        return result;
+    }
     MpqStream_Read(stream, &result->header, 0, sizeof(DC6Header));
 
     const uint32_t total_frames = result->header.directions * result->header.frames_per_direction;
@@ -66,23 +75,35 @@ uint32_t DC6_GetDirectionCount(const DC6 *dc6) { return dc6->header.directions; 
 
 uint32_t DC6_GetTotalFrameCount(const DC6 *dc6) { return dc6->header.directions * dc6->header.frames_per_direction; }
 
+// (a picture that isn't there, text mode without the MPQs: every frame is empty)
 void DC6_GetFrameSize(const DC6 *dc6, const uint32_t frame_index, uint32_t *width, uint32_t *height) {
     assert(dc6 != NULL);
-    assert(frame_index < (dc6->header.directions * dc6->header.frames_per_direction));
-
+    if (frame_index >= DC6_GetTotalFrameCount(dc6)) {
+        if (width != NULL) {
+            *width = 0;
+        }
+        if (height != NULL) {
+            *height = 0;
+        }
+        return;
+    }
     DC6Frame_GetFrameSize(dc6->dc6_frames[frame_index], width, height);
 }
 
 const uint8_t *DC6_GetFramePixelData(const DC6 *dc6, const uint32_t frame_index) {
     assert(dc6 != NULL);
-    assert(frame_index < (dc6->header.directions * dc6->header.frames_per_direction));
-
+    if (frame_index >= DC6_GetTotalFrameCount(dc6)) {
+        return NULL;
+    }
     return DC6Frame_GetPixelData(dc6->dc6_frames[frame_index]);
 }
 
 void DC6_GetFrameOffset(const DC6 *dc6, const uint32_t frame_index, int32_t *offset_x, int32_t *offset_y) {
     assert(dc6 != NULL);
-    assert(frame_index < (dc6->header.directions * dc6->header.frames_per_direction));
-
+    if (frame_index >= DC6_GetTotalFrameCount(dc6)) {
+        *offset_x = 0;
+        *offset_y = 0;
+        return;
+    }
     DC6Frame_GetFrameOffset(dc6->dc6_frames[frame_index], offset_x, offset_y);
 }

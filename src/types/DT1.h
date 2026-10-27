@@ -72,6 +72,7 @@ typedef struct DT1 DT1;
 DT1           *DT1_Load(const char *path); // NULL if the file is missing or broken
 void           DT1_Destroy(DT1 **dt1);
 int            DT1_GetTileCount(const DT1 *dt1);
+bool           DT1_IsPictureless(const DT1 *dt1); // only the tiles' headers (--extract --small): no pictures
 const DT1Tile *DT1_GetTile(const DT1 *dt1, int index);
 
 #endif // ABYSS_DT1_H
