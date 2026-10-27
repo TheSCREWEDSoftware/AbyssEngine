@@ -128,7 +128,7 @@ static void Roam__CheckQuests(SceneRoam *roam, const uint64_t now) {
         case QUEST_KILL: {
             const int boss = Roam__QuestBoss(roam, quest);
             if (boss < 0) {
-                if (quest->spawn && !roam->online) { // (multiplayer games share their monsters: not yet)
+                if (quest->spawn && !roam->online) { // (multiplayer: already put in with the map, Roam__PlaceQuestObjects)
                     Roam__SpawnQuestBoss(roam, quest, area);
                 }
             } else if (!Roam__IsAlive(&roam->units[boss]) &&

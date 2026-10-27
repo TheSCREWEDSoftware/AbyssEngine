@@ -491,7 +491,7 @@ magic item can be its exceptional or elite version too). Low quality weapons and
 Ort and a chipped gem) are in too; the Pandemonium portals aren't yet. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
 in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
 the Cow King). What's inside is kept with the character; any cube you carry opens it.
-In multiplayer games bosses that aren't in the presets aren't put there yet.
+In multiplayer games the bosses the presets leave out are there from the start, the same for everyone.
 
 ## Text mode
 
