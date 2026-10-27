@@ -1052,6 +1052,9 @@ void Character_LooksToText(const CharacterLooks *looks, char *text, const int si
     for (int c = 0; c < CHARACTER_LOOK_LAYERS && at > 0 && at < size; c++) {
         at += snprintf(text + at, (size_t)(size - at), " %s", looks->layer[c][0] != '\0' ? looks->layer[c] : "-");
     }
+    if (looks->shape != 0 && at > 0 && at < size) {
+        snprintf(text + at, (size_t)(size - at), " %c", looks->shape); // (older games stop reading before it)
+    }
 }
 
 bool Character_LooksFromText(const char *text, CharacterLooks *looks) {
@@ -1089,6 +1092,10 @@ bool Character_LooksFromText(const char *text, CharacterLooks *looks) {
     if (index != CHARACTER_LOOK_LAYERS) {
         return false;
     }
-    *looks = read;
+    while (*at == ' ') {
+        at++;
+    }
+    read.shape = (*at == 'w' || *at == 'b') && (at[1] == '\0' || at[1] == ' ') ? *at : 0;
+    *looks     = read;
     return true;
 }

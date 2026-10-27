@@ -195,6 +195,7 @@ typedef struct Character {
 typedef struct CharacterLooks {
     char weapon_class[4];
     char layer[CHARACTER_LOOK_LAYERS][4];
+    char shape; // the Druid's: 'w' a wolf, 'b' a bear, 0 none (the game sets it from the buff; sent with the rest)
 } CharacterLooks;
 
 void Character_Looks(const Character *character, CharacterLooks *looks);

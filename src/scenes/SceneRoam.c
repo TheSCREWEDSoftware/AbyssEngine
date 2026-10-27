@@ -735,12 +735,10 @@ static Figure *Roam__LooksFigure(SceneRoam *roam, const Unit *unit, const char *
 
 // The figure for the unit's current animation, falling back to standing still when it has no such animation
 static Figure *Roam__Figure(SceneRoam *roam, const Unit *unit) {
-    // The Druid in a shape (Werewolf, Werebear): the wolf's or bear's pictures, in their animations
-    for (int b = 0; unit == &roam->player && roam->game && b < roam->buff_count; b++) {
-        if (roam->buffs[b].skill->do_func != 116) {
-            continue;
-        }
-        const char *shape  = strcmp(roam->buffs[b].skill->id, "Wearbear") == 0 ? "bear" : "wolf";
+    // The Druid in a shape (Werewolf, Werebear: ours from the buff, the others' from their looks): the wolf's or
+    // bear's pictures, in their animations
+    if (unit->has_looks && unit->looks.shape != 0) {
+        const char *shape  = unit->looks.shape == 'b' ? "bear" : "wolf";
         const char *mode   = Roam__Mode(roam, unit);
         const char *as     = strcmp(mode, "tn") == 0   ? "nu"
                              : strcmp(mode, "tw") == 0 ? "wl"
@@ -5175,6 +5173,11 @@ static void Roam__Update(SceneRoam *roam) {
     if (roam->game && roam->character != NULL) {
         Character_Looks(roam->character, &roam->player.looks); // drawn in what's worn
         roam->player.has_looks = true;
+        for (int b = 0; b < roam->buff_count; b++) { // ... or in the Druid's shape
+            if (roam->buffs[b].skill->do_func == 116) {
+                roam->player.looks.shape = strcmp(roam->buffs[b].skill->id, "Wearbear") == 0 ? 'b' : 'w';
+            }
+        }
     }
     if (roam->online) {
         // The other players go on whatever we're doing (menus included)
