@@ -59,6 +59,7 @@ typedef struct ClassInfo {
     int  stat_per_level;
     int  mana_regen; // seconds
     int  run_drain;
+    int  block_factor;    // added to a shield's chance to block
     char start_skill[32]; // a skill the class starts with a point in (the Sorceress's Fire Bolt), "" = none
 } ClassInfo;
 
@@ -111,6 +112,7 @@ static void Character__LoadTables(void) {
             info->stamina               = DataTable_GetInt(stats, row, COL("stamina"));
             info->hp_add                = DataTable_GetInt(stats, row, COL("hpadd"));
             info->to_hit_factor         = DataTable_GetInt(stats, row, COL("ToHitFactor"));
+            info->block_factor          = DataTable_GetInt(stats, row, COL("BlockFactor"));
             info->life_per_level        = DataTable_GetInt(stats, row, COL("LifePerLevel"));
             info->stamina_per_level     = DataTable_GetInt(stats, row, COL("StaminaPerLevel"));
             info->mana_per_level        = DataTable_GetInt(stats, row, COL("ManaPerLevel"));
@@ -259,6 +261,20 @@ int Character_Defense(const Character *character) {
     }
     defense += Affixes_Total(character, MOD_DEFENSE);
     return defense + (defense * character->bonus[BONUS_DEFENSE_PCT] / 100); // Frozen Armor, Shout, Iron Skin, ...
+}
+
+int Character_BlockChance(const Character *character) {
+    const Item     *shield = &character->equipped[EQUIP_LEFT_ARM];
+    const ItemBase *base   = Item_Works(shield) ? Items_Find(shield->code) : NULL;
+    if (base == NULL || base->kind != ITEM_KIND_ARMOR || !Items_IsA(base, "shld")) {
+        return 0;
+    }
+    const int dex   = Character_Stat(character, STAT_DEXTERITY);
+    const int block = base->block + Character__Info(character)->block_factor + Affixes_Total(character, MOD_BLOCK) +
+                      character->bonus[BONUS_BLOCK];
+    const int level  = character->level > 0 ? character->level : 1;
+    const int chance = dex > 15 ? block * (dex - 15) / (level * 2) : 0;
+    return chance > 75 ? 75 : chance;
 }
 
 int Character_AttackRating(const Character *character) {

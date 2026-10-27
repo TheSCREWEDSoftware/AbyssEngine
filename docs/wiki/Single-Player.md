@@ -262,11 +262,17 @@ knows and leave out the rest (skills, charges, sockets).
 
 | Works | Shown, but doesn't do anything yet |
 |---|---|
-| Strength, Dexterity, Vitality, Energy (requirements count them, like the game; the character screen shows them in blue), Life, Mana, Stamina, Attack Rating (and %), Defense, Enhanced Defense (of the item it's on), Enhanced Damage (on a weapon: its damage; elsewhere: added to strength's bonus), minimum / maximum damage, fire / cold / lightning / poison damage (added to each blow, against the monster's resistance to it; poison all at once for now), resistances, Life and Mana Stolen per Hit, Replenish Life, Faster Run/Walk, Damage Reduced, Extra Gold | Magic Find, attack speed, hit recovery, block, light radius, thorns, magic damage reduced |
+| Strength, Dexterity, Vitality, Energy (requirements count them, like the game; the character screen shows them in blue), Life, Mana, Stamina, Attack Rating (and %), Defense, Enhanced Defense (of the item it's on), Enhanced Damage (on a weapon: its damage; elsewhere: added to strength's bonus), minimum / maximum damage, fire / cold / lightning / poison damage (added to each blow, against the monster's resistance to it; poison all at once for now), resistances, Life and Mana Stolen per Hit, Replenish Life, Faster Run/Walk, Damage Reduced, Extra Gold, Magic Find (better drops from what you kill, with the game's diminishing returns for rare, set and unique), Increased Attack Speed and Faster Hit Recovery (quicker swing and get-hit animations, diminishing like the game's), Increased Chance of Blocking, Attacker Takes Damage | light radius, magic damage reduced |
 
 The name on the ground and the tooltip are in the quality's colour; the tooltip shows damage and defense with the
 item's own magic in (blue when it changed them), then the properties in blue. Saved with the character (after an
 item's other numbers, so older builds still read the save, as plain items).
+
+### Blocking
+
+With a shield, some blows and missiles are blocked (no damage, the game's block sounds): the shield's block plus the
+class's (`charstats.txt` BlockFactor) plus Increased Chance of Blocking and skills, times (dexterity - 15) over twice
+your level, at most 75%, like the game. A broken shield doesn't block.
 
 ### Resistances
 

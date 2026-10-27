@@ -499,6 +499,9 @@ static void Roam__MissileHitsPlayer(SceneRoam *roam, Missile *missile, const uin
     if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_AVOID]) {
         return;
     }
+    if (Roam__Blocks(roam, true)) {
+        return; // a shield stops missiles too
+    }
     int damage = missile->damage[ELEMENT_PHYSICAL];
     for (int e = ELEMENT_FIRE; e < ELEMENT_COUNT; e++) {
         const int resist  = roam->game ? Character_Resist(roam->character, (Element)e, Roam__ResistPenalty(roam)) : 0;

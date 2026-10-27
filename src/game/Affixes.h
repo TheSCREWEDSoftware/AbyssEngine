@@ -12,6 +12,8 @@
 
 // A drop's quality and magic: called for each weapon, armor and jewelry dropped, with its item level (the monster's)
 void Affixes_Roll(Item *item, int item_level);
+// Magic Find for the rolls that follow (the killer's: Roam's drops set it, then put it back to 0)
+void Affixes_SetMagicFind(int percent);
 
 // A chosen quality (gambling): false when the item can't be that (no unique of its kind at that level, ...)
 bool Affixes_RollQuality(Item *item, int item_level, ItemQuality quality);

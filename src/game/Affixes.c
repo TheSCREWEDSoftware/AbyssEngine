@@ -710,6 +710,10 @@ bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality qua
     }
 }
 
+static int magic_find = 0; // Affixes_SetMagicFind
+
+void Affixes_SetMagicFind(const int percent) { magic_find = percent > 0 ? percent : 0; }
+
 void Affixes_Roll(Item *item, const int item_level) {
     Affixes__Load();
     const ItemBase *base = Items_Find(item->code);
@@ -722,17 +726,24 @@ void Affixes_Roll(Item *item, const int item_level) {
         return; // potions, scrolls, keys, gold: always normal
     }
     const int level = item_level > 0 ? item_level : 1;
-    const int roll  = rand() % 1000;
-    if (roll < 10 && Affixes__MakeUnique(item, base, level)) { // 1 in 100
+    // Out of 1,000: unique 10 (1 in 100), set 20 (1 in 50), rare 30 (1 in 20), magic 250 (1 in 4); Magic Find makes
+    // each likelier, with the game's diminishing returns for the better ones
+    const int mf     = magic_find;
+    const int unique = 10 * (100 + (mf * 250 / (mf + 250))) / 100;
+    const int set    = unique + (20 * (100 + (mf * 500 / (mf + 500))) / 100);
+    const int rare   = set + (30 * (100 + (mf * 600 / (mf + 600))) / 100);
+    const int magic  = rare + (250 * (100 + mf) / 100);
+    const int roll   = rand() % 1000;
+    if (roll < unique && Affixes__MakeUnique(item, base, level)) {
         return;
     }
-    if (roll < 30 && Affixes__MakeSet(item, base, level)) { // 1 in 50
+    if (roll < set && Affixes__MakeSet(item, base, level)) {
         return;
     }
-    if (roll < 60 && Affixes__MakeRare(item, base, level)) { // 1 in 20
+    if (roll < rare && Affixes__MakeRare(item, base, level)) {
         return;
     }
-    if (roll < 310 || jewelry) { // 1 in 4 (jewelry is never plain)
+    if (roll < magic || jewelry) { // (jewelry is never plain)
         Affixes__MakeMagic(item, base, level);
     }
 }

@@ -56,15 +56,15 @@ typedef enum ItemModType {
     MOD_RES_ALL,              // against monsters' attacks
     MOD_LIFE_STEAL,           // life back from each blow's damage
     MOD_MANA_STEAL,           // mana back from each blow's damage
-    MOD_MAGIC_FIND,           // *
+    MOD_MAGIC_FIND,           // better drops from what you kill
     MOD_GOLD_FIND,            // more gold picked up
     MOD_REPLENISH_LIFE,       // life back each second
     MOD_FASTER_RUN,           // faster walking and running
-    MOD_ATTACK_SPEED,         // *
-    MOD_HIT_RECOVERY,         // *
-    MOD_BLOCK,                // *
+    MOD_ATTACK_SPEED,         // quicker swings
+    MOD_HIT_RECOVERY,         // over a blow sooner
+    MOD_BLOCK,                // more chance to block (with a shield)
     MOD_LIGHT_RADIUS,         // *
-    MOD_THORNS,               // * attacker takes damage
+    MOD_THORNS,               // attacker takes damage (melee)
     MOD_DAMAGE_REDUCED,       // each blow taken does this much less
     MOD_MAGIC_DAMAGE_REDUCED, // *
     MOD_TYPE_COUNT

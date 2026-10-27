@@ -770,7 +770,17 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     int       first  = 0; // (where the frames start doesn't matter for timing)
     const int frames = Roam__FrameRange(unit, figure, &first);
     (void)first;
-    const int  ms       = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
+    int ms = Figure_GetFrameMilliseconds(figure) > 0 ? Figure_GetFrameMilliseconds(figure) : 40;
+    if (roam->game && unit == &roam->player && (unit->state == UNIT_ATTACK || unit->state == UNIT_HIT)) {
+        // Increased Attack Speed and Faster Hit Recovery: quicker swings and getting over blows sooner (with the
+        // game's diminishing returns: 120 x / (120 + x))
+        const int raw       = unit->state == UNIT_ATTACK ? Affixes_Total(roam->character, MOD_ATTACK_SPEED) +
+                                                         roam->character->bonus[BONUS_ATTACK_SPEED]
+                                                         : Affixes_Total(roam->character, MOD_HIT_RECOVERY);
+        const int effective = raw > 0 ? 120 * raw / (120 + raw) : 0;
+        ms                  = ms * 100 / (100 + effective);
+        ms                  = ms < 10 ? 10 : ms;
+    }
     const bool one_shot = unit->state == UNIT_ATTACK || unit->state == UNIT_HIT || unit->state == UNIT_DYING ||
                           unit->state == UNIT_OPERATE || unit->state == UNIT_CAST;
     if (unit->state == UNIT_DEAD) {
@@ -1604,10 +1614,26 @@ static void Roam__PutOnGround(SceneRoam *roam, const Item *item, const float x, 
     free(writer);
 }
 
+// Blocking with a shield (Character_BlockChance), with the game's sounds
+static bool Roam__Blocks(SceneRoam *roam, const bool missile) {
+    if (!roam->game) {
+        return false;
+    }
+    if (Roam__Roll(1, 100) > Character_BlockChance(roam->character)) {
+        return false;
+    }
+    char sound[24];
+    snprintf(sound, sizeof(sound), "%s_%d", missile ? "block_arrow" : "block_weapon", Roam__Roll(1, 3));
+    Sounds_Play(sound, SOUND_KIND_SFX);
+    return true;
+}
+
 // What a monster or chest had: rolled from its treasure class, scattered around where it was
 static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, const int level, const float x, const float y) {
-    Item      items[TREASURE_MAX_DROPS];
+    Item items[TREASURE_MAX_DROPS];
+    Affixes_SetMagicFind(roam->game ? Affixes_Total(roam->character, MOD_MAGIC_FIND) : 0); // (yours)
     const int count = Treasure_Roll(treasure, level, items);
+    Affixes_SetMagicFind(0);
     for (int i = 0; i < count; i++) {
         float spot_x;
         float spot_y;
@@ -3355,14 +3381,17 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         damage = damage * Roam__MonsterDamageFactor(roam, unit, now) / 100; // Weaken
                         if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
                             damage = 0; // dodged
+                        } else if (Roam__Blocks(roam, false)) {
+                            damage = 0;
                         }
                         damage = Roam__AbsorbDamage(roam, damage); // Bone Armor
                         if (damage > 0) {
                             Roam__Damage(roam, player, damage, now);
                         }
-                        if (damage > 0 && roam->game && roam->character->bonus[BONUS_THORNS_PCT] > 0) {
-                            // Thorns: some of it back
-                            const int back     = damage * roam->character->bonus[BONUS_THORNS_PCT] / 100;
+                        const int thorns = roam->game ? Affixes_Total(roam->character, MOD_THORNS) : 0;
+                        if (damage > 0 && roam->game && (roam->character->bonus[BONUS_THORNS_PCT] > 0 || thorns > 0)) {
+                            // Thorns: some of it back (the skill's share, and what's worn: "Attacker Takes Damage")
+                            const int back     = (damage * roam->character->bonus[BONUS_THORNS_PCT] / 100) + thorns;
                             const int dealt[5] = {back, 0, 0, 0, 0};
                             Roam__SkillHit(roam, unit, dealt, 0, 0, true, now);
                         }

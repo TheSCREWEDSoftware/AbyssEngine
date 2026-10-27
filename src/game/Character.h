@@ -211,11 +211,14 @@ int Character_ItemDefense(const Item *item); // an armor's defense with its enha
 // 100), at most RESIST_MAX
 int Character_Resist(const Character *character, Element element, int penalty);
 // Fire, cold, lightning and poison damage added to each blow (what's worn)
-void        Character_ElementDamage(const Character *character, Element element, int *minimum, int *maximum);
-int         Character_MaxLife(const Character *character);
-int         Character_MaxMana(const Character *character);
-int         Character_MaxStamina(const Character *character);
-int         Character_Defense(const Character *character);
+void Character_ElementDamage(const Character *character, Element element, int *minimum, int *maximum);
+int  Character_MaxLife(const Character *character);
+int  Character_MaxMana(const Character *character);
+int  Character_MaxStamina(const Character *character);
+int  Character_Defense(const Character *character);
+// Blocking with a shield, the game's way: (its block + the class's + magic and skills) x (dexterity - 15) / (level x
+// 2), at most 75 (percent); 0 without a shield
+int         Character_BlockChance(const Character *character);
 int         Character_AttackRating(const Character *character);
 void        Character_Damage(const Character *character, int *minimum, int *maximum); // with the weapon held
 const char *Character_WeaponName(const Character *character);
