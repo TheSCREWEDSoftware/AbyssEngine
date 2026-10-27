@@ -530,43 +530,48 @@ typedef struct SceneRoam {
     TextBox *seed_box; // Free Roam: world seed (in the Places panel)
 
     // Multiplayer: the other players, chat, and the game clock (game speed)
-    bool         online;
-    Unit         others[NET_MAX_PLAYERS];
-    int          other_ids[NET_MAX_PLAYERS];
-    char         other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
-    int          other_state_count[NET_MAX_PLAYERS + 1];
-    int          other_colors[NET_MAX_PLAYERS];
-    int          other_count;
-    uint64_t     last_sent;
-    uint64_t     last_monsters;                       // the map's owner: monsters last sent at
-    uint64_t     last_allies;                         // our summons last sent at
-    int          attack_other;                        // PvP: the player being attacked (their id), 0 = none
-    uint64_t     hostile_mine[NET_MAX_PLAYERS + 1];   // by id: when our hostility to them takes effect (0: at peace)
-    uint64_t     hostile_theirs[NET_MAX_PLAYERS + 1]; // by id: when theirs to us does
-    bool         loot_allowed[NET_MAX_PLAYERS + 1];   // by id: they may loot our corpse
-    bool         loot_from[NET_MAX_PLAYERS + 1];      // by id: we may loot theirs
-    RemoteCorpse remote_corpses[REMOTE_CORPSES];      // the others' corpses on this map
-    uint64_t     corpse_sent;                         // ours, last told at
-    char         sent_looks[CHARACTER_LOOKS_TEXT];    // what we last told the others we wear
-    bool         party_panel;                         // P: the party screen
-    bool         use_is_ours; // the server said we're the one opening this object (its treasure is ours to drop)
-    int          used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
-    int          used_objects[NET_USED_OBJECTS_MAX];
-    int          used_count;
-    int          hover_other;  // PvP: the other player under the mouse (index into others), -1 = none
-    int          spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
-    uint64_t     clock;        // the game's time (runs faster at Fast, Faster, Fastest)
-    uint64_t     clock_real;   // the real time it was last moved on at
-    TextBox     *chat_box;
-    Label       *chat_label;
-    Label       *log_label; // the message log and the help screen
-    char         log_lines[LOG_LINES][NET_CHAT_MAX + 24];
-    bool         log_chat[LOG_LINES]; // said by someone (white), or a message (gold)
-    int          log_count;
-    bool         log_open;
-    bool         help_open;
-    bool         hide_portraits; // Show portraits (Z) off
-    bool         show_belt;      // Show belt: the belt's rows above the bottom one
+    bool     online;
+    Unit     others[NET_MAX_PLAYERS];
+    int      other_ids[NET_MAX_PLAYERS];
+    char     other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
+    int      other_state_count[NET_MAX_PLAYERS + 1];
+    int      other_colors[NET_MAX_PLAYERS];
+    int      other_count;
+    uint64_t last_sent;
+    uint64_t last_monsters; // the map's owner: monsters last sent at
+    uint64_t last_allies;   // our summons last sent at
+    int      attack_other;  // PvP: the player being attacked (their id), 0 = none
+    // By player id: a party member's aura and warcries, which reach us when we're near them (Might, Battle Orders, ...)
+    const SkillRow *party_aura[NET_MAX_PLAYERS + 1];
+    int             party_aura_level[NET_MAX_PLAYERS + 1];
+    RoamBuff        party_cries[NET_MAX_PLAYERS + 1][4];
+    int             party_cry_count[NET_MAX_PLAYERS + 1];
+    uint64_t        hostile_mine[NET_MAX_PLAYERS + 1];   // by id: when our hostility to them takes effect (0: at peace)
+    uint64_t        hostile_theirs[NET_MAX_PLAYERS + 1]; // by id: when theirs to us does
+    bool            loot_allowed[NET_MAX_PLAYERS + 1];   // by id: they may loot our corpse
+    bool            loot_from[NET_MAX_PLAYERS + 1];      // by id: we may loot theirs
+    RemoteCorpse    remote_corpses[REMOTE_CORPSES];      // the others' corpses on this map
+    uint64_t        corpse_sent;                         // ours, last told at
+    char            sent_looks[CHARACTER_LOOKS_TEXT];    // what we last told the others we wear
+    bool            party_panel;                         // P: the party screen
+    bool            use_is_ours; // the server said we're the one opening this object (its treasure is ours to drop)
+    int      used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
+    int      used_objects[NET_USED_OBJECTS_MAX];
+    int      used_count;
+    int      hover_other;  // PvP: the other player under the mouse (index into others), -1 = none
+    int      spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
+    uint64_t clock;        // the game's time (runs faster at Fast, Faster, Fastest)
+    uint64_t clock_real;   // the real time it was last moved on at
+    TextBox *chat_box;
+    Label   *chat_label;
+    Label   *log_label; // the message log and the help screen
+    char     log_lines[LOG_LINES][NET_CHAT_MAX + 24];
+    bool     log_chat[LOG_LINES]; // said by someone (white), or a message (gold)
+    int      log_count;
+    bool     log_open;
+    bool     help_open;
+    bool     hide_portraits; // Show portraits (Z) off
+    bool     show_belt;      // Show belt: the belt's rows above the bottom one
 
     bool automap_fade; // the automap keys (F9-F12): see-through, no party, no names
     bool automap_no_party;
@@ -764,6 +769,12 @@ static bool Roam__IsPlayer(const SceneRoam *roam, const Unit *unit) { return uni
 
 // The game's time now (what Roam__Update's "now" is: faster than real time at Fast and up in multiplayer), for
 // timers set and checked outside the update
+// A buff that reaches the party around you too: the Barbarian's warcries Battle Orders, Shout and Battle Command
+static bool Roam__PartySkill(const SkillRow *skill) {
+    return skill != NULL && (strcmp(skill->id, "Battle Orders") == 0 || strcmp(skill->id, "Shout") == 0 ||
+                             strcmp(skill->id, "Battle Command") == 0);
+}
+
 static uint64_t Roam__Now(const SceneRoam *roam) {
     return roam->online && roam->clock != 0 ? roam->clock : SDL_GetTicks64();
 }
@@ -5899,6 +5910,26 @@ static void Roam__SendAllies(SceneRoam *roam) {
     for (int s = 0; s < state_count; s++) {
         NetWriter_String(writer, states[s]);
     }
+    // Then what reaches our party near us: our aura, and our warcries (Battle Orders, Shout, Battle Command)
+    int             aura_level = 0;
+    const SkillRow *aura       = roam->game ? Roam__ActiveAura(roam, &aura_level) : NULL;
+    NetWriter_U16(writer, aura != NULL ? (uint16_t)aura->row : 0xFFFF);
+    NetWriter_U8(writer, (uint8_t)(aura_level < 255 ? aura_level : 255));
+    const int count_cries = writer->size;
+    NetWriter_U8(writer, 0);
+    int            cries   = 0;
+    const uint64_t now_cry = Roam__Now(roam);
+    for (int b = 0; b < roam->buff_count && cries < 4; b++) {
+        const RoamBuff *buff = &roam->buffs[b];
+        if (buff->skill != NULL && Roam__PartySkill(buff->skill) && buff->until > now_cry) {
+            NetWriter_U16(writer, (uint16_t)buff->skill->row);
+            NetWriter_U8(writer, (uint8_t)(buff->level < 255 ? buff->level : 255));
+            NetWriter_U16(writer,
+                          (uint16_t)((buff->until - now_cry) / 100 < 65535 ? (buff->until - now_cry) / 100 : 65535));
+            cries++;
+        }
+    }
+    writer->data[count_cries] = (uint8_t)cries;
     NetClient_Send(MSG_ALLIES, writer); // (none: theirs go)
     free(writer);
 }
@@ -5975,6 +6006,25 @@ static void Roam__ApplyAllies(SceneRoam *roam, const int from, NetReader *reader
             NetReader_String(reader, name, sizeof(name));
             if (s < UNIT_STATES && !reader->failed) {
                 snprintf(roam->other_states[from][roam->other_state_count[from]++], 32, "%s", name);
+            }
+        }
+        // Their aura and warcries, for us when we're in their party and near them
+        const int       row          = NetReader_U16(reader);
+        const int       level        = NetReader_U8(reader);
+        const int       cries        = NetReader_U8(reader);
+        const SkillRow *aura         = row != 0xFFFF ? SkillData_ByRow(row) : NULL;
+        roam->party_aura[from]       = aura != NULL && aura->kind == SKILL_KIND_AURA && !reader->failed ? aura : NULL;
+        roam->party_aura_level[from] = level < 1 ? 1 : (level > 60 ? 60 : level);
+        roam->party_cry_count[from]  = 0;
+        for (int c = 0; c < cries && !reader->failed; c++) {
+            const SkillRow *cry  = SkillData_ByRow(NetReader_U16(reader));
+            const int       lvl  = NetReader_U8(reader);
+            const uint64_t  left = (uint64_t)NetReader_U16(reader) * 100;
+            if (cry != NULL && Roam__PartySkill(cry) && c < 4 && !reader->failed) {
+                RoamBuff *buff = &roam->party_cries[from][roam->party_cry_count[from]++];
+                buff->skill    = cry;
+                buff->level    = lvl < 1 ? 1 : (lvl > 60 ? 60 : lvl);
+                buff->until    = Roam__Now(roam) + (left < 600000 ? left : 600000);
             }
         }
     }

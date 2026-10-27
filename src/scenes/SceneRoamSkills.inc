@@ -182,6 +182,16 @@ static const SkillRow *Roam__ActiveAura(const SceneRoam *roam, int *level) {
     return NULL;
 }
 
+// Whether that buff is on you yourself (your own Battle Orders over a party member's: the same doesn't add up twice)
+static bool Roam__HasBuff(const SceneRoam *roam, const SkillRow *skill) {
+    for (int b = 0; b < roam->buff_count; b++) {
+        if (roam->buffs[b].skill == skill) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Passives, the buffs on, the aura: their stats onto the character (each frame; cheap sums)
 static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     if (!roam->game) {
@@ -225,6 +235,26 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
             const SkillRow *row = item->mods[m].type == MOD_AURA ? SkillData_ByRow(item->mods[m].param) : NULL;
             if (row != NULL && row->kind == SKILL_KIND_AURA) {
                 Roam__AddSkillStats(character, row, item->mods[m].value, true, true);
+            }
+        }
+    }
+    // Party members' auras and warcries, while you're near them (like the game: an aura reaches the party in its
+    // range, and Battle Orders those around when it's cast; here, while they're within about two screens' worth)
+    for (int o = 0; o < roam->other_count && roam->online; o++) {
+        const int        id     = roam->other_ids[o];
+        const NetPlayer *player = NetClient_Player(id);
+        const Unit      *other  = &roam->others[o];
+        if (id <= 0 || id > NET_MAX_PLAYERS || !Roam__InMyParty(player) || !Roam__OtherAlive(other) ||
+            Roam__Distance(other->x, other->y, roam->player.x, roam->player.y) > 20.0f) {
+            continue;
+        }
+        if (roam->party_aura[id] != NULL) {
+            Roam__AddSkillStats(character, roam->party_aura[id], roam->party_aura_level[id], true, true);
+        }
+        for (int c = 0; c < roam->party_cry_count[id] && c < 4; c++) {
+            const RoamBuff *cry = &roam->party_cries[id][c];
+            if (cry->skill != NULL && now < cry->until && !Roam__HasBuff(roam, cry->skill)) {
+                Roam__AddSkillStats(character, cry->skill, cry->level, true, false);
             }
         }
     }

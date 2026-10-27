@@ -98,7 +98,9 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   too, and so is a Druid in a shape (in their looks). Your summons and hireling are seen by the others on the map
   (sent five times a second: where they are and what they're doing; the fighting is yours), and so are your buffs and
   aura (their overlays on your figure). Curses land on everyone's copies of the monsters (the map's owner's do the
-  work: Amplify Damage, Weaken, ...), with their overlays.
+  work: Amplify Damage, Weaken, ...), with their overlays. **Party members' auras and warcries** reach you while
+  you're within about two screens of them: a Paladin's Might or Prayer, a Barbarian's Battle Orders, Shout and Battle
+  Command (until they run out; yours and theirs of the same don't add up).
 - **What you wear** shows on your figure for the others, and changes as you change it.
 - **The same map for everyone**: an act's joined-up outdoors is always built from its town outwards, whichever area
   you come into it by, so everyone in it sees everyone else where they are (it used to depend on where you came in,
@@ -106,7 +108,7 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Joining while the others are busy**: a game that's loading an area (which can take seconds) skips monster updates
   until it's caught up, rather than have them pile up until the connection gives up on it.
 
-Each of these changed what games send each other (now protocol version 17: the stash's pages, buffs and curses, mods, Town Portals, monsters' curses and auras on everyone, players' life and level for the party's portraits, items' superior / low quality, ethereal and personalized names; 17: hostility, corpses seen and looted):
+Each of these changed what games send each other (now protocol version 17: the stash's pages, buffs and curses, mods, Town Portals, monsters' curses and auras on everyone, players' life and level for the party's portraits, items' superior / low quality, ethereal and personalized names; 17: hostility, corpses seen and looted, party auras and warcries):
 everyone needs the same build, or the game says the host runs a different version.
 
 **Town Portals**: everyone sees everyone's (named after whose it is), in the field and in town; your party can go
