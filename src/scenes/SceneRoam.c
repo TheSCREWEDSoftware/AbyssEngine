@@ -1336,7 +1336,13 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
         Roam__UnitSound(roam, unit, MONSTER_SOUND_DEATH);
     } else {
         Roam__UnitSound(roam, unit, MONSTER_SOUND_HIT);
-        if ((unit->state == UNIT_IDLE || unit->state == UNIT_WALK) && Roam__HasMode(roam, unit, "gh")) {
+        // Hit recovery, the game's rule: a blow of at least a twelfth of your life (an eighth of a monster's) makes
+        // you flinch; a monster's swing is cut short by it too (not a boss's or a unique's)
+        const bool player = unit == &roam->player;
+        const bool hard   = !roam->game || amount * (player ? 12 : 8) >= (unit->max_hp > 0 ? unit->max_hp : 1);
+        const bool stops  = unit->state == UNIT_IDLE || unit->state == UNIT_WALK ||
+                           (!player && unit->state == UNIT_ATTACK && !unit->boss && unit->rank == 0);
+        if (hard && stops && Roam__HasMode(roam, unit, "gh")) {
             Roam__SetState(unit, UNIT_HIT, now);
         }
     }
