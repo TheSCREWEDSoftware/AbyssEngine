@@ -337,7 +337,7 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   (the ones up to about your level; rings and amulets always), at their gamble price (`misc.txt`, `armor.txt` and
   `weapons.txt` "gamble cost", times `npc.txt`'s sell mult). What you buy turns out magic, or rare (1 in 10), set (1
   in 500) or unique (1 in 1,000), its item level within five of yours; the message says what you got. New items each
-  time you choose Gamble. (Exceptional and elite versions aren't offered yet.)
+  time you choose Gamble. Once you're past their level, exceptional and elite versions come up too.
 - **Repair** (the blacksmiths) and **Identify Items** (Deckard Cain): see [Durability and
   identifying](#durability-and-identifying).
 - **Travel**: Warriv takes you between the Rogue Encampment and Lut Gholein, Meshif between Lut Gholein and the Kurast
@@ -398,9 +398,9 @@ Right click the cube in the inventory and it opens on the left: a 3 x 4 inside (
 the stash) and **Transmute**, which makes whatever recipe of the game's (`cubemain.txt`) is exactly what's inside: the
 quest items, three gems or runes into the next grade (with a gem for the higher runes), potions, three rings into an
 amulet (and back), rerolling a magic item with three perfect gems, magic weapons with a socket from three gems, the
-prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing. Recipes that need what
-this engine doesn't have (crafted items, exceptional and elite upgrades, low and superior quality, the Pandemonium
-portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
+prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing, unique and rare weapons
+and armor made exceptional or elite (their magic kept). Recipes that need what this engine doesn't have (crafted items,
+low and superior quality, the Pandemonium portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
 in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
 the Cow King). What's inside is kept with the character; any cube you carry opens it.
 In multiplayer games bosses that aren't in the presets aren't put there yet.

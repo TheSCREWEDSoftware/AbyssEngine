@@ -97,13 +97,16 @@ bool Cube_Carried(const Character *character) {
 #define RECIPE_MODS   5
 
 enum {
-    NEED_NORMAL  = 1,
-    NEED_MAGIC   = 2,
-    NEED_RARE    = 4,
-    NEED_UNIQUE  = 8,
-    NEED_SET     = 16,
-    NEED_SOCKETS = 32,
-    NEED_NO_SOCK = 64,
+    NEED_NORMAL      = 1,
+    NEED_MAGIC       = 2,
+    NEED_RARE        = 4,
+    NEED_UNIQUE      = 8,
+    NEED_SET         = 16,
+    NEED_SOCKETS     = 32,
+    NEED_NO_SOCK     = 64,
+    NEED_NORMAL_TIER = 128, // bas: a normal version (not exceptional or elite)
+    NEED_EXCEPTIONAL = 256,
+    NEED_ELITE       = 512,
 };
 
 typedef struct RecipeInput {
@@ -134,6 +137,7 @@ typedef struct Recipe {
     int         prefix;  // pre=, suf= (rows), -1 none
     int         suffix;
     int         qty;
+    int         upgrade; // useitem made exceptional (1) or elite (2), keeping its magic; 0 none
     bool        repair;
     bool        unsocket;
     int         lvl;
@@ -181,6 +185,12 @@ static bool Cube__ParseInput(const char *text, RecipeInput *input) {
             input->needs |= NEED_SOCKETS;
         } else if (strcmp(token, "nos") == 0) {
             input->needs |= NEED_NO_SOCK;
+        } else if (strcmp(token, "bas") == 0) {
+            input->needs |= NEED_NORMAL_TIER;
+        } else if (strcmp(token, "exc") == 0) {
+            input->needs |= NEED_EXCEPTIONAL;
+        } else if (strcmp(token, "eli") == 0) {
+            input->needs |= NEED_ELITE;
         } else if (strcmp(token, "noe") != 0) {
             return false; // low, hiq, crf, upg, bas, exc, eli, eth: not in this engine
         }
@@ -233,7 +243,11 @@ static bool Cube__ParseOutput(const char *text, Recipe *recipe) {
             recipe->repair = true;
         } else if (strcmp(token, "uns") == 0) {
             recipe->unsocket = true;
-        } else if (strcmp(token, "rch") != 0 && strncmp(token, "sock=", 5) != 0) {
+        } else if (strcmp(token, "exc") == 0) {
+            recipe->upgrade = 1;
+        } else if (strcmp(token, "eli") == 0) {
+            recipe->upgrade = 2;
+        } else if (strcmp(token, "rch") != 0 && strcmp(token, "mod") != 0 && strncmp(token, "sock=", 5) != 0) {
             return false; // crf, exc, eli, mod, ...: not in this engine
         }
         token = comma != NULL ? comma + 1 : NULL;
@@ -327,7 +341,9 @@ static bool Cube__Matches(const RecipeInput *input, const Item *item) {
     if (((needs & NEED_NORMAL) && item->quality != ITEM_NORMAL) ||
         ((needs & NEED_MAGIC) && item->quality != ITEM_MAGIC) || ((needs & NEED_RARE) && item->quality != ITEM_RARE) ||
         ((needs & NEED_UNIQUE) && item->quality != ITEM_UNIQUE) || ((needs & NEED_SET) && item->quality != ITEM_SET) ||
-        ((needs & NEED_SOCKETS) && item->sockets == 0) || ((needs & NEED_NO_SOCK) && item->sockets != 0)) {
+        ((needs & NEED_SOCKETS) && item->sockets == 0) || ((needs & NEED_NO_SOCK) && item->sockets != 0) ||
+        ((needs & NEED_NORMAL_TIER) && base->tier != 0) || ((needs & NEED_EXCEPTIONAL) && base->tier != 1) ||
+        ((needs & NEED_ELITE) && base->tier != 2)) {
         return false;
     }
     return true;
@@ -425,6 +441,21 @@ bool Cube_Transmute(Character *character, char *message, const size_t size) {
             if (rand() % 100 < mod->chance) {
                 Affixes_AddPropertyParam(&made, mod->code, mod->param, mod->min, mod->max);
             }
+        }
+        if (recipe->upgrade > 0) {
+            // The same item a tier up: its code, defense and durability from the better base, its magic kept
+            const ItemBase *from = Items_Find(made.code);
+            const ItemBase *to   = from != NULL && from->tiers[recipe->upgrade][0] != '\0'
+                                       ? Items_Find(from->tiers[recipe->upgrade])
+                                       : NULL;
+            if (to == NULL) {
+                continue; // nothing better to become
+            }
+            const Item fresh = Inventory_NewItem(to->code);
+            snprintf(made.code, sizeof(made.code), "%s", to->code);
+            made.defense        = fresh.defense;
+            made.durability     = fresh.durability;
+            made.max_durability = fresh.max_durability;
         }
         if (recipe->repair) {
             made.durability = made.max_durability;

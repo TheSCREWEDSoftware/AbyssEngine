@@ -168,9 +168,11 @@ typedef struct ItemBase {
     int  max_sockets; // gemsockets
     int  cost;        // what a merchant asks for it (before npc.txt's multiplier)
     int  gamble_cost; // what a gambler asks for one (rings and amulets: misc.txt; the rest: their own table)
-    int  durability;  // weapons and armor: how many knocks it takes (0: it doesn't wear down)
-    int  belt_rows;   // a belt: rows of four potions it holds
-    bool beltable;    // potions and scrolls go in the belt
+    char tiers[3][ITEM_CODE_MAX]; // its normal, exceptional and elite versions ("" if none: misc items)
+    int  tier;                    // which of them it is: 0 normal, 1 exceptional, 2 elite
+    int  durability;              // weapons and armor: how many knocks it takes (0: it doesn't wear down)
+    int  belt_rows;               // a belt: rows of four potions it holds
+    bool beltable;                // potions and scrolls go in the belt
     bool stackable;
     int  max_stack;
     // Potions

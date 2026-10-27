@@ -317,7 +317,16 @@ void Shop_FillGamble(ShopStock *stock, const char *npc_id, const int character_l
         const bool jewelry = Items_IsA(base, "ring") || Items_IsA(base, "amul");
         const int  copies  = jewelry ? 2 : (rand() % 3 == 0 ? 1 : 0);
         for (int c = 0; c < copies; c++) {
-            Item item = Inventory_NewItem(base->code);
+            // At higher levels the exceptional and elite versions come up too
+            const ItemBase *offer = base;
+            const ItemBase *exc   = base->tiers[1][0] != '\0' ? Items_Find(base->tiers[1]) : NULL;
+            const ItemBase *elite = base->tiers[2][0] != '\0' ? Items_Find(base->tiers[2]) : NULL;
+            if (elite != NULL && elite->level <= character_level && rand() % 6 == 0) {
+                offer = elite;
+            } else if (exc != NULL && exc->level <= character_level && rand() % 3 == 0) {
+                offer = exc;
+            }
+            Item item = Inventory_NewItem(offer->code);
             Shop__Place(stock, &item, false);
         }
     }
