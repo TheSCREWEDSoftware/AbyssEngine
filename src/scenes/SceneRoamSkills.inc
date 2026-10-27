@@ -578,7 +578,22 @@ static void Roam__MissileGoOff(SceneRoam *roam, Missile *missile, const uint64_t
     if (!missile->harmless && missile->radius > 0.0f) {
         Roam__MissileBlast(roam, missile, missile->x, missile->y, now);
     }
-    if (missile->info->hit_missile[0] != '\0') {
+    const MissileInfo *left =
+        missile->info->hit_missile[0] != '\0' ? MissileData_Get(missile->info->hit_missile) : NULL;
+    if (missile->lobbed && !missile->harmless && left != NULL && left->seconds >= 1.0f) {
+        // What it leaves on the ground keeps hurting what walks in it (Shock Web's field, the spikes)
+        Missile *field = Roam__SpawnMissile(roam, left->name, missile->x, missile->y, 1.0f, 1.0f, missile->ours);
+        if (field != NULL) {
+            for (int e = 0; e < ELEMENT_COUNT; e++) {
+                field->damage[e] = missile->damage[e] / 2;
+            }
+            field->speed  = 0.0f;
+            field->delay  = 0.3f;
+            field->ticks  = 0.6f;
+            field->life   = fminf(left->seconds, 4.0f);
+            field->radius = 2.0f;
+        }
+    } else if (missile->info->hit_missile[0] != '\0') {
         Roam__SpawnEffect(roam, missile->info->hit_missile, missile->x, missile->y, missile->dx, missile->dy);
     } else if (missile->info->explode_into[0] != '\0') {
         Roam__SpawnEffect(roam, missile->info->explode_into, missile->x, missile->y, missile->dx, missile->dy);
