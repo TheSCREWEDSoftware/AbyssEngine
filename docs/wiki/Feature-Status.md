@@ -63,9 +63,10 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Catalog: classes and skill trees | ✅ | |
 | Catalog: sprites | ✅ | Every DC6, by category, palettes, animation. |
 | Catalog: bestiary | ✅ | Players, NPCs, monsters, bosses, objects, every animation and direction. |
-| [Map Editor](Map-Editor.md) | ✅ | Open game areas, paint tiles, place units, save/load `.abm`. Undo / redo (Ctrl+Z / Ctrl+Y, "Changes: 4 / 11"), a recovery file after every change, auto-save, Back asks about unsaved changes. Saves the game's DS1 too (version 18). |
+| [Map Editor](Map-Editor.md) | ✅ | Open game areas, paint tiles, place units, save/load `.abm`. Undo / redo (Ctrl+Z / Ctrl+Y, "Changes: 4 / 11"), a recovery file after every change, auto-save, Back asks about unsaved changes. Saves the game's DS1 too (version 18). `AbyssEngine --editor [map]` opens it on its own. A [guide](Map-Editor-Guide.md) from the first room to putting a map in the game. |
 | [Testing Grounds](Testing-Grounds-and-Free-Roam.md) | ✅ | Default arena or your own map; drop monsters; combat toggle; placement preview. |
 | [Free Roam](Testing-Grounds-and-Free-Roam.md) | ✅ | Towns, fixed areas and randomly built wilderness and dungeons; teleport list; combat toggle. |
+| [Mods](Modding.md) | 🧪 | Folders of changed files in `mods/` (tables, strings, maps, tiles, pictures, sounds), read before `DataFolder` and the MPQs; turned on and ordered in Options › Mods (`mods/load_order.txt`); multiplayer games check everyone has the same. |
 | Loading screen | ✅ | Progress bar; the picture plays with the progress. |
 | `--extract DIR` | ✅ | Copies the data tables (`.txt`), strings (`.tbl`), maps (`.ds1`) and tiles (`.dt1`) out of the MPQs into a folder, keeping their paths, with the files the MPQs' lists leave out (some tables, the presets' maps, the acts' tiles). `--small` keeps only the tiles' walk flags (about 50 MB instead of 190). `DataFolder` in `abyss.ini` reads loose files like these before the MPQs (to change the tables: a mod); the window still takes its pictures and sounds from the MPQs, but text mode runs from the folder alone. |
 

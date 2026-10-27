@@ -1,6 +1,6 @@
 # Options
 
-**Options** on the main menu (or in the game: **Esc** › Options) has six tabs: Video, Audio, Gameplay, Controls, Multiplayer and Debug. **OK** saves, **Cancel** (or **Esc**)
+**Options** on the main menu (or in the game: **Esc** › Options) has seven tabs: Video, Audio, Gameplay, Controls, Multiplayer, Mods and Debug. **OK** saves, **Cancel** (or **Esc**)
 puts everything back as it was, **Defaults** resets the tab you're on. Everything except the window size shows
 straight away, in the game too (Esc › Options while playing), so you can see or feel a change before keeping it.
 
@@ -24,6 +24,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | **Gameplay** | Settings for all classes or one class (the highlighted **Settings for** band at the top; tick "Own settings" to give a class its own), type of movement, entrances, see-through obstructions, even walking speed on screen |
 | **Controls** | Every action and what it's bound to (see below), and the **Mouse** window |
 | **Multiplayer** | Names and circles over the other players, your colour, the lobby server ([Multiplayer](Multiplayer.md#options--multiplayer)) |
+| **Mods** | The [mods](Modding.md) in the `mods` folder: **On / Off** turns the selected one on or off, **Up** and **Down** move it (higher up wins when two change the same file). Kept in `mods/load_order.txt`; they're read when the game starts, so start it again after a change |
 | **Debug** | The developer tools, the same for every class (below) |
 
 **Video** (`[Graphics]` in `abyss.ini`):

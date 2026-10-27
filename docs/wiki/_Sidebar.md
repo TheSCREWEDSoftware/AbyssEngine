@@ -25,4 +25,6 @@
 
 - [Catalog](Catalog.md)
 - [Map Editor](Map-Editor.md)
+- [Map Editor Guide](Map-Editor-Guide.md)
+- [Modding](Modding.md)
 - [Testing Grounds and Free Roam](Testing-Grounds-and-Free-Roam.md)

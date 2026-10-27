@@ -10,7 +10,9 @@ AbyssEngine --editor act1/town/townN1.ds1    opening one of the game's areas (it
 ```
 
 Open the game's own areas or build your own maps from the game's tile sets, place monsters, NPCs and objects, and
-try them straight away in the [Testing Grounds](Testing-Grounds-and-Free-Roam.md).
+try them straight away in the [Testing Grounds](Testing-Grounds-and-Free-Roam.md). New to it? The
+[Map Editor Guide](Map-Editor-Guide.md) goes from the first room to putting a map in the game with a
+[mod](Modding.md).
 
 ## Screen
 
