@@ -62,11 +62,27 @@ static const char *Log__FileName(const char *file) {
     return last != NULL ? last + 1 : file;
 }
 
+static bool log_console = true;
+
+void Log_SetConsole(const bool on) { log_console = on; }
+
 void Log_Message(enum LogLevel level, const char *file, const int line, const char *format, ...) {
     char    msg[MAX_LOG_LINE_LENGTH];
     va_list args;
 
     if (level < log_level) {
+        return;
+    }
+    if (!log_console && level < LOG_LEVEL_FATAL) {
+        // Text mode: the terminal is the game's; the line goes to the log file only
+        char    text[MAX_LOG_LINE_LENGTH];
+        char    prefix[160];
+        va_list copy;
+        va_start(copy, format);
+        vsnprintf(text, sizeof(text), format, copy);
+        va_end(copy);
+        snprintf(prefix, sizeof(prefix), "[%s] %s:%i - ", log_level_strings[level], Log__FileName(file), line);
+        Log__Keep(prefix, text);
         return;
     }
 

@@ -67,6 +67,13 @@ void Scene_UpdateCurrentScene(uint64_t delta) {
     current_scene->update(current_scene_ptr, delta);
 }
 
+Scene *Scene_Current(void **scene_ref) {
+    if (scene_ref != NULL) {
+        *scene_ref = current_scene_ptr;
+    }
+    return current_scene;
+}
+
 void Scene_Set(Scene *scene) {
     if (next_scene != NULL) {
         LOG_FATAL("Attempted to set a new Scene when one was already queued!");

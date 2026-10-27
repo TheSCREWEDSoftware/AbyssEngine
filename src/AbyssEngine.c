@@ -5,11 +5,13 @@
 #include "common/Globals.h"
 #include "common/Logging.h"
 #include "common/Revision.h"
+#include "common/Terminal.h"
 #include "data/StringTable.h"
 #include "drawing/Cursor.h"
 #include "drawing/Label.h"
 #include "drawing/LoadingScreen.h"
 #include "drawing/Picture.h"
+#include "game/Character.h"
 #include "game/Controls.h"
 #include "game/ControlsExport.h"
 #include "game/Settings.h"
@@ -20,10 +22,12 @@
 #include "map/MapSession.h"
 #include "net/Multiplayer.h"
 #include "scenes/Scene.h"
+#include "scenes/SceneGame.h"
 #include "scenes/SceneIntroVideos.h"
 #include "scenes/SceneOptions.h"
 #include "types/Palette.h"
 #include "util/Crypto.h"
+#include <ctype.h>
 #include <libavutil/log.h>
 #include <signal.h>
 #include <stdio.h>
@@ -43,7 +47,142 @@ static void Main__Usage(void) {
            "                                       Single Player / Free Roam key tables into DIR (your bindings)\n"
            "  AbyssEngine --export-controls DIR --defaults   the same with the default bindings\n"
            "  AbyssEngine --server [--port N]      a dedicated multiplayer server, no window (settings: server.ini\n"
-           "                                       in the server folder next to abyss.ini; Ctrl+C stops it)\n");
+           "                                       in the server folder next to abyss.ini; Ctrl+C stops it)\n"
+           "  AbyssEngine --text [NAME] [--class N]   Single Player in the terminal, as text (NAME: a saved\n"
+           "                                       character, or a new one of class N: 0 Amazon .. 6 Assassin;\n"
+           "                                       no NAME: the last one played). Keys: wasd move, f fight, u use,\n"
+           "                                       g pick up, 1-4 potions, t town, Q quit\n"
+           "  AbyssEngine --extract DIR            copy the game's data out of the MPQs into DIR: the tables\n"
+           "                                       (.txt), the strings (.tbl), the maps (.ds1) and the tiles (.dt1)\n");
+}
+
+// --text: the character to play (a saved one by name, the last one played, or a new one) and into the game
+static bool Main__TextCharacter(const char *name, const int class_id) {
+    Character *saved = NULL;
+    const int  count = Character_ListSaved(&saved);
+    Character  character;
+    bool       found = false;
+    for (int i = 0; i < count && !found; i++) {
+        if (name == NULL ? i == 0 : SDL_strcasecmp(saved[i].name, name) == 0) {
+            character = saved[i];
+            found     = true;
+        }
+    }
+    free(saved);
+    if (!found) {
+        const char *reason   = NULL;
+        const char *new_name = name != NULL ? name : "Wanderer";
+        if (!Character_IsValidName(new_name, &reason)) {
+            fprintf(stderr, "%s: %s\n", new_name, reason != NULL ? reason : "not a valid name");
+            return false;
+        }
+        const CharacterClass cls =
+            class_id >= 0 && class_id < CHARACTER_CLASS_COUNT ? (CharacterClass)class_id : CHARACTER_BARBARIAN;
+        Character_Create(&character, new_name, cls, Character_ClassIsExpansion(cls), false);
+        if (!Character_Save(&character)) {
+            fprintf(stderr, "Could not save the character.\n");
+            return false;
+        }
+    }
+    Character_SetDifficulty(0);
+    Character_SetCurrent(&character);
+    Scene_Set(SCENE_REF(Game));
+    return true;
+}
+
+// --text, each frame: keys to the game, and the screen drawn again ten times a second. False once the game is left.
+static bool Main__TextFrame(const uint64_t ticks, uint64_t *drawn) {
+    static char screen[1 << 18];
+    void       *scene_ref = NULL;
+    Scene      *scene     = Scene_Current(&scene_ref);
+    if (scene != NULL && scene != SCENE_REF(Game)) {
+        return false;
+    }
+    if (scene == NULL || scene_ref == NULL) {
+        return true; // still starting
+    }
+    for (int key = Terminal_ReadKey(); key >= 0; key = Terminal_ReadKey()) {
+        Game_TextKey(scene_ref, key);
+    }
+    if (ticks - *drawn >= 100) {
+        *drawn   = ticks;
+        int cols = 80;
+        int rows = 24;
+        Terminal_Size(&cols, &rows);
+        const int length = Game_TextRender(scene_ref, screen, (int)sizeof(screen), cols, rows);
+        Terminal_Write(screen, length);
+    }
+    return true;
+}
+
+// --extract: the files that describe the game (not its pictures and sounds) out of the MPQs, into a folder, keeping
+// their paths (data\global\excel\levels.txt -> DIR/data/global/excel/levels.txt)
+static bool Main__ExtractWanted(const char *name) {
+    static const char *kinds[] = {".txt", ".tbl", ".ds1", ".dt1"};
+    const char        *dot     = strrchr(name, '.');
+    for (size_t k = 0; dot != NULL && k < sizeof(kinds) / sizeof(kinds[0]); k++) {
+        if (SDL_strcasecmp(dot, kinds[k]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void Main__MakeFolders(char *path) { // every folder in the path (the last part is the file)
+    for (char *c = path + 1; *c != '\0'; c++) {
+        if (*c == '/') {
+            *c = '\0';
+#ifdef _WIN32
+            _mkdir(path);
+#else
+            mkdir(path, 0755);
+#endif
+            *c = '/';
+        }
+    }
+}
+
+static int Main__Extract(const char *folder) {
+    const char *const *files = NULL;
+    const int          count = FileManager_GetFileList(&files);
+    int                saved = 0;
+    int                lost  = 0;
+    for (int i = 0; i < count; i++) {
+        if (!Main__ExtractWanted(files[i]) || !FileManager_FileExists(files[i])) {
+            continue;
+        }
+        MpqStream *stream = FileManager_OpenFile(files[i]);
+        if (stream == NULL) {
+            lost++;
+            continue;
+        }
+        const uint32_t size = MpqStream_GetSize(stream);
+        char          *data = malloc(size > 0 ? size : 1);
+        const uint32_t got  = data != NULL ? MpqStream_Read(stream, data, 0, size) : 0;
+        MpqStream_Destroy(&stream);
+
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/%s", folder, files[i]);
+        for (char *c = path + strlen(folder) + 1; *c != '\0'; c++) {
+            *c = *c == '\\' ? '/' : (char)tolower((unsigned char)*c);
+        }
+        Main__MakeFolders(path);
+        FILE *out = data != NULL && got == size ? fopen(path, "wb") : NULL;
+        if (out != NULL && fwrite(data, 1, size, out) == size) {
+            saved++;
+        } else {
+            lost++;
+        }
+        if (out != NULL) {
+            fclose(out);
+        }
+        free(data);
+    }
+    printf("%d files written into %s", saved, folder);
+    printf(lost > 0 ? " (%d could not be read or written)\n" : "\n", lost);
+    FileManager_DestroySingleton();
+    Log_CloseFile();
+    return saved > 0 ? 0 : 1;
 }
 
 static volatile sig_atomic_t server_running = 1;
@@ -121,6 +260,10 @@ int main(int argc, char **argv) {
     bool        export_default = false;
     bool        dedicated      = false;
     int         server_port    = 0;
+    bool        text_mode      = false;
+    const char *extract_folder = NULL;
+    const char *text_name      = NULL;
+    int         text_class     = CHARACTER_BARBARIAN;
     for (int a = 1; a < argc; a++) {
         if (strcmp(argv[a], "--settings") == 0) {
             settings_only = true;
@@ -130,6 +273,15 @@ int main(int argc, char **argv) {
             dedicated = true;
         } else if (strcmp(argv[a], "--port") == 0 && a + 1 < argc) {
             server_port = atoi(argv[++a]);
+        } else if (strcmp(argv[a], "--extract") == 0 && a + 1 < argc) {
+            extract_folder = argv[++a];
+        } else if (strcmp(argv[a], "--text") == 0) {
+            text_mode = true;
+            if (a + 1 < argc && argv[a + 1][0] != '-') {
+                text_name = argv[++a];
+            }
+        } else if (strcmp(argv[a], "--class") == 0 && a + 1 < argc) {
+            text_class = atoi(argv[++a]);
         } else if (strcmp(argv[a], "--defaults") == 0) {
             export_default = true;
         } else if (strcmp(argv[a], "--help") == 0 || strcmp(argv[a], "-h") == 0) {
@@ -139,6 +291,17 @@ int main(int argc, char **argv) {
     }
 
     Log_SetLevel(LOG_LEVEL_EVERYTHING);
+    if (text_mode) {
+        // No window and no sound: the game runs as usual, drawn into nothing, and is shown as text
+        SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
+        SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+        Log_SetConsole(false); // the log file keeps the lines
+    }
+    if (extract_folder != NULL) {
+        SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
+        SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+        Log_SetConsole(false); // just the count at the end
+    }
     av_log_set_level(AV_LOG_FATAL);
     LOG_INFO("Abyss Engine");
 
@@ -218,6 +381,10 @@ int main(int argc, char **argv) {
     LOG_DEBUG("Initializing file manager...");
     FileManager_CreateSingleton();
 
+    if (extract_folder != NULL) {
+        return Main__Extract(extract_folder);
+    }
+
     LOG_DEBUG("Loading game strings...");
     StringTable_InitializeSingleton("eng");
 
@@ -248,7 +415,9 @@ int main(int argc, char **argv) {
     }
 
     LOG_DEBUG("Creating renderer...");
-    sdl_renderer = SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    sdl_renderer = SDL_CreateRenderer(sdl_window, -1,
+                                      text_mode ? SDL_RENDERER_SOFTWARE // no screen: drawn into memory
+                                                : SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (sdl_renderer == NULL) {
         LOG_FATAL(SDL_GetError());
@@ -266,7 +435,11 @@ int main(int argc, char **argv) {
     Cursor_CreateSingleton();
     Scene_InitializeManager();
     Cursor_SetType(CURSOR_STANDARD);
-    if (settings_only) {
+    if (text_mode) {
+        if (!Main__TextCharacter(text_name, text_class)) {
+            return 1;
+        }
+    } else if (settings_only) {
         options_standalone = true;
         Scene_Set(SCENE_REF(Options)); // AbyssEngine --settings
     } else {
@@ -286,6 +459,11 @@ int main(int argc, char **argv) {
     const uint64_t counter_rate = SDL_GetPerformanceFrequency();
     uint64_t       frame_start  = SDL_GetPerformanceCounter();
     int            vsync_rate   = -1;
+    uint64_t       text_drawn   = 0;
+    if (text_mode && !Terminal_Begin()) {
+        fprintf(stderr, "Text mode needs a terminal.\n");
+        return 1;
+    }
 
     while (running) {
         while (SDL_PollEvent(&sdl_event)) {
@@ -315,6 +493,10 @@ int main(int argc, char **argv) {
         }
 
         last_ticks = current_ticks;
+
+        if (text_mode && !Main__TextFrame(current_ticks, &text_drawn)) {
+            break; // the game was left
+        }
 
         Multiplayer_Update(); // the hosted server and our connection, before the scene reads them
         VideoManager_IsPlayingVideo() ? VideoManager_Update(tick_delta) : Scene_UpdateCurrentScene(tick_delta);
@@ -352,6 +534,9 @@ int main(int argc, char **argv) {
         frame_start = SDL_GetPerformanceCounter();
     }
 
+    if (text_mode) {
+        Terminal_End();
+    }
     Multiplayer_Leave();
     Picture_Finalize();
     AudioManager_DestroySingleton(); // Destroy this first as it reaches into things via threads

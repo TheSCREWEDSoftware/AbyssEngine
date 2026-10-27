@@ -116,6 +116,7 @@ BasePath = C:\Program Files (x86)\Diablo II\
 Start `AbyssEngine` (`AbyssEngine.exe` on Windows, the `AbyssEngine.app` bundle on macOS) from the build folder. Logs go
 to the console; on macOS run `./AbyssEngine.app/Contents/MacOS/AbyssEngine` from a terminal to see them. If something
 doesn't start, see [Troubleshooting](https://github.com/TheSCREWEDSoftware/AbyssEngine/wiki/Troubleshooting).
+`AbyssEngine --help` lists the rest: `--settings`, `--server`, `--text` (play in a terminal) and `--extract`.
 
 ## Contributing
 

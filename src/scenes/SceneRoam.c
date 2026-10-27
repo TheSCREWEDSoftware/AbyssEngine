@@ -6052,3 +6052,5 @@ void TestingGrounds_Render(void *scene_ref) { Roam__Render(scene_ref); }
 void FreeRoam_Render(void *scene_ref) { Roam__Render(scene_ref); }
 
 void Game_Render(void *scene_ref) { Roam__Render(scene_ref); }
+
+#include "SceneRoamText.inc"

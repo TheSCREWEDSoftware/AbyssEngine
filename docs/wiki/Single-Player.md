@@ -333,7 +333,35 @@ Tainted Sun, Khalim's Will, the Blade of the Old Religion, the Golden Bird, the 
 Arreat, Rite of Passage) say "Not in this engine yet": they need quest items, the Horadric Cube and scripted events.
 In multiplayer games bosses that aren't in the presets aren't put there yet.
 
+## Text mode
+
+`AbyssEngine --text` plays Single Player in a terminal, drawn with letters instead of pictures: no window and no sound.
+
+```
+AbyssEngine --text                 the character played last
+AbyssEngine --text Texty           a saved character by name, or a new one called Texty
+AbyssEngine --text Texty --class 1 a new one of that class: 0 Amazon, 1 Sorceress, 2 Necromancer, 3 Paladin,
+                                   4 Barbarian (the default), 5 Druid, 6 Assassin
+```
+
+The map is around you, `@` in the middle: `#` walls, `.` ground, letters for monsters (red), town folk (yellow), other
+players and items. Under it are your life, mana, gold and where you are, and the last thing that happened.
+
+| Key | |
+|-----|---|
+| `w` `a` `s` `d` (or the arrow keys), `q` `e` `z` `c` | walk (the last four go diagonally) |
+| `f` | fight the nearest monster |
+| `r` / `l` | cast the right / left skill at the nearest monster |
+| `u` | use what's next to you: talk to someone, open a chest or door, take a waypoint |
+| `g` | pick up the nearest item |
+| `1`-`4` | drink from the belt; in someone's menu, the choice with that number |
+| `t` | go back to town |
+| `Q` | save and quit |
+
+It's the same game underneath (saves, levels, items and quests are shared with the normal game); the screen is drawn
+ten times a second. It still reads the game's MPQs, pictures included, because the engine loads them as it goes.
+
 ## Not yet
 
-Some skills (see above), the quests above that need quest items, NPC dialogue, difficulty levels. Each game has its own random world seed: the
+Some skills (see above), the quests above that need quest items, NPC dialogue. Each game has its own random world seed: the
 areas keep their layout while you play.

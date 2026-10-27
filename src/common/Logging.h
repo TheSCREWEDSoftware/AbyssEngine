@@ -1,6 +1,7 @@
 #ifndef ABYSS_LOG_H
 #define ABYSS_LOG_H
 
+#include <stdbool.h>
 #include <stdarg.h>
 
 #define LOG_DEBUG(...) Log_Message(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
@@ -28,6 +29,7 @@ enum LogLevel {
 extern enum LogLevel log_level;
 
 void Log_SetLevel(enum LogLevel level);
+void Log_SetConsole(bool on); // off: lines go only to the log file (text mode keeps the terminal for the game)
 // Also write every line to a file (and keep the last few for crash reports)
 void        Log_OpenFile(const char *path);
 void        Log_CloseFile(void);
