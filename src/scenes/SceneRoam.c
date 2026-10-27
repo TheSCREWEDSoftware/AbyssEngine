@@ -236,6 +236,11 @@ typedef struct Unit {
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
     bool            turned;      // a monster on our side for a while (Attract): back to a monster then, not gone
+    // Another player's summon or hireling (multiplayer), only to be seen: whose (player id), which of theirs, when
+    // last heard of
+    int      remote_owner;
+    int      remote_slot;
+    uint64_t remote_seen;
     // An Assassin's trap: it doesn't move or get attacked, it fires its missile at monsters so many times, then goes
     const SkillRow *trap;
     int             trap_level;
@@ -423,6 +428,7 @@ typedef struct SceneRoam {
     int      other_count;
     uint64_t last_sent;
     uint64_t last_monsters;                    // the map's owner: monsters last sent at
+    uint64_t last_allies;                      // our summons last sent at
     int      attack_other;                     // PvP: the player being attacked (their id), 0 = none
     char     sent_looks[CHARACTER_LOOKS_TEXT]; // what we last told the others we wear
     bool     party_panel;                      // P: the party screen
@@ -3482,6 +3488,23 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             Roam__UpdateAlly(roam, unit, seconds, now); // our summons: fighting for us, wherever the monsters are run
             continue;
         }
+        if (unit->remote_owner > 0) {
+            // Someone else's summon: where they last said, smoothly; gone when they stop saying
+            if (unit->vanished) {
+                continue;
+            }
+            if (real - unit->remote_seen > 2000) {
+                unit->vanished = true;
+                continue;
+            }
+            const float step = fminf((float)(real - unit->net_at) / 200.0f, 1.0f);
+            unit->x          = unit->net_from_x + ((unit->net_to_x - unit->net_from_x) * step);
+            unit->y          = unit->net_from_y + ((unit->net_to_y - unit->net_from_y) * step);
+            if (Roam__Animate(roam, unit, now) && unit->state != UNIT_DEAD) {
+                Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
+            }
+            continue;
+        }
         if (runs) {
             Roam__UpdateAilments(roam, unit, seconds, now); // poison working
         }
@@ -3648,8 +3671,8 @@ static int Roam__UnitAt(const SceneRoam *roam, const float sub_x, const float su
     float distance = HOVER_RANGE;
     for (int i = 0; i < roam->unit_count; i++) {
         const Unit *unit = &roam->units[i];
-        if (!Roam__IsAlive(unit) || (unit->is_object && !Roam__CanUse(unit))) {
-            continue; // torches, opened chests, ... can't be clicked
+        if (!Roam__IsAlive(unit) || (unit->is_object && !Roam__CanUse(unit)) || unit->remote_owner > 0) {
+            continue; // torches, opened chests, ... (and others' summons) can't be clicked
         }
         // Figures stand on their feet but most of the body is above: aim a little higher up the screen
         const float d = Roam__Distance(unit->x - 0.8f, unit->y - 0.8f, sub_x, sub_y);
@@ -4731,7 +4754,8 @@ static void Roam__SendMonsters(SceneRoam *roam) {
     int count = 0;
     for (int i = 0; i < roam->unit_count && count < 2500; i++) {
         const Unit *unit = &roam->units[i];
-        if (unit->is_object || unit->ally || Roam__NearestPlayer(roam, unit->x, unit->y) > MONSTER_SYNC_DISTANCE) {
+        if (unit->is_object || unit->ally || unit->remote_owner > 0 ||
+            Roam__NearestPlayer(roam, unit->x, unit->y) > MONSTER_SYNC_DISTANCE) {
             continue; // (our summons are ours alone)
         }
         NetWriter_U16(writer, (uint16_t)i);
@@ -4750,6 +4774,99 @@ static void Roam__SendMonsters(SceneRoam *roam) {
         NetClient_Send(MSG_MONSTERS, writer);
     }
     free(writer);
+}
+
+// Ours, five times a second: where our summons and hireling are, for the others to see
+static void Roam__SendAllies(SceneRoam *roam) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    FAIL_IF_NULL(writer);
+    NetWriter_Begin(writer);
+    NetWriter_I32(writer, Roam__MapKey(roam));
+    const int count_at = writer->size;
+    NetWriter_U8(writer, 0);
+    int count = 0;
+    for (int i = 0; i < roam->unit_count && count < 32; i++) {
+        const Unit *unit = &roam->units[i];
+        if (!unit->ally || unit->turned || !Roam__IsAlive(unit)) {
+            continue;
+        }
+        NetWriter_U8(writer, (uint8_t)(i & 0xFF)); // (its slot: its place in our list, the same while it lives)
+        NetWriter_String(writer, unit->id);
+        NetWriter_F32(writer, unit->x);
+        NetWriter_F32(writer, unit->y);
+        NetWriter_U8(writer, (uint8_t)unit->state);
+        NetWriter_U8(writer, (uint8_t)unit->turn);
+        count++;
+    }
+    writer->data[count_at] = (uint8_t)count;
+    NetClient_Send(MSG_ALLIES, writer); // (none: theirs go)
+    free(writer);
+}
+
+// Someone's summons: each kept as a unit only to be seen, moving smoothly to where they say; the ones they no longer
+// list are gone
+static void Roam__ApplyAllies(SceneRoam *roam, const int from, NetReader *reader, const uint64_t now) {
+    const uint64_t real  = SDL_GetTicks64();
+    const int      count = NetReader_U8(reader);
+    static bool    seen[MAX_UNITS];
+    memset(seen, 0, sizeof(seen));
+    for (int n = 0; n < count && !reader->failed; n++) {
+        const int slot = NetReader_U8(reader);
+        char      id[40];
+        NetReader_String(reader, id, sizeof(id));
+        const float x     = NetReader_F32(reader);
+        const float y     = NetReader_F32(reader);
+        const int   state = NetReader_U8(reader);
+        const int   turn  = NetReader_U8(reader);
+        if (reader->failed) {
+            break;
+        }
+        Unit *unit = NULL;
+        for (int i = 0; i < roam->unit_count && unit == NULL; i++) {
+            Unit *u = &roam->units[i];
+            if (u->remote_owner == from && u->remote_slot == slot && !u->vanished && strcmp(u->id, id) == 0) {
+                unit = u;
+            }
+        }
+        if (unit == NULL) {
+            // New: in a spent one's place if there is one
+            for (int i = 0; i < roam->unit_count && unit == NULL; i++) {
+                Unit *u = &roam->units[i];
+                if (u->remote_owner > 0 && u->vanished && Roam__InitUnit(u, "monsters", id, x, y)) {
+                    unit = u;
+                }
+            }
+            unit = unit != NULL ? unit : Roam__AddUnit(roam, "monsters", id, x, y);
+            if (unit == NULL) {
+                continue;
+            }
+            unit->remote_owner = from;
+            unit->remote_slot  = slot;
+            unit->max_hp       = 0; // (not to be fought or clicked)
+            unit->hp           = 1;
+            unit->npc          = false;
+            unit->x            = x;
+            unit->y            = y;
+        }
+        unit->net_from_x  = unit->x;
+        unit->net_from_y  = unit->y;
+        unit->net_to_x    = x;
+        unit->net_to_y    = y;
+        unit->net_at      = real;
+        unit->remote_seen = real;
+        unit->turn        = turn;
+        if (state != (int)unit->state && state <= UNIT_DEAD) {
+            Roam__SetState(unit, (UnitState)state, now);
+        }
+        seen[unit - roam->units] = true;
+    }
+    for (int i = 0; i < roam->unit_count && !reader->failed; i++) {
+        Unit *u = &roam->units[i];
+        if (u->remote_owner == from && !seen[i] && !u->vanished) {
+            u->vanished = true; // (dismissed, run out, killed)
+            Roam__SetState(u, UNIT_DEAD, now);
+        }
+    }
 }
 
 // What the owner says about the monsters: moved, hurt, attacking, dying
@@ -4846,6 +4963,20 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
     case MSG_TRADE_FROM:
         Roam__TradeMessage(roam, reader);
         break;
+    case MSG_ALLIES_FROM: {
+        const int from = NetReader_U8(reader);
+        const int map  = NetReader_I32(reader);
+        if (map == key) {
+            Roam__ApplyAllies(roam, from, reader, now);
+        } else {
+            for (int i = 0; i < roam->unit_count; i++) { // (they've gone elsewhere: so have their summons)
+                if (roam->units[i].remote_owner == from) {
+                    roam->units[i].vanished = true;
+                }
+            }
+        }
+        break;
+    }
     case MSG_CAST_FROM: {
         NetReader_U8(reader); // who (seen through their missiles)
         const int   map   = NetReader_I32(reader);
@@ -5016,6 +5147,10 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     if (roam->other_count > 0 && Roam__RunsMonsters(roam) && real - roam->last_monsters >= 1000 / NET_STATE_HZ) {
         roam->last_monsters = real;
         Roam__SendMonsters(roam);
+    }
+    if (roam->other_count > 0 && roam->game && real - roam->last_allies >= 200) {
+        roam->last_allies = real;
+        Roam__SendAllies(roam);
     }
     // Chat: Enter opens the line, Enter sends it, Esc closes it
     if (TextBox_IsFocused(roam->chat_box)) {
