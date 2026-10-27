@@ -107,6 +107,12 @@ static SoundEffect *Sounds__Effect(const int row, const int rate) {
         }
         effects[row] = SoundEffect_Load(path, rate);
         if (effects[row] == NULL) {
+            // Speech is in the language's folder (d2speech.mpq, d2xtalk.mpq): data/local/sfx
+            char local[512];
+            snprintf(local, sizeof(local), "/data/local/sfx/%s", path + strlen(SFX_FOLDER));
+            effects[row] = SoundEffect_Load(local, rate);
+        }
+        if (effects[row] == NULL) {
             missing[row] = true;
         }
     }
@@ -114,6 +120,30 @@ static SoundEffect *Sounds__Effect(const int row, const int rate) {
 }
 
 bool Sounds_Exists(const char *name) { return Sounds__FindRow(name) >= 0; }
+
+int Sounds_PlaySpeech(const char *name) {
+    int row = Sounds__FindRow(name);
+    if (row < 0) {
+        return -1;
+    }
+    const int rate = AudioManager_GetOutputRate();
+    if (rate <= 0) {
+        return 0;
+    }
+    load_rate                  = load_rate == 0 ? rate : load_rate;
+    const int group            = DataTable_GetInt(sounds, row, c_group);
+    row                       += group > 1 ? rand() % group : 0;
+    row                        = row < row_count ? row : row_count - 1;
+    const SoundEffect *effect  = Sounds__Effect(row, rate);
+    if (effect == NULL) {
+        return 0; // (no speech MPQ)
+    }
+    const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
+    AudioManager_PlaySpeech(effect, (float)volume / 255.0f);
+    return (int)((long)effect->frame_count * 1000 / rate);
+}
+
+void Sounds_StopSpeech(void) { AudioManager_StopSpeech(); }
 
 bool Sounds_Play(const char *name, const SoundKind kind) {
     int row = Sounds__FindRow(name);
@@ -153,9 +183,9 @@ const char *Sounds_MonsterSound(const char *monstats_id, const MonsterSound whic
     if (monstats == NULL || monsounds == NULL || monstats_id == NULL) {
         return NULL;
     }
-    const int   c_id    = DataTable_GetColumnIndex(monstats, "Id");
+    const int   c_id       = DataTable_GetColumnIndex(monstats, "Id");
     const int   c_monsound = DataTable_GetColumnIndex(monstats, "MonSound");
-    const char *set     = NULL;
+    const char *set        = NULL;
     for (int row = 0; row < DataTable_GetRowCount(monstats); row++) {
         if (Sounds__Compare(DataTable_GetString(monstats, row, c_id), monstats_id) == 0) {
             set = DataTable_GetString(monstats, row, c_monsound);

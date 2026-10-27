@@ -21,7 +21,7 @@ static int Roam__TextNearest(const SceneRoam *roam, const float range, const int
             continue;
         }
         const bool fits = kind == 0 ? Roam__IsCombatant(unit) && !Roam__IsPeaceful(roam, unit) && !unit->ally
-                                    : Roam__CanUse(unit) || (roam->game && Roam__CanTalk(unit));
+                                    : Roam__CanUse(unit) || (roam->game && Roam__CanTalk(roam, unit));
         if (fits) {
             best      = i;
             best_dist = d;
@@ -91,6 +91,7 @@ static TextCell Roam__TextUnit(const SceneRoam *roam, const Unit *unit) {
 
 int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int rows) {
     SceneRoam *roam    = scene_ref;
+    roam->text_mode    = true;
     cols               = cols < 40 ? 40 : (cols > 300 ? 300 : cols);
     rows               = rows < 12 ? 12 : (rows > 120 ? 120 : rows);
     const int map_rows = rows - 5;

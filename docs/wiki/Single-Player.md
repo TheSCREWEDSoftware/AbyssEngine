@@ -312,6 +312,12 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
 
 Click one of the town folk and you walk up to them; a box lists what they do:
 
+- **Talk**: walking up, they greet you (their speech); **Talk** has them say their introduction the first time in a
+  game (the one for your class when they have it), then what they know about this act's quests (the giver's first
+  words, "your task is not complete...", and once it's done, their thanks; each once a game), then gossip. The words
+  roll up in a box at the top as they're spoken (the game's texts and speech: `AkaraIntroGossip1`, `A1Q1InitAkara`,
+  `akara_act1_intro`, ...); a click or walking away ends it. The speech needs `d2speech.mpq` (and `d2xtalk.mpq` for
+  Act 5); without it they talk in text only.
 - **Healers** (Akara, Fara, Ormus, Jamella, Malah) heal your life, mana and stamina (and cure poison) as you come to
   them, the game's way.
 - **Trade** opens their store on the left, with the inventory on the right: tabs for armor, weapons and the rest, what

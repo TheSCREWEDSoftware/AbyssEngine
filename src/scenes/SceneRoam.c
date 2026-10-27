@@ -458,8 +458,17 @@ typedef struct SceneRoam {
     int        npc_option_count;
     ShopStock *shops[ROAM_SHOPS];
     int        shop_count;
-    ShopStock *gamble;   // a gambler's (rolled again each time)
-    int        shop_npc; // trading with (unit index), -1 = none
+    ShopStock *gamble; // a gambler's (rolled again each time)
+    // Talking (SceneRoamNpc.inc): what they say, scrolling in a box while the speech plays, and whose introductions
+    // you've heard this game
+    char     speech_text[3000];
+    uint64_t speech_at;
+    int      speech_ms;
+    int      speech_npc; // unit index, -1 = nobody's talking
+    bool     text_mode;  // shown as text (AbyssEngine --text): speech goes to the message line
+    char     npc_heard[32][40];
+    int      npc_heard_count;
+    int      shop_npc; // trading with (unit index), -1 = none
     // Trading with another player (SceneRoamTrade.inc)
     int        trade_state;
     int        trade_with;     // their player id
@@ -1861,7 +1870,8 @@ static void Roam__ResetPlayer(SceneRoam *roam) {
     }
 }
 
-static bool Roam__CanTalk(const Unit *unit);
+static bool Roam__CanTalk(const SceneRoam *roam, const Unit *unit);
+static bool Roam__NpcHasTalk(const SceneRoam *roam, const Unit *unit);
 static void Roam__TalkTo(SceneRoam *roam, int npc);
 
 // The player opens the object being walked to once close enough (or talks to the town folk). Returns true when that's
@@ -1869,7 +1879,7 @@ static void Roam__TalkTo(SceneRoam *roam, int npc);
 static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     Unit *player = &roam->player;
     Unit *object = &roam->units[roam->use_target];
-    if (roam->game && Roam__CanTalk(object)) {
+    if (roam->game && Roam__CanTalk(roam, object)) {
         if (Roam__Distance(object->x, object->y, player->x, player->y) > 2.5f) {
             return false;
         }
@@ -2032,7 +2042,12 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     roam->npc_menu     = -1;
-    roam->shop_npc     = -1; // (the store too)
+    if (roam->speech_text[0] != '\0') {
+        Sounds_StopSpeech();
+    }
+    roam->speech_npc     = -1;
+    roam->speech_text[0] = '\0';
+    roam->shop_npc       = -1; // (the store too)
     if (roam->online) {
         // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,
         // so their numbers match between games
@@ -4272,6 +4287,10 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         roam->ui_owns_press = left_down || right_down;
         return true; // the party screen's
     }
+    if (Roam__UpdateSpeech(roam, left_click)) {
+        roam->ui_owns_press = left_down || right_down;
+        return true; // the click closed what they were saying
+    }
     if (Roam__UpdateNpcMenu(roam, mouse_x, mouse_y, left_click)) {
         roam->ui_owns_press = left_down || right_down;
         return true; // what the town folk do
@@ -5247,7 +5266,7 @@ static void Roam__Update(SceneRoam *roam) {
                 Roam__ShowMessage(roam, "Too far away: walk up to it to pick it up.");
             }
         } else if (roam->hovered >= 0 && (Roam__CanUse(&roam->units[roam->hovered]) ||
-                                          (roam->game && Roam__CanTalk(&roam->units[roam->hovered])))) {
+                                          (roam->game && Roam__CanTalk(roam, &roam->units[roam->hovered])))) {
             roam->use_target = roam->hovered;
             if (!Roam__TryUse(roam, now)) {
                 roam->use_target = -1; // out of reach
@@ -5303,7 +5322,7 @@ static void Roam__Update(SceneRoam *roam) {
             Roam__ClearPath(&roam->player);
         } else if (!roam->prev_left && roam->hovered >= 0 &&
                    (Roam__CanUse(&roam->units[roam->hovered]) ||
-                    (roam->game && Roam__CanTalk(&roam->units[roam->hovered])))) {
+                    (roam->game && Roam__CanTalk(roam, &roam->units[roam->hovered])))) {
             roam->use_target    = roam->hovered; // walk over and open it
             roam->attack_target = -1;
             roam->item_target   = -1;
@@ -6112,6 +6131,7 @@ static void Roam__Render(SceneRoam *roam) {
     }
     Roam__DrawQuestPanel(roam);
     Roam__DrawNpcMenu(roam, ui_mouse_x, ui_mouse_y);
+    Roam__DrawSpeech(roam);
     Roam__DrawHireling(roam);
     if (now < roam->caption_until) {
         const uint64_t left  = roam->caption_until - now;

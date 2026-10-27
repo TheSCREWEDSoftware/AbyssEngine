@@ -12,6 +12,10 @@ typedef enum MonsterSound { MONSTER_SOUND_ATTACK, MONSTER_SOUND_HIT, MONSTER_SOU
 
 bool Sounds_Play(const char *name, SoundKind kind); // false if there's no such sound
 bool Sounds_Exists(const char *name);
+// Speech (sounds.txt names too: "akara_act1_intro"): one at a time, at the Speech volume. Returns how long it lasts in
+// milliseconds (0: it's in the table but can't be played, no speech MPQ or no sound device; -1: no such sound)
+int  Sounds_PlaySpeech(const char *name);
+void Sounds_StopSpeech(void);
 // The name of a monster's sound (monstats.txt "MonSound" -> MonSounds.txt), NULL if it has none
 const char *Sounds_MonsterSound(const char *monstats_id, MonsterSound which);
 void        Sounds_Release(void);

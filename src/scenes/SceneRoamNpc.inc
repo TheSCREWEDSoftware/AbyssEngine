@@ -10,7 +10,8 @@
 
 // NPC_OFFER + n: hire offer n; NPC_QUEST + n: quest n's reward
 enum {
-    NPC_TRADE,
+    NPC_TALK  = 9,
+    NPC_TRADE = 0,
     NPC_TRAVEL,
     NPC_HIRE,
     NPC_REVIVE,
@@ -38,6 +39,8 @@ static const struct {
 };
 
 static void Roam__Hire(SceneRoam *roam, const HireOffer *offer);
+static void Roam__NpcSpeechNames(const Unit *unit, char *text_name, size_t text_size, char *sound_name,
+                                 size_t sound_size);
 static void Roam__ReviveHireling(SceneRoam *roam);
 
 static const char *const npc_healers[] = {"akara", "fara", "ormus", "jamella", "malah"};
@@ -120,11 +123,23 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
         roam->stamina            = (float)Character_MaxStamina(roam->character);
         roam->player.poison_left = 0.0f;
     }
+    // Their greeting (speech: "akara_greeting_1" and the like)
+    char text_name[24];
+    char sound_name[24];
+    char greeting[48];
+    Roam__NpcSpeechNames(unit, text_name, sizeof(text_name), sound_name, sizeof(sound_name));
+    snprintf(greeting, sizeof(greeting), "%s_greeting_1", sound_name);
+    if (roam->speech_text[0] == '\0') {
+        Sounds_PlaySpeech(greeting);
+    }
     roam->npc_option_count = 0;
     int       waiting[3];
     const int rewards = Roam__QuestsFor(roam, unit, waiting, 3);
     for (int r = 0; r < rewards; r++) {
         roam->npc_options[roam->npc_option_count++] = NPC_QUEST + waiting[r];
+    }
+    if (Roam__NpcHasTalk(roam, unit)) {
+        roam->npc_options[roam->npc_option_count++] = NPC_TALK;
     }
     if (Shop_Vendor(unit->id) != NULL) {
         roam->npc_options[roam->npc_option_count++] = NPC_TRADE;
@@ -152,15 +167,315 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
     roam->npc_menu                              = npc;
 }
 
-static bool Roam__CanTalk(const Unit *unit) {
+// ---------------------------------------------------------------------------------------------------------------------
+// Talking: their introduction the first time (this game), then gossip, as the game's text (string tables:
+// AkaraIntroGossip1, AkaraGossip3, CainAct2Gossip1, ...) and speech (sounds.txt: akara_act1_intro, akara_act1_gossip_3,
+// ...)
+
+// Their names in the string keys ("Akara", "CainAct2" tried first) and in sounds.txt ("akara")
+static void Roam__NpcSpeechNames(const Unit *unit, char *text_name, const size_t text_size, char *sound_name,
+                                 const size_t sound_size) {
+    char base[24];
+    int  n = 0;
+    for (const char *c = unit->id; *c != '\0' && n < (int)sizeof(base) - 1; c++) {
+        if (*c != '-' && !(*c >= '0' && *c <= '9')) {
+            base[n++] = *c;
+        }
+    }
+    base[n] = '\0';
+    snprintf(sound_name, sound_size, "%s", base);
+    if (strcasecmp(base, "greiz") == 0) {
+        snprintf(text_name, text_size, "Griez"); // (the strings spell him so)
+    } else if (strcasecmp(base, "qualkehk") == 0) {
+        snprintf(text_name, text_size, "QualKehk");
+    } else {
+        snprintf(text_name, text_size, "%c%s", toupper((unsigned char)base[0]), base + 1);
+    }
+}
+
+static const char *Roam__NpcString(const char *key) { return StringTable_Find(key); }
+
+// The gossip lines' key ("AkaraGossip" or "CainAct2Gossip") and how many there are
+static int Roam__NpcGossip(const SceneRoam *roam, const Unit *unit, char *prefix, const size_t size) {
+    char      text_name[24];
+    char      sound_name[24];
+    char      key[64];
+    const int act = Roam__Act(roam) + 1;
+    Roam__NpcSpeechNames(unit, text_name, sizeof(text_name), sound_name, sizeof(sound_name));
+    for (int form = 0; form < 2; form++) {
+        if (form == 0) {
+            snprintf(prefix, size, "%sAct%dGossip", text_name, act);
+        } else {
+            snprintf(prefix, size, "%sGossip", text_name);
+        }
+        int count = 0;
+        for (;; count++) {
+            snprintf(key, sizeof(key), "%s%d", prefix, count + 1);
+            if (Roam__NpcString(key) == NULL) {
+                break;
+            }
+        }
+        if (count > 0) {
+            return count;
+        }
+    }
+    return 0;
+}
+
+static bool Roam__NpcHasTalk(const SceneRoam *roam, const Unit *unit) {
+    char prefix[64];
+    return unit->npc && !unit->is_object && Roam__NpcGossip(roam, unit, prefix, sizeof(prefix)) > 0;
+}
+
+static void Roam__CloseSpeech(SceneRoam *roam) {
+    if (roam->speech_text[0] != '\0') {
+        Sounds_StopSpeech();
+    }
+    roam->speech_text[0] = '\0';
+    roam->speech_npc     = -1;
+}
+
+static bool Roam__NpcHeard(SceneRoam *roam, const char *key, const bool mark) {
+    for (int h = 0; h < roam->npc_heard_count; h++) {
+        if (strcasecmp(roam->npc_heard[h], key) == 0) {
+            return true;
+        }
+    }
+    if (mark && roam->npc_heard_count < (int)(sizeof(roam->npc_heard) / sizeof(roam->npc_heard[0]))) {
+        snprintf(roam->npc_heard[roam->npc_heard_count++], sizeof(roam->npc_heard[0]), "%s", key);
+    }
+    return false;
+}
+
+static uint8_t *Roam__QuestState(SceneRoam *roam, int index);
+
+// What they say about this act's quests: the one you're on (the giver's first words "A1Q1InitAkara", then
+// "AfterInit" / "EarlyReturn"), or one done ("Successful"); each once a game. The speech is "akara_act1_q1_init" and so
+// on
+static const char *Roam__NpcQuestLine(SceneRoam *roam, const char *text_name, const char *sound_name, const int act,
+                                      char *sound, const size_t sound_size) {
+    if (!roam->game) {
+        return NULL;
+    }
+    for (int q = 0; q < QUEST_COUNT; q++) {
+        const Quest *quest = Quests_Get(q);
+        if (quest->act != act - 1) {
+            continue;
+        }
+        const uint8_t state = *Roam__QuestState(roam, q);
+        static const struct {
+            const char *key;
+            const char *sound;
+            bool        done; // for a finished quest
+            bool        once; // (each once a game: after that, gossip)
+        } lines[] = {
+            {"Init",        "init",    false, true},
+            {"EarlyReturn", "early",   false, true},
+            {"AfterInit",   "after",   false, true},
+            {"Successful",  "success", true,  true},
+        };
+        for (size_t l = 0; l < sizeof(lines) / sizeof(lines[0]); l++) {
+            if (lines[l].done != (state != QUEST_OPEN)) {
+                continue;
+            }
+            char key[64];
+            snprintf(key, sizeof(key), "A%dQ%d%s%s", act, quest->number, lines[l].key, text_name);
+            const char *text = Roam__NpcString(key);
+            if (text == NULL || (lines[l].once && Roam__NpcHeard(roam, key, false))) {
+                continue;
+            }
+            if (lines[l].once) {
+                Roam__NpcHeard(roam, key, true);
+            }
+            snprintf(sound, sound_size, "%s_act%d_q%d_%s", sound_name, act, quest->number, lines[l].sound);
+            return text;
+        }
+    }
+    return NULL;
+}
+
+// Their introduction (the first time this game; one for your class when they have it), what they have to say about
+// the quest you're on, or a piece of gossip
+static void Roam__NpcSpeak(SceneRoam *roam, const int npc) {
+    const Unit *unit = &roam->units[npc];
+    char        text_name[24];
+    char        sound_name[24];
+    Roam__NpcSpeechNames(unit, text_name, sizeof(text_name), sound_name, sizeof(sound_name));
+    const int                act                                = Roam__Act(roam) + 1;
+    static const char *const class_short[CHARACTER_CLASS_COUNT] = {"Ama", "Sor", "Nec", "Pal", "Bar", "Dru", "Ass"};
+    const char              *cls   = roam->character != NULL ? class_short[roam->character->class_id] : "";
+    bool                     heard = false;
+    for (int h = 0; h < roam->npc_heard_count && !heard; h++) {
+        heard = strcasecmp(roam->npc_heard[h], unit->id) == 0;
+    }
+    const char *text = NULL;
+    char        sound[64];
+    sound[0] = '\0';
+    if (!heard) {
+        // The introduction: by act, by class, in the forms the strings use
+        const char *forms[] = {"%sAct%dIntro%sGossip1", "%sAct%dIntroGossip1", "%sActIntro%sGossip1",
+                               "%sActIntroGossip1",     "%sIntro%sGossip1",    "%sIntroGossip1"};
+        char        key[64];
+        for (size_t f = 0; f < sizeof(forms) / sizeof(forms[0]) && text == NULL; f++) {
+            switch (f) {
+            case 0:
+                snprintf(key, sizeof(key), forms[f], text_name, act, cls);
+                break;
+            case 1:
+                snprintf(key, sizeof(key), forms[f], text_name, act);
+                break;
+            case 2:
+            case 4:
+                snprintf(key, sizeof(key), forms[f], text_name, cls);
+                break;
+            default:
+                snprintf(key, sizeof(key), forms[f], text_name);
+                break;
+            }
+            text = Roam__NpcString(key);
+        }
+        if (text != NULL) {
+            char lower[8];
+            snprintf(lower, sizeof(lower), "%c%c%c", tolower((unsigned char)cls[0]), cls[1], cls[2]);
+            snprintf(sound, sizeof(sound), "%s_act%d_intro_%s", sound_name, act, lower);
+            if (!Sounds_Exists(sound)) {
+                snprintf(sound, sizeof(sound), "%s_act%d_intro", sound_name, act);
+            }
+            if (roam->npc_heard_count < (int)(sizeof(roam->npc_heard) / sizeof(roam->npc_heard[0]))) {
+                snprintf(roam->npc_heard[roam->npc_heard_count++], sizeof(roam->npc_heard[0]), "%s", unit->id);
+            }
+        }
+    }
+    if (text == NULL) {
+        text = Roam__NpcQuestLine(roam, text_name, sound_name, act, sound, sizeof(sound));
+    }
+    if (text == NULL) {
+        char      prefix[64];
+        const int count = Roam__NpcGossip(roam, unit, prefix, sizeof(prefix));
+        if (count == 0) {
+            return;
+        }
+        const int pick = Roam__Roll(1, count);
+        char      key[80];
+        snprintf(key, sizeof(key), "%s%d", prefix, pick);
+        text = Roam__NpcString(key);
+        snprintf(sound, sizeof(sound), "%s_act%d_gossip_%d", sound_name, act, pick);
+    }
+    if (text == NULL) {
+        return;
+    }
+    // (some start with a number on its own line: the game's scrolling speed)
+    const char *start = text;
+    while (*start >= '0' && *start <= '9') {
+        start++;
+    }
+    text = start != text && (*start == '\n' || *start == '\r') ? start + 1 : text;
+    snprintf(roam->speech_text, sizeof(roam->speech_text), "%s", text);
+    const int ms     = Sounds_PlaySpeech(sound);
+    roam->speech_ms  = ms > 0 ? ms : 2500 + ((int)strlen(text) * 55); // (no speech: about reading speed)
+    roam->speech_at  = SDL_GetTicks64();
+    roam->speech_npc = npc;
+    if (roam->text_mode) {
+        Roam__ShowMessage(roam, text); // (text mode has no box: the message line)
+    }
+}
+
+// Clicks close it, and so does walking away; true when it took the click
+static bool Roam__UpdateSpeech(SceneRoam *roam, const bool click) {
+    if (roam->speech_text[0] == '\0') {
+        return false;
+    }
+    const Unit *unit =
+        roam->speech_npc >= 0 && roam->speech_npc < roam->unit_count ? &roam->units[roam->speech_npc] : NULL;
+    if (unit == NULL || Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) > NPC_RANGE + 4.0f ||
+        SDL_GetTicks64() > roam->speech_at + (uint64_t)roam->speech_ms + 1500) {
+        Roam__CloseSpeech(roam);
+        return false;
+    }
+    if (click || InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        Roam__CloseSpeech(roam);
+        return true;
+    }
+    return false;
+}
+
+// The box at the top: their words, rolling up as they're spoken (like the game's)
+static void Roam__DrawSpeech(SceneRoam *roam) {
+    if (roam->speech_text[0] == '\0' || roam->item_label == NULL) {
+        return;
+    }
+    // Wrapped to the box (the strings have their own line breaks too)
+    enum { SPEECH_LINES = 48, SPEECH_W = 500 };
+    char lines[SPEECH_LINES][160];
+    int  count = 0;
+    char word_line[160];
+    word_line[0]  = '\0';
+    const char *c = roam->speech_text;
+    while (*c != '\0' && count < SPEECH_LINES) {
+        // Next word (or a line break)
+        if (*c == '\n' || (*c == '\\' && c[1] == 'n')) {
+            snprintf(lines[count++], sizeof(lines[0]), "%s", word_line);
+            word_line[0]  = '\0';
+            c            += *c == '\n' ? 1 : 2;
+            continue;
+        }
+        const char *end = c;
+        while (*end != '\0' && *end != ' ' && *end != '\n' && !(*end == '\\' && end[1] == 'n')) {
+            end++;
+        }
+        char attempt[320];
+        snprintf(attempt, sizeof(attempt), "%s%s%.*s", word_line, word_line[0] != '\0' ? " " : "", (int)(end - c), c);
+        int w = 0;
+        Label_SetText(roam->item_label, attempt);
+        Label_GetSize(roam->item_label, &w, NULL);
+        if (w > SPEECH_W && word_line[0] != '\0') {
+            snprintf(lines[count++], sizeof(lines[0]), "%s", word_line);
+            snprintf(word_line, sizeof(word_line), "%.*s", (int)(end - c), c);
+        } else {
+            snprintf(word_line, sizeof(word_line), "%.159s", attempt);
+        }
+        c = *end == ' ' ? end + 1 : end;
+    }
+    if (word_line[0] != '\0' && count < SPEECH_LINES) {
+        snprintf(lines[count++], sizeof(lines[0]), "%s", word_line);
+    }
+    const int      line_h  = 18;
+    const int      visible = 9;
+    const SDL_Rect box     = {400 - (SPEECH_W / 2) - 14, 60, SPEECH_W + 28, (visible * line_h) + 16};
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 200);
+    SDL_RenderFillRect(sdl_renderer, &box);
+    // Rolling: still for the first second, then up so the last line shows as the speech ends
+    const uint64_t elapsed = SDL_GetTicks64() - roam->speech_at;
+    const int      extra   = count > visible ? (count - visible) * line_h : 0;
+    const int      run     = roam->speech_ms > 1000 ? roam->speech_ms - 1000 : 1;
+    int            offset  = elapsed > 1000 ? (int)((long)(elapsed - 1000) * extra / run) : 0;
+    offset                 = offset > extra ? extra : offset;
+    SDL_Rect clip          = {box.x, box.y + 8, box.w, visible * line_h};
+    SDL_RenderSetClipRect(sdl_renderer, &clip);
+    Label_SetColor(roam->item_label, 0xFF, 0xFF, 0xFF, 0xFF);
+    for (int l = 0; l < count; l++) {
+        const int y = box.y + 8 + (l * line_h) - offset;
+        if (y < box.y - line_h || y > box.y + box.h) {
+            continue;
+        }
+        Label_SetText(roam->item_label, lines[l]);
+        int w = 0;
+        Label_GetSize(roam->item_label, &w, NULL);
+        Label_Draw(roam->item_label, 400 - (w / 2), y);
+    }
+    SDL_RenderSetClipRect(sdl_renderer, NULL);
+}
+
+static bool Roam__CanTalk(const SceneRoam *roam, const Unit *unit) {
     bool gives = false;
     for (int q = 0; q < QUEST_COUNT && !gives; q++) {
         gives = Quests_Get(q)->giver != NULL && strcasecmp(Quests_Get(q)->giver, unit->id) == 0;
     }
     return unit->npc && !unit->is_object &&
            (Shop_Vendor(unit->id) != NULL || Roam__NpcTravel(unit) >= 0 || Roam__NpcHeals(unit) ||
-            Hirelings_Sells(unit->id) || Shop_Gambles(unit->id) || Shop_Repairs(unit->id) ||
-            Shop_Identifies(unit->id) || gives);
+            Roam__NpcHasTalk(roam, unit) || Hirelings_Sells(unit->id) || Shop_Gambles(unit->id) ||
+            Shop_Repairs(unit->id) || Shop_Identifies(unit->id) || gives);
 }
 
 static SDL_Rect Roam__NpcMenuRow(const int row) {
@@ -189,6 +504,8 @@ static const char *Roam__NpcOptionText(SceneRoam *roam, const int option) {
         snprintf(text, sizeof(text), "Resurrect your hireling: %d gold",
                  Hirelings_ReviveCost(roam->character->hireling_level));
         return text;
+    case NPC_TALK:
+        return "Talk";
     case NPC_TRADE:
         return "Trade";
     case NPC_GAMBLE:
@@ -248,6 +565,9 @@ static void Roam__NpcChoose(SceneRoam *roam, const int option) {
     }
     case NPC_REVIVE:
         Roam__ReviveHireling(roam);
+        break;
+    case NPC_TALK:
+        Roam__NpcSpeak(roam, npc);
         break;
     case NPC_TRADE:
         Roam__OpenShop(roam, npc, false);
