@@ -522,6 +522,7 @@ static Map *Places__LoadOutdoorsFrom(const Place *requested, const int root) {
         Map_Destroy(&maps[i]);
     }
     Map_Finish(world);
+    Map_FillSeams(world); // (the gaps between pieces and areas)
 
     world->has_start = true;
     world->start_x   = world->areas[0].start_x;

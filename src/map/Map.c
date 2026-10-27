@@ -561,6 +561,42 @@ void Map_Finish(Map *map) {
     Map__ResolveAll(map);
 }
 
+// Outdoors, a cell left without floor between two that have it (pieces put side by side a tile apart) shows as a
+// black seam you can't cross: it gets its neighbour's floor. Twice, for seams two tiles wide.
+void Map_FillSeams(Map *map) {
+    for (int pass = 0; pass < 2; pass++) {
+        for (int ty = 0; ty < map->height; ty++) {
+            for (int tx = 0; tx < map->width; tx++) {
+                const int c     = (ty * map->width) + tx;
+                bool      empty = true;
+                for (int f = 0; f < map->floor_layer_count && empty; f++) {
+                    empty = map->floor_tiles[f][c] == NULL;
+                }
+                for (int w = 0; w < map->wall_layer_count && empty; w++) {
+                    empty = map->wall_tiles[w][c] == NULL;
+                }
+                if (!empty) {
+                    continue;
+                }
+                const int  left  = tx > 0 ? c - 1 : -1;
+                const int  right = tx + 1 < map->width ? c + 1 : -1;
+                const int  up    = ty > 0 ? c - map->width : -1;
+                const int  down  = ty + 1 < map->height ? c + map->width : -1;
+                const bool row =
+                    left >= 0 && right >= 0 && map->floor_tiles[0][left] != NULL && map->floor_tiles[0][right] != NULL;
+                const bool col =
+                    up >= 0 && down >= 0 && map->floor_tiles[0][up] != NULL && map->floor_tiles[0][down] != NULL;
+                if (!row && !col) {
+                    continue;
+                }
+                const int from         = row ? left : up;
+                map->floors[0][c]      = map->floors[0][from];
+                map->floor_tiles[0][c] = map->floor_tiles[0][from];
+            }
+        }
+    }
+}
+
 void Map_AddExit(Map *map, const int target_level, const int x0, const int y0, const int x1, const int y1,
                  const float arrive_x, const float arrive_y) {
     if (map->exit_count >= MAP_MAX_EXITS || target_level <= 0) {

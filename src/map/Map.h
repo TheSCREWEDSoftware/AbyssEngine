@@ -137,6 +137,7 @@ void Map_StampDS1(Map *map, const DS1 *ds1, int tx, int ty, unsigned flags);
 // Copies another map's tiles (where it has any), tile sets and entities in at (tx, ty); exits aren't copied
 void Map_StampMap(Map *map, const Map *source, int tx, int ty);
 void Map_Finish(Map *map);
+void Map_FillSeams(Map *map); // (after Map_Finish) outdoors: one- or two-tile gaps without floor get their neighbour's
 
 // Exits to other areas
 void           Map_AddExit(Map *map, int target_level, int x0, int y0, int x1, int y1, float arrive_x, float arrive_y);
