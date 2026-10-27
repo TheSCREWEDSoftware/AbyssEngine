@@ -222,6 +222,31 @@ bool MonsterStats_SuperUnique(const char *name, char *class_out, const int class
     return false;
 }
 
+int MonsterStats_SuperUniqueMods(const char *name, int mods[3]) {
+    MonsterStats__Load();
+    mods[0] = mods[1] = mods[2] = 0;
+    if (superuniques == NULL || name == NULL) {
+        return 0;
+    }
+    const int c_name = DataTable_GetColumnIndex(superuniques, "Superunique");
+    for (int s = 0; s < DataTable_GetRowCount(superuniques); s++) {
+        if (MonsterStats__Compare(DataTable_GetString(superuniques, s, c_name), name) != 0) {
+            continue;
+        }
+        int count = 0;
+        for (int m = 0; m < 3; m++) {
+            char column[8];
+            snprintf(column, sizeof(column), "Mod%d", m + 1);
+            const int mod = DataTable_GetInt(superuniques, s, DataTable_GetColumnIndex(superuniques, column));
+            if (mod > 0) {
+                mods[count++] = mod;
+            }
+        }
+        return count;
+    }
+    return 0;
+}
+
 const char *MonsterStats_PresetSuperUnique(const int act, const int index) {
     MonsterStats__Load();
     if (monpreset == NULL || superuniques == NULL) {

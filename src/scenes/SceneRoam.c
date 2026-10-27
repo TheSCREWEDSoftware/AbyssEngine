@@ -2500,6 +2500,38 @@ static void Roam__UniquePower(Unit *unit, const int power) {
     snprintf(unit->power + used, sizeof(unit->power) - used, "%s%s", used == 0 ? "" : ", ", names[power % 12]);
 }
 
+// MonUMod.txt's id -> the engine's power (Roam__UniquePower), -1 for one it hasn't
+static int Roam__PowerOfMod(const int mod) {
+    switch (mod) {
+    case 5:
+        return 0; // strong
+    case 6:
+        return 1; // fast
+    case 28:
+        return 2; // stone skin
+    case 9:
+        return 3; // fire
+    case 18:
+        return 4; // cold
+    case 17:
+        return 5; // lightning
+    case 30:
+        return 6; // aura
+    case 8:
+        return 7; // magic resistant
+    case 7:
+        return 8; // cursed
+    case 25:
+        return 9; // mana burn
+    case 27:
+        return 10; // spectral hit
+    case 26:
+        return 11; // teleport
+    default:
+        return -1;
+    }
+}
+
 static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
     MonsterStats stats;
     const bool   have = MonsterStats_GetAtLevel(unit->id, 0, &stats);
@@ -2513,7 +2545,15 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
                 snprintf(unit->treasure, sizeof(unit->treasure), "%s", tc);
             }
         }
-        unit->rank        = RANK_SUPER_UNIQUE;
+        unit->rank = RANK_SUPER_UNIQUE;
+        // Its own powers (SuperUniques.txt): the ones the engine has
+        int mods[3];
+        for (int m = 0, count = MonsterStats_SuperUniqueMods(mark + 1, mods); m < count; m++) {
+            const int power = Roam__PowerOfMod(mods[m]);
+            if (power >= 0) {
+                Roam__UniquePower(unit, power);
+            }
+        }
         unit->max_hp     *= 4;
         unit->damage_min += unit->damage_min / 2;
         unit->damage_max += unit->damage_max / 2;
@@ -7027,7 +7067,7 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
         if (unit->rank == RANK_CHAMPION && unit->champion != CHAMPION_PLAIN) {
             static const char *const kinds[] = {"", "Fanatic", "Berserker", "Ghostly", "Possessed"};
             snprintf(text, sizeof(text), "%s", kinds[unit->champion < 5 ? unit->champion : 0]);
-        } else if (unit->rank == RANK_UNIQUE && unit->power[0] != '\0') {
+        } else if ((unit->rank == RANK_UNIQUE || unit->rank == RANK_SUPER_UNIQUE) && unit->power[0] != '\0') {
             snprintf(text, sizeof(text), "%s", unit->power);
         }
         for (int e = 0; e < ELEMENT_COUNT; e++) {

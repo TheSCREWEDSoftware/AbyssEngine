@@ -46,6 +46,8 @@ bool MonsterStats_GetAtLevel(const char *monstats_id, int area_level, MonsterSta
 int  MonsterStats_AreaLevel(int level_id); // Levels.txt MonLvl for the difficulty (0: none)
 // A super unique (SuperUniques.txt, by its Superunique name): its base monster and what it drops at the difficulty
 bool MonsterStats_SuperUnique(const char *name, char *class_out, int class_size, char *treasure_out, int treasure_size);
+// Its powers (SuperUniques.txt Mod1-3: MonUMod.txt ids): how many
+int         MonsterStats_SuperUniqueMods(const char *name, int mods[3]);
 const char *MonsterStats_PresetSuperUnique(int act, int index); // the super unique a DS1 preset places, or NULL
 // monstats Id for a DS1 monster preset (act 0..4, index into that act's MonPreset rows); NULL for spawn markers
 const char *MonsterStats_PresetMonster(int act, int index);
