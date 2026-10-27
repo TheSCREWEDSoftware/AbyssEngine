@@ -243,6 +243,7 @@ typedef struct Unit {
     bool        used;           // opened / activated: can't be clicked again
     bool        locked;         // a locked chest: a key (or an Assassin) opens it
     bool        trapped;        // goes off when opened
+    uint64_t    ready_at;       // a used shrine that comes back: when (0: never)
     int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
     bool        hireling;       // the character's hireling (an ally that comes along from area to area)
@@ -1590,7 +1591,8 @@ static void Roam__ApplyUsedObjects(SceneRoam *roam) {
 
 static void     Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void     Roam__RefreshList(SceneRoam *roam);
-static void     Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
+static void     Roam__UseShrine(SceneRoam *roam, Unit *shrine, uint64_t now);
+static void     Roam__RechargeShrines(SceneRoam *roam, uint64_t now);
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
 static void     Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
 
@@ -2870,6 +2872,9 @@ static void Roam__UpdateAtmosphere(SceneRoam *roam) {
 
 // The area's odd sounds now and then (birds, drips, distant howls): SoundEnviron.txt's event, about every Event Delay
 static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
+    if (roam->game && !roam->online) {
+        Roam__RechargeShrines(roam, SDL_GetTicks64());
+    }
     // The rain's sound, as loud as the shower is heavy (snow falls quietly)
     const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, now);
     Sounds_PlayWeather(rain > 0.02f ? "scene_rain" : NULL, rain);

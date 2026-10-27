@@ -171,7 +171,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   gems a grade up, or a chipped one), Portal (a Town Portal), Exploding and Poison (a pile of exploding or gas
   potions), Fire (everything near it, you too, loses half its life) and Monster (the nearest
   monster becomes a champion), the rarer ones less often. A booster lasts its time from the table (one at a time: a
-  new one replaces it) and shows in the message line. **Wells** fill life, mana and stamina. Each is used once.
+  new one replaces it) and shows in the message line. **Wells** fill life, mana and stamina. Shrines with a reset time in `shrines.txt` light up again after it (5 minutes for most boosters; Single Player); the rest, and wells, are used once.
 - The game is **saved** when you travel, level up, die and exit. Saves are text files in the `save` folder next to
   `abyss.ini` (`<name>.abc`); they're not compatible with the original game's `.d2s` files.
 

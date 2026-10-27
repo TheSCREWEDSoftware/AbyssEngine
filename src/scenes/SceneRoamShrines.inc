@@ -43,7 +43,9 @@ static const ShrineInfo *Roam__ShrineInfo(const int code) {
     return NULL;
 }
 
-// shrines.txt's row for a code: its two arguments, how long it lasts (frames) and how rare it is
+// shrines.txt's row for a code: its two arguments, how long it lasts (frames), how rare it is and how many minutes
+// before the shrine can be used again (0: never)
+static int  shrine_reset_minutes = 0; // (of the last row looked up)
 static bool Roam__ShrineRow(const int code, int *arg0, int *arg1, int *frames, int *rarity) {
     static DataTable *table = NULL;
     if (table == NULL) {
@@ -55,10 +57,11 @@ static bool Roam__ShrineRow(const int code, int *arg0, int *arg1, int *frames, i
     const int c_code = DataTable_GetColumnIndex(table, "Code");
     for (int r = 0; r < DataTable_GetRowCount(table); r++) {
         if (DataTable_GetInt(table, r, c_code) == code) {
-            *arg0   = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Arg0"));
-            *arg1   = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Arg1"));
-            *frames = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Duration in frames"));
-            *rarity = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "rarity"));
+            *arg0                = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Arg0"));
+            *arg1                = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Arg1"));
+            *frames              = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "Duration in frames"));
+            *rarity              = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "rarity"));
+            shrine_reset_minutes = DataTable_GetInt(table, r, DataTable_GetColumnIndex(table, "reset time in minutes"));
             return true;
         }
     }
@@ -185,14 +188,18 @@ static void Roam__GemShrine(SceneRoam *roam, const Unit *shrine) {
 }
 
 // Using a shrine: its effect on you (multiplayer: on whoever the server let use it)
-static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, const uint64_t now) {
+static void Roam__UseShrine(SceneRoam *roam, Unit *shrine, const uint64_t now) {
     if (!roam->game || roam->character == NULL || (roam->online && !roam->use_is_ours)) {
         return;
     }
     const int         code = Roam__PickShrine(roam, shrine->object.parm[0]);
     const ShrineInfo *info = Roam__ShrineInfo(code);
     int               arg0 = 0, arg1 = 0, frames = 0, rarity = 0;
+    shrine_reset_minutes = 0;
     Roam__ShrineRow(code, &arg0, &arg1, &frames, &rarity);
+    // Some come back after a few minutes, like the game's (Single Player: the server keeps a multiplayer game's)
+    shrine->ready_at =
+        !roam->online && shrine_reset_minutes > 0 ? SDL_GetTicks64() + ((uint64_t)shrine_reset_minutes * 60000) : 0;
     Character  *character = roam->character;
     const float max_mana  = (float)Character_MaxMana(character);
     char        message[96];
@@ -282,6 +289,19 @@ static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, const uint64_t 
         break;
     }
     Roam__ShowMessage(roam, message);
+}
+
+// Shrines whose time has come round light up again
+static void Roam__RechargeShrines(SceneRoam *roam, const uint64_t now) {
+    for (int i = 0; i < roam->unit_count; i++) {
+        Unit *unit = &roam->units[i];
+        if (unit->is_object && unit->used && unit->ready_at != 0 && now >= unit->ready_at) {
+            unit->used     = false;
+            unit->ready_at = 0;
+            snprintf(unit->object_mode, sizeof(unit->object_mode), "%s", unit->object.idle_mode);
+            Roam__SetState(unit, UNIT_IDLE, now);
+        }
+    }
 }
 
 // A well: life, mana and stamina back
