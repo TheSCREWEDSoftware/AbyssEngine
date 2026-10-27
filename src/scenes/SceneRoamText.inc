@@ -98,7 +98,7 @@ static void Roam__TextItemName(const Item *item, char *text, const size_t size) 
     char name1[96];
     char name2[96];
     Affixes_Name(item, name1, sizeof(name1), name2, sizeof(name2));
-    static const char *const qualities[ITEM_QUALITY_COUNT] = {"", "magic", "rare", "unique", "runeword", "set"};
+    static const char *const qualities[ITEM_QUALITY_COUNT] = {"", "magic", "rare", "unique", "runeword", "set", "crafted"};
     const char              *quality = item->quality < ITEM_QUALITY_COUNT ? qualities[item->quality] : "";
     snprintf(text, size, "%s%s%s%s%s%s%s", name1, name2[0] != '\0' ? " - " : "", name2, quality[0] != '\0' ? " (" : "",
              quality, quality[0] != '\0' ? ")" : "", item->unidentified ? " [unidentified]" : "");

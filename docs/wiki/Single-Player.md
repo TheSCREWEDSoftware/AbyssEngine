@@ -260,6 +260,7 @@ Drops are rolled the way the game words them, from its own tables:
 | Rare | Yellow | 1 in 20 | A made-up name (`RarePrefix.txt` + `RareSuffix.txt`: "Grim Bite") and 3 to 6 affixes (only the ones the game allows on rares, never two of the same kind) |
 | Unique | Gold | 1 in 100, when the item has a unique of the monster's level or below | One of `UniqueItems.txt`'s named items ("The Gnasher"), with its own picture and properties |
 | Set | Green | 1 in 50, when the item is a piece of a set of the monster's level or below | A piece of one of the game's sets (`SetItems.txt`: "Civerb's Ward"), with its own properties; wearing more pieces of the set adds the piece's bonuses and the set's (`Sets.txt`: two worn, three, ..., the whole set). The tooltip says how many you wear |
+| Crafted | Orange | Made in the cube (`cubemain.txt`'s crafting recipes: a magic item, a jewel, a rune and a perfect gem) | Named like a rare, the recipe's own magic and 1 to 4 random affixes (more at higher levels) |
 
 Affixes are picked as the game picks them: the item's type must suit them (`itype` / `etype`), their level can't be
 above the item's (the monster's level), and the more common ones (`frequency`) come up more. Only affixes whose every
@@ -412,8 +413,9 @@ the stash) and **Transmute**, which makes whatever recipe of the game's (`cubema
 quest items, three gems or runes into the next grade (with a gem for the higher runes), potions, three rings into an
 amulet (and back), rerolling a magic item with three perfect gems, magic weapons with a socket from three gems, the
 prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing, unique and rare weapons
-and armor made exceptional or elite (their magic kept). Recipes that need what this engine doesn't have (crafted items,
-low and superior quality, the Pandemonium portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
+and armor made exceptional or elite (their magic kept), **crafted items** (Hit Power, Blood, Caster and Safety: the
+magic item can be its exceptional or elite version too). Recipes that need what this engine doesn't have (low and
+superior quality, the Pandemonium portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
 in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
 the Cow King). What's inside is kept with the character; any cube you carry opens it.
 In multiplayer games bosses that aren't in the presets aren't put there yet.

@@ -107,6 +107,7 @@ enum {
     NEED_NORMAL_TIER = 128, // bas: a normal version (not exceptional or elite)
     NEED_EXCEPTIONAL = 256,
     NEED_ELITE       = 512,
+    NEED_ANY_TIER    = 1024, // upg: the exceptional and elite versions of it do too
 };
 
 typedef struct RecipeInput {
@@ -191,8 +192,10 @@ static bool Cube__ParseInput(const char *text, RecipeInput *input) {
             input->needs |= NEED_EXCEPTIONAL;
         } else if (strcmp(token, "eli") == 0) {
             input->needs |= NEED_ELITE;
+        } else if (strcmp(token, "upg") == 0) {
+            input->needs |= NEED_ANY_TIER;
         } else if (strcmp(token, "noe") != 0) {
-            return false; // low, hiq, crf, upg, bas, exc, eli, eth: not in this engine
+            return false; // low, hiq, crf, eth: not in this engine
         }
         token = comma != NULL ? comma + 1 : NULL;
     }
@@ -233,6 +236,8 @@ static bool Cube__ParseOutput(const char *text, Recipe *recipe) {
             recipe->quality = ITEM_RARE;
         } else if (strcmp(token, "uni") == 0) {
             recipe->quality = ITEM_UNIQUE;
+        } else if (strcmp(token, "crf") == 0) {
+            recipe->quality = ITEM_CRAFTED;
         } else if (strncmp(token, "pre=", 4) == 0) {
             recipe->prefix = atoi(token + 4);
         } else if (strncmp(token, "suf=", 4) == 0) {
@@ -334,7 +339,9 @@ static bool Cube__Matches(const RecipeInput *input, const Item *item) {
     if (base == NULL) {
         return false;
     }
-    if (strcmp(input->code, item->code) != 0 && strcmp(input->code, "any") != 0 && !Items_IsA(base, input->code)) {
+    const bool family = (input->needs & NEED_ANY_TIER) && strcmp(base->tiers[0], input->code) == 0;
+    if (strcmp(input->code, item->code) != 0 && strcmp(input->code, "any") != 0 && !Items_IsA(base, input->code) &&
+        !family) {
         return false;
     }
     const int needs = input->needs;

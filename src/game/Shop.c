@@ -219,7 +219,7 @@ static int Shop__Value(const Item *item) {
         return 1;
     }
     long             value                            = base->cost > 0 ? base->cost : 1;
-    static const int quality_mult[ITEM_QUALITY_COUNT] = {1, 3, 5, 8, 8, 6};
+    static const int quality_mult[ITEM_QUALITY_COUNT] = {1, 3, 5, 8, 8, 6, 6};
     value *= quality_mult[item->quality < ITEM_QUALITY_COUNT ? item->quality : 0];
     value += (long)item->mod_count * 50;
     value += (long)item->sockets * 100;

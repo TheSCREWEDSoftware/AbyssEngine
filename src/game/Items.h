@@ -21,7 +21,8 @@ typedef enum ItemQuality {
     ITEM_RARE,
     ITEM_UNIQUE,
     ITEM_RUNEWORD,
-    ITEM_SET, // green: one of a set (SetItems.txt; name1 is its row), more magic for each piece of it worn
+    ITEM_SET,     // green: one of a set (SetItems.txt; name1 is its row), more magic for each piece of it worn
+    ITEM_CRAFTED, // orange: made in the cube (a recipe's own magic, and a few random affixes), named like a rare
     ITEM_QUALITY_COUNT
 } ItemQuality;
 

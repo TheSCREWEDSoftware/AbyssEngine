@@ -817,17 +817,29 @@ bool Affixes_MakeRare(Item *item, const int item_level) {
     return Affixes__MakeRare(item, base, item_level > 0 ? item_level : 1);
 }
 
+static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, int level, int wanted, ItemQuality quality);
+
 static bool Affixes__MakeRare(Item *item, const ItemBase *base, const int level) {
+    return Affixes__MakeRareCount(item, base, level, Affixes__Roll(3, 6), ITEM_RARE);
+}
+
+// Crafted: one to four random affixes (more for higher levels), the rest is the recipe's
+static bool Affixes__MakeCrafted(Item *item, const ItemBase *base, const int level) {
+    const int most = level < 31 ? 1 : (level < 51 ? 2 : (level < 71 ? 3 : 4));
+    return Affixes__MakeRareCount(item, base, level, Affixes__Roll(1, most), ITEM_CRAFTED);
+}
+
+static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, const int level, const int wanted,
+                                   const ItemQuality quality) {
     const int first  = Affixes__PickRareName(rare_prefixes, rare_prefix_count, base);
     const int second = Affixes__PickRareName(rare_suffixes, rare_suffix_count, base);
     if (first < 0 || second < 0) {
         return false;
     }
-    int       groups[6];
-    int       group_count = 0;
-    int       prefix_left = 3;
-    int       suffix_left = 3;
-    const int wanted      = Affixes__Roll(3, 6);
+    int groups[6];
+    int group_count = 0;
+    int prefix_left = 3;
+    int suffix_left = 3;
     for (int a = 0; a < wanted * 3 && group_count < wanted; a++) {
         const bool        prefix = (prefix_left > 0 && rand() % 2 == 0) || suffix_left == 0;
         const AffixTable *table  = prefix ? &prefixes : &suffixes;
@@ -843,7 +855,7 @@ static bool Affixes__MakeRare(Item *item, const ItemBase *base, const int level)
     if (item->mod_count == 0) {
         return false;
     }
-    item->quality = ITEM_RARE;
+    item->quality = (uint8_t)quality;
     item->name1   = (int16_t)(first + 1);
     item->name2   = (int16_t)(second + 1);
     return true;
@@ -906,6 +918,8 @@ bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality qua
         return Affixes__MakeSet(item, base, level);
     case ITEM_RARE:
         return Affixes__MakeRare(item, base, level);
+    case ITEM_CRAFTED:
+        return Affixes__MakeCrafted(item, base, level);
     case ITEM_MAGIC:
         return Affixes__MakeMagic(item, base, level);
     default:
@@ -975,6 +989,7 @@ void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2
         return;
     }
     case ITEM_RARE:
+    case ITEM_CRAFTED:
         snprintf(line1, size1, "%s %s",
                  item->name1 > 0 && item->name1 <= rare_prefix_count ? rare_prefixes[item->name1 - 1].name : "?",
                  item->name2 > 0 && item->name2 <= rare_suffix_count ? rare_suffixes[item->name2 - 1].name : "?");
@@ -1010,6 +1025,7 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b) 
         {0xC7, 0xB3, 0x77}, // unique: gold
         {0xC7, 0xB3, 0x77}, // runeword: gold too
         {0x00, 0xFF, 0x00}, // set: green
+        {0xFF, 0xA8, 0x00}, // crafted: orange
     };
     const int q = item->quality < ITEM_QUALITY_COUNT ? item->quality : 0;
     *r          = colors[q][0];
