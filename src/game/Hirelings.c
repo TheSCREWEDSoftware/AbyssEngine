@@ -10,22 +10,25 @@
 #include <strings.h>
 
 typedef struct HireRow {
-    char title[32];
-    char kind[40];
-    int  version;
-    int  id;
-    int  act;
-    int  difficulty;
-    int  level;
-    char seller[24]; // monstats id
-    char monster[24];
-    char name_first[16];
-    char name_last[16];
-    int  gold;
-    int  exp_per_level;
-    int  hp, hp_per_level, defense, def_per_level, ar, ar_per_level;
-    int  dmg_min, dmg_max, dmg_per_level, resist, resist_per_level;
-    char weapon[8];
+    char      title[32];
+    char      kind[40];
+    int       version;
+    int       id;
+    int       act;
+    int       difficulty;
+    int       level;
+    char      seller[24]; // monstats id
+    char      monster[24];
+    char      name_first[16];
+    char      name_last[16];
+    int       gold;
+    int       exp_per_level;
+    int       hp, hp_per_level, defense, def_per_level, ar, ar_per_level;
+    int       dmg_min, dmg_max, dmg_per_level, resist, resist_per_level;
+    char      weapon[8];
+    HireSkill skills[HIRE_SKILLS]; // (level: at the row's level; per_level: in 32nds, to add for each level above)
+    int       skill_per_level[HIRE_SKILLS];
+    int       skill_count;
 } HireRow;
 
 static HireRow *rows      = NULL;
@@ -101,6 +104,23 @@ static void Hirelings__Load(void) {
         h->resist           = INT("Resist");
         h->resist_per_level = INT("Resist/Lvl");
         snprintf(h->weapon, sizeof(h->weapon), "%s", STR("WType1"));
+        for (int s = 1; s <= HIRE_SKILLS; s++) {
+            char column[16];
+            snprintf(column, sizeof(column), "Skill%d", s);
+            if (STR(column)[0] == '\0' || h->skill_count >= HIRE_SKILLS) {
+                continue;
+            }
+            HireSkill *skill = &h->skills[h->skill_count];
+            snprintf(skill->name, sizeof(skill->name), "%s", STR(column));
+            snprintf(column, sizeof(column), "Mode%d", s);
+            skill->mode = INT(column);
+            snprintf(column, sizeof(column), "Chance%d", s);
+            skill->chance = INT(column);
+            snprintf(column, sizeof(column), "Level%d", s);
+            skill->level = INT(column);
+            snprintf(column, sizeof(column), "LvlPerLvl%d", s);
+            h->skill_per_level[h->skill_count++] = INT(column);
+        }
         row_count++;
     }
 #undef STR
@@ -212,6 +232,23 @@ void Hirelings_Name(const int row, const int name, char *out, const int size) {
     snprintf(key, sizeof(key), "%s%0*d", prefix, digits, name);
     const char *found = StringTable_Find(key);
     snprintf(out, (size_t)size, "%s", found != NULL ? found : rows[row].title);
+}
+
+int Hirelings_Skills(const int row, const int level, HireSkill *out, const int most) {
+    Hirelings__Load();
+    if (row < 0 || row >= row_count) {
+        return 0;
+    }
+    const HireRow *h     = &rows[row];
+    int            count = 0;
+    for (int s = 0; s < h->skill_count && count < most; s++) {
+        out[count]       = h->skills[s];
+        const int above  = level > h->level ? level - h->level : 0;
+        out[count].level = h->skills[s].level + (above * h->skill_per_level[s] / 32);
+        out[count].level = out[count].level > 0 ? out[count].level : 1;
+        count++;
+    }
+    return count;
 }
 
 const char *Hirelings_Title(const int row) {

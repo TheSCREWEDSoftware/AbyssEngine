@@ -17,6 +17,16 @@ typedef struct HireOffer {
     char kind[40]; // "Fire - Normal"
 } HireOffer;
 
+// Their skills (hireling.txt Skill1-5): the act 2 mercenaries' auras (mode 1), the act 3 sorcerers' spells (7), ...
+#define HIRE_SKILLS 5
+typedef struct HireSkill {
+    char name[32]; // skills.txt "skill"
+    int  mode;     // the animation it's used with: 1 an aura (always on), 4 an arrow, 5 / 14 a blow, 7 a spell
+    int  chance;
+    int  level;
+} HireSkill;
+int Hirelings_Skills(int row, int level, HireSkill *out, int most); // at that level; returns how many
+
 typedef struct HireStats {
     int  hp;
     int  defense;

@@ -17,6 +17,7 @@ static bool Roam__HasMode(SceneRoam *roam, const Unit *unit, const char *mode);
 static void Roam__GainExperience(SceneRoam *roam, const Unit *victim);
 static void Roam__SendKilled(SceneRoam *roam, int index, int killer);
 static void Roam__ApplyCharacter(SceneRoam *roam);
+static int  Roam__FindHireling(const SceneRoam *roam);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // What skills add to the character
@@ -181,6 +182,20 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     const SkillRow *aura       = Roam__ActiveAura(roam, &aura_level);
     if (aura != NULL) {
         Roam__AddSkillStats(character, aura, aura_level, true, true);
+    }
+    // Your hireling's aura (the act 2 mercenaries: Prayer, Defiance, Blessed Aim, Might, ...), while they're alive and
+    // near you
+    const int hireling = character->hireling > 0 && !character->hireling_dead ? Roam__FindHireling(roam) : -1;
+    if (hireling >= 0 && Roam__IsAlive(&roam->units[hireling]) &&
+        Roam__Distance(roam->units[hireling].x, roam->units[hireling].y, roam->player.x, roam->player.y) <= 30.0f) {
+        HireSkill skills[HIRE_SKILLS];
+        const int count = Hirelings_Skills(character->hireling - 1, character->hireling_level, skills, HIRE_SKILLS);
+        for (int s = 0; s < count; s++) {
+            const SkillRow *row = SkillData_Get(skills[s].name);
+            if (row != NULL && row->kind == SKILL_KIND_AURA) {
+                Roam__AddSkillStats(character, row, skills[s].level, true, true);
+            }
+        }
     }
     if (memcmp(before, character->bonus, sizeof(before)) != 0) {
         Roam__ApplyCharacter(roam); // defense, attack rating, damage, life and mana
@@ -1575,6 +1590,27 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
                     const char *shot = ally->element == ELEMENT_FIRE   ? "firearrow"
                                        : ally->element == ELEMENT_COLD ? "coldarrow"
                                                                        : "arrow";
+                    // A sorcerer's spell (hireling.txt: Fire Ball, Glacial Spike, Charged Bolt, Lightning, ...)
+                    if (ally->hireling && roam->character->hireling > 0) {
+                        HireSkill skills[HIRE_SKILLS];
+                        const int count = Hirelings_Skills(roam->character->hireling - 1,
+                                                           roam->character->hireling_level, skills, HIRE_SKILLS);
+                        int       pick  = -1;
+                        int       seen  = 0;
+                        for (int s = 0; s < count; s++) {
+                            const SkillRow *row = SkillData_Get(skills[s].name);
+                            const char     *name =
+                                row != NULL ? (row->missile[0] != '\0' ? row->missile : row->missile_a) : "";
+                            if (skills[s].mode == 7 && row != NULL && row->kind == SKILL_KIND_MISSILE &&
+                                MissileData_Get(name) != NULL && Roam__Roll(0, seen++) == 0) {
+                                pick = s;
+                            }
+                        }
+                        if (pick >= 0) {
+                            const SkillRow *row = SkillData_Get(skills[pick].name);
+                            shot                = row->missile[0] != '\0' ? row->missile : row->missile_a;
+                        }
+                    }
                     Roam__FireMissilesFrom(roam, shot, NULL, 0, 1, 0.0f, false, ally->x, ally->y, victim->x, victim->y,
                                            true);
                     Roam__SendShot(roam, shot, ally->x, ally->y, victim->x, victim->y, NULL);

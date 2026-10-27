@@ -348,7 +348,9 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   about yours, the price). Your hireling follows you everywhere, fights what's near (Rogue Scouts shoot fire or cold
   arrows from afar), shows top left with their life, gets a level as you get yours (staying a level or so behind),
   and is saved with you. Hiring another sends the first away. When they die, **Resurrect** brings them back for
-  gold.
+  gold. Their skills are `hireling.txt`'s: the Desert Mercenaries' auras (Prayer, Defiance, Blessed Aim, Thorns, Holy
+  Freeze, Might) work on you while they're alive and near, at their level; the Eastern Sorcerers cast their spells
+  (Fire Ball, Inferno, Glacial Spike, Ice Blast, Charged Bolt, Lightning). Not yet: equipping them.
 
 ## Quests
 
