@@ -440,6 +440,7 @@ typedef struct SceneRoam {
     int             area_level;       // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
+    uint64_t        thunder_heard;    // the lightning flash whose thunder was last played (its time)
     bool            night_sounds;     // the area's night sounds are on (outdoors at night)
     RoamPortal      portals[NET_MAX_PLAYERS + 1]; // the Town Portals open: ours [0], the other players' by their id
     int             shrine_code;                  // the shrine booster on (shrines.txt Code; 0 none) and until when
@@ -2844,6 +2845,21 @@ static float Roam__WeatherLevel(const SceneRoam *roam, const uint64_t now) { // 
     return cycle < 0.33f ? sinf(cycle / 0.33f * 3.14159f) : 0.0f;
 }
 
+// Lightning in a heavy shower now and then (a flash every half a minute or so, at its heaviest): when the one in this stretch of time flashes
+// (0: none in it)
+static uint64_t Roam__LightningAt(const SceneRoam *roam, const uint64_t now) {
+    if (roam->atmosphere.snow) {
+        return 0;
+    }
+    const uint64_t slot  = now / 25000;
+    uint32_t       h     = (uint32_t)slot * 2654435761u;
+    h                   ^= h >> 13;
+    h                   *= 0x5bd1e995u;
+    h                   ^= h >> 15;
+    const uint64_t at    = (slot * 25000) + (h % 20000);
+    return h % 4 != 0 && Roam__WeatherLevel(roam, at) > 0.55f ? at : 0;
+}
+
 static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
     const uint64_t now   = SDL_GetTicks64();
     const float    level = Roam__WeatherLevel(roam, now);
@@ -2875,6 +2891,16 @@ static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
     }
     if (roam->atmosphere.snow) {
         return;
+    }
+    // A lightning flash: a bright blink, then a weaker second one
+    const uint64_t flash = Roam__LightningAt(roam, now);
+    if (flash != 0 && now >= flash && now < flash + 320) {
+        const uint64_t into = now - flash;
+        const int      a    = into < 90 ? 110 : (into >= 200 ? 60 : 0);
+        if (a > 0) {
+            SDL_SetRenderDrawColor(sdl_renderer, 225, 230, 255, (uint8_t)a);
+            SDL_RenderFillRect(sdl_renderer, view);
+        }
     }
     // Splashes where drops land: each a little spreading ring for a fifth of a second, somewhere new each time
     const int splashes = drops / 3;
@@ -3077,6 +3103,15 @@ static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
     // The rain's sound, as loud as the shower is heavy (snow falls quietly)
     const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, SDL_GetTicks64()); // (as drawn)
     Sounds_PlayWeather(rain > 0.02f ? "scene_rain" : NULL, rain);
+    // The thunder after a flash (a moment later: it's some way off)
+    const uint64_t ticks = SDL_GetTicks64();
+    const uint64_t flash = Roam__LightningAt(roam, ticks);
+    if (flash != 0 && flash != roam->thunder_heard && ticks >= flash + 900 && ticks < flash + 4000) {
+        roam->thunder_heard = flash;
+        char name[24];
+        snprintf(name, sizeof(name), "event_thunder_%d", Roam__Roll(1, 3));
+        Sounds_Play(name, SOUND_KIND_SFX);
+    }
     // Night falls or the day breaks: the background changes over
     const bool night = Roam__NightSounds(roam);
     if (night != roam->night_sounds) {
