@@ -597,6 +597,75 @@ void Map_FillSeams(Map *map) {
     }
 }
 
+static bool Map__Empty(const Map *map, const int c) {
+    for (int f = 0; f < map->floor_layer_count; f++) {
+        if (map->floor_tiles[f][c] != NULL) {
+            return false;
+        }
+    }
+    for (int w = 0; w < map->wall_layer_count; w++) {
+        if (map->wall_tiles[w][c] != NULL) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int Map__FloorAlong(const Map *map, const int tx, const int ty, const int dx, const int dy, const int widest) {
+    // How far to the nearest floor going (dx, dy) from (tx, ty), 0 if none within widest or a wall is met first
+    for (int k = 1; k <= widest; k++) {
+        const int x = tx + (dx * k);
+        const int y = ty + (dy * k);
+        if (x < 0 || y < 0 || x >= map->width || y >= map->height) {
+            return 0;
+        }
+        const int c = (y * map->width) + x;
+        if (map->floor_tiles[0][c] != NULL) {
+            return k;
+        }
+        if (!Map__Empty(map, c)) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+void Map_FillGaps(Map *map, const int widest) {
+    // A hole: empty, with floor near on both sides along the row, and above and below it (a run along a row of up
+    // to a third as wide with floor at both ends is filled too: the edges' notches)
+    const int size  = map->width * map->height;
+    int      *from  = malloc(sizeof(int) * (size_t)size);
+    const int notch = widest / 3;
+    if (from == NULL) {
+        return;
+    }
+    for (int c = 0; c < size; c++) {
+        from[c] = -1;
+        if (!Map__Empty(map, c)) {
+            continue;
+        }
+        const int tx    = c % map->width;
+        const int ty    = c / map->width;
+        const int left  = Map__FloorAlong(map, tx, ty, -1, 0, widest);
+        const int right = Map__FloorAlong(map, tx, ty, 1, 0, widest);
+        if (left == 0 || right == 0) {
+            continue;
+        }
+        const int up   = Map__FloorAlong(map, tx, ty, 0, -1, widest);
+        const int down = Map__FloorAlong(map, tx, ty, 0, 1, widest);
+        if ((up > 0 && down > 0) || left + right - 1 <= notch) {
+            from[c] = c - left;
+        }
+    }
+    for (int c = 0; c < size; c++) {
+        if (from[c] >= 0) {
+            map->floors[0][c]      = map->floors[0][from[c]];
+            map->floor_tiles[0][c] = map->floor_tiles[0][from[c]];
+        }
+    }
+    free(from);
+}
+
 void Map_AddExit(Map *map, const int target_level, const int x0, const int y0, const int x1, const int y1,
                  const float arrive_x, const float arrive_y) {
     if (map->exit_count >= MAP_MAX_EXITS || target_level <= 0) {

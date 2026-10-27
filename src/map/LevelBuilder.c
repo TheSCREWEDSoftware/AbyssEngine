@@ -2081,6 +2081,9 @@ Map *LevelBuilder_Build(const int level_id, uint32_t seed) {
     if (map != NULL && (level_id == STRIP_LEVEL_ID || Builder__Outdoor(level_id) != NULL)) {
         Map_FillSeams(map); // (outdoors: no black gaps between the pieces)
     }
+    if (map != NULL && level_id == STRIP_LEVEL_ID) {
+        Map_FillGaps(map, 24); // (the siege strips' ragged top and bottom edges)
+    }
     if (map != NULL) {
         uint8_t *main_area = Builder__MainArea(map);
         Builder__Populate(map, &level, main_area, &rng);
