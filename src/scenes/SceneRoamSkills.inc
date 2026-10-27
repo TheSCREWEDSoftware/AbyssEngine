@@ -1115,6 +1115,28 @@ static int Roam__CountAllies(const SceneRoam *roam, const SkillRow *s, int *olde
     return count;
 }
 
+// A skill of yours a shadow uses (a missile one when it's far, else any attack): random among those you've learned
+static const SkillRow *Roam__ShadowSkill(const SceneRoam *roam, const bool missile, int *level) {
+    const SkillClass *skills = Skills_ForClass(roam->character->class_id);
+    const SkillRow   *pick   = NULL;
+    int               seen   = 0;
+    for (int k = 0; k < skills->count && k < CHARACTER_SKILLS; k++) {
+        const int       lvl = roam->character->skill_levels[k];
+        const SkillRow *s   = lvl > 0 ? SkillData_Get(skills->skills[k].id) : NULL;
+        if (s == NULL) {
+            continue;
+        }
+        const char *name    = s->missile[0] != '\0' ? s->missile : s->missile_a;
+        const bool  shoots  = s->kind == SKILL_KIND_MISSILE && MissileData_Get(name) != NULL;
+        const bool  strikes = strcmp(s->range, "h2h") == 0 && s->summon[0] == '\0';
+        if ((missile ? shoots : (shoots || strikes)) && Roam__Roll(0, seen++) == 0) {
+            pick   = s;
+            *level = lvl;
+        }
+    }
+    return pick;
+}
+
 // Monsters that fight for you (skeletons, golems, the Valkyrie, wolves, the Druid's spirits, hydras, sentries)
 static void Roam__Summon(SceneRoam *roam, const SkillRow *s, const int level, const float tx, const float ty,
                          const uint64_t now) {
@@ -1177,6 +1199,28 @@ static void Roam__Summon(SceneRoam *roam, const SkillRow *s, const int level, co
     unit->attack_rating += SkillData_Eval(roam->character, s, level, s->aura_calc[1]) > 0
                                ? SkillData_Eval(roam->character, s, level, s->aura_calc[1])
                                : roam->character->level * 5;
+    // The Decoy: a copy of you that stands and draws the monsters for its time; the shadows use your skills; the
+    // Valkyrie your Critical Strike
+    if (s->do_func == 15) {
+        const int frames = SkillData_Eval(roam->character, s, level, s->calc[1]);
+        unit->decoy      = true;
+        unit->speed      = 0.0f;
+        unit->damage_min = unit->damage_max = 0;
+        unit->ally_until                    = now + (uint64_t)((frames > 0 ? frames : 250) * 40);
+    } else if (s->do_func == 49) {
+        unit->shadow = true;
+        int skill_level;
+        if (Roam__ShadowSkill(roam, true, &skill_level) != NULL) {
+            unit->reach = 8.0f; // (casts from afar, strikes up close)
+        }
+    } else if (s->do_func == 16) {
+        const SkillClass *skills = Skills_ForClass(roam->character->class_id);
+        const int         k      = Skills_Find(skills, "Critical Strike");
+        const SkillRow *crit = k >= 0 && roam->character->skill_levels[k] > 0 ? SkillData_Get("Critical Strike") : NULL;
+        unit->crit           = crit != NULL ? SkillData_Eval(roam->character, crit, roam->character->skill_levels[k],
+                                                             crit->passive_calc[0])
+                                            : 0;
+    }
     // The Druid's spirits carry their aura (Oak Sage: more life; Heart of Wolverine: damage and attack rating; Spirit
     // of Barbs: damage back): it reaches you and your party around it
     if (s->do_func == 119) {
@@ -2154,7 +2198,42 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
             if (target >= 0 && Roam__Distance(ally->x, ally->y, roam->units[target].x, roam->units[target].y) <=
                                    fmaxf(ATTACK_RANGE, ally->reach) + 1.0f) {
                 Unit *victim = &roam->units[target];
-                if (ally->reach > 0.0f) { // an arrow or a bolt on its way (the damage is done now)
+                if (ally->shadow) { // your skills: a missile from afar, or a blow with its bonus up close
+                    const bool      far = Roam__Distance(ally->x, ally->y, victim->x, victim->y) > ATTACK_RANGE + 1.0f;
+                    int             level = 1;
+                    const SkillRow *s     = Roam__ShadowSkill(roam, far, &level);
+                    const char     *name  = s != NULL ? (s->missile[0] != '\0' ? s->missile : s->missile_a) : "";
+                    if (s != NULL && s->kind == SKILL_KIND_MISSILE && MissileData_Get(name) != NULL) {
+                        int   count;
+                        float spread;
+                        bool  scatter;
+                        name = Roam__MissileVolley(roam, s, level, &count, &spread, &scatter);
+                        Roam__FireMissilesFrom(roam, name, s, level, count, spread, scatter, ally->x, ally->y,
+                                               victim->x, victim->y, false);
+                        Roam__SendShot(roam, name, ally->x, ally->y, victim->x, victim->y, NULL);
+                        Roam__SetState(ally, UNIT_IDLE, now);
+                        return;
+                    }
+                    if (s != NULL && !far &&
+                        Roam__Roll(1, 100) <=
+                            Character_HitChance(ally->attack_rating, ally->level, victim->defense, victim->level)) {
+                        int damage[ELEMENT_COUNT] = {0};
+                        damage[ELEMENT_PHYSICAL]  = Roam__Roll(ally->damage_min, ally->damage_max);
+                        damage[ELEMENT_PHYSICAL] +=
+                            damage[ELEMENT_PHYSICAL] * SkillData_Eval(roam->character, s, level, s->calc[0]) / 100;
+                        int low    = 0;
+                        int high   = 0;
+                        int frames = 0;
+                        SkillData_ElementalDamage(roam->character, s, level, &low, &high, &frames);
+                        if (s->element > ELEMENT_PHYSICAL && s->element < ELEMENT_COUNT && high > 0) {
+                            damage[s->element] += Roam__Roll(low, high);
+                        }
+                        Roam__SkillHit(roam, victim, damage, s->element == ELEMENT_COLD ? frames : 0, 0, true, now);
+                        Roam__SetState(ally, UNIT_IDLE, now);
+                        return;
+                    }
+                }
+                if (ally->reach > 0.0f && !ally->shadow) { // an arrow or a bolt on its way (the damage is done now)
                     const char *shot = ally->element == ELEMENT_FIRE   ? "firearrow"
                                        : ally->element == ELEMENT_COLD ? "coldarrow"
                                                                        : "arrow";
@@ -2187,6 +2266,9 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
                     Character_HitChance(ally->attack_rating, ally->level, victim->defense, victim->level)) {
                     int damage[ELEMENT_COUNT] = {0};
                     damage[ELEMENT_PHYSICAL]  = Roam__Roll(ally->damage_min, ally->damage_max);
+                    if (ally->crit > 0 && Roam__Roll(1, 100) <= ally->crit) {
+                        damage[ELEMENT_PHYSICAL] *= 2; // (the Valkyrie's Critical Strike)
+                    }
                     if (ally->element > 0 && ally->element < ELEMENT_COUNT) {
                         damage[ally->element] = Roam__Roll(ally->element_min, ally->element_max);
                     }
@@ -2215,7 +2297,7 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
         if (Roam__Distance(ally->x, ally->y, victim->x, victim->y) <= fmaxf(ATTACK_RANGE, ally->reach)) {
             Roam__TurnTowards(&ally->turn, ally->x, ally->y, victim->x, victim->y);
             Roam__ClearPath(ally);
-            if (now >= ally->next_attack && Roam__CanAttack(roam, ally)) {
+            if (now >= ally->next_attack && !ally->decoy && Roam__CanAttack(roam, ally)) {
                 ally->next_attack = now + ATTACK_COOLDOWN;
                 Roam__SetState(ally, UNIT_ATTACK, now);
                 Roam__UnitSound(roam, ally, MONSTER_SOUND_ATTACK);
@@ -2244,7 +2326,8 @@ static int Roam__AllyNear(const SceneRoam *roam, const Unit *unit, const float t
         if (!ally->ally || !Roam__IsAlive(ally) || ally->trap != NULL) {
             continue; // (traps aren't fought)
         }
-        const float d = Roam__Distance(unit->x, unit->y, ally->x, ally->y);
+        // (the Decoy draws them: it counts as half as far, so they go for it before you)
+        const float d = Roam__Distance(unit->x, unit->y, ally->x, ally->y) * (ally->decoy ? 0.5f : 1.0f);
         if (d < distance) {
             distance = d;
             best     = i;

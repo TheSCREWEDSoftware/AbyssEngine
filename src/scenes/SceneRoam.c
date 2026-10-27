@@ -300,6 +300,9 @@ typedef struct Unit {
     bool            ally;        // summoned by the player: fights the monsters
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
+    bool            decoy;       // the Amazon's Decoy: stands there drawing the monsters, never strikes
+    bool            shadow;      // the Assassin's Shadow Warrior / Master: fights with your own skills
+    int             crit;        // the Valkyrie: your Critical Strike's chance of double damage
     bool            turned;      // a monster on our side for a while (Attract): back to a monster then, not gone
     // Another player's summon or hireling (multiplayer), only to be seen: whose (player id), which of theirs, when
     // last heard of
