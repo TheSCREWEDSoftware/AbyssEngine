@@ -13,6 +13,8 @@
 // A drop's quality and magic: called for each weapon, armor and jewelry dropped, with its item level (the monster's)
 void Affixes_Roll(Item *item, int item_level);
 // Magic Find for the rolls that follow (the killer's: Roam's drops set it, then put it back to 0)
+void Affixes_SetQualityFactors(int unique, int set, int rare, int magic); // the treasure class's (of 1024; 0 none)
+void Affixes_SetClassic(bool classic); // a classic game: itemratio.txt's classic rows
 void Affixes_SetMagicFind(int percent);
 
 // A chosen quality (gambling): false when the item can't be that (no unique of its kind at that level, ...)

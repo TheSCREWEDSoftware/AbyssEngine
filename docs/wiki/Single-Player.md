@@ -307,7 +307,11 @@ magic. What's in a socket stays there.
   TreasureClass1, e.g. "Act 1 H2H A") and `TreasureClassEx.txt` says what it picks, maybe nothing: gold, potions,
   scrolls, keys, arrows, weapons and armor of about the monster's level (the game's own "weap3", "armo6" groups,
   from the items' levels). Up to six things a monster. Weapons, armor, rings, amulets and jewels can come out
-  [magic, rare or unique](#magic-rare-and-unique-items), some with [sockets](#sockets-gems-and-runes).
+  [magic, rare or unique](#magic-rare-and-unique-items), some with [sockets](#sockets-gems-and-runes). Which, the
+  game's way: `itemratio.txt` (classic or expansion rows, exceptional and elite items, a class's own items) gives
+  each quality's chance from the monster's level against the item's, Magic Find makes the better ones likelier, and
+  the treasure classes' Unique / Set / Rare / Magic columns (bosses and champions) better still; a plain weapon or
+  armor is then maybe superior, or low quality when the monster is about the item's level. A mod can change all of it.
 - **Chests, caskets, urns, barrels, crates, corpses and racks** drop the act's chest treasure ("Act 1 Chest A") when
   opened.
 - **Gold** shows as "35 Gold" on the ground and goes straight to your gold when picked up; you can carry 10,000 a

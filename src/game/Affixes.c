@@ -948,6 +948,96 @@ bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality qua
 }
 
 static int magic_find = 0; // Affixes_SetMagicFind
+static int tc_quality[4];  // Affixes_SetQualityFactors: the treasure class's Unique, Set, Rare, Magic (of 1024)
+
+void Affixes_SetQualityFactors(const int unique, const int set, const int rare, const int magic) {
+    tc_quality[0] = unique;
+    tc_quality[1] = set;
+    tc_quality[2] = rare;
+    tc_quality[3] = magic;
+}
+
+// itemratio.txt: for each kind of item (classic or expansion, exceptional/elite or not, a class's own or not) the
+// chance of each quality: Ratio less (monster level - item level) / Divisor, at least Min, Magic Find and the
+// treasure class's quality factor taken off (the game's rule)
+enum { RATIO_UNIQUE, RATIO_SET, RATIO_RARE, RATIO_MAGIC, RATIO_HIQ, RATIO_NORMAL, RATIO_KINDS };
+typedef struct ItemRatio {
+    int version;
+    int uber;
+    int class_specific;
+    int ratio[RATIO_KINDS];
+    int divisor[RATIO_KINDS];
+    int min[RATIO_KINDS];
+} ItemRatio;
+static ItemRatio ratios[16];
+static int       ratio_count   = -1;    // -1: not read yet
+static bool      ratio_classic = false; // Affixes_SetClassic: a classic character's game (Version 0 rows)
+
+void Affixes_SetClassic(const bool classic) { ratio_classic = classic; }
+
+static void Affixes__LoadRatios(void) {
+    if (ratio_count >= 0) {
+        return;
+    }
+    ratio_count  = 0;
+    DataTable *t = DataTable_Load("/data/global/excel/itemratio.txt");
+    if (t == NULL) {
+        return;
+    }
+    static const char *const names[RATIO_KINDS] = {"Unique", "Set", "Rare", "Magic", "HiQuality", "Normal"};
+    for (int row = 0; row < DataTable_GetRowCount(t) && ratio_count < 16; row++) {
+        if (!DataTable_HasValue(t, row, DataTable_GetColumnIndex(t, "Version"))) {
+            continue;
+        }
+        ItemRatio *r      = &ratios[ratio_count++];
+        r->version        = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "Version"));
+        r->uber           = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "Uber"));
+        r->class_specific = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "Class Specific"));
+        for (int k = 0; k < RATIO_KINDS; k++) {
+            char column[32];
+            r->ratio[k] = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, names[k]));
+            snprintf(column, sizeof(column), "%sDivisor", names[k]);
+            r->divisor[k] = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, column));
+            snprintf(column, sizeof(column), "%sMin", names[k]);
+            r->min[k] = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, column));
+        }
+    }
+    DataTable_Destroy(&t);
+}
+
+static const ItemRatio *Affixes__Ratio(const ItemBase *base) {
+    Affixes__LoadRatios();
+    static const char *const classes[] = {"amaz", "barb", "necr", "pala", "sorc", "drui", "assn"};
+    bool                     own       = false;
+    for (size_t k = 0; k < sizeof(classes) / sizeof(classes[0]) && !own; k++) {
+        own = Items_IsA(base, classes[k]);
+    }
+    const int        version = ratio_classic ? 0 : 1;
+    const ItemRatio *found   = NULL;
+    for (int r = 0; r < ratio_count; r++) {
+        const ItemRatio *row = &ratios[r];
+        if (row->version == version && row->uber == (base->tier > 0 ? 1 : 0) && row->class_specific == (own ? 1 : 0)) {
+            return row;
+        }
+        if (found == NULL && row->version == version && row->uber == (base->tier > 0 ? 1 : 0)) {
+            found = row; // (classic has no class rows)
+        }
+    }
+    return found;
+}
+
+// One quality's roll: true when it comes up
+static bool Affixes__RatioRoll(const ItemRatio *r, const int kind, const int level, const int qlvl, const int mf,
+                               const int factor) {
+    const int divisor = r->divisor[kind] > 0 ? r->divisor[kind] : 1;
+    long      chance  = ((long)r->ratio[kind] - (long)((level - qlvl) / divisor)) * 128;
+    if (kind <= RATIO_MAGIC) {
+        chance = chance * 100 / (100 + mf);
+        chance = chance > r->min[kind] ? chance : r->min[kind];
+        chance = chance - (chance * factor / 1024);
+    }
+    return chance <= 128 || rand() % chance < 128;
+}
 
 void Affixes_SetMagicFind(const int percent) { magic_find = percent > 0 ? percent : 0; }
 
@@ -1053,10 +1143,47 @@ void Affixes_Roll(Item *item, const int item_level) {
     if (!jewelry && base->kind == ITEM_KIND_MISC) {
         return; // potions, scrolls, keys, gold: always normal
     }
-    const int level = item_level > 0 ? item_level : 1;
-    roll_level      = level;
-    // Out of 1,000: unique 10 (1 in 100), set 20 (1 in 50), rare 30 (1 in 20), magic 250 (1 in 4); Magic Find makes
-    // each likelier, with the game's diminishing returns for the better ones
+    const int level        = item_level > 0 ? item_level : 1;
+    roll_level             = level;
+    const ItemRatio *ratio = Affixes__Ratio(base);
+    if (ratio != NULL) {
+        // The game's way (itemratio.txt): unique, set, rare, magic, each tried in turn; Magic Find with the game's
+        // diminishing returns for the better ones
+        const int mf     = magic_find;
+        const int qlvl   = base->level > 0 ? base->level : 1;
+        const int mfs[4] = {mf * 250 / (mf + 250), mf * 500 / (mf + 500), mf * 600 / (mf + 600), mf};
+        bool      done   = false;
+        if (Affixes__RatioRoll(ratio, RATIO_UNIQUE, level, qlvl, mfs[0], tc_quality[0])) {
+            done = Affixes__MakeUnique(item, base, level);
+        }
+        if (!done && Affixes__RatioRoll(ratio, RATIO_SET, level, qlvl, mfs[1], tc_quality[1])) {
+            done = Affixes__MakeSet(item, base, level);
+        }
+        if (!done && Affixes__RatioRoll(ratio, RATIO_RARE, level, qlvl, mfs[2], tc_quality[2])) {
+            done = Affixes__MakeRare(item, base, level);
+        }
+        if (done) {
+            return;
+        }
+        if (Affixes__RatioRoll(ratio, RATIO_MAGIC, level, qlvl, mfs[3], tc_quality[3]) || jewelry) {
+            Affixes__MakeMagic(item, base, level);
+        }
+        const bool gear = base->kind == ITEM_KIND_WEAPON || base->kind == ITEM_KIND_ARMOR;
+        if (gear && item->quality == ITEM_NORMAL) {
+            if (Affixes__RatioRoll(ratio, RATIO_HIQ, level, qlvl, 0, 0)) {
+                Affixes__MakeSuperior(item, base);
+            } else if (!Affixes__RatioRoll(ratio, RATIO_NORMAL, level, qlvl, 0, 0)) {
+                Affixes__MakeLow(item); // (not even normal: low quality)
+            }
+        }
+        if (gear && item->quality != ITEM_UNIQUE && item->quality != ITEM_SET && base->durability > 0 &&
+            rand() % 20 == 0) {
+            Affixes__MakeEthereal(item);
+        }
+        return;
+    }
+    // Without itemratio.txt, out of 1,000: unique 10 (1 in 100), set 20 (1 in 50), rare 30 (1 in 20), magic 250 (1 in
+    // 4); Magic Find makes each likelier, with the game's diminishing returns for the better ones
     const int mf     = magic_find;
     const int unique = 10 * (100 + (mf * 250 / (mf + 250))) / 100;
     const int set    = unique + (20 * (100 + (mf * 500 / (mf + 500))) / 100);

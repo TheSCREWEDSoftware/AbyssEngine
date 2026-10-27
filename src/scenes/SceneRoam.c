@@ -2097,6 +2097,7 @@ static bool Roam__Blocks(SceneRoam *roam, const bool missile) {
 static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, const int level, const float x, const float y) {
     Item items[TREASURE_MAX_DROPS];
     Affixes_SetMagicFind(roam->game ? Affixes_Total(roam->character, MOD_MAGIC_FIND) : 0); // (yours)
+    Affixes_SetClassic(roam->character != NULL && !roam->character->expansion);
     const int count = Treasure_Roll(treasure, level, items);
     Affixes_SetMagicFind(0);
     for (int i = 0; i < count; i++) {

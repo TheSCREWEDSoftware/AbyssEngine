@@ -21,6 +21,7 @@ typedef struct TreasureClass {
     char items[TC_ITEMS][48];
     int  chances[TC_ITEMS];
     int  count;
+    int  quality[4]; // Unique, Set, Rare, Magic: better odds of those for what comes out of it (of 1024)
 } TreasureClass;
 
 static TreasureClass *classes     = NULL;
@@ -50,8 +51,12 @@ static void Treasure__Load(void) {
         }
         TreasureClass *tc = &classes[class_count++];
         snprintf(tc->name, sizeof(tc->name), "%s", name);
-        tc->picks   = DataTable_GetInt(t, row, c_picks);
-        tc->no_drop = DataTable_GetInt(t, row, c_nodrop);
+        tc->picks                           = DataTable_GetInt(t, row, c_picks);
+        tc->no_drop                         = DataTable_GetInt(t, row, c_nodrop);
+        static const char *const quality[4] = {"Unique", "Set", "Rare", "Magic"};
+        for (int q = 0; q < 4; q++) {
+            tc->quality[q] = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, quality[q]));
+        }
         for (int i = 0; i < TC_ITEMS; i++) {
             char column[16];
             snprintf(column, sizeof(column), "Item%d", i + 1);
@@ -127,18 +132,23 @@ static int Treasure__NoDrop(const int no_drop, const int items) {
     return ratio > 0.0 ? (int)((double)items / ratio) : no_drop;
 }
 
-static void Treasure__Pick(const char *name, const int level, Item *items, int *count, const int depth) {
+static void Treasure__Pick(const char *name, const int level, Item *items, int *count, const int depth,
+                           const int *quality) {
     if (*count >= TREASURE_MAX_DROPS || depth > TC_DEPTH || name[0] == '\0') {
         return;
     }
     const TreasureClass *tc = Treasure__Find(name);
     if (tc != NULL) {
+        int inner[4]; // the best quality factors on the way down (the game's)
+        for (int q = 0; q < 4; q++) {
+            inner[q] = tc->quality[q] > quality[q] ? tc->quality[q] : quality[q];
+        }
         if (tc->picks < 0) {
             // Each item as many times as its chance, -picks in all (bosses' guaranteed drops)
             int left = -tc->picks;
             for (int i = 0; i < tc->count && left > 0; i++) {
                 for (int n = 0; n < tc->chances[i] && left > 0; n++, left--) {
-                    Treasure__Pick(tc->items[i], level, items, count, depth + 1);
+                    Treasure__Pick(tc->items[i], level, items, count, depth + 1, inner);
                 }
             }
             return;
@@ -157,7 +167,7 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
             roll -= no_drop;
             for (int i = 0; i < tc->count; i++) {
                 if (roll < tc->chances[i]) {
-                    Treasure__Pick(tc->items[i], level, items, count, depth + 1);
+                    Treasure__Pick(tc->items[i], level, items, count, depth + 1, inner);
                     break;
                 }
                 roll -= tc->chances[i];
@@ -167,7 +177,9 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
     }
     Item item;
     if (Treasure__Auto(name, &item)) {
+        Affixes_SetQualityFactors(quality[0], quality[1], quality[2], quality[3]);
         Affixes_Roll(&item, level); // magic, rare or unique, maybe
+        Affixes_SetQualityFactors(0, 0, 0, 0);
         Sockets_Roll(&item, level);
         item.unidentified = item.quality != ITEM_NORMAL; // found: what it does is found out later
         items[(*count)++] = item;
@@ -184,7 +196,9 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
     } else if (base->stackable && base->max_stack > 1) {
         item.quantity = Treasure__Roll((base->max_stack / 2) > 0 ? base->max_stack / 2 : 1, base->max_stack);
     } else {
+        Affixes_SetQualityFactors(quality[0], quality[1], quality[2], quality[3]);
         Affixes_Roll(&item, level); // rings and amulets, armor and weapons named in the class itself
+        Affixes_SetQualityFactors(0, 0, 0, 0);
         Sockets_Roll(&item, level);
         item.unidentified = item.quality != ITEM_NORMAL;
     }
@@ -194,7 +208,8 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
 int Treasure_Roll(const char *treasure_class, const int level, Item *items) {
     int count = 0;
     if (treasure_class != NULL) {
-        Treasure__Pick(treasure_class, level, items, &count, 0);
+        static const int none[4] = {0, 0, 0, 0};
+        Treasure__Pick(treasure_class, level, items, &count, 0, none);
     }
     return count;
 }
