@@ -62,6 +62,8 @@ struct Automap {
 
     Label *labels[MAX_EXIT_LABELS]; // "To The Cold Plains" at each way out
     Label *name_label;              // other players' names
+    bool   fade;                    // drawn see-through (Fade automap)
+    bool   hide_names;              // no names (Names on automap off)
 };
 
 // AutoMap.txt's tile names for the orientations
@@ -405,6 +407,7 @@ void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float play
                     SDL_Texture *texture = Automap__Texture(automap, automap->cels[(c * automap->layers) + l]);
                     if (texture != NULL) {
                         const SDL_Rect dest = {sx, sy, cell_w, cell_h};
+                        SDL_SetTextureAlphaMod(texture, automap->fade ? 110 : 255);
                         SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
                     }
                 }
@@ -428,7 +431,7 @@ void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float play
             SDL_RenderDrawLine(sdl_renderer, px - 4, py + 2, px + 4, py - 2);
             SDL_RenderDrawLine(sdl_renderer, px - 4, py - 1, px + 4, py + 3);
             SDL_RenderDrawLine(sdl_renderer, px - 4, py + 3, px + 4, py - 1);
-            if (marks[m].name != NULL && shrink == 1) {
+            if (marks[m].name != NULL && shrink == 1 && !automap->hide_names) {
                 if (automap->name_label == NULL) {
                     automap->name_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
                     Label_SetAlignment(automap->name_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
@@ -454,11 +457,12 @@ void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float play
         w                   /= shrink;
         h                   /= shrink;
         const SDL_Rect dest  = {mx - (w / 2), my - h + half_h, w, h};
+        SDL_SetTextureAlphaMod(texture, automap->fade ? 110 : 255);
         SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
     }
 
     // The ways out you've seen, labelled
-    for (int e = 0; shrink == 1 && e < map->exit_count && e < MAX_EXIT_LABELS; e++) {
+    for (int e = 0; shrink == 1 && !automap->hide_names && e < map->exit_count && e < MAX_EXIT_LABELS; e++) {
         const MapExit *exit = &map->exits[e];
         const float    ex   = (float)(exit->x0 + exit->x1) / 2.0f;
         const float    ey   = (float)(exit->y0 + exit->y1) / 2.0f;
@@ -484,6 +488,11 @@ void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float play
     SDL_RenderDrawLine(sdl_renderer, cx - 4, cy + 3, cx + 4, cy - 1);
 
     SDL_RenderSetClipRect(sdl_renderer, NULL);
+}
+
+void Automap_SetStyle(Automap *automap, const bool fade, const bool names) {
+    automap->fade       = fade;
+    automap->hide_names = !names;
 }
 
 void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,

@@ -521,6 +521,11 @@ typedef struct SceneRoam {
     bool     log_open;
     bool     help_open;
     bool     hide_portraits; // Show portraits (Z) off
+    bool     automap_fade;   // the automap keys (F9-F12): see-through, no party, no names
+    bool     automap_no_party;
+    bool     automap_no_names;
+    int      automap_size; // 0 as Options say, 1 full view, 2 corner (Center automap)
+
     char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
     uint64_t chat_times[CHAT_LINES];
     Button  *seed_use_button;
@@ -6831,8 +6836,8 @@ static void Roam__Render(SceneRoam *roam) {
                     marks[mark_count++] = (AutomapMark){unit->x, unit->y, cel, 0, NULL};
                 }
             }
-            // Multiplayer: your party on this map, in their colours
-            for (int o = 0; o < roam->other_count && mark_count < MAX_AUTOMAP_MARKS; o++) {
+            // Multiplayer: your party on this map, in their colours (Party on automap)
+            for (int o = 0; o < roam->other_count && mark_count < MAX_AUTOMAP_MARKS && !roam->automap_no_party; o++) {
                 const NetPlayer *player = NetClient_Player(roam->other_ids[o]);
                 if (!Roam__InMyParty(player)) {
                     continue;
@@ -6844,7 +6849,10 @@ static void Roam__Render(SceneRoam *roam) {
                 marks[mark_count++] = (AutomapMark){roam->others[o].x, roam->others[o].y, -1,
                                                     ((uint32_t)r << 16) | ((uint32_t)g << 8) | b, roam->others[o].name};
             }
-            if (Roam__Gameplay(roam)->corner_automap) {
+            Automap_SetStyle(roam->automap, roam->automap_fade, !roam->automap_no_names);
+            const bool corner =
+                roam->automap_size == 0 ? Roam__Gameplay(roam)->corner_automap : roam->automap_size == 2;
+            if (corner) {
                 // Small in the top right corner (Options > Gameplay > Automap), on a dark box
                 const SDL_Rect corner = {view.x + view.w - 214, view.y + 34, 204, 154};
                 SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);

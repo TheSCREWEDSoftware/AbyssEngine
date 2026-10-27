@@ -109,6 +109,24 @@ static void Roam__ScreenKeys(SceneRoam *roam) {
         memset(roam->chat_lines, 0, sizeof(roam->chat_lines)); // (the log keeps them)
         roam->message_until = 0;
     }
+    // The automap's keys
+    if (Controls_Pressed(ACTION_AUTOMAP_CENTER)) { // full view <-> the corner
+        const bool corner  = roam->automap_size == 0 ? Roam__Gameplay(roam)->corner_automap : roam->automap_size == 2;
+        roam->automap_size = corner ? 1 : 2;
+        roam->show_automap = true;
+    }
+    if (Controls_Pressed(ACTION_AUTOMAP_FADE)) {
+        roam->automap_fade = !roam->automap_fade;
+        Roam__ShowMessage(roam, roam->automap_fade ? "Automap: faded" : "Automap: solid");
+    }
+    if (Controls_Pressed(ACTION_AUTOMAP_PARTY)) {
+        roam->automap_no_party = !roam->automap_no_party;
+        Roam__ShowMessage(roam, roam->automap_no_party ? "Automap: party hidden" : "Automap: party shown");
+    }
+    if (Controls_Pressed(ACTION_AUTOMAP_NAMES)) {
+        roam->automap_no_names = !roam->automap_no_names;
+        Roam__ShowMessage(roam, roam->automap_no_names ? "Automap: names hidden" : "Automap: names shown");
+    }
     if (Controls_Pressed(ACTION_SHOW_PORTRAITS)) {
         roam->hide_portraits = !roam->hide_portraits;
     }
