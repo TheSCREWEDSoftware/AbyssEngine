@@ -280,6 +280,8 @@ void Inventory_GiveStartingItems(Character *character) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The stash
 
+int Stash_Rows(const Character *character) { return character->expansion ? STASH_H : 4; }
+
 int Stash_ItemAt(const Character *character, const int cell_x, const int cell_y) {
     for (int i = 0; i < character->stash_count; i++) {
         const InventoryItem *it   = &character->stash[i];
@@ -294,7 +296,7 @@ int Stash_ItemAt(const Character *character, const int cell_x, const int cell_y)
 }
 
 int Stash_Covered(const Character *character, const ItemBase *base, const int x, const int y) {
-    if (base == NULL || x < 0 || y < 0 || x + base->width > STASH_W || y + base->height > STASH_H) {
+    if (base == NULL || x < 0 || y < 0 || x + base->width > STASH_W || y + base->height > Stash_Rows(character)) {
         return -2;
     }
     int found = -1;
@@ -329,7 +331,7 @@ bool Stash_Add(Character *character, const Item *item) {
         return false;
     }
     for (int x = 0; x + base->width <= STASH_W; x++) {
-        for (int y = 0; y + base->height <= STASH_H; y++) {
+        for (int y = 0; y + base->height <= Stash_Rows(character); y++) {
             if (Stash_Place(character, item, x, y)) {
                 return true;
             }

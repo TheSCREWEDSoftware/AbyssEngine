@@ -79,8 +79,13 @@ typedef enum Origin {
 
 // The stash, on the left (TradeStash.dc6, inventory.txt's "Big Bank Page 1"), and its gold with the withdraw button
 #define STASH_PANEL  "/data/global/ui/PANEL/TradeStash.dc6"
+#define BANK_PANEL   "/data/global/ui/PANEL/bank.DC6" // classic characters' stash: "Bank Page 1", 6 x 4
 #define STASH_GRID_X 74
-#define STASH_GRID_Y 82
+// The expansion's big stash (6 x 8, its grid at 82) or the classic bank (6 x 4, at 273, the gold boxes above it): set
+// for the character shown (GameInventory__StashLayout)
+static int stash_grid_y = 82;
+static int stash_gold_y = 23;
+static int stash_rows   = STASH_H;
 // A merchant's store, on the left (buysell.dc6: tabs along the top, a 10 x 10 grid, your gold, the buttons)
 #define SHOP_PANEL          "/data/global/ui/PANEL/buysell.dc6"
 #define SHOP_GRID_X         15
@@ -91,7 +96,6 @@ typedef enum Origin {
 #define SHOP_CLOSE_Y        383
 #define SHOP_BUTTON_SZ      32
 #define STASH_GOLD_BUTTON_X 75
-#define STASH_GOLD_BUTTON_Y 23
 
 typedef struct IconCache {
     char    file[32];
@@ -108,7 +112,8 @@ struct GameInventory {
     Sprite    *panel;
     Sprite    *gold_button;
     Sprite    *stash_panel;
-    Sprite    *socket; // gemsocket.dc6
+    Sprite    *bank_panel; // (classic characters')
+    Sprite    *socket;     // gemsocket.dc6
     Sprite    *shop_panel;
     Sprite    *shop_tabs;
     Sprite    *shop_buttons; // buysellbtn.dc6
@@ -155,6 +160,7 @@ GameInventory *GameInventory_Create(void) {
     inventory->panel        = Sprite_Create(INVENTORY_PANEL, PALETTE_UNITS);
     inventory->gold_button  = Sprite_Create("/data/global/ui/PANEL/goldcoinbtn.dc6", PALETTE_SKY);
     inventory->stash_panel  = Sprite_Create(STASH_PANEL, PALETTE_SKY);
+    inventory->bank_panel   = Sprite_Create(BANK_PANEL, PALETTE_SKY);
     inventory->socket       = Sprite_Create("/data/global/ui/PANEL/gemsocket.dc6", PALETTE_UNITS);
     inventory->shop_panel   = Sprite_Create(SHOP_PANEL, PALETTE_SKY);
     inventory->trade_panel  = Sprite_Create(TRADE_PANEL, PALETTE_SKY);
@@ -174,6 +180,7 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
     Sprite_Destroy(&inventory->panel);
     Sprite_Destroy(&inventory->gold_button);
     Sprite_Destroy(&inventory->stash_panel);
+    Sprite_Destroy(&inventory->bank_panel);
     Sprite_Destroy(&inventory->socket);
     Sprite_Destroy(&inventory->shop_panel);
     Sprite_Destroy(&inventory->trade_panel);
@@ -423,24 +430,24 @@ bool GameInventory_IsOverStash(const GameInventory *inventory, const int mouse_x
 }
 
 static bool GameInventory__StashCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
-    if (mouse_x < STASH_GRID_X || mouse_y < STASH_GRID_Y || mouse_x >= STASH_GRID_X + (STASH_W * CELL) ||
-        mouse_y >= STASH_GRID_Y + (STASH_H * CELL)) {
+    if (mouse_x < STASH_GRID_X || mouse_y < stash_grid_y || mouse_x >= STASH_GRID_X + (STASH_W * CELL) ||
+        mouse_y >= stash_grid_y + (stash_rows * CELL)) {
         return false;
     }
     *cell_x = (mouse_x - STASH_GRID_X) / CELL;
-    *cell_y = (mouse_y - STASH_GRID_Y) / CELL;
+    *cell_y = (mouse_y - stash_grid_y) / CELL;
     return true;
 }
 
 static SDL_Rect GameInventory__StashRect(const InventoryItem *it, const ItemBase *base) {
-    const SDL_Rect rect = {STASH_GRID_X + (it->x * CELL), STASH_GRID_Y + (it->y * CELL),
+    const SDL_Rect rect = {STASH_GRID_X + (it->x * CELL), stash_grid_y + (it->y * CELL),
                            (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
     return rect;
 }
 
 static bool GameInventory__OverStashGold(const int mouse_x, const int mouse_y) {
-    return mouse_x >= STASH_GOLD_BUTTON_X && mouse_x < STASH_GOLD_BUTTON_X + GOLD_BUTTON_W &&
-           mouse_y >= STASH_GOLD_BUTTON_Y && mouse_y < STASH_GOLD_BUTTON_Y + GOLD_BUTTON_H;
+    return mouse_x >= STASH_GOLD_BUTTON_X && mouse_x < STASH_GOLD_BUTTON_X + GOLD_BUTTON_W && mouse_y >= stash_gold_y &&
+           mouse_y < stash_gold_y + GOLD_BUTTON_H;
 }
 
 static int GameInventory__BeltSlotAt(const int mouse_x, const int mouse_y) {
@@ -714,9 +721,16 @@ bool GameInventory_DrinkBelt(Character *character, const int slot, Item *drunk) 
     return true;
 }
 
+static void GameInventory__StashLayout(const Character *character) {
+    stash_grid_y = character->expansion ? 82 : 273;
+    stash_gold_y = character->expansion ? 23 : 219;
+    stash_rows   = Stash_Rows(character);
+}
+
 int GameInventory_Update(GameInventory *inventory, Character *character, const bool open, const int mouse_x,
                          const int mouse_y, const bool left_click, const bool right_click, const bool shift,
                          Item *drunk, const char **message) {
+    GameInventory__StashLayout(character);
     *message            = NULL;
     inventory->sound[0] = '\0';
     int events          = INVENTORY_EVENT_NONE;
@@ -1003,7 +1017,7 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             const int       left    = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
             const int       top     = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
             const int       x       = left >= STASH_GRID_X ? (left - STASH_GRID_X) / CELL : -1;
-            const int       y       = top >= STASH_GRID_Y ? (top - STASH_GRID_Y) / CELL : -1;
+            const int       y       = top >= stash_grid_y ? (top - stash_grid_y) / CELL : -1;
             const int       covered = Stash_Covered(character, base, x, y);
             if (covered == -2) {
                 return events;
@@ -1281,16 +1295,18 @@ static void GameInventory__DrawCube(GameInventory *inventory, const Character *c
 // The stash on the left: its items, its gold and the button to take some out
 static void GameInventory__DrawStash(GameInventory *inventory, const Character *character, const int mouse_x,
                                      const int mouse_y) {
-    Sprite_DrawMulti(inventory->stash_panel, 0, 0, 0, 2, 2);
+    Sprite_DrawMulti(character->expansion || inventory->bank_panel == NULL ? inventory->stash_panel
+                                                                           : inventory->bank_panel,
+                     0, 0, 0, 2, 2);
     if (inventory->holding) {
         const ItemBase *base = Items_Find(inventory->held.code);
         const int       left = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
         const int       top  = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
         const int       x    = left >= STASH_GRID_X ? (left - STASH_GRID_X) / CELL : -1;
-        const int       y    = top >= STASH_GRID_Y ? (top - STASH_GRID_Y) / CELL : -1;
+        const int       y    = top >= stash_grid_y ? (top - stash_grid_y) / CELL : -1;
         if (Stash_Covered(character, base, x, y) != -2 &&
             GameInventory__StashCellAt(mouse_x, mouse_y, &(int){0}, &(int){0})) {
-            const SDL_Rect area = {STASH_GRID_X + (x * CELL), STASH_GRID_Y + (y * CELL), base->width * CELL,
+            const SDL_Rect area = {STASH_GRID_X + (x * CELL), stash_grid_y + (y * CELL), base->width * CELL,
                                    base->height * CELL};
             SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(sdl_renderer, 30, 100, 30, 110);
@@ -1311,16 +1327,16 @@ static void GameInventory__DrawStash(GameInventory *inventory, const Character *
     bool left_down = false;
     InputManager_GetMouseButtons(&left_down, NULL, NULL);
     Sprite_Draw(inventory->gold_button, GameInventory__OverStashGold(mouse_x, mouse_y) && left_down ? 1 : 0,
-                STASH_GOLD_BUTTON_X, STASH_GOLD_BUTTON_Y + GOLD_BUTTON_H);
+                STASH_GOLD_BUTTON_X, stash_gold_y + GOLD_BUTTON_H);
     char text[64];
     Label_SetAlignment(inventory->text, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
     Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
     snprintf(text, sizeof(text), "Gold in Stash: %d", character->stash_gold);
     Label_SetText(inventory->text, text);
-    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, STASH_GOLD_BUTTON_Y + 10);
+    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, stash_gold_y + 10);
     snprintf(text, sizeof(text), "Gold Max: %d", Stash_GoldLimit(character));
     Label_SetText(inventory->text, text);
-    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, STASH_GOLD_BUTTON_Y + 34);
+    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, stash_gold_y + 34);
 }
 
 // The merchant's store on the left
@@ -1425,6 +1441,7 @@ static void GameInventory__DrawTrade(GameInventory *inventory, const Character *
 }
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
+    GameInventory__StashLayout(character);
     if (inventory->trade != NULL) {
         GameInventory__DrawTrade(inventory, character, mouse_x, mouse_y);
     } else if (inventory->shop != NULL) {

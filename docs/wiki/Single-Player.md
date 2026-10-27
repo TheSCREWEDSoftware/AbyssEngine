@@ -188,7 +188,8 @@ page number under the grid, next to the gold). The square button in its bottom c
 ### The stash
 
 Each town's stash (the chest by the camp) opens your stash on the left, with the inventory on the right: a 6 x 8 grid
-(the expansion's big stash, `inventory.txt`'s "Big Bank Page 1"). Items move between the two with the mouse like in
+(the expansion's big stash, `inventory.txt`'s "Big Bank Page 1"; classic characters have the original 6 x 4 bank,
+"Bank Page 1", in its own panel). Items move between the two with the mouse like in
 the inventory. Gold too: at the stash the inventory's coin button puts gold in (up to "Gold Max": 50,000 for each ten
 levels), and the stash's own coin button takes it out (no more than you can carry). Walking away, closing the
 inventory or opening the character screen closes it. The stash is kept with the character.

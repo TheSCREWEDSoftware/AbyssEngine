@@ -37,7 +37,8 @@ bool            Inventory_CanEquip(const Character *character, const Item *item,
 bool            Inventory_MeetsRequirements(const Character *character, const ItemBase *base);
 const ItemBase *Inventory_Weapon(const Character *character); // NULL: bare hands
 
-// The stash (in town): the same as the grid, 6 x 8, one page
+// The stash (in town): the same as the grid, 6 x 8 (the expansion's big one; classic characters' is 6 x 4), one page
+int  Stash_Rows(const Character *character);
 int  Stash_ItemAt(const Character *character, int cell_x, int cell_y);
 int  Stash_Covered(const Character *character, const ItemBase *base, int x, int y);
 bool Stash_Place(Character *character, const Item *item, int x, int y);

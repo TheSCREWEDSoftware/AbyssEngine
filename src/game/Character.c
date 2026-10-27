@@ -779,7 +779,9 @@ bool Character_ReadText(const char *text, Character *character) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 Affixes_Parse(&item, value + used);
                 Character__Durability(&item);
-                Stash_Place(character, &item, a, b);
+                if (!Stash_Place(character, &item, a, b) && !Stash_Add(character, &item)) {
+                    Inventory_Add(character, &item); // (a classic character's from when the stash was bigger)
+                }
             } else if (sscanf(value, "cube %d %d %7s %d %d%n", &a, &b, code, &item.defense, &item.quantity, &used) ==
                        5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
