@@ -10,11 +10,12 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 15 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+#define NET_PROTOCOL_VERSION 16 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
 // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading;
 // 9: durability, unidentified items, +skills (a mod's skill); 10: charges (a mod's extra); 11: summons and hirelings
 // seen by the others; 12: stash pages; 13: the mods in the hello; 14: Town Portals seen and used by the others;
-// 15: monsters' curses and auras on every player, burrowed monsters and auras seen
+// 15: monsters' curses and auras on every player, burrowed monsters and auras seen; 16: players' life and level
+// in their state (the party's portraits)
 
 // Trading between players (MSG_TRADE / MSG_TRADE_FROM): the server only passes them on; both games check and make
 // the swap when each has accepted the other's offer as it stands (their versions)

@@ -62,7 +62,8 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Chests, doors and shrines**: the first to open one opens it for everyone (the server decides who was first), and
   what's in a chest drops once, for everyone to pick up. Coming into an area later, what's been opened shows open.
 - **Parties**: **P** opens the party screen: everyone in the game, with **Invite** next to each (or **Accept** when
-  they've invited you; the chat says so), and **Leave Party** when you're in one. Party members share the experience
+  they've invited you; the chat says so), and **Leave Party** when you're in one. Your party's members have a
+  portrait in the top left (under your hireling's): name, level and life (Z hides them). Party members share the experience
   of kills made within about two screens of each other, with the game's bonus of 35% for each member after the first
   (two players get 67.5% each), and can't attack each other with PvP on. Leaving the game leaves the party. Your
   party shows on the automap: a cross in each one's colour with their name.

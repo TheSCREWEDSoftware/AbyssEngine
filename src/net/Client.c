@@ -309,10 +309,14 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
             const int   turn  = NetReader_U8(reader);
             char        mode[4];
             NetReader_String(reader, mode, sizeof(mode));
+            const int  life   = NetReader_U8(reader);
+            const int  level  = NetReader_U8(reader);
             NetPlayer *player = NetClient_Player(id);
             if (player == NULL || id == client.my_id) {
                 continue;
             }
+            player->life      = life;
+            player->level     = level > 0 ? level : player->level;
             const bool jumped = !player->has_state || place != player->place ||
                                 (x - player->x) * (x - player->x) + (y - player->y) * (y - player->y) > 400.0f;
             player->from_x    = jumped ? x : player->x;
@@ -480,7 +484,8 @@ void NetClient_Delete(const char *name) {
     NetClient__Send(MSG_CHAR_DELETE, &writer);
 }
 
-void NetClient_SendState(const int place, const float x, const float y, const int turn, const char *mode) {
+void NetClient_SendState(const int place, const float x, const float y, const int turn, const char *mode,
+                         const int life_percent, const int level) {
     if (client.stage != NETC_IN_GAME) {
         return;
     }
@@ -491,6 +496,8 @@ void NetClient_SendState(const int place, const float x, const float y, const in
     NetWriter_F32(&writer, y);
     NetWriter_U8(&writer, (uint8_t)turn);
     NetWriter_String(&writer, mode != NULL ? mode : "nu");
+    NetWriter_U8(&writer, (uint8_t)(life_percent < 0 ? 0 : (life_percent > 100 ? 100 : life_percent)));
+    NetWriter_U8(&writer, (uint8_t)(level < 1 ? 1 : (level > 255 ? 255 : level)));
     NetClient__Send(MSG_STATE, &writer);
 }
 

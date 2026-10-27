@@ -27,6 +27,7 @@ typedef struct NetPlayer {
     int            color;     // NetColor: theirs
     int            party;     // their party's id, 0 = none
     bool           has_state; // where they are (MSG_STATES)
+    int            life;      // their life, percent (with their state)
     int            place;     // Places index (same seed: same map)
     float          x;         // sub-tiles
     float          y;
@@ -61,7 +62,7 @@ void NetClient_Delete(const char *name);                                        
 // In the game
 int        NetClient_MyId(void);
 uint32_t   NetClient_Seed(void);
-void       NetClient_SendState(int place, float x, float y, int turn, const char *mode);
+void       NetClient_SendState(int place, float x, float y, int turn, const char *mode, int life_percent, int level);
 void       NetClient_SendChat(const char *text);
 int        NetClient_Players(NetPlayer **players);   // the others in the game
 bool       NetClient_TakeChat(char *text, int size); // the next line to show ("Name: hello"), false when none

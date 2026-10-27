@@ -5973,7 +5973,9 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
         roam->last_sent = real;
         Roam__ForgetGonePortals(roam); // (theirs who've left)
         NetClient_SendState(Roam__MapKey(roam), roam->player.x, roam->player.y, roam->player.turn,
-                            Roam__Mode(roam, &roam->player));
+                            Roam__Mode(roam, &roam->player),
+                            roam->player.max_hp > 0 ? roam->player.hp * 100 / roam->player.max_hp : 100,
+                            roam->character != NULL ? roam->character->level : 1);
     }
     char line[NET_CHAT_MAX + 24];
     while (NetClient_TakeChat(line, sizeof(line))) {
@@ -7150,9 +7152,12 @@ static void Roam__DrawOtherPlayers(SceneRoam *roam, const SDL_Rect *view) {
 }
 
 // Multiplayer: what was said lately (top left, like the game's), and the line being typed
+static bool Roam__PortraitsShown(SceneRoam *roam);
+
 static void Roam__DrawChat(SceneRoam *roam) {
     const uint64_t now = SDL_GetTicks64();
     int            y   = 30;
+    const int      x   = Roam__PortraitsShown(roam) ? 140 : 12; // (beside the portraits)
     for (int l = 0; l < CHAT_LINES; l++) {
         if (roam->chat_lines[l][0] == '\0' || now - roam->chat_times[l] > CHAT_MS) {
             continue;
@@ -7160,7 +7165,7 @@ static void Roam__DrawChat(SceneRoam *roam) {
         const bool said = strchr(roam->chat_lines[l], ':') != NULL; // "Name: ..." (the server's news has no name)
         Label_SetText(roam->chat_label, roam->chat_lines[l]);
         Label_SetColor(roam->chat_label, said ? 0xFF : 0xFF, said ? 0xFF : 0xE8, said ? 0xFF : 0x60, 0xFF);
-        Label_Draw(roam->chat_label, 12, y);
+        Label_Draw(roam->chat_label, x, y);
         y += 18;
     }
     if (TextBox_IsFocused(roam->chat_box)) {

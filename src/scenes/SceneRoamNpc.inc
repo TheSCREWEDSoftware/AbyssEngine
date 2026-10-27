@@ -879,12 +879,55 @@ static void Roam__KeepHirelingScreen(SceneRoam *roam) {
     }
 }
 
+// Any portraits in the top left (the hireling's, the party's)?
+static bool Roam__PortraitsShown(SceneRoam *roam) {
+    if (roam->hide_portraits || !roam->game) {
+        return false;
+    }
+    const int index = Roam__FindHireling(roam);
+    if (index >= 0 && Roam__IsAlive(&roam->units[index])) {
+        return true;
+    }
+    for (int o = 0; o < roam->other_count && roam->online; o++) {
+        if (Roam__InMyParty(NetClient_Player(roam->other_ids[o]))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Party members' portraits, under the hireling's: name, level and life (Show portraits, Z, hides them)
+static void Roam__DrawPartyPortraits(SceneRoam *roam, int y) {
+    for (int o = 0; o < roam->other_count && roam->online && !roam->hide_portraits; o++) {
+        const NetPlayer *player = NetClient_Player(roam->other_ids[o]);
+        if (!Roam__InMyParty(player)) {
+            continue;
+        }
+        const SDL_Rect box = {8, y, 120, 30};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 170);
+        SDL_RenderFillRect(sdl_renderer, &box);
+        const int      pct  = player->life < 0 ? 0 : (player->life > 100 ? 100 : player->life);
+        const SDL_Rect life = {box.x + 4, box.y + 20, (box.w - 8) * pct / 100, 5};
+        SDL_SetRenderDrawColor(sdl_renderer, pct > 50 ? 30 : 200, pct > 50 ? 180 : (pct > 25 ? 160 : 30), 30, 255);
+        SDL_RenderFillRect(sdl_renderer, &life);
+        char text[48];
+        snprintf(text, sizeof(text), "%s  %d", player->name, player->level);
+        Label_SetText(roam->item_label, text);
+        Label_SetColor(roam->item_label, 0xC7, 0xB3, 0x77, 0xFF);
+        Label_Draw(roam->item_label, box.x + 4, box.y + 3);
+        y += 34;
+    }
+}
+
 // Their portrait's place: top left, name and life
 static void Roam__DrawHireling(SceneRoam *roam) {
     const int index = roam->game ? Roam__FindHireling(roam) : -1;
     if (index < 0 || !Roam__IsAlive(&roam->units[index]) || roam->hide_portraits) {
+        Roam__DrawPartyPortraits(roam, 26);
         return;
     }
+    Roam__DrawPartyPortraits(roam, 60);
     const Unit    *unit = &roam->units[index];
     const SDL_Rect box  = {8, 26, 120, 30};
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);

@@ -41,6 +41,8 @@ typedef struct Peer {
     float          y;
     int            turn;
     char           mode[4];
+    int            life; // percent, and their level (MSG_STATE)
+    int            level;
     int            party;                       // the party's id (its first member's player id), 0 = none
     char           looks[CHARACTER_LOOKS_TEXT]; // what they wear (Character_LooksToText), sent with MSG_PLAYER
     int            invite_from;                 // the last player who invited them
@@ -828,6 +830,8 @@ static void Server__State(Peer *peer, NetReader *reader) {
     const int   turn  = NetReader_U8(reader);
     char        mode[4];
     NetReader_String(reader, mode, sizeof(mode));
+    const int life  = NetReader_U8(reader);
+    const int level = NetReader_U8(reader);
     if (reader->failed || x != x || y != y || x < 0.0f || y < 0.0f || x > 100000.0f || y > 100000.0f) {
         return; // nonsense (NaN, off any map)
     }
@@ -836,6 +840,8 @@ static void Server__State(Peer *peer, NetReader *reader) {
     peer->y         = y;
     peer->turn      = turn;
     peer->has_state = true;
+    peer->life      = life > 100 ? 100 : life;
+    peer->level     = level;
     snprintf(peer->mode, sizeof(peer->mode), "%s", mode);
 }
 
@@ -1373,6 +1379,8 @@ void NetServer_Update(NetServer *server, const uint64_t now) {
                 NetWriter_F32(&writer, peer->y);
                 NetWriter_U8(&writer, (uint8_t)peer->turn);
                 NetWriter_String(&writer, peer->mode);
+                NetWriter_U8(&writer, (uint8_t)peer->life);
+                NetWriter_U8(&writer, (uint8_t)peer->level);
             }
         }
         if (count > 0) {
