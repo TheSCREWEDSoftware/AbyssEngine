@@ -253,6 +253,14 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
             }
         }
     }
+    // Feral Rage's charges quicken you (the game's own sum: from 10% with one to near 70% with many)
+    if (roam->charges > 0 && roam->charge_skill != NULL && roam->charge_skill->do_func == 120 &&
+        strcmp(roam->charge_skill->id, "Feral Rage") == 0 && now < roam->charges_until) {
+        const SkillRow *s = roam->charge_skill;
+        const int       n = roam->charges;
+        character->bonus[BONUS_SPEED_PCT] +=
+            ((110 * n) * (s->params[3] - s->params[2])) / (100 * (n + 6)) + s->params[2];
+    }
     // Your spirit's aura (the Druid's Oak Sage, Heart of Wolverine, Spirit of Barbs), near it
     const SkillRow *spirit_aura  = NULL;
     int             spirit_level = 0;

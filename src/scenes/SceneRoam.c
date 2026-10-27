@@ -3827,6 +3827,70 @@ static void Roam__ReleaseCharges(SceneRoam *roam, Unit *target, int rolled[ELEME
     roam->charges = 0;
 }
 
+static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now);
+
+// Feral Rage's and Maul's charges: each blow that lands adds one (up to the skill's most), for a while
+static int Roam__DruidCharge(SceneRoam *roam, const SkillRow *skill, const int level, const uint64_t now) {
+    if (roam->charge_skill != skill || now >= roam->charges_until) {
+        roam->charges = 0;
+    }
+    const int most      = SkillData_Eval(roam->character, skill, level, skill->calc[1]);
+    roam->charge_skill  = skill;
+    roam->charge_level  = level;
+    roam->charges       = roam->charges < (most > 1 ? most : 1) ? roam->charges + 1 : (most > 1 ? most : 1);
+    const int frames    = SkillData_Eval(roam->character, skill, level, skill->aura_length);
+    roam->charges_until = now + (uint64_t)((frames > 0 ? frames : 500) * 40);
+    return roam->charges;
+}
+
+// The Druid's shape-shifted blows, as the game does them: Hunger steals life and mana, Feral Rage builds charges that
+// steal life (and quicken you), Maul's add damage and stun, Rabies' poison spreads to the monsters around, Fury
+// strikes several at once
+static void Roam__DruidBlow(SceneRoam *roam, const SkillRow *skill, const int level, Unit *target,
+                            int rolled[ELEMENT_COUNT], int *life_steal, int *mana_steal, const uint64_t now) {
+    if (skill->do_func == 122) { // Hunger
+        *life_steal += SkillData_Eval(roam->character, skill, level, skill->calc[1]);
+        *mana_steal += SkillData_Eval(roam->character, skill, level, skill->calc[2]);
+    } else if (skill->do_func == 120 && strcmp(skill->id, "Maul") == 0) {
+        const int charges         = Roam__DruidCharge(roam, skill, level, now);
+        rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * skill->params[2] * charges / 100;
+        const int stun            = SkillData_Eval(roam->character, skill, level, "dm56");
+        if (Roam__RunsMonsters(roam) && stun > 0) {
+            const uint64_t until = now + (uint64_t)(stun * 40);
+            target->frozen_until = until > target->frozen_until ? until : target->frozen_until;
+        }
+    } else if (skill->do_func == 120) { // Feral Rage
+        *life_steal += skill->params[1] * Roam__DruidCharge(roam, skill, level, now);
+    } else if (skill->do_func == 121 && Roam__RunsMonsters(roam) && target->poison_left > 0.0f) { // Rabies
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *other = &roam->units[i];
+            if (other != target && Roam__IsAlive(other) && Roam__IsCombatant(other) && !other->ally && !other->npc &&
+                Roam__Distance(other->x, other->y, target->x, target->y) < 4.0f) {
+                other->poison_left = fmaxf(other->poison_left, target->poison_left);
+                other->poison_rate = fmaxf(other->poison_rate, target->poison_rate);
+                other->poison_ours = true;
+            }
+        }
+    } else if (skill->do_func == 13 && strcmp(skill->id, "Fury") == 0) {
+        static bool striking = false; // (the others are struck once each, not again from their blows)
+        if (striking) {
+            return;
+        }
+        striking = true;
+        int more = SkillData_Eval(roam->character, skill, level, skill->calc[0]) - 1;
+        for (int i = 0; i < roam->unit_count && more > 0; i++) {
+            Unit *other = &roam->units[i];
+            if (other != target && Roam__IsAlive(other) && Roam__IsCombatant(other) && !other->ally && !other->npc &&
+                !other->is_object &&
+                Roam__Distance(other->x, other->y, roam->player.x, roam->player.y) <= ATTACK_RANGE + 0.5f) {
+                Roam__PlayerStrikes(roam, other, now);
+                more--;
+            }
+        }
+        striking = false;
+    }
+}
+
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
@@ -3895,6 +3959,11 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
             Roam__HitEffects(roam, target, big, now);
         }
     }
+    int life_steal = 0;
+    int mana_steal = 0;
+    if (roam->game && skill != NULL) {
+        Roam__DruidBlow(roam, skill, level, target, rolled, &life_steal, &mana_steal, now);
+    }
     if (roam->game && skill != NULL && skill->finishing) {
         Roam__ReleaseCharges(roam, target, rolled, now); // a finishing move: the charges go into this blow
     } else if (roam->game && skill != NULL && skill->progressive) {
@@ -3914,8 +3983,8 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (roam->game) {
         // Life and mana stolen with each blow that lands (from its physical damage, like the game)
         const int physical = Roam__Resisted(rolled[ELEMENT_PHYSICAL], target->resist[ELEMENT_PHYSICAL]);
-        const int life     = physical * Affixes_Total(roam->character, MOD_LIFE_STEAL) / 100;
-        const int mana     = physical * Affixes_Total(roam->character, MOD_MANA_STEAL) / 100;
+        const int life     = physical * (Affixes_Total(roam->character, MOD_LIFE_STEAL) + life_steal) / 100;
+        const int mana     = physical * (Affixes_Total(roam->character, MOD_MANA_STEAL) + mana_steal) / 100;
         roam->player.hp = roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
         roam->mana      = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
     }
