@@ -161,6 +161,53 @@ void MapHistory_AddEntity(MapHistory *history, Map *map, const char *base, const
     }
 }
 
+void MapHistory_SetCellRaw(MapHistory *history, Map *map, const MapLayerKind kind, const int layer, const int tx,
+                           const int ty, const DS1Cell *value) {
+    const DS1Cell *cell = Map_GetCell(map, kind, layer, tx, ty);
+    if (cell == NULL) {
+        return;
+    }
+    const bool alone = !history->open;
+    if (alone) {
+        MapHistory_Begin(history);
+    }
+    const DS1Cell before = *cell;
+    Map_SetCellRaw(map, kind, layer, tx, ty, value);
+    MapEdit *edit    = MapHistory__Push(history);
+    edit->kind       = EDIT_CELL;
+    edit->layer_kind = kind;
+    edit->layer      = layer;
+    edit->tx         = tx;
+    edit->ty         = ty;
+    edit->before     = before;
+    edit->after      = *Map_GetCell(map, kind, layer, tx, ty);
+    if (alone) {
+        MapHistory_End(history);
+    }
+}
+
+void MapHistory_AddEntityCopy(MapHistory *history, Map *map, const MapEntity *entity) {
+    const bool alone = !history->open;
+    if (alone) {
+        MapHistory_Begin(history);
+    }
+    MapEntity *added = Map_AddEntity(map, entity->base, entity->id, entity->name, entity->x, entity->y);
+    if (added != NULL) {
+        const float x = added->x;
+        const float y = added->y;
+        *added        = *entity; // (its facing, object row and mode too)
+        added->x      = x;
+        added->y      = y;
+        MapEdit *edit = MapHistory__Push(history);
+        edit->kind    = EDIT_ENTITY_ADDED;
+        edit->index   = map->entity_count - 1;
+        edit->entity  = *added;
+    }
+    if (alone) {
+        MapHistory_End(history);
+    }
+}
+
 void MapHistory_RemoveEntity(MapHistory *history, Map *map, const int index) {
     if (index < 0 || index >= map->entity_count) {
         return;

@@ -23,6 +23,10 @@ void MapHistory_SetCell(MapHistory *history, Map *map, MapLayerKind kind, int la
 void MapHistory_AddEntity(MapHistory *history, Map *map, const char *base, const char *id, const char *name, float x,
                           float y);
 void MapHistory_RemoveEntity(MapHistory *history, Map *map, int index);
+// A cell set exactly as given, and a whole entity added as it is (copy and paste)
+void MapHistory_SetCellRaw(MapHistory *history, Map *map, MapLayerKind kind, int layer, int tx, int ty,
+                           const DS1Cell *value);
+void MapHistory_AddEntityCopy(MapHistory *history, Map *map, const MapEntity *entity);
 void MapHistory_TurnEntity(MapHistory *history, Map *map, int index, int direction); // 0..15
 
 bool MapHistory_Undo(MapHistory *history, Map *map); // false: nothing to undo

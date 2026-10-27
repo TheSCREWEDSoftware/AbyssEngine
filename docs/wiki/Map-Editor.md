@@ -67,6 +67,13 @@ The monsters, NPCs and players for **Units** are loaded when the editor opens (u
 - **Back** (or **Esc**) asks first: with unsaved changes it offers **Save** (into the map's file, or asks for a name),
   **Leave** (lose them) or **Cancel**; otherwise "Return to the main menu?".
 
+## Copy and paste
+
+**Ctrl**+drag over the map picks a block of tiles (outlined in blue; **Ctrl**+right click lets go of it). **Ctrl+C**
+copies it: every floor, wall and shadow layer of each tile, and the units standing on them (their facing too).
+**Ctrl+V** puts the copy down with its top corner on the tile under the mouse, as one change to undo. What's copied
+stays while the program runs, so it can go from one map into another. Up to 64 x 64 tiles at a time.
+
 ## Undo, redo and not losing work
 
 - **Ctrl+Z** undoes the last change, **Ctrl+Y** (or **Ctrl+Shift+Z**) does it again. A change is one stroke of the

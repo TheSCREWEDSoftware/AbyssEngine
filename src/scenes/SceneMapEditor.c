@@ -151,7 +151,30 @@ typedef struct SceneMapEditor {
     int          new_type;
     int          new_size;
     TextBox     *name_box;
+    // Copy and paste: Ctrl+drag picks tiles (selecting while held), Ctrl+C copies them, Ctrl+V puts them at the mouse
+    bool selecting;
+    bool has_selection;
+    int  select_x0;
+    int  select_y0;
+    int  select_x1;
+    int  select_y1;
 } SceneMapEditor;
+
+// What Ctrl+C copied (kept while the program runs, from one map to another): every layer of each tile, and the units
+// standing on them, by where they are in the copied block
+#define CLIP_MAX_TILES (64 * 64)
+#define CLIP_MAX_UNITS 256
+static struct {
+    int       width;
+    int       height;
+    int       floors;
+    int       walls;
+    DS1Cell   floor[MAP_FLOOR_LAYERS][CLIP_MAX_TILES];
+    DS1Cell   wall[MAP_WALL_LAYERS][CLIP_MAX_TILES];
+    DS1Cell   shadow[CLIP_MAX_TILES];
+    MapEntity units[CLIP_MAX_UNITS];
+    int       unit_count;
+} clip;
 
 DEFINE_SCENE_CALLBACKS(MapEditor);
 
@@ -897,6 +920,100 @@ static void Editor__DrawDialog(const SceneMapEditor *editor) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Editing
 
+// The selection's corners, smallest first
+static void Editor__SelectionBox(const SceneMapEditor *editor, int *x0, int *y0, int *x1, int *y1) {
+    *x0 = editor->select_x0 < editor->select_x1 ? editor->select_x0 : editor->select_x1;
+    *y0 = editor->select_y0 < editor->select_y1 ? editor->select_y0 : editor->select_y1;
+    *x1 = editor->select_x0 < editor->select_x1 ? editor->select_x1 : editor->select_x0;
+    *y1 = editor->select_y0 < editor->select_y1 ? editor->select_y1 : editor->select_y0;
+}
+
+static void Editor__Copy(SceneMapEditor *editor) {
+    if (!editor->has_selection) {
+        Editor__Message(editor, "Ctrl+drag over the tiles to copy first");
+        return;
+    }
+    const Map *map = editor->map;
+    int        x0, y0, x1, y1;
+    Editor__SelectionBox(editor, &x0, &y0, &x1, &y1);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > CLIP_MAX_TILES) {
+        Editor__Message(editor, "That's too big to copy (64 x 64 tiles at most)");
+        return;
+    }
+    clip.width      = x1 - x0 + 1;
+    clip.height     = y1 - y0 + 1;
+    clip.floors     = map->floor_layer_count < MAP_FLOOR_LAYERS ? map->floor_layer_count : MAP_FLOOR_LAYERS;
+    clip.walls      = map->wall_layer_count < MAP_WALL_LAYERS ? map->wall_layer_count : MAP_WALL_LAYERS;
+    clip.unit_count = 0;
+    for (int ty = y0; ty <= y1; ty++) {
+        for (int tx = x0; tx <= x1; tx++) {
+            const int      at     = ((ty - y0) * clip.width) + (tx - x0);
+            const DS1Cell  none   = {0};
+            const DS1Cell *shadow = Map_GetCell(map, MAP_LAYER_SHADOW, 0, tx, ty);
+            for (int l = 0; l < clip.floors; l++) {
+                const DS1Cell *cell = Map_GetCell(map, MAP_LAYER_FLOOR, l, tx, ty);
+                clip.floor[l][at]   = cell != NULL ? *cell : none;
+            }
+            for (int l = 0; l < clip.walls; l++) {
+                const DS1Cell *cell = Map_GetCell(map, MAP_LAYER_WALL, l, tx, ty);
+                clip.wall[l][at]    = cell != NULL ? *cell : none;
+            }
+            clip.shadow[at] = shadow != NULL ? *shadow : none;
+        }
+    }
+    for (int e = 0; e < map->entity_count && clip.unit_count < CLIP_MAX_UNITS; e++) {
+        const MapEntity *entity = &map->entities[e];
+        const int        tx     = (int)floorf(entity->x / MAP_SUBTILES);
+        const int        ty     = (int)floorf(entity->y / MAP_SUBTILES);
+        if (tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1) {
+            MapEntity *copy  = &clip.units[clip.unit_count++];
+            *copy            = *entity;
+            copy->x         -= (float)(x0 * MAP_SUBTILES); // (from the block's corner)
+            copy->y         -= (float)(y0 * MAP_SUBTILES);
+        }
+    }
+    char text[96];
+    snprintf(text, sizeof(text), "Copied %d x %d tiles and %d units (Ctrl+V puts them at the mouse)", clip.width,
+             clip.height, clip.unit_count);
+    Editor__Message(editor, text);
+}
+
+static void Editor__Paste(SceneMapEditor *editor) {
+    if (clip.width == 0 || !editor->hover_valid) {
+        Editor__Message(editor, clip.width == 0 ? "Nothing copied yet (Ctrl+drag, then Ctrl+C)" : "");
+        return;
+    }
+    Map *map = editor->map;
+    MapHistory_Begin(editor->history); // (one change to undo)
+    for (int y = 0; y < clip.height; y++) {
+        for (int x = 0; x < clip.width; x++) {
+            const int tx = editor->hover_tx + x;
+            const int ty = editor->hover_ty + y;
+            const int at = (y * clip.width) + x;
+            if (tx >= map->width || ty >= map->height) {
+                continue;
+            }
+            for (int l = 0; l < clip.floors && l < map->floor_layer_count; l++) {
+                MapHistory_SetCellRaw(editor->history, map, MAP_LAYER_FLOOR, l, tx, ty, &clip.floor[l][at]);
+            }
+            for (int l = 0; l < clip.walls && l < map->wall_layer_count; l++) {
+                MapHistory_SetCellRaw(editor->history, map, MAP_LAYER_WALL, l, tx, ty, &clip.wall[l][at]);
+            }
+            MapHistory_SetCellRaw(editor->history, map, MAP_LAYER_SHADOW, 0, tx, ty, &clip.shadow[at]);
+        }
+    }
+    for (int u = 0; u < clip.unit_count; u++) {
+        MapEntity unit  = clip.units[u];
+        unit.x         += (float)(editor->hover_tx * MAP_SUBTILES);
+        unit.y         += (float)(editor->hover_ty * MAP_SUBTILES);
+        if (unit.x < (float)(map->width * MAP_SUBTILES) && unit.y < (float)(map->height * MAP_SUBTILES)) {
+            MapHistory_AddEntityCopy(editor->history, map, &unit);
+        }
+    }
+    Editor__EndChange(editor);
+    editor->dirty = true;
+}
+
 // Shift+click with a floor: every tile joined to the one clicked that has the same floor (side by side, not
 // corners) becomes the selected one, as one change
 static void Editor__FloodFill(SceneMapEditor *editor) {
@@ -1131,6 +1248,29 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
     editor->hover_valid = over_view && editor->hover_tx >= 0 && editor->hover_ty >= 0 &&
                           editor->hover_tx < editor->map->width && editor->hover_ty < editor->map->height;
 
+    // Ctrl+drag: picking tiles to copy (nothing's painted while Ctrl is held)
+    const bool ctrl_held = (SDL_GetModState() & KMOD_CTRL) != 0;
+    if (ctrl_held && left && editor->hover_valid && !editor->panning) {
+        if (!editor->prev_left) {
+            editor->selecting = true;
+            editor->select_x0 = editor->hover_tx;
+            editor->select_y0 = editor->hover_ty;
+        }
+        if (editor->selecting) {
+            editor->select_x1     = editor->hover_tx;
+            editor->select_y1     = editor->hover_ty;
+            editor->has_selection = true;
+        }
+        editor->prev_left  = left;
+        editor->prev_right = right;
+        return;
+    }
+    editor->selecting = editor->selecting && left;
+    if (ctrl_held && right && !editor->prev_right) {
+        editor->has_selection = false; // Ctrl+right click: no selection
+        editor->prev_right    = right;
+        return;
+    }
     // Paint / erase (tiles while held, units once per click); a stroke, press to release, is one change
     if ((left && !editor->prev_left) || (right && !editor->prev_right)) {
         if (!editor->stroke && editor->hover_valid && !editor->panning) {
@@ -1255,6 +1395,10 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
         Editor__Undo(editor, (SDL_GetModState() & KMOD_SHIFT) != 0);
     } else if (ctrl && InputManager_ConsumeKeyPress(SDL_SCANCODE_Y)) {
         Editor__Undo(editor, true);
+    } else if (ctrl && InputManager_ConsumeKeyPress(SDL_SCANCODE_C)) {
+        Editor__Copy(editor);
+    } else if (ctrl && InputManager_ConsumeKeyPress(SDL_SCANCODE_V)) {
+        Editor__Paste(editor);
     }
 
     // Auto-save (Options › Gameplay › Debug): into the map's file, or the recovery file for a map never saved
@@ -1407,6 +1551,21 @@ void MapEditor_Render(void *scene_ref) {
     const int   count = MapUnits_BuildDrawables(editor->units, editor->map, SDL_GetTicks64(), drawables, MAX_DRAWABLES);
     MapRenderer_Draw(editor->renderer, editor->map, &editor->camera, &view, drawables, count, editor->draw_flags);
 
+    // The tiles picked for copying
+    if (editor->has_selection && editor->dialog == DIALOG_NONE) {
+        int x0, y0, x1, y1;
+        Editor__SelectionBox(editor, &x0, &y0, &x1, &y1);
+        SDL_RenderSetClipRect(sdl_renderer, &view);
+        const SDL_Color picked = {120, 200, 255, 200};
+        for (int ty = y0; ty <= y1 && (y1 - y0) < 128; ty++) {
+            for (int tx = x0; tx <= x1 && (x1 - x0) < 128; tx++) {
+                if (tx == x0 || tx == x1 || ty == y0 || ty == y1) {
+                    MapRenderer_DrawTileOutline(&editor->camera, &view, tx, ty, picked);
+                }
+            }
+        }
+        SDL_RenderSetClipRect(sdl_renderer, NULL);
+    }
     // Cursor: the tile (or sub-tile for units) that will be painted
     if (editor->hover_valid && editor->dialog == DIALOG_NONE) {
         SDL_RenderSetClipRect(sdl_renderer, &view);
