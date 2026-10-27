@@ -462,18 +462,20 @@ typedef struct SceneRoam {
     ShopStock *gamble; // a gambler's (rolled again each time)
     // Talking (SceneRoamNpc.inc): what they say, scrolling in a box while the speech plays, and whose introductions
     // you've heard this game
-    char     speech_text[3000];
-    uint64_t speech_at;
-    int      speech_ms;
-    int      speech_npc; // unit index, -1 = nobody's talking
-    bool     text_mode;  // shown as text (AbyssEngine --text): speech goes to the message line
-    char     npc_heard[32][40];
-    int      npc_heard_count;
-    int      council_killed;    // the Blackened Temple: High Council super uniques killed this game
-    int      quest_objects_key; // the map the quests' missing objects were put in (key + 1)
-    bool     ancients_called;   // Rite of Passage: the Ancients are up (this game)
-    int      prisons_broken;    // Rescue on Mount Arreat: prison doors broken (this game)
-    int      shop_npc;          // trading with (unit index), -1 = none
+    char         speech_text[3000];
+    uint64_t     speech_at;
+    int          speech_ms;
+    int          speech_npc; // unit index, -1 = nobody's talking
+    bool         text_mode;  // shown as text (AbyssEngine --text): speech goes to the message line
+    char         npc_heard[32][40];
+    int          npc_heard_count;
+    int          council_killed;    // the Blackened Temple: High Council super uniques killed this game
+    int          quest_objects_key; // the map the quests' missing objects were put in (key + 1)
+    bool         ancients_called;   // Rite of Passage: the Ancients are up (this game)
+    bool         hire_open;         // the hireling's screen (click their portrait)
+    HirelingView hire_view;
+    int          prisons_broken; // Rescue on Mount Arreat: prison doors broken (this game)
+    int          shop_npc;       // trading with (unit index), -1 = none
     // Trading with another player (SceneRoamTrade.inc)
     int        trade_state;
     int        trade_with;     // their player id
@@ -1909,6 +1911,8 @@ static void Roam__ResetPlayer(SceneRoam *roam) {
 }
 
 static bool Roam__CanTalk(const SceneRoam *roam, const Unit *unit);
+static bool Roam__UpdateHirelingPortrait(SceneRoam *roam, int mouse_x, int mouse_y, bool click);
+static void Roam__KeepHirelingScreen(SceneRoam *roam);
 static bool Roam__NpcHasTalk(const SceneRoam *roam, const Unit *unit);
 static void Roam__TalkTo(SceneRoam *roam, int npc);
 
@@ -4335,8 +4339,13 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         roam->ui_owns_press = left_down || right_down;
         return true; // what the town folk do
     }
+    if (Roam__UpdateHirelingPortrait(roam, mouse_x, mouse_y, left_click)) {
+        roam->ui_owns_press = left_down || right_down;
+        return true; // their screen opened or closed
+    }
     Roam__KeepShop(roam);
     Roam__KeepHireling(roam);
+    Roam__KeepHirelingScreen(roam);
     if (roam->online) {
         Roam__KeepTrade(roam);
     }
@@ -4473,6 +4482,19 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     if (item_events & INVENTORY_EVENT_SHOP_CLOSE) {
         Roam__CloseShop(roam);
         roam->inventory_panel = false;
+    }
+    if (item_events & INVENTORY_EVENT_HIRE_CLOSE) {
+        roam->hire_open = false;
+        GameInventory_SetHireling(roam->inventory_ui, NULL);
+    }
+    if (item_events & INVENTORY_EVENT_HIRELING) {
+        const int hireling = Roam__FindHireling(roam);
+        if (hireling >= 0) {
+            const int lost = roam->units[hireling].max_hp - roam->units[hireling].hp;
+            Roam__HirelingStats(roam, &roam->units[hireling]); // what they wear now
+            roam->units[hireling].hp =
+                roam->units[hireling].max_hp - lost > 1 ? roam->units[hireling].max_hp - lost : 1;
+        }
     }
     if (item_events & INVENTORY_EVENT_STASH_GOLD) {
         const int room = Roam__GoldLimit(roam) - character->gold;

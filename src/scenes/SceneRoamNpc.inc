@@ -706,6 +706,29 @@ static void Roam__HirelingStats(SceneRoam *roam, Unit *unit) {
     const Character *c = roam->character;
     HireStats        stats;
     Hirelings_Stats(c->hireling - 1, c->hireling_level, &stats);
+    // What they wear: the weapon's damage (and their own a little), armor's defense, magic's life and resistances
+    const Item     *weapon = &c->hireling_items[HIRE_WEAPON];
+    const ItemBase *wbase  = Item_Works(weapon) ? Items_Find(weapon->code) : NULL;
+    if (wbase != NULL) {
+        const bool two   = wbase->max_damage <= 0 || (wbase->two_handed && wbase->two_hand_max > 0);
+        const int  low   = two ? wbase->two_hand_min : wbase->min_damage;
+        const int  high  = two ? wbase->two_hand_max : wbase->max_damage;
+        const int  pct   = Affixes_ItemTotal(weapon, MOD_DAMAGE_PCT);
+        stats.damage_min = low + (low * pct / 100) + Affixes_ItemTotal(weapon, MOD_DAMAGE_MIN) + (stats.damage_min / 2);
+        stats.damage_max =
+            high + (high * pct / 100) + Affixes_ItemTotal(weapon, MOD_DAMAGE_MAX) + (stats.damage_max / 2);
+    }
+    for (int s = 0; s < HIRE_SLOTS; s++) {
+        const Item *item = &c->hireling_items[s];
+        if (!Item_Works(item)) {
+            continue;
+        }
+        stats.defense       += Character_ItemDefense(item) + Affixes_ItemTotal(item, MOD_DEFENSE);
+        stats.hp            += Affixes_ItemTotal(item, MOD_LIFE);
+        stats.resist        += Affixes_ItemTotal(item, MOD_RES_ALL);
+        stats.attack_rating += Affixes_ItemTotal(item, MOD_ATTACK_RATING);
+    }
+    stats.resist        = stats.resist > RESIST_MAX ? RESIST_MAX : stats.resist;
     unit->max_hp        = stats.hp > 0 ? stats.hp : 40;
     unit->defense       = stats.defense;
     unit->attack_rating = stats.attack_rating;
@@ -790,6 +813,60 @@ static void Roam__KeepHireling(SceneRoam *roam) {
     }
 }
 
+static void Roam__KeepHirelingScreen(SceneRoam *roam);
+
+// A click on their portrait opens their screen (with the inventory), or closes it
+static bool Roam__UpdateHirelingPortrait(SceneRoam *roam, const int mouse_x, const int mouse_y, const bool click) {
+    const int       index = roam->game ? Roam__FindHireling(roam) : -1;
+    const SDL_Rect  box   = {8, 26, 120, 30};
+    const SDL_Point mouse = {mouse_x, mouse_y};
+    if (!click || index < 0 || !Roam__IsAlive(&roam->units[index]) || !SDL_PointInRect(&mouse, &box)) {
+        return false;
+    }
+    roam->hire_open = !roam->hire_open;
+    if (roam->hire_open) {
+        Roam__CloseShop(roam);
+        GameInventory_SetStash(roam->inventory_ui, false);
+        roam->inventory_panel = true;
+        roam->skill_panel     = false;
+        roam->char_panel      = false;
+        roam->panel           = PANEL_NONE;
+    }
+    Roam__KeepHirelingScreen(roam);
+    Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    return true;
+}
+
+// While it's open: their numbers, as they are now; it closes with the inventory, or when they're gone
+static void Roam__KeepHirelingScreen(SceneRoam *roam) {
+    const int index = roam->game ? Roam__FindHireling(roam) : -1;
+    if (!roam->hire_open || index < 0 || !Roam__IsAlive(&roam->units[index]) || !roam->inventory_panel ||
+        roam->char_panel || GameInventory_ShopOpen(roam->inventory_ui) || GameInventory_StashOpen(roam->inventory_ui) ||
+        GameInventory_CubeOpen(roam->inventory_ui)) {
+        roam->hire_open = false;
+        GameInventory_SetHireling(roam->inventory_ui, NULL);
+        return;
+    }
+    const Unit      *unit = &roam->units[index];
+    const Character *c    = roam->character;
+    HirelingView    *view = &roam->hire_view;
+    snprintf(view->name, sizeof(view->name), "%s", unit->name);
+    snprintf(view->title, sizeof(view->title), "%s", Hirelings_Title(c->hireling - 1));
+    view->row        = c->hireling - 1;
+    view->level      = c->hireling_level;
+    view->hp         = unit->hp;
+    view->max_hp     = unit->max_hp;
+    view->damage_min = unit->damage_min;
+    view->damage_max = unit->damage_max;
+    view->defense    = unit->defense;
+    view->resist     = unit->resist[ELEMENT_FIRE];
+    view->strength   = Hirelings_Strength(c->hireling - 1, c->hireling_level);
+    view->dexterity  = Hirelings_Dexterity(c->hireling - 1, c->hireling_level);
+    if (!GameInventory_HirelingOpen(roam->inventory_ui)) {
+        GameInventory_SetHireling(roam->inventory_ui, view);
+    }
+}
+
 // Their portrait's place: top left, name and life
 static void Roam__DrawHireling(SceneRoam *roam) {
     const int index = roam->game ? Roam__FindHireling(roam) : -1;
@@ -816,6 +893,13 @@ static void Roam__Hire(SceneRoam *roam, const HireOffer *offer) {
     if (c->gold < offer->cost) {
         Roam__ShowMessage(roam, "You don't have enough gold for that.");
         return;
+    }
+    // What the one you had wore comes back to you
+    for (int s = 0; s < HIRE_SLOTS && c->hireling > 0; s++) {
+        if (c->hireling_items[s].code[0] != '\0' &&
+            (Inventory_Add(c, &c->hireling_items[s]) || Stash_Add(c, &c->hireling_items[s]))) {
+            memset(&c->hireling_items[s], 0, sizeof(Item));
+        }
     }
     const int old = Roam__FindHireling(roam);
     if (old >= 0) {

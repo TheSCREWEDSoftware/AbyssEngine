@@ -29,6 +29,9 @@
 #define CUBE_H              4
 #define CUBE_MAX            (CUBE_W * CUBE_H)
 
+// What a hireling wears (their inventory screen): helm, body armor, weapon, shield (only the act 3 sorcerers)
+typedef enum HirelingSlot { HIRE_HEAD, HIRE_TORSO, HIRE_WEAPON, HIRE_SHIELD, HIRE_SLOTS } HirelingSlot;
+
 typedef enum CharacterClass {
     CHARACTER_AMAZON,
     CHARACTER_SORCERESS,
@@ -158,7 +161,8 @@ typedef struct Character {
     int           gold;
     InventoryItem stash[STASH_MAX]; // in town: page is always 0
     int           stash_count;
-    InventoryItem cube[CUBE_MAX]; // in the Horadric Cube (any cube you carry opens them)
+    InventoryItem cube[CUBE_MAX];             // in the Horadric Cube (any cube you carry opens them)
+    Item          hireling_items[HIRE_SLOTS]; // what your hireling wears
     int           cube_count;
     int           stash_gold;
     // A hireling (hireling.txt): row + 1 (0 = none), their level, name (string table number), life; dead: to be

@@ -1,6 +1,7 @@
 #ifndef ABYSS_HIRELINGS_H
 #define ABYSS_HIRELINGS_H
 
+#include "Character.h"
 #include <stdbool.h>
 
 // Hirelings, from the game's hireling.txt: who sells them (Kashya, Greiz, Asheara, Qual-Kehk), what kind (a Rogue
@@ -44,8 +45,13 @@ bool        Hirelings_Stats(int row, int level, HireStats *stats);
 const char *Hirelings_MonsterId(int row); // the monstats id to make them as ("roguehire")
 void        Hirelings_Name(int row, int name, char *out, int size);
 const char *Hirelings_Title(int row); // "Rogue Scout"
-int         Hirelings_ReviveCost(int level);
-int         Hirelings_Experience(int row); // their Exp/Lvl
-void        Hirelings_Release(void);
+// What they can wear (Character.h HirelingSlot): helms, body armor, their kind's weapons (hireling.txt WType1/2:
+// bows, polearms and spears, swords) and the sorcerers' shields, if they meet the requirements
+bool Hirelings_CanWear(int row, int level, const Item *item, int slot, const char **why);
+int  Hirelings_Strength(int row, int level);
+int  Hirelings_Dexterity(int row, int level);
+int  Hirelings_ReviveCost(int level);
+int  Hirelings_Experience(int row); // their Exp/Lvl
+void Hirelings_Release(void);
 
 #endif // ABYSS_HIRELINGS_H

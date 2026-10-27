@@ -350,7 +350,12 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   and is saved with you. Hiring another sends the first away. When they die, **Resurrect** brings them back for
   gold. Their skills are `hireling.txt`'s: the Desert Mercenaries' auras (Prayer, Defiance, Blessed Aim, Thorns, Holy
   Freeze, Might) work on you while they're alive and near, at their level; the Eastern Sorcerers cast their spells
-  (Fire Ball, Inferno, Glacial Spike, Ice Blast, Charged Bolt, Lightning). Not yet: equipping them.
+  (Fire Ball, Inferno, Glacial Spike, Ice Blast, Charged Bolt, Lightning). Click their portrait (top left) for their
+  screen (the game's own, with the inventory beside it): put a helm, body armor and a weapon of their kind on them
+  (bows for the Rogues, polearms and spears for the Desert Mercenaries, swords for the Eastern Sorcerers and the
+  Barbarians; the sorcerers take a shield too), if they meet its requirements (their strength and dexterity grow with
+  their level). The weapon's damage, the armor's defense and the magic's life and resistances become theirs; it's
+  saved with you, and comes back to you if you hire someone else. Their numbers show below.
 
 ## Quests
 

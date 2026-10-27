@@ -6,6 +6,7 @@
 #include "../drawing/Sprite.h"
 #include "../game/Affixes.h"
 #include "../game/Cube.h"
+#include "../game/Hirelings.h"
 #include "../game/Inventory.h"
 #include "../game/Shop.h"
 #include "../game/Sockets.h"
@@ -54,6 +55,17 @@ typedef enum Origin {
     ORIGIN_TRADE,
     ORIGIN_CUBE
 } Origin;
+
+// The hireling's screen (NpcInv.dc6): the four slots, their numbers below, the close button
+#define HIRE_PANEL   "/data/global/ui/PANEL/NpcInv.dc6"
+#define HIRE_CLOSE_X 272
+#define HIRE_CLOSE_Y 383
+static const SDL_Rect hire_rects[HIRE_SLOTS] = {
+    {133, 4,  56, 56 }, // helm
+    {133, 73, 56, 87 }, // armor
+    {17,  46, 58, 113}, // weapon
+    {249, 46, 58, 113}, // shield
+};
 
 // The Horadric Cube, on the left (supertransmogrifier.dc6, inventory.txt's "Transmogrify Box Page 1"): its 3 x 4
 // inside, the Transmute button below it and the close button
@@ -109,28 +121,30 @@ typedef struct IconCache {
 #define GOLD_BUTTON_H 18
 
 struct GameInventory {
-    Sprite    *panel;
-    Sprite    *gold_button;
-    Sprite    *stash_panel;
-    Sprite    *bank_panel; // (classic characters')
-    Sprite    *socket;     // gemsocket.dc6
-    Sprite    *shop_panel;
-    Sprite    *shop_tabs;
-    Sprite    *shop_buttons; // buysellbtn.dc6
-    ShopStock *shop;         // trading with a merchant (NULL: not)
-    TradeView *trade;        // trading with another player (NULL: not)
-    Sprite    *trade_panel;
-    int        shop_tab;
-    int        difficulty;    // what they pay depends on it
-    char       tip_extra[48]; // the price line under a tooltip while trading
-    bool       stash_open;    // in town, at the stash
-    bool       cube_open;     // the Horadric Cube (right click it in the inventory)
-    Sprite    *cube_panel;
-    char       cube_message[200];
-    IconCache  icons[ICON_CACHE];
-    int        icon_count;
-    Label     *text;  // tooltip lines (font16)
-    Label     *small; // belt keys, quantities
+    Sprite             *panel;
+    Sprite             *gold_button;
+    Sprite             *stash_panel;
+    Sprite             *bank_panel; // (classic characters')
+    Sprite             *socket;     // gemsocket.dc6
+    Sprite             *shop_panel;
+    Sprite             *shop_tabs;
+    Sprite             *shop_buttons; // buysellbtn.dc6
+    ShopStock          *shop;         // trading with a merchant (NULL: not)
+    TradeView          *trade;        // trading with another player (NULL: not)
+    Sprite             *trade_panel;
+    int                 shop_tab;
+    int                 difficulty;    // what they pay depends on it
+    char                tip_extra[48]; // the price line under a tooltip while trading
+    bool                stash_open;    // in town, at the stash
+    bool                cube_open;     // the Horadric Cube (right click it in the inventory)
+    const HirelingView *hire;          // the hireling's screen (NULL: closed)
+    Sprite             *hire_panel;
+    Sprite             *cube_panel;
+    char                cube_message[200];
+    IconCache           icons[ICON_CACHE];
+    int                 icon_count;
+    Label              *text;  // tooltip lines (font16)
+    Label              *small; // belt keys, quantities
     // The item on the cursor, and where it came from (it goes back there if the panel closes)
     bool   holding;
     Item   held;
@@ -167,6 +181,7 @@ GameInventory *GameInventory_Create(void) {
     inventory->shop_tabs    = Sprite_Create("/data/global/ui/PANEL/buysellTabs.dc6", PALETTE_SKY);
     inventory->shop_buttons = Sprite_Create("/data/global/ui/PANEL/buysellbtn.dc6", PALETTE_SKY);
     inventory->cube_panel   = Sprite_Create(CUBE_PANEL, PALETTE_SKY);
+    inventory->hire_panel   = Sprite_Create(HIRE_PANEL, PALETTE_SKY);
     inventory->text         = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     inventory->small        = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     return inventory;
@@ -264,6 +279,25 @@ void GameInventory_SetStash(GameInventory *inventory, const bool open) {
 }
 
 bool GameInventory_CubeOpen(const GameInventory *inventory) { return inventory->cube_open; }
+
+void GameInventory_SetHireling(GameInventory *inventory, const HirelingView *view) {
+    inventory->hire = view;
+    if (view != NULL) {
+        inventory->stash_open = false;
+        inventory->cube_open  = false;
+    }
+}
+
+bool GameInventory_HirelingOpen(const GameInventory *inventory) { return inventory->hire != NULL; }
+
+static int GameInventory__HireSlotAt(const int mouse_x, const int mouse_y) {
+    for (int s = 0; s < HIRE_SLOTS; s++) {
+        if (GameInventory__In(&hire_rects[s], mouse_x, mouse_y)) {
+            return s;
+        }
+    }
+    return -1;
+}
 
 static bool GameInventory__CubeCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
     if (mouse_x < CUBE_GRID_X || mouse_y < CUBE_GRID_Y || mouse_x >= CUBE_GRID_X + (CUBE_W * CELL) ||
@@ -426,7 +460,8 @@ static void GameInventory__Sell(GameInventory *inventory, Character *character, 
 bool GameInventory_StashOpen(const GameInventory *inventory) { return inventory->stash_open; }
 
 bool GameInventory_IsOverStash(const GameInventory *inventory, const int mouse_x, const int mouse_y) {
-    return (inventory->stash_open || inventory->cube_open) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
+    return (inventory->stash_open || inventory->cube_open || inventory->hire != NULL) && mouse_x < GAME_PANEL_W &&
+           mouse_y < GAME_PANEL_H;
 }
 
 static bool GameInventory__StashCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
@@ -922,6 +957,44 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         return events | INVENTORY_EVENT_MOVED;
     }
 
+    // The hireling's screen: put things on them, take them off
+    if (inventory->hire != NULL && left_click && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H) {
+        if (GameInventory__InBox(mouse_x, mouse_y, HIRE_CLOSE_X, HIRE_CLOSE_Y)) {
+            return events | INVENTORY_EVENT_HIRE_CLOSE;
+        }
+        const int slot = GameInventory__HireSlotAt(mouse_x, mouse_y);
+        if (slot < 0) {
+            return events;
+        }
+        Item *worn = &character->hireling_items[slot];
+        if (inventory->holding) {
+            const char *why = NULL;
+            if (!Hirelings_CanWear(inventory->hire->row, inventory->hire->level, &inventory->held, slot, &why)) {
+                *message = why;
+                return events;
+            }
+            if (inventory->still_worn) { // Modern: it comes off you now
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
+            const Item before = *worn;
+            *worn             = inventory->held;
+            GameInventory__PutDown(inventory, &inventory->held);
+            inventory->holding = false;
+            if (before.code[0] != '\0') {
+                GameInventory__Take(inventory, &before, ORIGIN_GROUND, 0); // (back on the cursor: anywhere it fits)
+            }
+            return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_HIRELING;
+        }
+        if (worn->code[0] != '\0') {
+            GameInventory__Take(inventory, worn, ORIGIN_GROUND, 0);
+            memset(worn, 0, sizeof(Item));
+            return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_HIRELING;
+        }
+        return events;
+    }
+
     // The Horadric Cube: its inside (like the stash), Transmute and close
     if (inventory->cube_open && (left_click || right_click) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H) {
         if (left_click && !inventory->holding &&
@@ -1247,6 +1320,71 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
 // ---------------------------------------------------------------------------------------------------------------------
 // Drawing
 
+// The hireling's screen: what they wear, and their numbers in the boxes below (name and level, life, then two columns)
+static void GameInventory__HireText(GameInventory *inventory, const char *text, const int x, const int y,
+                                    const label_align_t align) {
+    Label_SetAlignment(inventory->text, align, LABEL_ALIGN_CENTER);
+    Label_SetText(inventory->text, text);
+    Label_Draw(inventory->text, x, y);
+}
+
+static void GameInventory__DrawHireling(GameInventory *inventory, const Character *character, const int mouse_x,
+                                        const int mouse_y) {
+    const HirelingView *view = inventory->hire;
+    Sprite_DrawMulti(inventory->hire_panel, 0, 0, 0, 2, 2);
+    const int over = GameInventory__HireSlotAt(mouse_x, mouse_y);
+    for (int s = 0; s < HIRE_SLOTS; s++) {
+        const Item *worn = &character->hireling_items[s];
+        if (inventory->holding && s == over) {
+            const char *why  = NULL;
+            const bool  fits = Hirelings_CanWear(view->row, view->level, &inventory->held, s, &why);
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, fits ? 30 : 140, fits ? 100 : 0, 30, 110);
+            SDL_RenderFillRect(sdl_renderer, &hire_rects[s]);
+        }
+        if (worn->code[0] != '\0') {
+            GameInventory__DrawItem(inventory, worn, &hire_rects[s], true);
+        }
+    }
+    char text[96];
+    Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
+    GameInventory__HireText(inventory, view->name, 80, 207, LABEL_ALIGN_CENTER);
+    snprintf(text, sizeof(text), "Level %d", view->level);
+    GameInventory__HireText(inventory, text, 238, 207, LABEL_ALIGN_CENTER);
+    snprintf(text, sizeof(text), "%s    Life: %d / %d", view->title, view->hp, view->max_hp);
+    GameInventory__HireText(inventory, text, 160, 239, LABEL_ALIGN_CENTER);
+    const struct {
+        const char *label;
+        int         value;
+        int         value2; // (damage: to)
+    } rows[8] = {
+        {"Strength",       view->strength,   -1              },
+        {"Dexterity",      view->dexterity,  -1              },
+        {"Damage",         view->damage_min, view->damage_max},
+        {"Defense",        view->defense,    -1              },
+        {"Fire Resist",    view->resist,     -1              },
+        {"Cold Resist",    view->resist,     -1              },
+        {"Lightning Res.", view->resist,     -1              },
+        {"Poison Resist",  view->resist,     -1              },
+    };
+    for (int r = 0; r < 8; r++) {
+        const int col = r / 4;
+        const int y   = 273 + ((r % 4) * 24);
+        GameInventory__HireText(inventory, rows[r].label, 10 + (col * 158), y, LABEL_ALIGN_BEGIN);
+        if (rows[r].value2 >= 0) {
+            snprintf(text, sizeof(text), "%d-%d", rows[r].value, rows[r].value2);
+        } else {
+            snprintf(text, sizeof(text), "%d%s", rows[r].value, r >= 4 ? "%" : "");
+        }
+        GameInventory__HireText(inventory, text, 132 + (col * 158), y, LABEL_ALIGN_CENTER);
+    }
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    const bool over_close = GameInventory__InBox(mouse_x, mouse_y, HIRE_CLOSE_X, HIRE_CLOSE_Y);
+    Sprite_Draw(inventory->shop_buttons, over_close && left_down ? 11 : 10, HIRE_CLOSE_X,
+                HIRE_CLOSE_Y + SHOP_BUTTON_SZ);
+}
+
 // The cube on the left: its inside, Transmute and close
 static void GameInventory__DrawCube(GameInventory *inventory, const Character *character, const int mouse_x,
                                     const int mouse_y) {
@@ -1450,6 +1588,8 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         GameInventory__DrawStash(inventory, character, mouse_x, mouse_y);
     } else if (inventory->cube_open) {
         GameInventory__DrawCube(inventory, character, mouse_x, mouse_y);
+    } else if (inventory->hire != NULL) {
+        GameInventory__DrawHireling(inventory, character, mouse_x, mouse_y);
     }
     Sprite_DrawMulti(inventory->panel, 4, GAME_PANEL_X, 0, 2, 2);
 
@@ -1803,6 +1943,12 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
                 snprintf(inventory->tip_extra, sizeof(inventory->tip_extra), "Cost: %d",
                          Shop_Price(inventory->shop, item));
             }
+        } else if (inventory->hire != NULL && GameInventory__HireSlotAt(mouse_x, mouse_y) >= 0 &&
+                   character->hireling_items[GameInventory__HireSlotAt(mouse_x, mouse_y)].code[0] != '\0') {
+            const int slot = GameInventory__HireSlotAt(mouse_x, mouse_y);
+            item           = &character->hireling_items[slot];
+            anchor_x       = hire_rects[slot].x + (hire_rects[slot].w / 2);
+            anchor_y       = hire_rects[slot].y;
         } else if (inventory->cube_open && GameInventory__CubeCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
             const int under = Cube_ItemAt(character, cell_x, cell_y);
             if (under >= 0) {

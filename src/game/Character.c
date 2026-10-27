@@ -598,6 +598,15 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
             Character__Print(file, "item belt %d %s %d %d%s\n", b, it->code, it->defense, it->quantity, magic);
         }
     }
+    // What the hireling wears: "item hire <slot>"
+    for (int s = 0; s < HIRE_SLOTS; s++) {
+        const Item *it = &character->hireling_items[s];
+        if (it->code[0] != '\0') {
+            char magic[400];
+            Affixes_Format(it, magic, sizeof(magic));
+            Character__Print(file, "item hire %d %s %d %d%s\n", s, it->code, it->defense, it->quantity, magic);
+        }
+    }
     // What's on your corpse comes back to you next time ("item corpse <slot>": worn slots, then the belt's)
     for (int s = 0; character->has_corpse && s < EQUIP_COUNT + BELT_MAX; s++) {
         const Item *it = s < EQUIP_COUNT ? &character->corpse_equipped[s] : &character->corpse_belt[s - EQUIP_COUNT];
@@ -813,6 +822,8 @@ bool Character_ReadText(const char *text, Character *character) {
                     character->equipped[a] = item;
                 } else if (strcmp(where, "belt") == 0 && a >= 0 && a < BELT_MAX) {
                     character->belt[a] = item;
+                } else if (strcmp(where, "hire") == 0 && a >= 0 && a < HIRE_SLOTS) {
+                    character->hireling_items[a] = item;
                 }
             }
         } else {

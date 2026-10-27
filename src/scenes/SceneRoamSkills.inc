@@ -188,12 +188,13 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     const int hireling = character->hireling > 0 && !character->hireling_dead ? Roam__FindHireling(roam) : -1;
     if (hireling >= 0 && Roam__IsAlive(&roam->units[hireling]) &&
         Roam__Distance(roam->units[hireling].x, roam->units[hireling].y, roam->player.x, roam->player.y) <= 30.0f) {
-        HireSkill skills[HIRE_SKILLS];
-        const int count = Hirelings_Skills(character->hireling - 1, character->hireling_level, skills, HIRE_SKILLS);
+        HireSkill hire_skills[HIRE_SKILLS];
+        const int count =
+            Hirelings_Skills(character->hireling - 1, character->hireling_level, hire_skills, HIRE_SKILLS);
         for (int s = 0; s < count; s++) {
-            const SkillRow *row = SkillData_Get(skills[s].name);
+            const SkillRow *row = SkillData_Get(hire_skills[s].name);
             if (row != NULL && row->kind == SKILL_KIND_AURA) {
-                Roam__AddSkillStats(character, row, skills[s].level, true, true);
+                Roam__AddSkillStats(character, row, hire_skills[s].level, true, true);
             }
         }
     }

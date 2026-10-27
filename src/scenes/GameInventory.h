@@ -27,8 +27,29 @@ typedef enum GameInventoryEvent {
     INVENTORY_EVENT_TRADE      = 64,  // trading: your offer changed
     INVENTORY_EVENT_TRADE_OK   = 128, // trading: the accept button
     INVENTORY_EVENT_TRADE_GOLD = 256, // trading: your gold box (how much to offer)
-    INVENTORY_EVENT_TRADE_END  = 512, // trading: the close button
+    INVENTORY_EVENT_TRADE_END  = 512,  // trading: the close button
+    INVENTORY_EVENT_HIRELING   = 1024, // what the hireling wears changed (their numbers need working out again)
+    INVENTORY_EVENT_HIRE_CLOSE = 2048, // the hireling's screen's close button
 } GameInventoryEvent;
+
+// Your hireling's screen, on the left (NpcInv.dc6): what they wear (helm, armor, weapon, the sorcerers' shield) and
+// their numbers, which the scene keeps up to date while it's open
+typedef struct HirelingView {
+    char name[48];
+    char title[40]; // "Rogue Scout"
+    int  row;       // hireling.txt (Hirelings.h)
+    int  level;
+    int  hp;
+    int  max_hp;
+    int  damage_min;
+    int  damage_max;
+    int  defense;
+    int  resist;
+    int  strength;
+    int  dexterity;
+} HirelingView;
+void GameInventory_SetHireling(GameInventory *inventory, const HirelingView *view); // NULL: closed
+bool GameInventory_HirelingOpen(const GameInventory *inventory);
 
 GameInventory *GameInventory_Create(void);
 void           GameInventory_Destroy(GameInventory **inventory);

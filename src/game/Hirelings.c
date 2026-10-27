@@ -26,6 +26,8 @@ typedef struct HireRow {
     int       hp, hp_per_level, defense, def_per_level, ar, ar_per_level;
     int       dmg_min, dmg_max, dmg_per_level, resist, resist_per_level;
     char      weapon[8];
+    char      weapon2[8];
+    int       str, str_per_level, dex, dex_per_level; // (per level: in eighths)
     HireSkill skills[HIRE_SKILLS]; // (level: at the row's level; per_level: in 32nds, to add for each level above)
     int       skill_per_level[HIRE_SKILLS];
     int       skill_count;
@@ -104,6 +106,11 @@ static void Hirelings__Load(void) {
         h->resist           = INT("Resist");
         h->resist_per_level = INT("Resist/Lvl");
         snprintf(h->weapon, sizeof(h->weapon), "%s", STR("WType1"));
+        snprintf(h->weapon2, sizeof(h->weapon2), "%s", STR("WType2"));
+        h->str           = INT("Str");
+        h->str_per_level = INT("Str/Lvl");
+        h->dex           = INT("Dex");
+        h->dex_per_level = INT("Dex/Lvl");
         for (int s = 1; s <= HIRE_SKILLS; s++) {
             char column[16];
             snprintf(column, sizeof(column), "Skill%d", s);
@@ -249,6 +256,63 @@ int Hirelings_Skills(const int row, const int level, HireSkill *out, const int m
         count++;
     }
     return count;
+}
+
+int Hirelings_Strength(const int row, const int level) {
+    Hirelings__Load();
+    if (row < 0 || row >= row_count) {
+        return 0;
+    }
+    const int above = level > rows[row].level ? level - rows[row].level : 0;
+    return rows[row].str + (above * rows[row].str_per_level / 8);
+}
+
+int Hirelings_Dexterity(const int row, const int level) {
+    Hirelings__Load();
+    if (row < 0 || row >= row_count) {
+        return 0;
+    }
+    const int above = level > rows[row].level ? level - rows[row].level : 0;
+    return rows[row].dex + (above * rows[row].dex_per_level / 8);
+}
+
+bool Hirelings_CanWear(const int row, const int level, const Item *item, const int slot, const char **why) {
+    Hirelings__Load();
+    const ItemBase *base = Items_Find(item->code);
+    *why                 = NULL;
+    if (base == NULL || row < 0 || row >= row_count) {
+        *why = "They can't use that.";
+        return false;
+    }
+    const HireRow *h  = &rows[row];
+    bool           ok = false;
+    switch (slot) {
+    case HIRE_HEAD:
+        ok = Items_IsA(base, "helm");
+        break;
+    case HIRE_TORSO:
+        ok = Items_IsA(base, "tors");
+        break;
+    case HIRE_WEAPON:
+        ok = (h->weapon[0] != '\0' && Items_IsA(base, h->weapon)) ||
+             (h->weapon2[0] != '\0' && strcmp(h->weapon2, "shie") != 0 && Items_IsA(base, h->weapon2));
+        break;
+    case HIRE_SHIELD:
+        ok = strcmp(h->weapon2, "shie") == 0 && Items_IsA(base, "shie");
+        break;
+    default:
+        break;
+    }
+    if (!ok) {
+        *why = slot == HIRE_WEAPON ? "That's not a weapon they use." : "They can't wear that there.";
+        return false;
+    }
+    if (base->required_level > level || base->required_strength > Hirelings_Strength(row, level) ||
+        base->required_dexterity > Hirelings_Dexterity(row, level)) {
+        *why = "They don't meet its requirements yet.";
+        return false;
+    }
+    return true;
 }
 
 const char *Hirelings_Title(const int row) {
