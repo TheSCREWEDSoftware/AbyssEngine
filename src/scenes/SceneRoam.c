@@ -4918,6 +4918,9 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
             GameSkills_ClosePicker(roam->skills_ui);
         }
     }
+    if (Controls_Pressed(ACTION_SKILL_BAR)) {
+        GameSkills_ToggleSpeedBar(roam->skills_ui);
+    }
     if (Controls_Pressed(ACTION_SKILL_TREE)) {
         roam->skill_panel     = !roam->skill_panel;
         roam->inventory_panel = false;

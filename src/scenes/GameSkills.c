@@ -47,8 +47,9 @@ struct GameSkills {
     Sprite           *others[CHARACTER_CLASS_COUNT]; // other classes' icons (skills from items), when needed
     Label            *text;
     Label            *small;
-    int               page;   // 1..3
-    int               picker; // 0 closed, 1 left, 2 right
+    int               page;      // 1..3
+    int               picker;    // 0 closed, 1 left, 2 right
+    bool              speed_bar; // the skill speed bar: the bound skills above the right skill, to click
 };
 
 GameSkills *GameSkills_Create(const CharacterClass class_id) {
@@ -169,6 +170,21 @@ static void GameSkills__PickerRects(const GameSkills *skills, const Character *c
 
 bool GameSkills_PickerOpen(const GameSkills *skills) { return skills->picker != 0; }
 
+void GameSkills_ToggleSpeedBar(GameSkills *skills) { skills->speed_bar = !skills->speed_bar; }
+
+// The speed bar's icons: the skill keys' skills, in key order, from above the right skill button to the left
+static int GameSkills__SpeedBar(const GameSkills *skills, const Character *character, int *keys, SDL_Rect *rects) {
+    int count = 0;
+    for (int h = 0; h < 8 && skills->speed_bar && skills->picker == 0; h++) {
+        if (character->hotkey_set[h]) {
+            keys[count]  = h;
+            rects[count] = (SDL_Rect){GAME_SKILL_RIGHT_X - (count * ICON), GAME_SKILL_Y - ICON - 4, ICON, ICON};
+            count++;
+        }
+    }
+    return count;
+}
+
 int GameSkills_PickerSkillAt(const GameSkills *skills, const Character *character, const int mouse_x, const int mouse_y,
                              bool *left) {
     if (skills->picker == 0) {
@@ -197,6 +213,10 @@ static int GameSkills__ButtonAt(const int x, const int y) {
 bool GameSkills_IsOver(const GameSkills *skills, const bool tree_open, const int mouse_x, const int mouse_y) {
     if ((tree_open && GameInventory_IsOver(mouse_x, mouse_y)) || GameSkills__ButtonAt(mouse_x, mouse_y) != 0) {
         return true;
+    }
+    if (skills->speed_bar && skills->picker == 0 && mouse_y >= GAME_SKILL_Y - ICON - 4 && mouse_y < GAME_SKILL_Y - 4 &&
+        mouse_x < GAME_SKILL_RIGHT_X + ICON && mouse_x >= GAME_SKILL_RIGHT_X - (7 * ICON)) {
+        return true; // (over the speed bar's row: its clicks don't walk)
     }
     return skills->picker != 0; // an open picker takes the next click wherever it is
 }
@@ -229,6 +249,17 @@ int GameSkills_Update(GameSkills *skills, Character *character, const bool tree_
     if (button != 0) {
         skills->picker = button;
         return SKILLS_EVENT_CLICKED;
+    }
+    int       keys[8];
+    SDL_Rect  bar[8];
+    const int on_bar = GameSkills__SpeedBar(skills, character, keys, bar);
+    for (int i = 0; i < on_bar; i++) {
+        if (GameSkills__In(&bar[i], mouse_x, mouse_y)) {
+            const int h = keys[i];
+            *(character->hotkey_left[h] ? &character->left_skill : &character->right_skill) =
+                character->hotkey_skill[h];
+            return SKILLS_EVENT_CHOSEN | SKILLS_EVENT_CLICKED;
+        }
     }
     if (!tree_open || !GameInventory_IsOver(mouse_x, mouse_y)) {
         return SKILLS_EVENT_NONE;
@@ -362,9 +393,24 @@ void GameSkills_DrawTree(GameSkills *skills, const Character *character, const i
     }
 }
 
+static void GameSkills__HotkeyLabel(GameSkills *skills, int hotkey, int x, int y);
+
 void GameSkills_DrawButtons(GameSkills *skills, const Character *character) {
     GameSkills__DrawIcon(skills, character->left_skill, GAME_SKILL_LEFT_X, GAME_SKILL_Y, false);
     GameSkills__DrawIcon(skills, character->right_skill, GAME_SKILL_RIGHT_X, GAME_SKILL_Y, false);
+    int       keys[8];
+    SDL_Rect  bar[8];
+    const int on_bar = GameSkills__SpeedBar(skills, character, keys, bar);
+    for (int i = 0; i < on_bar; i++) {
+        const int h = keys[i];
+        GameSkills__DrawIcon(skills, character->hotkey_skill[h], bar[i].x, bar[i].y, false);
+        GameSkills__HotkeyLabel(skills, h, bar[i].x + 2, bar[i].y + 2);
+        const int current = character->hotkey_left[h] ? character->left_skill : character->right_skill;
+        if (current == character->hotkey_skill[h]) {
+            SDL_SetRenderDrawColor(sdl_renderer, 230, 200, 110, 255); // on its button now
+            SDL_RenderDrawRect(sdl_renderer, &bar[i]);
+        }
+    }
 }
 
 // A box of lines near (x, y), kept on the screen
