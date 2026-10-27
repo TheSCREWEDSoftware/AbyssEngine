@@ -16,9 +16,11 @@
 
 typedef struct NetServer NetServer;
 
-NetServer         *NetServer_Start(const NetSettings *settings, bool dedicated, char *error, int error_size);
-void               NetServer_Update(NetServer *server, uint64_t now_ms);
-void               NetServer_Stop(NetServer **server); // tells everyone first
+NetServer *NetServer_Start(const NetSettings *settings, bool dedicated, char *error, int error_size);
+void       NetServer_Update(NetServer *server, uint64_t now_ms);
+void       NetServer_Stop(NetServer **server); // tells everyone first
+// A console command (players, kick, ban, save, say): what it did goes in reply
+void               NetServer_Command(NetServer *server, const char *line, char *reply, int reply_size);
 const NetSettings *NetServer_Settings(const NetServer *server);
 int                NetServer_PlayerCount(const NetServer *server); // in the game
 const char        *NetServer_Realm(const NetServer *server);       // the id characters made here are tagged with

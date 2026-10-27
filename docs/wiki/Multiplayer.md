@@ -19,7 +19,11 @@ positions). The same server runs in two ways:
 | Runs | Inside the host's game; the host joins it like everyone else | On its own, no window (a home server, a VPS) |
 | Characters | Stay on each player's computer. Ones made in the host's games are marked as made there | Kept on the server, per player (`server/characters/<player id>/`); players can't edit them |
 | "Only characters made here" | Characters marked with the host's id | Characters made on that server |
-| Ends | When the host leaves | When it's stopped (Ctrl+C) |
+| Ends | When the host leaves | When it's stopped (Ctrl+C, or `quit` typed on it) |
+
+A dedicated server takes commands typed in its window: `players` (who's connected, with their player ids), `kick
+<name>`, `ban <name>` (their player id goes in `server/bans.txt`, one a line; take it out to let them back), `save`
+(everyone's character written now), `say <text>` ("[Server] ..." in everyone's chat) and `quit`.
 
 Each computer has a player id, made the first time and kept in `client.id` next to `abyss.ini`: a dedicated server
 knows whose characters are whose by it.

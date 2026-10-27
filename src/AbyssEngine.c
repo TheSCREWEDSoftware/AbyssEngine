@@ -272,6 +272,27 @@ static void                  Main__StopServer(int signal_number) {
     server_running = 0;
 }
 
+// The dedicated server's console: lines typed on it, read by a thread of their own (reading waits), handed to the
+// server's loop
+static SDL_mutex   *console_lock = NULL;
+static char         console_line[512];
+static volatile int console_ready = 0;
+
+static int Main__ConsoleThread(void *data) {
+    (void)data;
+    char line[512];
+    while (server_running && fgets(line, sizeof(line), stdin) != NULL) {
+        for (int waited = 0; console_ready && server_running && waited < 2000; waited++) {
+            SDL_Delay(5); // (the last one not taken yet)
+        }
+        SDL_LockMutex(console_lock);
+        snprintf(console_line, sizeof(console_line), "%s", line);
+        console_ready = 1;
+        SDL_UnlockMutex(console_lock);
+    }
+    return 0;
+}
+
 // --server: the game server on its own (characters are kept here), until Ctrl+C
 static int Main__DedicatedServer(const int port) {
     NetSettings settings;
@@ -286,13 +307,37 @@ static int Main__DedicatedServer(const int port) {
         printf("Server: %s\n", error);
         return 1;
     }
-    printf("Abyss Engine dedicated server \"%s\" on port %u (settings: %s/server.ini). Ctrl+C to stop.\n",
+    printf("Abyss Engine dedicated server \"%s\" on port %u (settings: %s/server.ini). Ctrl+C or quit to stop;\n"
+           "type help for the commands (players, kick, ban, save, say).\n",
            settings.name, (unsigned)settings.port, NetServer_Folder());
     fflush(stdout);
     signal(SIGINT, Main__StopServer);
     signal(SIGTERM, Main__StopServer);
+    console_lock        = SDL_CreateMutex();
+    SDL_Thread *console = console_lock != NULL ? SDL_CreateThread(Main__ConsoleThread, "console", NULL) : NULL;
+    if (console != NULL) {
+        SDL_DetachThread(console); // (it may be waiting for a line when the server stops)
+    }
     while (server_running) {
         NetServer_Update(server, SDL_GetTicks64());
+        if (console_ready) {
+            char line[512];
+            SDL_LockMutex(console_lock);
+            snprintf(line, sizeof(line), "%s", console_line);
+            console_ready = 0;
+            SDL_UnlockMutex(console_lock);
+            line[strcspn(line, "\r\n")] = '\0';
+            if (strcmp(line, "quit") == 0 || strcmp(line, "exit") == 0) {
+                server_running = 0;
+            } else {
+                char reply[4096];
+                NetServer_Command(server, line, reply, sizeof(reply));
+                if (reply[0] != '\0') {
+                    printf("%s\n", reply);
+                    fflush(stdout);
+                }
+            }
+        }
         SDL_Delay(5);
     }
     NetServer_Stop(&server);

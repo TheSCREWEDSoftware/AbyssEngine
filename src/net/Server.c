@@ -658,6 +658,24 @@ static bool Server__NameInGame(const NetServer *server, const char *name) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Messages
 
+// server/bans.txt: player ids (one a line, '#' notes) that can't join
+static bool Server__Banned(const char *client_id) {
+    char path[4300];
+    snprintf(path, sizeof(path), "%s/bans.txt", NetServer_Folder());
+    FILE *file = fopen(path, "r");
+    if (file == NULL) {
+        return false;
+    }
+    char line[160];
+    bool banned = false;
+    while (!banned && fgets(line, sizeof(line), file) != NULL) {
+        line[strcspn(line, " \t\r\n#")] = '\0';
+        banned                          = line[0] != '\0' && strcmp(line, client_id) == 0;
+    }
+    fclose(file);
+    return banned;
+}
+
 static void Server__Hello(NetServer *server, Peer *peer, NetReader *reader) {
     const int version = NetReader_U16(reader);
     char      password[NET_NAME_MAX];
@@ -682,6 +700,10 @@ static void Server__Hello(NetServer *server, Peer *peer, NetReader *reader) {
     }
     if (peer->client_id[0] == '\0') {
         Server__Reject(peer, "No player id.");
+        return;
+    }
+    if (Server__Banned(peer->client_id)) {
+        Server__Reject(peer, "You're banned from this server.");
         return;
     }
     if (server->settings.password[0] != '\0' && strcmp(password, server->settings.password) != 0) {
@@ -1200,6 +1222,80 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
 
 // ---------------------------------------------------------------------------------------------------------------------
 // LAN searches and the lobby
+
+// The server's console (a dedicated server's typed commands): who's in, kick, ban, save everyone, say something
+static Peer *Server__PeerByName(NetServer *server, const char *name) {
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        Peer *peer = &server->peers[p];
+        if (peer->connection != NULL && peer->stage == STAGE_IN_GAME && Server__SameName(peer->character.name, name)) {
+            return peer;
+        }
+    }
+    return NULL;
+}
+
+void NetServer_Command(NetServer *server, const char *line, char *reply, const int reply_size) {
+    char word[16] = "";
+    char rest[NET_CHAT_MAX];
+    rest[0] = '\0';
+    sscanf(line, " %15s %199[^\r\n]", word, rest);
+    reply[0] = '\0';
+    if (strcmp(word, "players") == 0 || strcmp(word, "who") == 0) {
+        int used = snprintf(reply, (size_t)reply_size,
+                            "%d connected (playing or picking a character):", Server__InGame(server));
+        for (int p = 0; p < MAX_CONNECTIONS && used < reply_size; p++) {
+            const Peer *peer = &server->peers[p];
+            if (peer->connection != NULL && peer->stage == STAGE_IN_GAME) {
+                used += snprintf(reply + used, (size_t)(reply_size - used), "\n  %s, level %d %s (player id %s)",
+                                 peer->character.name, peer->character.level,
+                                 Character_ClassName(peer->character.class_id), peer->client_id);
+            }
+        }
+    } else if (strcmp(word, "kick") == 0 || strcmp(word, "ban") == 0) {
+        Peer *peer = Server__PeerByName(server, rest);
+        if (peer == NULL) {
+            snprintf(reply, (size_t)reply_size, "Nobody called \"%s\" is in the game.", rest);
+            return;
+        }
+        const bool ban = strcmp(word, "ban") == 0;
+        if (ban) {
+            char path[4300];
+            snprintf(path, sizeof(path), "%s/bans.txt", NetServer_Folder());
+            FILE *file = fopen(path, "a");
+            if (file != NULL) {
+                fprintf(file, "%s # %s\n", peer->client_id, peer->character.name);
+                fclose(file);
+            }
+        }
+        if (server->dedicated) {
+            Server__WriteCharacter(peer->client_id, &peer->character); // (what they had, kept)
+        }
+        char said[96];
+        snprintf(said, sizeof(said), "%s was %s by the server.", peer->character.name, ban ? "banned" : "kicked");
+        snprintf(reply, (size_t)reply_size, "%s", said);
+        Server__Reject(peer, ban ? "You were banned from this server." : "You were kicked by the server.");
+        Server__Chat(server, 0, said, peer);
+    } else if (strcmp(word, "save") == 0) {
+        int saved = 0;
+        for (int p = 0; p < MAX_CONNECTIONS && server->dedicated; p++) {
+            const Peer *peer = &server->peers[p];
+            if (peer->connection != NULL && peer->stage == STAGE_IN_GAME &&
+                Server__WriteCharacter(peer->client_id, &peer->character)) {
+                saved++;
+            }
+        }
+        snprintf(reply, (size_t)reply_size,
+                 server->dedicated ? "Saved %d characters." : "Only a dedicated server keeps characters.", saved);
+    } else if (strcmp(word, "say") == 0 && rest[0] != '\0') {
+        char said[NET_CHAT_MAX + 16];
+        snprintf(said, sizeof(said), "[Server] %s", rest);
+        Server__Chat(server, 0, said, NULL);
+        snprintf(reply, (size_t)reply_size, "%s", said);
+    } else if (word[0] != '\0') {
+        snprintf(reply, (size_t)reply_size,
+                 "Commands: players, kick <name>, ban <name> (server/bans.txt), save, say <text>, quit");
+    }
+}
 
 static void Server__Info(const NetServer *server, NetGameInfo *info) {
     memset(info, 0, sizeof(NetGameInfo));
