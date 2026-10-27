@@ -242,6 +242,21 @@ static void Roam__TextItemsKey(SceneRoam *roam, const int key) {
         if (Items_IsPotion(base)) {
             Inventory_Remove(c, pick);
             Roam__Drink(roam, &item);
+        } else if (strcmp(item.code, "tsc") == 0 || strcmp(item.code, "tbk") == 0) {
+            // Town Portal: it opens beside you (u by it goes through)
+            if (roam->in_town) {
+                Roam__ShowMessage(roam, "You can't open a portal here.");
+            } else if (strcmp(item.code, "tbk") == 0 && item.quantity <= 0) {
+                Roam__ShowMessage(roam, "The tome is empty.");
+            } else {
+                if (strcmp(item.code, "tbk") == 0) {
+                    c->inventory[pick].item.quantity--;
+                } else {
+                    Inventory_Remove(c, pick);
+                }
+                Roam__OpenTownPortal(roam);
+                Roam__ShowMessage(roam, "A Town Portal opens beside you.");
+            }
         } else {
             Roam__ShowMessage(roam, "That can't be used here.");
         }

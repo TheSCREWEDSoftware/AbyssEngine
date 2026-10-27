@@ -152,6 +152,10 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
   the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
   own music.
+- **Town Portal**: right click a scroll or tome of Town Portal (in the inventory or the belt; text mode: **u** on it)
+  outside town and a blue portal opens beside you. Through it you're in the act's town, by its other end; back
+  through that one you're where you opened it, and it closes. A new portal closes the old one. In multiplayer games
+  it's yours alone for now (the others don't see it).
 - **Shrines** do the game's shrine effects (`shrines.txt`): health and mana shrines fill you up; the others are one
   of Refilling, Armor (+100% defense), Combat (+200% attack rating and damage), the four Resist shrines (+75%), Skill
   (+2 to your skills), Mana Recharge (+400%), Stamina (running doesn't tire you), Experience (+50%), Gem (one of your
@@ -469,5 +473,5 @@ ten times a second. It still reads the game's MPQs, pictures included, because t
 
 ## Not yet
 
-Some skills (see above); the shrines that open a portal, throw exploding or poison potions or reverse your name; town
-portals. Each game has its own random world seed: the areas keep their layout while you play.
+Some skills (see above); the shrines that open a portal, throw exploding or poison potions or reverse your name; other
+players seeing your Town Portal. Each game has its own random world seed: the areas keep their layout while you play.

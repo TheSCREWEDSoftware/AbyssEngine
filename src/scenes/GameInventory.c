@@ -163,6 +163,7 @@ struct GameInventory {
     // Identifying with a scroll or tome: the next item clicked; where the scroll is (the belt slot, or the grid's
     // cell x + y * INVENTORY_W + page * INVENTORY_PAGE)
     bool identifying;
+    bool portal_allowed; // a Town Portal can be read here (not in town)
     bool id_from_belt;
     int  id_where;
 };
@@ -556,6 +557,10 @@ bool GameInventory_Holding(const GameInventory *inventory) { return inventory->h
 
 void GameInventory_SetModernPickup(GameInventory *inventory, const bool modern) { inventory->modern = modern; }
 
+void GameInventory_SetPortalAllowed(GameInventory *inventory, const bool allowed) {
+    inventory->portal_allowed = allowed;
+}
+
 void GameInventory_SetBeltPosition(const int x, const int y) {
     belt_x = x;
     belt_y = y;
@@ -659,6 +664,33 @@ void GameInventory_PutBackCopy(const GameInventory *inventory, Character *copy) 
 
 void GameInventory_Hold(GameInventory *inventory, const Item *item) {
     GameInventory__Take(inventory, item, ORIGIN_GROUND, 0);
+}
+
+// Right click on a scroll or tome of Town Portal: read (a scroll goes, a tome loses a charge). Returns the events.
+static int GameInventory__ReadPortal(const GameInventory *inventory, Character *character, Item *scroll,
+                                     const bool from_belt, const int index, const char **message) {
+    const bool tome = strcmp(scroll->code, "tbk") == 0;
+    if (!inventory->portal_allowed) {
+        *message = "You can't open a portal here.";
+        return INVENTORY_EVENT_NONE;
+    }
+    if (tome && scroll->quantity <= 0) {
+        *message = "The tome is empty: Akara and the other healers sell scrolls to fill it.";
+        return INVENTORY_EVENT_NONE;
+    }
+    if (tome) {
+        scroll->quantity--;
+    } else if (from_belt) {
+        memset(scroll, 0, sizeof(Item));
+        Inventory_SettleBelt(character);
+    } else {
+        Inventory_Remove(character, index);
+    }
+    return INVENTORY_EVENT_PORTAL;
+}
+
+static bool GameInventory__IsPortal(const Item *item) {
+    return strcmp(item->code, "tsc") == 0 || strcmp(item->code, "tbk") == 0;
 }
 
 // Scrolls and tomes of identify
@@ -903,6 +935,10 @@ static int GameInventory__UpdateInner(GameInventory *inventory, Character *chara
     if (belt_slot >= 0) {
         if (right_click && GameInventory_DrinkBelt(character, belt_slot, drunk)) {
             return INVENTORY_EVENT_DRINK;
+        }
+        if (right_click && GameInventory__IsPortal(&character->belt[belt_slot])) {
+            return events |
+                   GameInventory__ReadPortal(inventory, character, &character->belt[belt_slot], true, -1, message);
         }
         if (right_click && GameInventory__Identifies(&character->belt[belt_slot])) {
             if (!open) {
@@ -1270,6 +1306,11 @@ static int GameInventory__UpdateInner(GameInventory *inventory, Character *chara
                                              it->x + (it->y * INVENTORY_W) + (it->page * INVENTORY_PAGE), message)) {
                 return events;
             }
+        }
+        if (right_click && under >= 0 && !inventory->holding &&
+            GameInventory__IsPortal(&character->inventory[under].item)) {
+            return events | GameInventory__ReadPortal(inventory, character, &character->inventory[under].item, false,
+                                                      under, message);
         }
         if (right_click && under >= 0) {
             if (GameInventory__Drink(&character->inventory[under].item, drunk)) {

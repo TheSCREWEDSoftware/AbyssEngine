@@ -18,18 +18,19 @@ typedef struct GameInventory GameInventory;
 
 typedef enum GameInventoryEvent {
     INVENTORY_EVENT_NONE       = 0,
-    INVENTORY_EVENT_EQUIPMENT  = 1,   // what's worn changed: damage and defense need working out again
-    INVENTORY_EVENT_DRINK      = 2,   // a potion was drunk: *drunk says which
-    INVENTORY_EVENT_MOVED      = 4,   // something was picked up or put down (a sound)
-    INVENTORY_EVENT_GOLD       = 8,   // the gold button: drop some, or at the stash put some in (the scene asks)
-    INVENTORY_EVENT_STASH_GOLD = 16,  // the stash's gold button: take some out
-    INVENTORY_EVENT_SHOP_CLOSE = 32,  // the store's close button
-    INVENTORY_EVENT_TRADE      = 64,  // trading: your offer changed
-    INVENTORY_EVENT_TRADE_OK   = 128, // trading: the accept button
-    INVENTORY_EVENT_TRADE_GOLD = 256, // trading: your gold box (how much to offer)
+    INVENTORY_EVENT_EQUIPMENT  = 1,    // what's worn changed: damage and defense need working out again
+    INVENTORY_EVENT_DRINK      = 2,    // a potion was drunk: *drunk says which
+    INVENTORY_EVENT_MOVED      = 4,    // something was picked up or put down (a sound)
+    INVENTORY_EVENT_GOLD       = 8,    // the gold button: drop some, or at the stash put some in (the scene asks)
+    INVENTORY_EVENT_STASH_GOLD = 16,   // the stash's gold button: take some out
+    INVENTORY_EVENT_SHOP_CLOSE = 32,   // the store's close button
+    INVENTORY_EVENT_TRADE      = 64,   // trading: your offer changed
+    INVENTORY_EVENT_TRADE_OK   = 128,  // trading: the accept button
+    INVENTORY_EVENT_TRADE_GOLD = 256,  // trading: your gold box (how much to offer)
     INVENTORY_EVENT_TRADE_END  = 512,  // trading: the close button
     INVENTORY_EVENT_HIRELING   = 1024, // what the hireling wears changed (their numbers need working out again)
     INVENTORY_EVENT_HIRE_CLOSE = 2048, // the hireling's screen's close button
+    INVENTORY_EVENT_PORTAL     = 4096, // a Town Portal was read (the scroll or the tome's charge is used up)
 } GameInventoryEvent;
 
 // Your hireling's screen, on the left (NpcInv.dc6): what they wear (helm, armor, weapon, the sorcerers' shield) and
@@ -64,6 +65,7 @@ bool GameInventory_DrinkBelt(Character *character, int slot, Item *drunk);
 bool GameInventory_Holding(const GameInventory *inventory); // an item on the cursor
 // Options > Gameplay > Picking up worn gear: Modern keeps it worn until it is put somewhere else
 void GameInventory_SetModernPickup(GameInventory *inventory, bool modern);
+void GameInventory_SetPortalAllowed(GameInventory *inventory, bool allowed); // false in town (the default)
 // Where the control panel shows the belt's bottom row (its top-left; the Classic panel: 422, 568)
 void        GameInventory_SetBeltPosition(int x, int y);
 const char *GameInventory_Sound(const GameInventory *inventory); // the sound of what was last put down ("" none)

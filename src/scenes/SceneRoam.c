@@ -399,10 +399,20 @@ typedef struct SceneRoam {
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
     bool            night_sounds;     // the area's night sounds are on (outdoors at night)
-    int             shrine_code;      // the shrine booster on (shrines.txt Code; 0 none) and until when
-    int             shrine_arg0;
-    int             shrine_arg1;
-    uint64_t        shrine_until;
+    struct {
+        bool     open;
+        int      act;   // its town's
+        int      place; // where it was opened (Places), its area and the world it's in
+        int      level_id;
+        uint32_t seed;
+        float    x, y;     // its end there
+        bool     town_set; // its end in town (placed on arriving there)
+        float    town_x, town_y;
+    } portal;             // the Town Portal open
+    int      shrine_code; // the shrine booster on (shrines.txt Code; 0 none) and until when
+    int      shrine_arg0;
+    int      shrine_arg1;
+    uint64_t shrine_until;
 
     // Player
     Unit     player;
@@ -1486,9 +1496,15 @@ static void Roam__ApplyUsedObjects(SceneRoam *roam) {
 static void Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void Roam__RefreshList(SceneRoam *roam);
 static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
+static void Roam__TakePortal(SceneRoam *roam);
+static void Roam__PlacePortals(SceneRoam *roam);
 static void Roam__UseWell(SceneRoam *roam);
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (unit->object.operate_fn == 15) {
+        Roam__TakePortal(roam); // a Town Portal
+        return;
+    }
     if (unit->object.operate_fn == 32) {
         // The stash: opens on the left, with the inventory on the right
         if (roam->game && roam->character != NULL) {
@@ -2028,7 +2044,8 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
-    if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32) {
+    if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32 &&
+        object->object.operate_fn != 15) { // (a Town Portal is your own)
         // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
         object->used      = true;
         NetWriter *writer = malloc(sizeof(NetWriter));
@@ -2492,6 +2509,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         Roam__ClearPath(&roam->player);
         roam->exits_armed = false;
         Roam__EnteredArea(roam, place->level_id, roam->announce);
+        Roam__PlacePortals(roam);
         return;
     }
     if (roam->game && roam->map != NULL && Roam__IsAlive(&roam->player)) {
@@ -2521,6 +2539,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     }
     Roam__Populate(roam);
     Roam__ApplyUsedObjects(roam);
+    Roam__PlacePortals(roam);
     memset(roam->missiles, 0, sizeof(roam->missiles)); // what was flying stays behind
     // The automap of an act's outdoors is kept under its lowest level Id (the town), whichever area you came in by
     int automap_key = place->level_id;
@@ -3216,6 +3235,7 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
 }
 
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+#include "SceneRoamPortals.inc"
 #include "SceneRoamShrines.inc"
 #include "SceneRoamSkills.inc"
 
@@ -4595,6 +4615,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         Stash_SetPages(stash_pages > stash_used ? stash_pages : stash_used); // (for what goes in by itself)
     }
     GameInventory_SetModernPickup(roam->inventory_ui, gameplay->modern_pickup);
+    GameInventory_SetPortalAllowed(roam->inventory_ui, !roam->in_town);
 
     // The stash closes with the inventory, the character screen, or walking away from it
     if (GameInventory_StashOpen(roam->inventory_ui)) {
@@ -4637,6 +4658,9 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     if (item_events & INVENTORY_EVENT_DRINK) {
         Roam__Drink(roam, &drunk);
+    }
+    if (item_events & INVENTORY_EVENT_PORTAL) {
+        Roam__OpenTownPortal(roam);
     }
     if ((item_events & INVENTORY_EVENT_GOLD) && GameInventory_StashOpen(roam->inventory_ui)) {
         const int room = Stash_GoldLimit(character) - character->stash_gold;
