@@ -37,6 +37,7 @@ struct MpqStream {
     uint32_t         data_buffer_size;
     uint32_t         position;
     uint32_t         block_index;
+    bool             memory; // a loose file read whole (FileManager's DataFolder): data_buffer is all of it
 };
 
 struct pk_info {
@@ -115,6 +116,17 @@ static void *MpqStream__Explode(void *buffer, const uint32_t to_read, const uint
     }
 
     return out_buffer;
+}
+
+MpqStream *MpqStream_CreateFromMemory(const char *file_name, void *data, const uint32_t size) {
+    MpqStream *result = calloc(1, sizeof(MpqStream));
+    FAIL_IF_NULL(result);
+    result->file_name        = strdup(file_name);
+    result->memory           = true;
+    result->data_buffer      = data;
+    result->data_buffer_size = size;
+    result->size             = size > 0 ? size : 1;
+    return result;
 }
 
 MpqStream *MpqStream_Create(struct MPQ *mpq, const char *file_name) {
@@ -198,6 +210,17 @@ uint32_t MpqStream_Read(MpqStream *mpq_stream, void *buffer, uint32_t offset, ui
     assert(mpq_stream != NULL);
     assert(buffer != NULL);
     assert(size > 0);
+
+    if (mpq_stream->memory) {
+        const uint32_t start = mpq_stream->position;
+        if (start >= mpq_stream->data_buffer_size) {
+            return 0;
+        }
+        const uint32_t count = MIN(size, mpq_stream->data_buffer_size - start);
+        memcpy((char *)buffer + offset, (char *)mpq_stream->data_buffer + start, count);
+        mpq_stream->position += count;
+        return count;
+    }
 
     if (mpq_stream->block->flags & FILE_FLAG_SINGLE_UNIT) {
         LOG_FATAL("TODO: Single unit loads");
@@ -424,13 +447,13 @@ void *MpqStream__DecompressMulti(void *buffer, uint32_t to_read, uint32_t expect
 uint32_t MpqStream_GetSize(const MpqStream *mpq_stream) {
     assert(mpq_stream != NULL);
 
-    return mpq_stream->block->size_uncompressed;
+    return mpq_stream->memory ? mpq_stream->data_buffer_size : mpq_stream->block->size_uncompressed;
 }
 
 bool MpqStream_GetIsEof(const MpqStream *mpq_stream) {
     assert(mpq_stream != NULL);
 
-    return mpq_stream->position >= mpq_stream->block->size_uncompressed;
+    return mpq_stream->position >= MpqStream_GetSize(mpq_stream);
 }
 
 void MpqStream_Seek(MpqStream *mpq_stream, int64_t position, int32_t origin) {
@@ -444,7 +467,7 @@ void MpqStream_Seek(MpqStream *mpq_stream, int64_t position, int32_t origin) {
         mpq_stream->position += (uint32_t)position;
         break;
     case SEEK_END:
-        mpq_stream->position = mpq_stream->block->size_uncompressed + (uint32_t)position;
+        mpq_stream->position = MpqStream_GetSize(mpq_stream) + (uint32_t)position;
         break;
     default:
         LOG_FATAL("Invalid origin for seek: %d", origin);

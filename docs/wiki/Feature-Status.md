@@ -67,7 +67,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | [Testing Grounds](Testing-Grounds-and-Free-Roam.md) | ✅ | Default arena or your own map; drop monsters; combat toggle; placement preview. |
 | [Free Roam](Testing-Grounds-and-Free-Roam.md) | ✅ | Towns, fixed areas and randomly built wilderness and dungeons; teleport list; combat toggle. |
 | Loading screen | ✅ | Progress bar; the picture plays with the progress. |
-| `--extract DIR` | ✅ | Copies the data tables (`.txt`), strings (`.tbl`), maps (`.ds1`) and tiles (`.dt1`) out of the MPQs into a folder, keeping their paths. The engine doesn't read such a folder yet (it reads the MPQs). |
+| `--extract DIR` | ✅ | Copies the data tables (`.txt`), strings (`.tbl`), maps (`.ds1`) and tiles (`.dt1`) out of the MPQs into a folder, keeping their paths. `DataFolder` in `abyss.ini` reads loose files like these before the MPQs (to change the tables: a mod); the pictures and sounds still come from the MPQs. |
 
 ## Platforms
 

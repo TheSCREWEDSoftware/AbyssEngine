@@ -90,6 +90,7 @@ d2speech.MPQ
 |---------|---------|
 | `BasePath` | Folder containing the MPQs, with or without a slash at the end (quotes around it are fine). An entry in `[MPQs]` given as a full path is used as it is. |
 | `Locale` | Font set: `latin` for English and other Latin-alphabet languages. |
+| `DataFolder` | Optional. A folder of loose game files read before the MPQs, in the MPQs' paths (`data/global/excel/weapons.txt`, lower case): what `AbyssEngine --extract` writes, or your own changes to the tables (a mod). Files that aren't there come from the MPQs as usual. |
 | `SkipIntroMovies` | `true` starts at the main menu (the `DEBUG_SKIP_INTRO` build option does this regardless). |
 | `Resolution` | Window size. The game is drawn at 800x600 and scaled, with black bars on wide screens. |
 | `[MPQs]` | Which MPQs to load, highest priority first. On Linux the names are matched without caring about upper/lower case. |

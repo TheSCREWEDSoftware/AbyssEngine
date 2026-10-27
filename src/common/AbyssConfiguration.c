@@ -15,6 +15,7 @@ typedef struct AbyssConfiguration {
     char  *config_folder; // where abyss.ini lives; user data (maps) goes here too
     char  *ini_path;      // abyss.ini itself
     char  *locale;
+    char  *data_folder; // loose files that come before the MPQs ("" none)
     char **mpqs;
     int    num_mpqs;
     bool   skip_intro_movies;
@@ -181,6 +182,14 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
                 abyss_configuration.base_path[base_len - 2] = '\0';
             }
             LOG_DEBUG("Setting base path to '%s'", abyss_configuration.base_path);
+        } else if (IS_STR_EQUAL(key, "datafolder")) {
+            SET_PARAM_STR(abyss_configuration.data_folder, value);
+            const size_t len = strlen(abyss_configuration.data_folder);
+            if (len >= 2 && abyss_configuration.data_folder[0] == '"' &&
+                abyss_configuration.data_folder[len - 1] == '"') {
+                memmove(abyss_configuration.data_folder, abyss_configuration.data_folder + 1, len - 2);
+                abyss_configuration.data_folder[len - 2] = '\0';
+            }
         } else if (IS_STR_EQUAL(key, "locale")) {
             if (strlen(abyss_configuration.locale) != 0) {
                 memset(abyss_configuration.locale, 0, sizeof(char) * strlen(abyss_configuration.locale));
@@ -430,6 +439,8 @@ void AbyssConfiguration_DestroySingleton(void) {
     abyss_configuration.ini_path = NULL;
     free(abyss_configuration.locale);
     abyss_configuration.locale = NULL;
+    free(abyss_configuration.data_folder);
+    abyss_configuration.data_folder = NULL;
     free(abyss_configuration.graphics.scale_quality);
     abyss_configuration.graphics.scale_quality = NULL;
 
@@ -455,6 +466,9 @@ void AbyssConfiguration_AddMpq(const char *mpq_file) {
     snprintf(abyss_configuration.mpqs[abyss_configuration.num_mpqs - 1], MAX_LINE_LEN, "%s", mpq_file);
 }
 const char *AbyssConfiguration_GetLocale(void) { return abyss_configuration.locale; }
+const char *AbyssConfiguration_GetDataFolder(void) {
+    return abyss_configuration.data_folder != NULL ? abyss_configuration.data_folder : "";
+}
 
 size_t AbyssConfiguration_GetMpqCount(void) { return abyss_configuration.num_mpqs; }
 

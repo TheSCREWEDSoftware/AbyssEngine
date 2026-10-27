@@ -141,12 +141,36 @@ void FileManager_AddMpq(const char *mpq_path) {
     file_manager->mpqs[file_manager->mpq_count - 1] = MPQ_Load(resolved);
 }
 
+// A loose file in the DataFolder (abyss.ini) for a path: "data\global\excel\levels.txt" ->
+// "<folder>/data/global/excel/levels.txt"
+static bool FileManager__Loose(const char *path_fixed, char *out, const size_t size) {
+    const char *folder = AbyssConfiguration_GetDataFolder();
+    if (folder == NULL || folder[0] == '\0') {
+        return false;
+    }
+    snprintf(out, size, "%s/%s", folder, path_fixed);
+    for (char *c = out + strlen(folder); *c != '\0'; c++) {
+        *c = *c == '\\' ? '/' : *c;
+    }
+    FILE *probe = fopen(out, "rb");
+    if (probe == NULL) {
+        return false;
+    }
+    fclose(probe);
+    return true;
+}
+
 bool FileManager_FileExists(const char *file_path) {
     assert(file_manager != NULL);
     assert(file_path != NULL);
 
     char *path_fixed = fix_path(file_path);
     bool  result     = false;
+    char  loose[4096];
+    if (FileManager__Loose(path_fixed, loose, sizeof(loose))) {
+        free(path_fixed);
+        return true;
+    }
 
     for (uint32_t mpq_idx = 0; mpq_idx < file_manager->mpq_count; mpq_idx++) {
         if (MPQ_FileExists(file_manager->mpqs[mpq_idx], path_fixed)) {
@@ -171,7 +195,24 @@ MpqStream *FileManager_OpenFile(const char *file_path) {
         file_read_hook();
     }
 
-    char          *path_fixed = fix_path(file_path);
+    char *path_fixed = fix_path(file_path);
+    // A loose file (the DataFolder) comes before the MPQs
+    char loose[4096];
+    if (FileManager__Loose(path_fixed, loose, sizeof(loose))) {
+        FILE *file = fopen(loose, "rb");
+        if (file != NULL) {
+            fseek(file, 0, SEEK_END);
+            const long length = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            char *data = malloc(length > 0 ? (size_t)length : 1);
+            FAIL_IF_NULL(data);
+            const size_t got = length > 0 ? fread(data, 1, (size_t)length, file) : 0;
+            fclose(file);
+            MpqStream *stream = MpqStream_CreateFromMemory(path_fixed, data, (uint32_t)got);
+            free(path_fixed);
+            return stream;
+        }
+    }
     const uint64_t file_hash  = crypto_hash_file_name(path_fixed);
     FileEntry     *file_entry = NULL;
 

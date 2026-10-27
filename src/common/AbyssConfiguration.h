@@ -9,6 +9,9 @@ void        AbyssConfiguration_LoadSingleton(const char *file_path);
 void        AbyssConfiguration_DestroySingleton(void);
 void        AbyssConfiguration_AddMpq(const char *mpq_file);
 const char *AbyssConfiguration_GetLocale(void);
+// [General] DataFolder: a folder of loose files (data/global/excel/levels.txt, ...: what --extract writes, or your
+// own changes) read before the MPQs; "" none
+const char *AbyssConfiguration_GetDataFolder(void);
 size_t      AbyssConfiguration_GetMpqCount(void);
 const char *AbyssConfiguration_GetMpqFileName(size_t index);
 const char *AbyssConfiguration_GetBasePath(void); // BasePath: the Diablo II folder

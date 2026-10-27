@@ -7,6 +7,8 @@
 typedef struct MpqStream MpqStream;
 
 MpqStream *MpqStream_Create(struct MPQ *mpq, const char *file_name);
+// A loose file's contents as a stream (the stream frees data)
+MpqStream *MpqStream_CreateFromMemory(const char *file_name, void *data, uint32_t size);
 void       MpqStream_Destroy(MpqStream **mpq_stream);
 uint32_t   MpqStream_GetSize(const MpqStream *MpqStream);
 uint32_t   MpqStream_Read(MpqStream *mpq_stream, void *buffer, uint32_t offset, uint32_t size);
