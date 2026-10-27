@@ -25,7 +25,7 @@ struct Sprite {
     uint32_t            animation_index;
 };
 
-void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name);
+void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name, const uint8_t *remap);
 
 char *get_extension(const char *path) {
     const char *ext = strrchr(path, '.') + 1;
@@ -42,6 +42,10 @@ char *get_extension(const char *path) {
 }
 
 Sprite *Sprite_Create(const char *path, const char *palette_name) {
+    return Sprite_CreateShifted(path, palette_name, NULL);
+}
+
+Sprite *Sprite_CreateShifted(const char *path, const char *palette_name, const uint8_t *remap) {
     Sprite *result = malloc(sizeof(Sprite));
     FAIL_IF_NULL(result);
 
@@ -50,7 +54,7 @@ Sprite *Sprite_Create(const char *path, const char *palette_name) {
     char *file_ext = get_extension(path);
 
     if (strcmp(file_ext, "dc6") == 0) {
-        Sprite__LoadDC6(result, path, palette_name);
+        Sprite__LoadDC6(result, path, palette_name, remap);
     } else {
         LOG_FATAL("Could not load Sprite: '%s' is an unsupported file extension.", file_ext);
     }
@@ -59,7 +63,7 @@ Sprite *Sprite_Create(const char *path, const char *palette_name) {
     return result;
 }
 
-void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name) {
+void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name, const uint8_t *remap) {
     struct DC6           *dc6     = DC6_Load(path);
     const struct Palette *Palette = Palette_Get(palette_name);
 
@@ -93,7 +97,8 @@ void Sprite__LoadDC6(Sprite *sprite, const char *path, const char *palette_name)
         memset(pixels, 0, (size_t)spr_frame->width * spr_frame->height * 4);
 
         for (uint32_t idx = 0; idx < (spr_frame->width * spr_frame->height); idx++) {
-            pixels[idx] = Palette->entries[frame_pixel_data[idx]];
+            const uint8_t index = frame_pixel_data[idx];
+            pixels[idx]         = Palette->entries[remap != NULL && index != 0 ? remap[index] : index];
         }
 
         SDL_UpdateTexture(spr_frame->texture, NULL, pixels, (int)spr_frame->width * 4);

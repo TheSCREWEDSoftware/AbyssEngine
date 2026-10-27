@@ -263,6 +263,7 @@ typedef struct Affix {
     int  itype_count;
     char etypes[5][8];
     int  etype_count;
+    char tint[8]; // the colour it gives the item's picture (colors.txt code), "" none
 } Affix;
 
 typedef struct RareName {
@@ -279,6 +280,7 @@ typedef struct Unique {
     int  level;
     int  rarity;
     char inv_file[32];
+    char tint[8]; // invtransform (colors.txt code)
     Prop props[PROPS_MAX];
     int  prop_count;
 } Unique;
@@ -292,6 +294,7 @@ typedef struct SetItem {
     int  level;
     int  rarity;
     char inv_file[32];
+    char tint[8]; // invtransform (colors.txt code)
     Prop props[PROPS_MAX];
     int  prop_count;
     Prop worn[5][2]; // [pieces worn - 2]
@@ -379,6 +382,10 @@ static void Affixes__LoadAffixes(const char *path, AffixTable *table) {
         affix->max_level  = DataTable_GetInt(t, row, c_max);
         affix->group      = DataTable_GetInt(t, row, c_group);
         affix->rare       = DataTable_GetInt(t, row, c_rare) == 1;
+        snprintf(affix->tint, sizeof(affix->tint), "%s",
+                 DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "transform")) == 1
+                     ? DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "transformcolor"))
+                     : "");
         for (int m = 1; m <= 3; m++) {
             char column[16];
             snprintf(column, sizeof(column), "mod%dcode", m);
@@ -446,6 +453,8 @@ static void Affixes__LoadUniques(void) {
         unique->level  = DataTable_GetInt(t, row, c_level);
         unique->rarity = DataTable_GetInt(t, row, c_rarity) > 0 ? DataTable_GetInt(t, row, c_rarity) : 1;
         snprintf(unique->inv_file, sizeof(unique->inv_file), "%s", DataTable_GetString(t, row, c_inv));
+        snprintf(unique->tint, sizeof(unique->tint), "%s",
+                 DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "invtransform")));
         for (int p = 1; p <= PROPS_MAX; p++) {
             char column[16];
             snprintf(column, sizeof(column), "prop%d", p);
@@ -500,6 +509,8 @@ static void Affixes__LoadSets(void) {
         item->rarity = item->rarity > 0 ? item->rarity : 1;
         snprintf(item->inv_file, sizeof(item->inv_file), "%s",
                  DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "invfile")));
+        snprintf(item->tint, sizeof(item->tint), "%s",
+                 DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "invtransform")));
         for (int p = 1; p <= PROPS_MAX; p++) {
             snprintf(a, sizeof(a), "prop%d", p);
             snprintf(b, sizeof(b), "min%d", p);
@@ -1252,6 +1263,49 @@ int Affixes_Recharge(Item *item) {
         }
     }
     return used;
+}
+
+bool Affixes_InvTint(const Item *item, int *shift, int *color) {
+    Affixes__Load();
+    const ItemBase *base = Items_Find(item->code);
+    const char     *code = "";
+    if (base == NULL || base->inv_trans <= 0) {
+        return false;
+    }
+    if (item->quality == ITEM_UNIQUE && item->name1 > 0 && item->name1 <= unique_count) {
+        code = uniques[item->name1 - 1].tint;
+    } else if (item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count) {
+        code = set_items[item->name1 - 1].tint;
+    } else if (item->quality == ITEM_MAGIC) {
+        // The suffix's colour, or the prefix's
+        if (item->name2 > 0 && item->name2 <= suffixes.count && suffixes.rows[item->name2 - 1].tint[0] != '\0') {
+            code = suffixes.rows[item->name2 - 1].tint;
+        } else if (item->name1 > 0 && item->name1 <= prefixes.count) {
+            code = prefixes.rows[item->name1 - 1].tint;
+        }
+    }
+    if (code[0] == '\0') {
+        return false;
+    }
+    static char colors[32][8]; // colors.txt's codes, in order
+    static int  color_count = -1;
+    if (color_count < 0) {
+        color_count       = 0;
+        DataTable *table  = DataTable_Load("/data/global/excel/colors.txt");
+        const int  c_code = table != NULL ? DataTable_GetColumnIndex(table, "Code") : -1;
+        for (int r = 0; table != NULL && r < DataTable_GetRowCount(table) && color_count < 32; r++) {
+            snprintf(colors[color_count++], sizeof(colors[0]), "%s", DataTable_GetString(table, r, c_code));
+        }
+        DataTable_Destroy(&table);
+    }
+    for (int r = 0; r < color_count; r++) {
+        if (strcmp(colors[r], code) == 0) {
+            *shift = base->inv_trans;
+            *color = r;
+            return true;
+        }
+    }
+    return false;
 }
 
 const char *Affixes_InvFile(const Item *item) {

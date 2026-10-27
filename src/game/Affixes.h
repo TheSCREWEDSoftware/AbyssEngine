@@ -40,6 +40,9 @@ bool Affixes_UseCharge(Character *character, int row);
 int Affixes_Recharge(Item *item);
 // The inventory picture (uniques have their own)
 const char *Affixes_InvFile(const Item *item);
+// Its picture's colour (uniques', sets' and magic affixes' tints): the base's colour shift (InvTrans) and the colour
+// (colors.txt row); false when it's drawn as it is
+bool Affixes_InvTint(const Item *item, int *shift, int *color);
 // The sum of one property over the items worn
 int Affixes_Total(const Character *character, ItemModType type);
 int Affixes_ItemTotal(const Item *item, ItemModType type); // on one item

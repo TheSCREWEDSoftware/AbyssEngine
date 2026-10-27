@@ -138,6 +138,7 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
         Items__Sanitize(base->name, sizeof(base->name), name != NULL ? name : DataTable_GetString(t, row, c_name));
         snprintf(base->inv_file, sizeof(base->inv_file), "%s", DataTable_GetString(t, row, c_inv));
         snprintf(base->unique_inv_file, sizeof(base->unique_inv_file), "%s", DataTable_GetString(t, row, c_uinv));
+        base->inv_trans = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "InvTrans"));
         snprintf(base->use_sound, sizeof(base->use_sound), "%s", DataTable_GetString(t, row, c_sound));
         snprintf(base->flippy_file, sizeof(base->flippy_file), "%s", DataTable_GetString(t, row, c_flippy));
         snprintf(base->drop_sound, sizeof(base->drop_sound), "%s", DataTable_GetString(t, row, c_drop));

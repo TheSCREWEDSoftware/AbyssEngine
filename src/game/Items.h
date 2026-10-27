@@ -137,13 +137,14 @@ typedef struct ItemBase {
     int      height;
     char     inv_file[32];        // data/global/items/<inv_file>.dc6
     char     unique_inv_file[32]; // its picture when unique (empty: the normal one)
-    char     use_sound[32];       // sounds.txt: put down in the inventory, worn, drunk
-    char flippy_file[32];  // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
-    char drop_sound[32];   // sounds.txt: landing on the ground
-    int  drop_sound_frame; // ... played at this frame of the flip
-    int  level;            // its item level: which drops it can be in (weap3 has the weapons up to level 3)
-    bool spawnable;        // can drop
-    char kinds[12][8];     // its type(s) and what they count as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
+    int      inv_trans;     // which colour shift its picture takes (InvTrans: 2 grey2, 5 greybrown, 8 invgreybrown)
+    char     use_sound[32]; // sounds.txt: put down in the inventory, worn, drunk
+    char flippy_file[32];   // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
+    char drop_sound[32];    // sounds.txt: landing on the ground
+    int  drop_sound_frame;  // ... played at this frame of the flip
+    int  level;             // its item level: which drops it can be in (weap3 has the weapons up to level 3)
+    bool spawnable;         // can drop
+    char kinds[12][8];      // its type(s) and what they count as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
     int  kind_count;
     bool slots[EQUIP_COUNT];
     int  min_damage; // one hand (or the only damage)

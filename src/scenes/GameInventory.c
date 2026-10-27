@@ -1,4 +1,5 @@
 #include "GameInventory.h"
+#include "../common/FileManager.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
@@ -18,7 +19,7 @@
 
 #define INVENTORY_PANEL "/data/global/ui/PANEL/invchar6.dc6" // frames 4-7: the inventory (0-3: the character)
 #define CELL            29                                   // a grid cell, in pixels
-#define ICON_CACHE      64
+#define ICON_CACHE      192
 #define TOOLTIP_LINES   26
 
 // inventory.txt's 640 x 480 layout ("Amazon" .. "Assassin", all the same), moved to the panel's place on 800 x 600
@@ -213,12 +214,37 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Pictures
 
-static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file) {
+// A colour shift table (data/global/items/Palette/*.dat: 256 entries a colour), by InvTrans, false if none
+static bool GameInventory__Shift(const int shift, const int color, uint8_t remap[256]) {
+    static const char *const files[] = {NULL,        "grey",    "grey2",    "gold",        "brown",
+                                        "greybrown", "invgrey", "invgrey2", "invgreybrown"};
+    if (shift <= 0 || shift >= (int)(sizeof(files) / sizeof(files[0])) || color < 0) {
+        return false;
+    }
+    char path[96];
+    snprintf(path, sizeof(path), "/data/global/items/Palette/%s.dat", files[shift]);
+    MpqStream *stream = FileManager_FileExists(path) ? FileManager_OpenFile(path) : NULL;
+    if (stream == NULL) {
+        return false;
+    }
+    const uint32_t offset = (uint32_t)color * 256;
+    bool           ok     = MpqStream_GetSize(stream) >= offset + 256;
+    if (ok) {
+        MpqStream_Seek(stream, offset, SEEK_SET);
+        ok = MpqStream_Read(stream, remap, 0, 256) == 256;
+    }
+    MpqStream_Destroy(&stream);
+    return ok;
+}
+
+static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file, const int shift, const int color) {
     if (file == NULL || file[0] == '\0') {
         return NULL;
     }
+    char key[32];
+    snprintf(key, sizeof(key), shift > 0 ? "%.20s#%d.%d" : "%.20s", file, shift, color); // (each tint its own)
     for (int i = 0; i < inventory->icon_count; i++) {
-        if (strcmp(inventory->icons[i].file, file) == 0) {
+        if (strcmp(inventory->icons[i].file, key) == 0) {
             return inventory->icons[i].sprite;
         }
     }
@@ -228,15 +254,21 @@ static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file) {
     char path[96];
     snprintf(path, sizeof(path), "/data/global/items/%s.dc6", file);
     IconCache *entry = &inventory->icons[inventory->icon_count++];
-    snprintf(entry->file, sizeof(entry->file), "%s", file);
-    entry->sprite = Sprite_Create(path, PALETTE_UNITS);
+    snprintf(entry->file, sizeof(entry->file), "%s", key);
+    uint8_t remap[256];
+    entry->sprite = GameInventory__Shift(shift, color, remap) ? Sprite_CreateShifted(path, PALETTE_UNITS, remap)
+                                                              : Sprite_Create(path, PALETTE_UNITS);
     return entry->sprite;
 }
 
 // An item's picture, centred in a box; tinted red when it can't be used
 static void GameInventory__DrawItem(GameInventory *inventory, const Item *item, const SDL_Rect *box,
                                     const bool usable) {
-    Sprite *icon = GameInventory__Icon(inventory, Affixes_InvFile(item)); // (uniques have their own picture)
+    int        shift  = 0;
+    int        color  = -1;
+    const bool tinted = Affixes_InvTint(item, &shift, &color); // (uniques, sets and some affixes colour it)
+    Sprite    *icon   = GameInventory__Icon(inventory, Affixes_InvFile(item), tinted ? shift : 0,
+                                            color); // (uniques have their own picture)
     if (icon == NULL) {
         return;
     }

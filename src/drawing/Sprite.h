@@ -7,7 +7,9 @@
 
 typedef struct Sprite Sprite;
 
-Sprite  *Sprite_Create(const char *path, const char *palette_name);
+Sprite *Sprite_Create(const char *path, const char *palette_name);
+// With its colours shifted: each pixel's palette index looked up in remap[256] first (an item's tint)
+Sprite  *Sprite_CreateShifted(const char *path, const char *palette_name, const uint8_t *remap);
 void     Sprite_Destroy(Sprite **sprite);
 void     Sprite_SetBlendMode(const Sprite *sprite, SDL_BlendMode blend_mode);
 void     Sprite_SetAlphaMod(const Sprite *sprite, uint8_t alpha); // how much of it is drawn (blended and added)
