@@ -12,7 +12,7 @@
 #define MISSILE_SPRITES_MAX 192
 
 struct MissileSprite {
-    char           cel_file[40];
+    char           cel_file[72];
     char           palette[16];
     bool           glow;
     bool           missing; // no such file: remembered so it isn't looked for again
@@ -43,7 +43,11 @@ MissileSprite *MissileSprite_Get(const char *cel_file, const char *palette_name,
     snprintf(s->palette, sizeof(s->palette), "%s", palette_name);
     s->glow = glow;
     char path[128];
-    snprintf(path, sizeof(path), "/data/global/missiles/%s.dcc", cel_file);
+    if (cel_file[0] == '/') {
+        snprintf(path, sizeof(path), "%s", cel_file); // (a whole path: an overlay)
+    } else {
+        snprintf(path, sizeof(path), "/data/global/missiles/%s.dcc", cel_file);
+    }
     s->dcc     = DCC_Load(path);
     s->colours = Palette_Get(palette_name);
     if (s->dcc == NULL || s->colours == NULL) {

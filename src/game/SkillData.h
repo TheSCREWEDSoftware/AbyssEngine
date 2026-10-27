@@ -31,14 +31,15 @@ typedef struct SkillRow {
     int       row;
     int       do_func; // srvdofunc
     int       start_func;
-    char      missile[40];    // srvmissile (fired at the start)
-    char      missile_a[40];  // srvmissilea (fired by the skill's function)
-    char      summon[40];     // monstats Id
-    char      state[32];      // aurastate
-    char      anim[4];        // the player's animation: SC, A1, TH, ...
-    char      range[8];       // "rng", "h2h", "none", "loc"
-    char      cast_sound[40]; // stsound
-    char      do_sound[40];   // dosound
+    char      missile[40];      // srvmissile (fired at the start)
+    char      missile_a[40];    // srvmissilea (fired by the skill's function)
+    char      summon[40];       // monstats Id
+    char      state[32];        // aurastate
+    char      target_state[32]; // auratargetstate (a curse's, on the monsters)
+    char      anim[4];          // the player's animation: SC, A1, TH, ...
+    char      range[8];         // "rng", "h2h", "none", "loc"
+    char      cast_sound[40];   // stsound
+    char      do_sound[40];     // dosound
     bool      aura;
     bool      passive;
     bool      left_ok;

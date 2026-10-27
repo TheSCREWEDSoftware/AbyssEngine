@@ -111,6 +111,7 @@ static void SkillData__Load(void) {
         STR(s->missile_a, "srvmissilea");
         STR(s->summon, "summon");
         STR(s->state, "aurastate");
+        STR(s->target_state, "auratargetstate");
         STR(s->anim, "anim");
         STR(s->range, "range");
         STR(s->cast_sound, "stsound");

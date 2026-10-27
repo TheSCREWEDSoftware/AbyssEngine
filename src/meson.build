@@ -71,6 +71,7 @@ sources = [
     'game/Shop.c',
     'game/Cube.c',
     'game/SharedStash.c',
+    'game/StateOverlays.c',
     'game/Sockets.c',
     'game/Treasure.c',
     'game/Affixes.c',

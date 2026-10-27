@@ -138,6 +138,24 @@ static void Roam__AddSkillStats(Character *character, const SkillRow *s, const i
     }
 }
 
+static const SkillRow *Roam__ActiveAura(const SceneRoam *roam, int *level);
+
+// Our states, to be seen on our figure (and sent to the others): the buffs on us, the aura we have on
+static int Roam__PlayerStates(const SceneRoam *roam, char states[][32], const int max) {
+    int count = 0;
+    for (int b = 0; b < roam->buff_count && count < max; b++) {
+        if (roam->buffs[b].skill != NULL && roam->buffs[b].skill->state[0] != '\0') {
+            snprintf(states[count++], 32, "%s", roam->buffs[b].skill->state);
+        }
+    }
+    int             level = 0;
+    const SkillRow *aura  = roam->character != NULL ? Roam__ActiveAura(roam, &level) : NULL;
+    if (aura != NULL && aura->state[0] != '\0' && count < max) {
+        snprintf(states[count++], 32, "%s", aura->state);
+    }
+    return count;
+}
+
 // The skill on the right (or left) button that's an aura: on while it's there, like the game's
 static const SkillRow *Roam__ActiveAura(const SceneRoam *roam, int *level) {
     const int hands[2] = {roam->character->right_skill, roam->character->left_skill};
@@ -1181,6 +1199,8 @@ static void Roam__ShowCast(SceneRoam *roam, const int row, const int level, cons
             const float angle = (float)n * 2.0f * 3.14159265f / 24.0f;
             Roam__SpawnEffect(roam, name, x, y, cosf(angle), sinf(angle));
         }
+    } else if (s->kind == SKILL_KIND_CURSE) {
+        Roam__Curse(roam, s, level, tx, ty, SDL_GetTicks64()); // (on our copies too: the map's owner's count)
     } else if (s->kind == SKILL_KIND_AREA) {
         Missile *spot = Roam__SpawnEffect(roam, s->missile[0] != '\0' ? s->missile : s->missile_a, tx, ty, 1.0f, 1.0f);
         if (spot != NULL) {
@@ -1468,7 +1488,8 @@ static void Roam__ApplyCast(SceneRoam *roam, const uint64_t now) {
     const float     tx    = roam->cast_x;
     const float     ty    = roam->cast_y;
     roam->cast_fired      = true;
-    if (s == NULL || s->kind == SKILL_KIND_MISSILE || s->kind == SKILL_KIND_NOVA || s->kind == SKILL_KIND_AREA) {
+    if (s == NULL || s->kind == SKILL_KIND_MISSILE || s->kind == SKILL_KIND_NOVA || s->kind == SKILL_KIND_AREA ||
+        s->kind == SKILL_KIND_CURSE) {
         Roam__SendCast(roam, s, tx, ty);
     }
     if (s == NULL) {

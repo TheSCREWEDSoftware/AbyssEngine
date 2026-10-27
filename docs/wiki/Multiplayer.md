@@ -78,8 +78,9 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
   Monsters' arrows and spells are seen by everyone on the map and hurt whoever they reach; hirelings' arrows are seen
   too, and so is a Druid in a shape (in their looks). Your summons and hireling are seen by the others on the map
-  (sent five times a second: where they are and what they're doing; the fighting is yours). Buffs, auras and curses
-  aren't shown to the others yet.
+  (sent five times a second: where they are and what they're doing; the fighting is yours), and so are your buffs and
+  aura (their overlays on your figure). Curses land on everyone's copies of the monsters (the map's owner's do the
+  work: Amplify Damage, Weaken, ...), with their overlays.
 - **What you wear** shows on your figure for the others, and changes as you change it.
 - **The same map for everyone**: an act's joined-up outdoors is always built from its town outwards, whichever area
   you come into it by, so everyone in it sees everyone else where they are (it used to depend on where you came in,

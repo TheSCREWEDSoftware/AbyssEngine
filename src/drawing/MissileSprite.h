@@ -8,7 +8,8 @@
 
 typedef struct MissileSprite MissileSprite;
 
-MissileSprite *MissileSprite_Get(const char *cel_file, const char *palette_name, bool glow); // NULL if no such file
+// NULL if no such file. A cel file starting with '/' is a whole path (overlays: data/global/overlays/<file>.dcc)
+MissileSprite *MissileSprite_Get(const char *cel_file, const char *palette_name, bool glow);
 int            MissileSprite_Directions(const MissileSprite *sprite);
 int            MissileSprite_Frames(const MissileSprite *sprite);
 // Draws a frame with its anchor at (x, y) on screen

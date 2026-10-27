@@ -318,7 +318,9 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
     Glacial Spike and Ice Blast's freeze, chill and poison over time.
   - Weapon skills (Bash, Jab, Critical Strike, ...): the skill's attack rating and damage bonus on the next blow.
   - Buffs and warcries (Shout, Battle Orders, Bone Armor that soaks up damage, Thorns), passives (Dodge, the
-    Amazon's and Barbarian's masteries), auras that pulse, curses (Weaken, Amplify Damage, ...), Teleport.
+    Amazon's and Barbarian's masteries), auras that pulse, curses (Weaken, Amplify Damage, ...), Teleport. Buffs,
+    auras and curses show their overlays on whoever has them (`states.txt` / `overlay.txt`: Frozen Armor's shards,
+    an aura's rings, the curse over a monster's head).
   - Summons (Raise Skeleton, the Valkyrie, Hydra, ...): allies that follow you, fight what's near and run out when
     their skill says so.
   - The Druid's shapes (Werewolf, Werebear: the wolf's or bear's pictures and the form's bonuses; cast it again to

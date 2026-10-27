@@ -29,6 +29,7 @@
 #include "../game/Shop.h"
 #include "../game/SkillData.h"
 #include "../game/Skills.h"
+#include "../game/StateOverlays.h"
 #include "../game/Treasure.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
@@ -152,10 +153,15 @@ typedef enum UnitState {
     UNIT_CAST, // using a skill (its own animation: SC, A1, TH, S1, ...)
 } UnitState;
 
+#define UNIT_STATES 6 // buffs, an aura, a curse: how many show on a figure at once
+
 typedef struct DrawContext {
-    Figure *figure;
-    int     direction;
-    int     frame;
+    Figure     *figure;
+    int         direction;
+    int         frame;
+    const char *palette;                 // the act's (the overlays')
+    char        states[UNIT_STATES][32]; // states.txt names: their overlays are drawn with the figure
+    int         state_count;
 } DrawContext;
 
 typedef struct Unit {
@@ -424,6 +430,8 @@ typedef struct SceneRoam {
     bool     online;
     Unit     others[NET_MAX_PLAYERS];
     int      other_ids[NET_MAX_PLAYERS];
+    char     other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
+    int      other_state_count[NET_MAX_PLAYERS + 1];
     int      other_colors[NET_MAX_PLAYERS];
     int      other_count;
     uint64_t last_sent;
@@ -4807,6 +4815,13 @@ static void Roam__SendAllies(SceneRoam *roam) {
         count++;
     }
     writer->data[count_at] = (uint8_t)count;
+    // Then our buffs and aura (states.txt names), for our figure
+    char      states[UNIT_STATES][32];
+    const int state_count = Roam__PlayerStates(roam, states, UNIT_STATES);
+    NetWriter_U8(writer, (uint8_t)state_count);
+    for (int s = 0; s < state_count; s++) {
+        NetWriter_String(writer, states[s]);
+    }
     NetClient_Send(MSG_ALLIES, writer); // (none: theirs go)
     free(writer);
 }
@@ -4873,6 +4888,17 @@ static void Roam__ApplyAllies(SceneRoam *roam, const int from, NetReader *reader
         if (u->remote_owner == from && !seen[i] && !u->vanished) {
             u->vanished = true; // (dismissed, run out, killed)
             Roam__SetState(u, UNIT_DEAD, now);
+        }
+    }
+    const int states = NetReader_U8(reader);
+    if (from >= 0 && from <= NET_MAX_PLAYERS && !reader->failed) {
+        roam->other_state_count[from] = 0;
+        for (int s = 0; s < states && !reader->failed; s++) {
+            char name[32];
+            NetReader_String(reader, name, sizeof(name));
+            if (s < UNIT_STATES && !reader->failed) {
+                snprintf(roam->other_states[from][roam->other_state_count[from]++], 32, "%s", name);
+            }
         }
     }
 }
@@ -5793,9 +5819,34 @@ void FreeRoam_Update(void *scene_ref, const uint64_t delta) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Render
 
+// A figure's states' overlays (behind it, or in front): animated as time goes
+static void Roam__DrawOverlays(const DrawContext *draw, const int screen_x, const int screen_y, const float zoom,
+                               const bool behind) {
+    for (int s = 0; s < draw->state_count; s++) {
+        StateOverlay overlays[STATE_OVERLAYS_MAX];
+        const int    count = StateOverlays_For(draw->states[s], overlays, STATE_OVERLAYS_MAX);
+        for (int o = 0; o < count; o++) {
+            if (overlays[o].behind != behind) {
+                continue;
+            }
+            char path[72];
+            snprintf(path, sizeof(path), "/data/global/overlays/%s.dcc", overlays[o].file);
+            MissileSprite *sprite = MissileSprite_Get(path, draw->palette, overlays[o].glow);
+            if (sprite == NULL || MissileSprite_Frames(sprite) <= 0) {
+                continue;
+            }
+            const int frame = (int)((SDL_GetTicks64() / 40) % (uint64_t)MissileSprite_Frames(sprite));
+            MissileSprite_Draw(sprite, 0, frame, screen_x + (int)((float)overlays[o].x * zoom),
+                               screen_y + (int)((float)overlays[o].y * zoom), zoom);
+        }
+    }
+}
+
 static void Roam__DrawFigure(void *context, const int screen_x, const int screen_y, const float zoom) {
     const DrawContext *draw = context;
+    Roam__DrawOverlays(draw, screen_x, screen_y, zoom, true);
     Figure_Draw(draw->figure, draw->direction, draw->frame, screen_x, screen_y, zoom);
+    Roam__DrawOverlays(draw, screen_x, screen_y, zoom, false);
 }
 
 // An item on the ground, in its flip or lying still; remembers where it went (for the mouse)
@@ -5910,6 +5961,20 @@ static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable
     }
     if (unit->is_object && unit->rest_frame >= 0 && unit->state == UNIT_IDLE) {
         unit->draw.frame = unit->rest_frame;
+    }
+    // Its states, to be seen: ours (buffs, the aura), another player's (as they said), a monster's curse
+    unit->draw.palette     = Roam__Palette(roam);
+    unit->draw.state_count = 0;
+    if (unit == &roam->player && roam->game) {
+        unit->draw.state_count = Roam__PlayerStates(roam, unit->draw.states, UNIT_STATES);
+    } else if (unit >= roam->others && unit < roam->others + roam->other_count) {
+        const int id = roam->other_ids[unit - roam->others];
+        for (int s = 0; id >= 0 && id <= NET_MAX_PLAYERS && s < roam->other_state_count[id]; s++) {
+            snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", roam->other_states[id][s]);
+        }
+    } else if (unit->curse != NULL && SDL_GetTicks64() < unit->curse_until && Roam__IsAlive(unit) &&
+               unit->curse->target_state[0] != '\0') {
+        snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->curse->target_state);
     }
     drawable->x        = unit->x;
     drawable->y        = unit->y;
