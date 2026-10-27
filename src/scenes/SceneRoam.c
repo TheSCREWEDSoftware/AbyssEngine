@@ -5913,6 +5913,9 @@ static void Roam__SendAllies(SceneRoam *roam) {
     // Then what reaches our party near us: our aura, and our warcries (Battle Orders, Shout, Battle Command)
     int             aura_level = 0;
     const SkillRow *aura       = roam->game ? Roam__ActiveAura(roam, &aura_level) : NULL;
+    if (aura == NULL && roam->game) {
+        Roam__SpiritAura(roam, &aura, &aura_level); // (the Druid's spirit's, then)
+    }
     NetWriter_U16(writer, aura != NULL ? (uint16_t)aura->row : 0xFFFF);
     NetWriter_U8(writer, (uint8_t)(aura_level < 255 ? aura_level : 255));
     const int count_cries = writer->size;

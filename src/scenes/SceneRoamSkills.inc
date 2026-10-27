@@ -182,6 +182,21 @@ static const SkillRow *Roam__ActiveAura(const SceneRoam *roam, int *level) {
     return NULL;
 }
 
+// Your Druid's spirit, alive and near you: its aura and level
+static bool Roam__SpiritAura(const SceneRoam *roam, const SkillRow **aura, int *level) {
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        if (unit->ally && unit->remote_owner == 0 && unit->aura != NULL && unit->summoned_by != NULL &&
+            unit->summoned_by->do_func == 119 && Roam__IsAlive(unit) &&
+            Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) <= 20.0f) {
+            *aura  = unit->aura;
+            *level = unit->aura_level;
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether that buff is on you yourself (your own Battle Orders over a party member's: the same doesn't add up twice)
 static bool Roam__HasBuff(const SceneRoam *roam, const SkillRow *skill) {
     for (int b = 0; b < roam->buff_count; b++) {
@@ -237,6 +252,12 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
                 Roam__AddSkillStats(character, row, item->mods[m].value, true, true);
             }
         }
+    }
+    // Your spirit's aura (the Druid's Oak Sage, Heart of Wolverine, Spirit of Barbs), near it
+    const SkillRow *spirit_aura  = NULL;
+    int             spirit_level = 0;
+    if (Roam__SpiritAura(roam, &spirit_aura, &spirit_level)) {
+        Roam__AddSkillStats(character, spirit_aura, spirit_level, true, true);
     }
     // Party members' auras and warcries, while you're near them (like the game: an aura reaches the party in its
     // range, and Battle Orders those around when it's cast; here, while they're within about two screens' worth)
@@ -1098,6 +1119,16 @@ static void Roam__Summon(SceneRoam *roam, const SkillRow *s, const int level, co
         gone->vanished = true;
         Roam__SetState(gone, UNIT_DEAD, now);
     }
+    // The Druid's spirits: one at a time, whichever (a new one sends the other away)
+    for (int i = 0; s->do_func == 119 && i < roam->unit_count; i++) {
+        Unit *other = &roam->units[i];
+        if (other->ally && other->remote_owner == 0 && other->summoned_by != NULL &&
+            other->summoned_by->do_func == 119 && Roam__IsAlive(other)) {
+            other->hp       = 0;
+            other->vanished = true;
+            Roam__SetState(other, UNIT_DEAD, now);
+        }
+    }
     float x = tx;
     float y = ty;
     if (!Map_IsWalkable(roam->map, (int)x, (int)y) || Roam__Distance(x, y, roam->player.x, roam->player.y) > 12.0f) {
@@ -1138,6 +1169,17 @@ static void Roam__Summon(SceneRoam *roam, const SkillRow *s, const int level, co
     unit->attack_rating += SkillData_Eval(roam->character, s, level, s->aura_calc[1]) > 0
                                ? SkillData_Eval(roam->character, s, level, s->aura_calc[1])
                                : roam->character->level * 5;
+    // The Druid's spirits carry their aura (Oak Sage: more life; Heart of Wolverine: damage and attack rating; Spirit
+    // of Barbs: damage back): it reaches you and your party around it
+    if (s->do_func == 119) {
+        char aura[48];
+        snprintf(aura, sizeof(aura), "%s Aura",
+                 strcmp(s->id, "Spirit of Barbs") == 0
+                     ? "Barbs"
+                     : (strcmp(s->id, "Heart of Wolverine") == 0 ? "Wolverine" : s->id));
+        unit->aura       = SkillData_Get(aura);
+        unit->aura_level = level;
+    }
     // The Assassin's traps: what each fires (its monster's own skill's missile)
     static const struct {
         const char *summon;

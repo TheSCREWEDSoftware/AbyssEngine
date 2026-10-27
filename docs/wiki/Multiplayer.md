@@ -99,7 +99,7 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   (sent five times a second: where they are and what they're doing; the fighting is yours), and so are your buffs and
   aura (their overlays on your figure). Curses land on everyone's copies of the monsters (the map's owner's do the
   work: Amplify Damage, Weaken, ...), with their overlays. **Party members' auras and warcries** reach you while
-  you're within about two screens of them: a Paladin's Might or Prayer, a Barbarian's Battle Orders, Shout and Battle
+  you're within about two screens of them: a Paladin's Might or Prayer, a Druid's spirit's (Oak Sage, ...), a Barbarian's Battle Orders, Shout and Battle
   Command (until they run out; yours and theirs of the same don't add up).
 - **What you wear** shows on your figure for the others, and changes as you change it.
 - **The same map for everyone**: an act's joined-up outdoors is always built from its town outwards, whichever area
