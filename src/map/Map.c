@@ -767,6 +767,111 @@ int Map_JoinPieces(Map *map, const int widest) {
     return joined;
 }
 
+static bool Map__HasWall(const Map *map, const int c) {
+    for (int w = 0; w < map->wall_layer_count; w++) {
+        const DT1Tile *tile = map->wall_tiles[w][c];
+        if (tile != NULL && tile->orientation != DT1_ORIENTATION_ROOF &&
+            !(tile->orientation >= DT1_ORIENTATION_LOWER_WALL && tile->orientation <= DT1_ORIENTATION_LOWER_WALL + 3)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int Map_OpenThinWalls(Map *map, const int start_x, const int start_y, const int thickness) {
+    const int W     = map->width * MAP_SUBTILES;
+    const int H     = map->height * MAP_SUBTILES;
+    uint8_t  *seen  = malloc((size_t)W * (size_t)H);
+    int      *queue = malloc(sizeof(int) * (size_t)W * (size_t)H);
+    if (seen == NULL || queue == NULL || !Map_IsWalkable(map, start_x, start_y)) {
+        free(seen);
+        free(queue);
+        return 0;
+    }
+    if (map->opened == NULL) {
+        map->opened = calloc((size_t)W * (size_t)H, 1);
+    }
+    int opened = 0;
+    for (int pass = 0; pass < 64 && map->opened != NULL; pass++) {
+        memset(seen, 0, (size_t)W * (size_t)H);
+        int head                      = 0;
+        int tail                      = 0;
+        queue[tail++]                 = (start_y * W) + start_x;
+        seen[(start_y * W) + start_x] = 1;
+        while (head < tail) {
+            const int c = queue[head++];
+            const int x = c % W;
+            const int y = c / W;
+            for (int d = 0; d < 8; d++) {
+                static const int dx[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+                static const int dy[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+                const int        nx    = x + dx[d];
+                const int        ny    = y + dy[d];
+                if (nx >= 0 && ny >= 0 && nx < W && ny < H && !seen[(ny * W) + nx] && Map_IsWalkable(map, nx, ny)) {
+                    seen[(ny * W) + nx] = 1;
+                    queue[tail++]       = (ny * W) + nx;
+                }
+            }
+        }
+        // A reachable sub-tile, a thin blocked line, then walkable ground that isn't reached: open the line
+        int made = 0;
+        for (int c = 0; c < W * H && made == 0; c++) {
+            if (!seen[c]) {
+                continue;
+            }
+            const int x = c % W;
+            const int y = c / W;
+            for (int d = 0; d < 4 && made == 0; d++) {
+                const int dx = d == 0 ? 1 : (d == 1 ? -1 : 0);
+                const int dy = d == 2 ? 1 : (d == 3 ? -1 : 0);
+                int       k  = 1;
+                bool      ok = true;
+                for (; k <= thickness + 1; k++) {
+                    const int nx = x + (dx * k);
+                    const int ny = y + (dy * k);
+                    if (nx < 0 || ny < 0 || nx >= W || ny >= H) {
+                        ok = false;
+                        break;
+                    }
+                    if (Map_IsWalkable(map, nx, ny)) {
+                        break;
+                    }
+                    const int cell = ((ny / MAP_SUBTILES) * map->width) + (nx / MAP_SUBTILES);
+                    if (Map__HasWall(map, cell) || Map__Empty(map, cell)) {
+                        ok = false; // (a real wall, or nothing there)
+                        break;
+                    }
+                }
+                const int ex = x + (dx * k);
+                const int ey = y + (dy * k);
+                if (!ok || k == 1 || k > thickness + 1 || ex < 0 || ey < 0 || ex >= W || ey >= H ||
+                    seen[(ey * W) + ex]) {
+                    continue;
+                }
+                // Only into a sizeable part (not a stray sub-tile behind a pillar): a few walkable around it
+                int room = 0;
+                for (int j = 1; j <= 4; j++) {
+                    room += Map_IsWalkable(map, ex + (dx * j), ey + (dy * j)) ? 1 : 0;
+                }
+                if (room < 4) {
+                    continue;
+                }
+                for (int j = 1; j < k; j++) {
+                    map->opened[((y + (dy * j)) * W) + x + (dx * j)] = 1;
+                    opened++;
+                }
+                made++;
+            }
+        }
+        if (made == 0) {
+            break;
+        }
+    }
+    free(seen);
+    free(queue);
+    return opened;
+}
+
 void Map_AddExit(Map *map, const int target_level, const int x0, const int y0, const int x1, const int y1,
                  const float arrive_x, const float arrive_y) {
     if (map->exit_count >= MAP_MAX_EXITS || target_level <= 0) {
@@ -826,6 +931,7 @@ void Map_Destroy(Map **map_ref) {
     free(map->shadow_tiles);
     free(map->entities);
     free(map->blocked);
+    free(map->opened);
     free(map->dt1_masks);
     free(map->area_of);
     free(map->tile_index);
@@ -916,6 +1022,9 @@ bool Map_IsWalkable(const Map *map, const int subtile_x, const int subtile_y) {
     }
     if (map->blocked != NULL && map->blocked[(subtile_y * map->width * MAP_SUBTILES) + subtile_x] != 0) {
         return false;
+    }
+    if (map->opened != NULL && map->opened[(subtile_y * map->width * MAP_SUBTILES) + subtile_x] != 0) {
+        return true;
     }
     const int tx = subtile_x / MAP_SUBTILES;
     const int ty = subtile_y / MAP_SUBTILES;

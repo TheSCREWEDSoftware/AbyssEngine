@@ -93,6 +93,7 @@ typedef struct Map {
     MapEntity *entities;
 
     uint8_t *blocked; // per sub-tile: blocked by something standing there (objects), NULL = nothing
+    uint8_t *opened;  // per sub-tile: walkable whatever its tiles say (Map_OpenThinWalls), NULL = none
 
     // Built from several presets (Map_StampDS1): each cell only uses the tile sets of the preset it came from, so
     // presets with clashing tile numbers don't mix. One bit per dt1s[] entry; 0 or NULL = any.
@@ -144,6 +145,10 @@ void Map_FillGaps(Map *map, int widest);
 // Separate walkable pieces a short gap (up to widest empty cells along a row or column) apart get a strip of floor
 // joining them (the Arcane Sanctuary's walkways); the joins made
 int Map_JoinPieces(Map *map, int widest);
+// Walkable parts you can't reach from (start_x, start_y) (sub-tiles) that are cut off by no more than thickness
+// sub-tiles of blocked ground in a cell without walls (a doorway whose sides' flags close it) are opened up; the
+// sub-tiles opened
+int Map_OpenThinWalls(Map *map, int start_x, int start_y, int thickness);
 
 // Exits to other areas
 void           Map_AddExit(Map *map, int target_level, int x0, int y0, int x1, int y1, float arrive_x, float arrive_y);

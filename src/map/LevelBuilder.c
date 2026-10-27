@@ -1981,6 +1981,9 @@ static Map *Builder__BuildComposite(const LevelInfo *level, Rng *rng) {
         Builder__StampPiece(map, rng, "Act 4 - Diablo Arm N", 24, 72);
         start_x = (float)(36 * MAP_SUBTILES);
         start_y = (float)(12 * MAP_SUBTILES);
+        Map_Finish(map);
+        // (the north wing's doorway is closed off by the flags of the walls either side of it)
+        Map_OpenThinWalls(map, (int)start_x + 2, (int)start_y + 2, 2);
 
     } else if (id == 122 || id == 123) {
         // Four 40x40 quarters: the stairs up in the south-east, the stairs down in one of the others, and the
