@@ -4844,6 +4844,37 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         roam->panel           = PANEL_NONE;
         Sounds_Play("cursor_button_click", SOUND_KIND_UI);
     }
+    // The skill keys (F1-F8): over a skill in a picker, binds it (again: unbinds); otherwise puts the bound skill on
+    // its button, like the game
+    for (int h = 0; h < 8; h++) {
+        if (!Controls_Pressed((ControlAction)(ACTION_SKILL_1 + h))) {
+            continue;
+        }
+        bool      left   = false;
+        const int picked = GameSkills_PickerSkillAt(roam->skills_ui, character, mouse_x, mouse_y, &left);
+        char      text[96];
+        if (picked != SKILL_NONE_PICKED) {
+            const bool same =
+                character->hotkey_set[h] && character->hotkey_skill[h] == picked && character->hotkey_left[h] == left;
+            for (int other = 0; other < 8; other++) { // (one key per skill and button)
+                if (character->hotkey_set[other] && character->hotkey_skill[other] == picked &&
+                    character->hotkey_left[other] == left) {
+                    character->hotkey_set[other] = false;
+                }
+            }
+            character->hotkey_set[h]   = !same;
+            character->hotkey_skill[h] = picked;
+            character->hotkey_left[h]  = left;
+            const SkillClass *table    = Skills_ForClass(character->class_id);
+            snprintf(text, sizeof(text), same ? "Skill %d: none" : "Skill %d: %s", h + 1,
+                     picked >= 0 && picked < table->count ? table->skills[picked].name : "Attack");
+            Roam__ShowMessage(roam, text);
+        } else if (character->hotkey_set[h]) {
+            *(character->hotkey_left[h] ? &character->left_skill : &character->right_skill) =
+                character->hotkey_skill[h];
+            GameSkills_ClosePicker(roam->skills_ui);
+        }
+    }
     if (Controls_Pressed(ACTION_SKILL_TREE)) {
         roam->skill_panel     = !roam->skill_panel;
         roam->inventory_panel = false;

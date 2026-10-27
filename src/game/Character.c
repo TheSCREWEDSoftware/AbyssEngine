@@ -537,6 +537,14 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
                          : hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id
                                                                      : "attack");
     }
+    // The skill keys: "hotkey <1-8> <left|right> <skill>"
+    for (int h = 0; h < 8; h++) {
+        const int s = character->hotkey_skill[h];
+        if (character->hotkey_set[h] && (s == SKILL_ATTACK || (s >= 0 && s < skills->count))) {
+            Character__Print(file, "hotkey %d %s %s\n", h + 1, character->hotkey_left[h] ? "left" : "right",
+                             s == SKILL_ATTACK ? "attack" : skills->skills[s].id);
+        }
+    }
     // Items: "item <where> <code> <defense> <quantity>", where is "inv x y", "equip <slot>" or "belt <slot>"
     Character__Print(file, "gold %d\n", character->gold);
     Character__Print(file, "items %d\n", character->inventory_count);
@@ -756,6 +764,19 @@ bool Character_ReadText(const char *text, Character *character) {
             const SkillRow *from_item = k < 0 ? SkillData_Get(value) : NULL; // (an item's skill)
             *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
                 k >= 0 ? k : (from_item != NULL ? SKILL_FROM_ITEM + from_item->row : SKILL_ATTACK);
+        } else if (strcmp(key, "hotkey") == 0) {
+            int  h = 0;
+            char side[8];
+            char skill[96];
+            if (sscanf(value, "%d %7s %95[^\n]", &h, side, skill) == 3 && h >= 1 && h <= 8) {
+                const int k = strcmp(skill, "attack") == 0 ? SKILL_ATTACK
+                                                           : Skills_Find(Skills_ForClass(character->class_id), skill);
+                if (k == SKILL_ATTACK || k >= 0) {
+                    character->hotkey_set[h - 1]   = true;
+                    character->hotkey_left[h - 1]  = strcmp(side, "left") == 0;
+                    character->hotkey_skill[h - 1] = k;
+                }
+            }
         } else if (strcmp(key, "films") == 0) {
             character->films = (uint8_t)(number > 0 ? number : 0);
         } else if (strcmp(key, "waypoints") == 0) {

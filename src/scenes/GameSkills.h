@@ -34,6 +34,10 @@ void        GameSkills_Destroy(GameSkills **skills);
 int  GameSkills_Update(GameSkills *skills, Character *character, bool tree_open, int mouse_x, int mouse_y,
                        bool left_click, const char **message);
 bool GameSkills_PickerOpen(const GameSkills *skills);
+// The skill under the mouse in the open picker (SKILL_NONE_PICKED if none), and whether it's the left button's
+#define SKILL_NONE_PICKED (-1000)
+int  GameSkills_PickerSkillAt(const GameSkills *skills, const Character *character, int mouse_x, int mouse_y,
+                              bool *left);
 void GameSkills_ClosePicker(GameSkills *skills);
 bool GameSkills_IsOver(const GameSkills *skills, bool tree_open, int mouse_x, int mouse_y);
 

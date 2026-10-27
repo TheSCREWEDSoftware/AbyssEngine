@@ -168,6 +168,24 @@ static void GameSkills__PickerRects(const GameSkills *skills, const Character *c
 }
 
 bool GameSkills_PickerOpen(const GameSkills *skills) { return skills->picker != 0; }
+
+int GameSkills_PickerSkillAt(const GameSkills *skills, const Character *character, const int mouse_x, const int mouse_y,
+                             bool *left) {
+    if (skills->picker == 0) {
+        return SKILL_NONE_PICKED;
+    }
+    int      list[PICKER_MAX];
+    SDL_Rect rects[PICKER_MAX];
+    int      count = 0;
+    GameSkills__PickerRects(skills, character, list, rects, &count);
+    for (int i = 0; i < count; i++) {
+        if (GameSkills__In(&rects[i], mouse_x, mouse_y) && list[i] < SKILL_FROM_ITEM) {
+            *left = skills->picker == 1;
+            return list[i];
+        }
+    }
+    return SKILL_NONE_PICKED;
+}
 void GameSkills_ClosePicker(GameSkills *skills) { skills->picker = 0; }
 
 static int GameSkills__ButtonAt(const int x, const int y) {
@@ -470,6 +488,16 @@ static void GameSkills__SkillTip(GameSkills *skills, const Character *character,
     GameSkills__Tip(skills, lines, colors, count, x, y);
 }
 
+// A skill key's name in a picker icon's corner
+static void GameSkills__HotkeyLabel(GameSkills *skills, const int hotkey, const int x, const int y) {
+    char text[8];
+    snprintf(text, sizeof(text), "F%d", hotkey + 1);
+    Label_SetText(skills->small, text);
+    Label_SetColor(skills->small, 0xFF, 0xE0, 0x80, 0xFF);
+    Label_SetAlignment(skills->small, LABEL_ALIGN_BEGIN, LABEL_ALIGN_BEGIN);
+    Label_Draw(skills->small, x, y);
+}
+
 void GameSkills_DrawOverlay(GameSkills *skills, const Character *character, const bool tree_open, const int mouse_x,
                             const int mouse_y) {
     if (skills->picker != 0) {
@@ -480,6 +508,13 @@ void GameSkills_DrawOverlay(GameSkills *skills, const Character *character, cons
         int hovered = -1;
         for (int i = 0; i < count; i++) {
             GameSkills__DrawIcon(skills, list[i], rects[i].x, rects[i].y, false);
+            // Its skill key, if it has one for this button ("F3" in the corner, like the game)
+            for (int h = 0; h < 8; h++) {
+                if (character->hotkey_set[h] && character->hotkey_skill[h] == list[i] &&
+                    character->hotkey_left[h] == (skills->picker == 1)) {
+                    GameSkills__HotkeyLabel(skills, h, rects[i].x + 2, rects[i].y + 2);
+                }
+            }
             if (GameSkills__In(&rects[i], mouse_x, mouse_y)) {
                 hovered = i;
                 SDL_SetRenderDrawColor(sdl_renderer, 230, 200, 110, 255);

@@ -155,6 +155,10 @@ typedef struct Character {
     uint8_t skill_levels[CHARACTER_SKILLS];
     int     left_skill; // a skill's index, or SKILL_ATTACK (-1)
     int     right_skill;
+    // The skill keys F1-F8 (Skill 1-8): which skill each puts on which button (bound from the skill pickers)
+    bool hotkey_set[8];
+    bool hotkey_left[8];
+    int  hotkey_skill[8];
     // Items
     InventoryItem inventory[INVENTORY_MAX];
     int           inventory_count;
