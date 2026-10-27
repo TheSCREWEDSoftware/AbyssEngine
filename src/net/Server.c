@@ -43,11 +43,12 @@ typedef struct Peer {
     char           mode[4];
     int            life; // percent, and their level (MSG_STATE)
     int            level;
-    int            party;                       // the party's id (its first member's player id), 0 = none
-    char           looks[CHARACTER_LOOKS_TEXT]; // what they wear (Character_LooksToText), sent with MSG_PLAYER
-    int            invite_from;                 // the last player who invited them
-    uint8_t        portal[32];                  // their Town Portal (MSG_PORTAL as they sent it), for newcomers
-    int            portal_size;                 // 0: none open
+    int            party;                           // the party's id (its first member's player id), 0 = none
+    char           looks[CHARACTER_LOOKS_TEXT];     // what they wear (Character_LooksToText), sent with MSG_PLAYER
+    int            invite_from;                     // the last player who invited them
+    uint64_t       hostile_at[NET_MAX_PLAYERS + 1]; // by player id: when they declared hostility to them (0: not)
+    uint8_t        portal[32];                      // their Town Portal (MSG_PORTAL as they sent it), for newcomers
+    int            portal_size;                     // 0: none open
 } Peer;
 
 // An item lying on the ground somewhere in the game
@@ -631,6 +632,9 @@ static void Server__Drop(NetServer *server, Peer *peer) {
     }
     if (peer->stage == STAGE_IN_GAME) {
         Server__LeaveParty(server, peer);
+        for (int p = 0; p < MAX_CONNECTIONS && peer->id > 0 && peer->id <= NET_MAX_PLAYERS; p++) {
+            server->peers[p].hostile_at[peer->id] = 0; // (whoever gets this id next starts at peace)
+        }
         NetWriter writer;
         NetWriter_Begin(&writer);
         NetWriter_U8(&writer, (uint8_t)peer->id);
@@ -1052,6 +1056,40 @@ static void Server__PartyAccept(NetServer *server, Peer *peer, NetReader *reader
 }
 
 // What a player sent, passed on as it is with their id in front: to everyone on a map, or to one player
+// Hostility (PvP games): either one declared it, long enough ago (the game's countdown)
+static bool Server__Hostile(NetServer *server, const Peer *a, const int b_id, const uint64_t now) {
+    const Peer *b = Server__PeerById(server, b_id);
+    if (b == NULL || !server->settings.pvp) {
+        return false;
+    }
+    const uint64_t ab   = a->hostile_at[b_id];
+    const uint64_t ba   = b->hostile_at[a->id];
+    const uint64_t wait = NET_HOSTILE_MS - 1000; // (a second's leeway for the clocks)
+    return (ab != 0 && now >= ab + wait) || (ba != 0 && now >= ba + wait);
+}
+
+static void Server__HostileFrom(NetServer *server, Peer *peer, NetReader *reader) {
+    const int  target = NetReader_U8(reader);
+    const bool on     = NetReader_U8(reader) != 0;
+    Peer      *other  = Server__PeerById(server, target);
+    if (reader->failed || peer->stage != STAGE_IN_GAME || other == NULL || other == peer || !server->settings.pvp) {
+        return;
+    }
+    const int my_level    = peer->level > peer->character.level ? peer->level : peer->character.level;
+    const int their_level = other->level > other->character.level ? other->level : other->character.level;
+    if (on && (my_level < NET_HOSTILE_LVL || their_level < NET_HOSTILE_LVL ||
+               (peer->party != 0 && peer->party == other->party))) {
+        return; // (too low, or in the same party)
+    }
+    peer->hostile_at[target] = on ? SDL_GetTicks64() : 0;
+    NetWriter writer;
+    NetWriter_Begin(&writer);
+    NetWriter_U8(&writer, (uint8_t)peer->id);
+    NetWriter_U8(&writer, (uint8_t)target);
+    NetWriter_U8(&writer, on ? 1 : 0);
+    Server__Broadcast(server, MSG_HOSTILE_FROM, &writer, NULL);
+}
+
 static void Server__PassOn(NetServer *server, const Peer *from, const uint8_t type, const NetReader *reader,
                            const int map, const int to_id) {
     NetWriter *writer = malloc(sizeof(NetWriter));
@@ -1178,6 +1216,22 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
             Server__LeaveParty(server, peer);
         }
         break;
+    case MSG_HOSTILE:
+        Server__HostileFrom(server, peer, reader);
+        break;
+    case MSG_CORPSE:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            Server__PassOn(server, peer, MSG_CORPSE_FROM, reader, NetReader_I32(&peek), 0);
+        }
+        break;
+    case MSG_LOOT:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            const int to   = NetReader_U8(&peek);
+            Server__PassOn(server, peer, MSG_LOOT_FROM, reader, 0, to > 0 ? to : 255);
+        }
+        break;
     case MSG_TRADE:
         if (peer->stage == STAGE_IN_GAME) {
             NetReader peek = *reader;
@@ -1210,7 +1264,8 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
             NetReader  peek   = *reader;
             const int  target = NetReader_U8(&peek);
             const bool pvp    = NetReader_U8(&peek) != 0;
-            if (target > 0 && (!pvp || server->settings.pvp)) { // no fighting each other unless the game allows it
+            if (target > 0 && (!pvp || Server__Hostile(server, peer, target, SDL_GetTicks64()))) {
+                // (no fighting each other unless the game allows it and one of them went hostile)
                 Server__PassOn(server, peer, MSG_HIT_YOU, reader, 0, target);
             }
         }

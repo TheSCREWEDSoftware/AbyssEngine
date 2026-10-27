@@ -62,8 +62,13 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Getting hit**: your game rolls whether a blow lands, with your own defense, whether it's a monster's or a player's.
 - **Difficulty**: Nightmare and Hell use the game's own numbers for them (`monstats.txt` and `MonLvl.txt`'s (N) and
   (H) columns): higher levels, much more life and damage, more experience.
-- **PvP** (when the host turns it on): point at another player outside town (their name turns red) and click to
-  attack them, like a monster. There's no fighting in town. "So-and-so killed you" says who.
+- **PvP** (when the host turns it on): like the game, you go **hostile** to one player at a time from the party
+  screen (both level 9 or more, not in the same party). The button counts down ten seconds ("Hostile in 7"), then the
+  two of you can fight outside town: point at them (their name turns red) and click to attack, like a monster. Either
+  one declaring it is enough; **Make Peace** ends it at once, and both are told. "So-and-so killed you" says who.
+- **Corpses**: while your gear lies on your corpse, the others on that map see it ("Name's corpse"). The party
+  screen's **Loot** button lets that player take what's on it: when they walk up to it, everything drops on the
+  ground there (first come, first served); **No Loot** takes it back.
 - **Chests, doors and shrines**: the first to open one opens it for everyone (the server decides who was first), and
   what's in a chest drops once, for everyone to pick up. Coming into an area later, what's been opened shows open.
 - **Parties**: **P** opens the party screen: everyone in the game, with **Invite** next to each (or **Accept** when
@@ -101,7 +106,7 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Joining while the others are busy**: a game that's loading an area (which can take seconds) skips monster updates
   until it's caught up, rather than have them pile up until the connection gives up on it.
 
-Each of these changed what games send each other (now protocol version 16: the stash's pages, buffs and curses, mods, Town Portals, monsters' curses and auras on everyone, players' life and level for the party's portraits, items' superior / low quality, ethereal and personalized names):
+Each of these changed what games send each other (now protocol version 17: the stash's pages, buffs and curses, mods, Town Portals, monsters' curses and auras on everyone, players' life and level for the party's portraits, items' superior / low quality, ethereal and personalized names; 17: hostility, corpses seen and looted):
 everyone needs the same build, or the game says the host runs a different version.
 
 **Town Portals**: everyone sees everyone's (named after whose it is), in the field and in town; your party can go

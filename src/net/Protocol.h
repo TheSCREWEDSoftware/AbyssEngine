@@ -10,12 +10,15 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 16 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+#define NET_PROTOCOL_VERSION 17 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
 // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading;
 // 9: durability, unidentified items, +skills (a mod's skill); 10: charges (a mod's extra); 11: summons and hirelings
 // seen by the others; 12: stash pages; 13: the mods in the hello; 14: Town Portals seen and used by the others;
 // 15: monsters' curses and auras on every player, burrowed monsters and auras seen; 16: players' life and level
-// in their state (the party's portraits)
+// in their state (the party's portraits); 17: hostility, corpses seen and looted
+#define NET_HOSTILE_MS  10000 // a declaration of hostility takes effect this long after (the game's countdown)
+#define NET_HOSTILE_LVL 9     // the level both need to be to go hostile, like the game
+typedef enum LootOp { LOOT_DENY, LOOT_ALLOW, LOOT_TAKE } LootOp;
 
 // Trading between players (MSG_TRADE / MSG_TRADE_FROM): the server only passes them on; both games check and make
 // the swap when each has accepted the other's offer as it stands (their versions)
@@ -74,6 +77,9 @@ typedef enum NetMessageType {
     MSG_ALLIES,  // map, count, then slot, monstats id, x, y, state, turn each: my summons and hireling, to be seen
     MSG_PORTAL,  // my Town Portal: open, act, level, world seed, x, y (where it was opened)
     MSG_AFFLICT, // the map's owner: player id, skill row (0xFFFF: chilled), level, milliseconds (a monster's curse)
+    MSG_HOSTILE, // player id, on: declaring hostility to them (PvP games), or ending it
+    MSG_CORPSE,  // map, x, y, there: my corpse with my gear on it (every couple of seconds while it's there)
+    MSG_LOOT,    // to (player id), what (LootOp): letting them loot my corpse, or asking theirs for its things
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
@@ -99,6 +105,9 @@ typedef enum NetMessageType {
     MSG_ALLIES_FROM,         // someone's summons and hireling
     MSG_PORTAL_FROM,         // someone's Town Portal (their id, then what MSG_PORTAL carried); to newcomers too
     MSG_AFFLICTED,           // only to the one cursed or chilled: who did it, then what MSG_AFFLICT carried
+    MSG_HOSTILE_FROM,        // to everyone: who, to whom, on
+    MSG_CORPSE_FROM,         // someone's corpse (their id, then what MSG_CORPSE carried), to those on that map
+    MSG_LOOT_FROM,           // only to the one it's for: who, then what MSG_LOOT carried
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;

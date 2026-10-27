@@ -330,6 +330,15 @@ typedef struct Unit {
     DrawContext     draw;
 } Unit;
 
+// Another player's corpse, seen where they fell (multiplayer)
+#define REMOTE_CORPSES 16
+typedef struct RemoteCorpse {
+    int      id;    // whose (player id), 0 = none
+    uint64_t heard; // last told it's there
+    uint64_t asked; // we last asked for its things
+    Unit     unit;  // drawn as their figure, dead
+} RemoteCorpse;
+
 // Missiles: what skills (and the bow) fire, flying until they hit something or run out; explosions and the spots
 // where an area skill (Meteor, Blizzard) lands are missiles too, standing still
 #define MAX_MISSILES 384
@@ -516,37 +525,43 @@ typedef struct SceneRoam {
     TextBox *seed_box; // Free Roam: world seed (in the Places panel)
 
     // Multiplayer: the other players, chat, and the game clock (game speed)
-    bool     online;
-    Unit     others[NET_MAX_PLAYERS];
-    int      other_ids[NET_MAX_PLAYERS];
-    char     other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
-    int      other_state_count[NET_MAX_PLAYERS + 1];
-    int      other_colors[NET_MAX_PLAYERS];
-    int      other_count;
-    uint64_t last_sent;
-    uint64_t last_monsters;                    // the map's owner: monsters last sent at
-    uint64_t last_allies;                      // our summons last sent at
-    int      attack_other;                     // PvP: the player being attacked (their id), 0 = none
-    char     sent_looks[CHARACTER_LOOKS_TEXT]; // what we last told the others we wear
-    bool     party_panel;                      // P: the party screen
-    bool     use_is_ours; // the server said we're the one opening this object (its treasure is ours to drop)
-    int      used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
-    int      used_objects[NET_USED_OBJECTS_MAX];
-    int      used_count;
-    int      hover_other;  // PvP: the other player under the mouse (index into others), -1 = none
-    int      spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
-    uint64_t clock;        // the game's time (runs faster at Fast, Faster, Fastest)
-    uint64_t clock_real;   // the real time it was last moved on at
-    TextBox *chat_box;
-    Label   *chat_label;
-    Label   *log_label; // the message log and the help screen
-    char     log_lines[LOG_LINES][NET_CHAT_MAX + 24];
-    bool     log_chat[LOG_LINES]; // said by someone (white), or a message (gold)
-    int      log_count;
-    bool     log_open;
-    bool     help_open;
-    bool     hide_portraits; // Show portraits (Z) off
-    bool     show_belt;      // Show belt: the belt's rows above the bottom one
+    bool         online;
+    Unit         others[NET_MAX_PLAYERS];
+    int          other_ids[NET_MAX_PLAYERS];
+    char         other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
+    int          other_state_count[NET_MAX_PLAYERS + 1];
+    int          other_colors[NET_MAX_PLAYERS];
+    int          other_count;
+    uint64_t     last_sent;
+    uint64_t     last_monsters;                       // the map's owner: monsters last sent at
+    uint64_t     last_allies;                         // our summons last sent at
+    int          attack_other;                        // PvP: the player being attacked (their id), 0 = none
+    uint64_t     hostile_mine[NET_MAX_PLAYERS + 1];   // by id: when our hostility to them takes effect (0: at peace)
+    uint64_t     hostile_theirs[NET_MAX_PLAYERS + 1]; // by id: when theirs to us does
+    bool         loot_allowed[NET_MAX_PLAYERS + 1];   // by id: they may loot our corpse
+    bool         loot_from[NET_MAX_PLAYERS + 1];      // by id: we may loot theirs
+    RemoteCorpse remote_corpses[REMOTE_CORPSES];      // the others' corpses on this map
+    uint64_t     corpse_sent;                         // ours, last told at
+    char         sent_looks[CHARACTER_LOOKS_TEXT];    // what we last told the others we wear
+    bool         party_panel;                         // P: the party screen
+    bool         use_is_ours; // the server said we're the one opening this object (its treasure is ours to drop)
+    int          used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
+    int          used_objects[NET_USED_OBJECTS_MAX];
+    int          used_count;
+    int          hover_other;  // PvP: the other player under the mouse (index into others), -1 = none
+    int          spread_place; // the place we were last moved off the arrival spot in (-1: not yet)
+    uint64_t     clock;        // the game's time (runs faster at Fast, Faster, Fastest)
+    uint64_t     clock_real;   // the real time it was last moved on at
+    TextBox     *chat_box;
+    Label       *chat_label;
+    Label       *log_label; // the message log and the help screen
+    char         log_lines[LOG_LINES][NET_CHAT_MAX + 24];
+    bool         log_chat[LOG_LINES]; // said by someone (white), or a message (gold)
+    int          log_count;
+    bool         log_open;
+    bool         help_open;
+    bool         hide_portraits; // Show portraits (Z) off
+    bool         show_belt;      // Show belt: the belt's rows above the bottom one
 
     bool automap_fade; // the automap keys (F9-F12): see-through, no party, no names
     bool automap_no_party;
@@ -1006,6 +1021,7 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
 static int Roam__Roll(const int low, const int high) { return high > low ? low + (rand() % (high - low + 1)) : low; }
 
 typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQUE, RANK_MINION } UnitRank;
+
 // Monsters that make others (monstats spawn and AI): eggs hatch when you come near, nests and mothers keep making them
 enum { SPAWNER_NONE, SPAWNER_EGG, SPAWNER_NEST };
 
@@ -1469,6 +1485,8 @@ static bool Roam__OtherById(const SceneRoam *roam, const int id, const Unit **ot
     }
     return false;
 }
+
+static bool Roam__HostileTo(const SceneRoam *roam, int id);
 
 // PvP: the game allows players to fight, and we're out of town
 static bool Roam__PvP(const SceneRoam *roam) {
@@ -2097,20 +2115,24 @@ static void Roam__AddGroundItem(SceneRoam *roam, const Item *item, const int map
 }
 
 // An item onto the ground at a spot (multiplayer: the server puts it there, for everyone)
-static void Roam__PutOnGround(SceneRoam *roam, const Item *item, const float x, const float y) {
+static void Roam__PutOnGroundAt(SceneRoam *roam, const Item *item, const int map_key, const float x, const float y) {
     if (!roam->online) {
-        Roam__AddGroundItem(roam, item, Roam__MapKey(roam), x, y, true, 0);
+        Roam__AddGroundItem(roam, item, map_key, x, y, true, 0);
         return;
     }
     NetWriter *writer = malloc(sizeof(NetWriter));
     FAIL_IF_NULL(writer);
     NetWriter_Begin(writer);
-    NetWriter_I32(writer, Roam__MapKey(roam));
+    NetWriter_I32(writer, map_key);
     NetWriter_F32(writer, x);
     NetWriter_F32(writer, y);
     NetItem_Write(writer, item);
     NetClient_Send(MSG_ITEM_DROP, writer);
     free(writer);
+}
+
+static void Roam__PutOnGround(SceneRoam *roam, const Item *item, const float x, const float y) {
+    Roam__PutOnGroundAt(roam, item, Roam__MapKey(roam), x, y);
 }
 
 // Blocking with a shield (Character_BlockChance), with the game's sounds
@@ -4016,7 +4038,8 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 }
             }
             const Unit *other = NULL;
-            if (roam->attack_other > 0 && Roam__PvP(roam) && Roam__OtherById(roam, roam->attack_other, &other) &&
+            if (roam->attack_other > 0 && Roam__HostileTo(roam, roam->attack_other) &&
+                Roam__OtherById(roam, roam->attack_other, &other) &&
                 Roam__Distance(player->x, player->y, other->x, other->y) <= ATTACK_RANGE + 0.5f) {
                 // PvP: they roll whether it lands, with their defense
                 int rolled[ELEMENT_COUNT];
@@ -4118,7 +4141,8 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
     // PvP: walk up to the other player, then swing
     if (!key_walking && roam->attack_other > 0) {
         const Unit *other = NULL;
-        if (!Roam__PvP(roam) || !Roam__OtherById(roam, roam->attack_other, &other) || !Roam__OtherAlive(other)) {
+        if (!Roam__HostileTo(roam, roam->attack_other) || !Roam__OtherById(roam, roam->attack_other, &other) ||
+            !Roam__OtherAlive(other)) {
             roam->attack_other = 0;
         } else if (Roam__Distance(player->x, player->y, other->x, other->y) <= ATTACK_RANGE) {
             Roam__TurnTowards(&player->turn, player->x, player->y, other->x, other->y);
@@ -5118,19 +5142,21 @@ static void Roam__Drink(SceneRoam *roam, const Item *item) {
 
 #include "SceneRoamTrade.inc"
 
-#define PARTY_X     150
+#define PARTY_X     70
 #define PARTY_Y     80
-#define PARTY_W     500
+#define PARTY_W     660
 #define PARTY_ROW   26
 #define PARTY_ROWS  12
 #define PARTY_TOP   (PARTY_Y + 44)
-#define PARTY_BTN_W 110
+#define PARTY_BTN_W 100
 
 static int Roam__PartyHeight(int rows) { return 44 + (rows * PARTY_ROW) + 46; }
 
 static bool Roam__InMyParty(const NetPlayer *player) {
     return NetClient_MyParty() != 0 && player != NULL && player->party == NetClient_MyParty();
 }
+
+#include "SceneRoamHostile.inc"
 
 static SDL_Rect Roam__PartyButton(const int row) {
     return (SDL_Rect){PARTY_X + PARTY_W - PARTY_BTN_W - 12, PARTY_TOP + (row * PARTY_ROW) + 2, PARTY_BTN_W, 21};
@@ -5139,6 +5165,17 @@ static SDL_Rect Roam__PartyButton(const int row) {
 static SDL_Rect Roam__PartyTradeButton(const int row) {
     const SDL_Rect invite = Roam__PartyButton(row);
     return (SDL_Rect){invite.x - PARTY_BTN_W - 8, invite.y, PARTY_BTN_W, invite.h};
+}
+
+// Hostile (PvP games) and Loot (they may take what's on your corpse), left of Trade
+static SDL_Rect Roam__PartyHostileButton(const int row) {
+    const SDL_Rect trade = Roam__PartyTradeButton(row);
+    return (SDL_Rect){trade.x - PARTY_BTN_W - 8, trade.y, PARTY_BTN_W, trade.h};
+}
+
+static SDL_Rect Roam__PartyLootButton(const int row) {
+    const SDL_Rect hostile = Roam__PartyHostileButton(row);
+    return (SDL_Rect){hostile.x - PARTY_BTN_W - 8, hostile.y, PARTY_BTN_W, hostile.h};
 }
 
 static SDL_Rect Roam__PartyLeaveButton(const int rows) {
@@ -5173,6 +5210,18 @@ static bool Roam__UpdatePartyPanel(SceneRoam *roam, const int mouse_x, const int
         return true;
     }
     for (int r = 0; r < rows; r++) {
+        const SDL_Rect hostile = Roam__PartyHostileButton(r);
+        const SDL_Rect loot    = Roam__PartyLootButton(r);
+        if (Roam__PvPGame() && SDL_PointInRect(&mouse, &hostile)) {
+            Roam__DeclareHostile(roam, &players[r]);
+            Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+            return true;
+        }
+        if (SDL_PointInRect(&mouse, &loot)) {
+            Roam__ToggleLoot(roam, &players[r]);
+            Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+            return true;
+        }
         const SDL_Rect trade = Roam__PartyTradeButton(r);
         if (SDL_PointInRect(&mouse, &trade)) {
             Roam__TradeButton(roam, &players[r]);
@@ -5251,6 +5300,15 @@ static void Roam__DrawPartyPanel(SceneRoam *roam, const int mouse_x, const int m
         const SDL_Rect trade = Roam__PartyTradeButton(r);
         Roam__PartyButtonDraw(roam, &trade, roam->trade_asked_by == player->id ? "Accept Trade" : "Trade",
                               SDL_PointInRect(&mouse, &trade));
+        const SDL_Rect loot = Roam__PartyLootButton(r);
+        Roam__PartyButtonDraw(roam, &loot, roam->loot_allowed[player->id] ? "No Loot" : "Loot",
+                              SDL_PointInRect(&mouse, &loot));
+        if (Roam__PvPGame()) {
+            char           label[24];
+            const SDL_Rect hostile = Roam__PartyHostileButton(r);
+            Roam__HostileLabel(roam, player->id, label, sizeof(label));
+            Roam__PartyButtonDraw(roam, &hostile, label, SDL_PointInRect(&mouse, &hostile));
+        }
         const SDL_Rect button = Roam__PartyButton(r);
         if (Roam__InMyParty(player)) {
             Label_SetText(roam->item_label, "In your party");
@@ -5930,6 +5988,15 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
     case MSG_TRADE_FROM:
         Roam__TradeMessage(roam, reader);
         break;
+    case MSG_HOSTILE_FROM:
+        Roam__HostileMessage(roam, reader);
+        break;
+    case MSG_CORPSE_FROM:
+        Roam__CorpseMessage(roam, reader, now);
+        break;
+    case MSG_LOOT_FROM:
+        Roam__LootMessage(roam, reader);
+        break;
     case MSG_PORTAL_FROM:
         Roam__ReceivePortal(roam, reader);
         break;
@@ -6060,8 +6127,8 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         }
         Unit *player = &roam->player;
         if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until ||
-            (pvp && roam->in_town)) {
-            break;
+            (pvp && !Roam__HostileTo(roam, from))) {
+            break; // (another player's blow only when one of us went hostile, out of town)
         }
         if (Roam__Roll(1, 100) > Character_HitChance(attack_rating, level, player->defense, player->level)) {
             break; // missed
@@ -6118,6 +6185,8 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     if (real - roam->last_sent >= 1000 / NET_STATE_HZ) {
         roam->last_sent = real;
         Roam__ForgetGonePortals(roam); // (theirs who've left)
+        Roam__KeepCorpseSeen(roam, real);
+        Roam__LootNearCorpse(roam, real);
         NetClient_SendState(Roam__MapKey(roam), roam->player.x, roam->player.y, roam->player.turn,
                             Roam__Mode(roam, &roam->player),
                             roam->player.max_hp > 0 ? roam->player.hp * 100 / roam->player.max_hp : 100,
@@ -6524,9 +6593,12 @@ static void Roam__Update(SceneRoam *roam) {
         roam->hovered = -1;
     }
     // PvP: another player under the mouse (when no monster or item is)
-    roam->hover_other = over_view && roam->hover_item < 0 && roam->hovered < 0 && Roam__PvP(roam)
+    roam->hover_other = over_view && roam->hover_item < 0 && roam->hovered < 0 && Roam__AnyHostile(roam)
                             ? Roam__OtherAt(roam, sub_x, sub_y)
                             : -1;
+    if (roam->hover_other >= 0 && !Roam__HostileTo(roam, roam->other_ids[roam->hover_other])) {
+        roam->hover_other = -1; // (only those we're hostile with)
+    }
     // An entrance under the mouse (cave mouth, tomb door, stairs): its name is shown, like the game's
     roam->hover_exit = -1;
     for (int e = 0; over_view && roam->hovered < 0 && e < roam->map->exit_count; e++) {
@@ -7350,6 +7422,12 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->corpse_key != 0 && roam->corpse_key == Roam__MapKey(roam) &&
         Roam__PrepareDraw(roam, &roam->corpse, &drawables[count])) {
         count++; // where you fell
+    }
+    for (int i = 0; i < REMOTE_CORPSES && roam->online; i++) { // where the others fell
+        if (roam->remote_corpses[i].id != 0 &&
+            Roam__PrepareDraw(roam, &roam->remote_corpses[i].unit, &drawables[count])) {
+            count++;
+        }
     }
     if (Roam__PrepareDraw(roam, &roam->player, &drawables[count])) {
         count++;
