@@ -14,6 +14,7 @@ typedef enum QuestGoal {
     QUEST_KILL,    // the monster (spawned if the area doesn't have it)
     QUEST_CLEAR,   // every monster in the area
     QUEST_REACH,   // get to the area
+    QUEST_ITEMS,   // quest items: found, put together in the Horadric Cube, used (SceneRoamQuests.inc's hooks)
 } QuestGoal;
 
 typedef enum QuestReward {

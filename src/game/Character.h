@@ -25,6 +25,9 @@
 #define STASH_H             8
 #define STASH_MAX           (STASH_W * STASH_H)
 #define BELT_MAX            16 // four rows of four, with the biggest belt
+#define CUBE_W              3  // the Horadric Cube's inside, in cells
+#define CUBE_H              4
+#define CUBE_MAX            (CUBE_W * CUBE_H)
 
 typedef enum CharacterClass {
     CHARACTER_AMAZON,
@@ -155,6 +158,8 @@ typedef struct Character {
     int           gold;
     InventoryItem stash[STASH_MAX]; // in town: page is always 0
     int           stash_count;
+    InventoryItem cube[CUBE_MAX]; // in the Horadric Cube (any cube you carry opens them)
+    int           cube_count;
     int           stash_gold;
     // A hireling (hireling.txt): row + 1 (0 = none), their level, name (string table number), life; dead: to be
     // brought back by whoever sells them, for gold

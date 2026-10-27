@@ -133,7 +133,7 @@ typedef struct ItemBase {
     int  drop_sound_frame; // ... played at this frame of the flip
     int  level;            // its item level: which drops it can be in (weap3 has the weapons up to level 3)
     bool spawnable;        // can drop
-    char kinds[8][8];      // its type and what that counts as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
+    char kinds[12][8];     // its type(s) and what they count as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
     int  kind_count;
     bool slots[EQUIP_COUNT];
     int  min_damage; // one hand (or the only damage)

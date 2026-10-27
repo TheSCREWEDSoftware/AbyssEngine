@@ -17,6 +17,8 @@ void Affixes_SetMagicFind(int percent);
 
 // A chosen quality (gambling): false when the item can't be that (no unique of its kind at that level, ...)
 bool Affixes_RollQuality(Item *item, int item_level, ItemQuality quality);
+// A magic item with these affixes (MagicPrefix.txt / MagicSuffix.txt rows, from 0; -1: none): the cube's recipes
+bool Affixes_SetMagic(Item *item, int prefix, int suffix);
 
 // The name shown: magic "Jagged Hand Axe of the Fox"; rare "Grim Bite" with the base's name as line2; unique "The
 // Gnasher" with the base's name; normal the base's name (line2 "")

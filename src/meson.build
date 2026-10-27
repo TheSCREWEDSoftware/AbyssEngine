@@ -69,6 +69,7 @@ sources = [
     'game/Hirelings.c',
     'game/Quests.c',
     'game/Shop.c',
+    'game/Cube.c',
     'game/Sockets.c',
     'game/Treasure.c',
     'game/Affixes.c',

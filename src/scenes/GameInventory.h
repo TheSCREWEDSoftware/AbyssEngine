@@ -58,7 +58,8 @@ bool GameInventory_IsOver(int mouse_x, int mouse_y); // over the panel
 // The stash panel on the left (in town, at the stash): its grid and gold, items carried between it and the inventory
 void GameInventory_SetStash(GameInventory *inventory, bool open);
 bool GameInventory_StashOpen(const GameInventory *inventory);
-bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y);
+bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y); // (or the cube)
+bool GameInventory_CubeOpen(const GameInventory *inventory); // the Horadric Cube on the left (right click it to open)
 // A merchant's store on the left (NULL closes it): click an item to buy it (Shift: potions into the belt), put an item
 // on it or right click one in the inventory to sell it
 struct ShopStock;

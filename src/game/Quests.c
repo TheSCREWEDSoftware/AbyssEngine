@@ -17,17 +17,17 @@ static const Quest quests[QUEST_COUNT] = {
     {0, 6, QUEST_KILL,    37,  "andariel",      NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa1q62", NULL        },
     // Act 2
     {1, 1, QUEST_KILL,    49,  "radament",      NULL,                 false, "atma",      REWARD_SKILL_POINTS, 1,  NULL,         "qstsa2q12", "qstsa2q13" },
-    {1, 2, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q22", NULL        },
-    {1, 3, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q32", NULL        },
+    {1, 2, QUEST_ITEMS,   0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q22", NULL        },
+    {1, 3, QUEST_ITEMS,   0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q32", NULL        },
     {1, 4, QUEST_REACH,   74,  NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q41", NULL        },
     {1, 5, QUEST_KILL,    74,  "summoner",      NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q52", NULL        },
     {1, 6, QUEST_KILL,    73,  "duriel",        NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa2q62", NULL        },
     // Act 3 (the log's order: the Golden Bird, the Blade, Khalim's Will, Lam Esen's Tome, the Temple, the Guardian)
-    {2, 4, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q41", NULL        },
+    {2, 4, QUEST_ITEMS,   0,   NULL,            NULL,                 false, "alkor",     REWARD_LIFE,         20, NULL,         "qstsa3q41", "qstsa3q45" },
     {2, 3, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q31", NULL        },
-    {2, 2, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q21", NULL        },
+    {2, 2, QUEST_ITEMS,   0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q21", NULL        },
     {2, 1, QUEST_REACH,   94,  NULL,            NULL,                 false, "alkor",     REWARD_STAT_POINTS,  5,  NULL,         "qstsa3q11", "qstsa3q12" },
-    {2, 5, QUEST_NOT_YET, 0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q52", NULL        },
+    {2, 5, QUEST_ITEMS,   0,   NULL,            NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q52", NULL        },
     {2, 6, QUEST_KILL,    102, "mephisto",      NULL,                 false, NULL,        REWARD_NONE,         0,  NULL,         "qstsa3q63", NULL        },
     // Act 4
     {3, 1, QUEST_KILL,    105, "izual",         NULL,                 true,  "tyrael2",   REWARD_SKILL_POINTS, 2,  NULL,         "qstsa4q12", "qstsa4q13" },

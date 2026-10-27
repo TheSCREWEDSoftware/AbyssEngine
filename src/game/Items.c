@@ -75,7 +75,12 @@ static void Items__TypeInfo(const DataTable *types, const char *code, ItemBase *
     if (row < 0) {
         return;
     }
-    if (base->kind_count < 8) {
+    for (int k = 0; k < base->kind_count; k++) {
+        if (strcmp(base->kinds[k], code) == 0) {
+            return; // (already counted, through another way up)
+        }
+    }
+    if (base->kind_count < 12) {
         snprintf(base->kinds[base->kind_count++], sizeof(base->kinds[0]), "%s", code);
     }
     base->beltable = base->beltable || DataTable_GetInt(types, row, c_belt) == 1;
@@ -111,7 +116,7 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
               c_1or2 = COL("1or2handed"), c_rarm = COL("rArm"), c_larm = COL("lArm"), c_torso = COL("Torso"),
               c_legs = COL("Legs"), c_rpad = COL("rSPad"), c_lpad = COL("lSPad"), c_sockets = COL("gemsockets"),
               c_cost = COL("cost"), c_dur = COL("durability"), c_nodur = COL("nodurability"),
-              c_gamble = COL("gamble cost");
+              c_gamble = COL("gamble cost"), c_type2 = COL("type2");
 #undef COL
     const int rows  = DataTable_GetRowCount(t);
     ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
@@ -181,6 +186,9 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
                                ? DataTable_GetInt(t, row, c_dur)
                                : 0;
         Items__TypeInfo(types, base->type, base, 0);
+        if (c_type2 >= 0 && DataTable_GetString(t, row, c_type2)[0] != '\0') {
+            Items__TypeInfo(types, DataTable_GetString(t, row, c_type2), base, 0); // (a gem's grade: "gem4")
+        }
         if (base->slots[EQUIP_BELT] && belts != NULL && c_belt >= 0) {
             // armor.txt's "belt" is a row of belts.txt, which says how many potions it holds
             const int belt_row = DataTable_GetInt(t, row, c_belt);

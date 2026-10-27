@@ -5,6 +5,7 @@
 #include "../data/DataTable.h"
 #include "../types/COF.h"
 #include "Affixes.h"
+#include "Cube.h"
 #include "Inventory.h"
 #include "Skills.h"
 #include <ctype.h>
@@ -573,6 +574,14 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
         Character__Print(file, "item stash %d %d %s %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
                          it->item.quantity, magic);
     }
+    // In the Horadric Cube: "item cube x y <code> <defense> <quantity>"
+    for (int i = 0; i < character->cube_count; i++) {
+        const InventoryItem *it = &character->cube[i];
+        char                 magic[400];
+        Affixes_Format(&it->item, magic, sizeof(magic));
+        Character__Print(file, "item cube %d %d %s %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity, magic);
+    }
     for (int e = 0; e < EQUIP_COUNT; e++) {
         const Item *it = &character->equipped[e];
         if (it->code[0] != '\0') {
@@ -771,6 +780,12 @@ bool Character_ReadText(const char *text, Character *character) {
                 Affixes_Parse(&item, value + used);
                 Character__Durability(&item);
                 Stash_Place(character, &item, a, b);
+            } else if (sscanf(value, "cube %d %d %7s %d %d%n", &a, &b, code, &item.defense, &item.quantity, &used) ==
+                       5) {
+                snprintf(item.code, sizeof(item.code), "%s", code);
+                Affixes_Parse(&item, value + used);
+                Character__Durability(&item);
+                Cube_Place(character, &item, a, b);
             } else if (sscanf(value, "inv %d %d %7s %d %d %d%n", &a, &b, code, &item.defense, &item.quantity, &page,
                               &used) >= 5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);

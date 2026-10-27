@@ -20,6 +20,7 @@
 #include "../game/Affixes.h"
 #include "../game/Character.h"
 #include "../game/Controls.h"
+#include "../game/Cube.h"
 #include "../game/Hirelings.h"
 #include "../game/Inventory.h"
 #include "../game/MissileData.h"
@@ -468,7 +469,9 @@ typedef struct SceneRoam {
     bool     text_mode;  // shown as text (AbyssEngine --text): speech goes to the message line
     char     npc_heard[32][40];
     int      npc_heard_count;
-    int      shop_npc; // trading with (unit index), -1 = none
+    int      council_killed;    // the Blackened Temple: High Council super uniques killed this game
+    int      quest_objects_key; // the map the quests' missing objects were put in (key + 1)
+    int      shop_npc;          // trading with (unit index), -1 = none
     // Trading with another player (SceneRoamTrade.inc)
     int        trade_state;
     int        trade_with;     // their player id
@@ -1062,6 +1065,8 @@ static bool Roam__RunsMonsters(const SceneRoam *roam);
 
 static void Roam__ApplyCharacter(SceneRoam *roam);
 static void Roam__ShowMessage(SceneRoam *roam, const char *text);
+static void Roam__QuestKill(SceneRoam *roam, const Unit *victim);
+static bool Roam__QuestObject(SceneRoam *roam, Unit *unit);
 
 // Durability: the weapon wears with blows that land (1 in 25), what's worn with blows taken (1 in 10, a random piece)
 static void Roam__Wear(SceneRoam *roam, const bool weapon) {
@@ -1091,6 +1096,7 @@ static void Roam__Wear(SceneRoam *roam, const bool weapon) {
     char text[160];
     if (item->durability == 0) {
         snprintf(text, sizeof(text), "Your %s has broken: a blacksmith in town can repair it.", name1);
+        Sounds_Play("cursor_durability_break", SOUND_KIND_UI);
         Roam__ShowMessage(roam, text);
         Roam__ApplyCharacter(roam); // it does nothing now
     } else if (item->durability * 10 == item->max_durability || (item->max_durability < 10 && item->durability == 1)) {
@@ -1121,6 +1127,7 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
         unit->hp = 0;
         if (roam->game && unit != &roam->player && Roam__RunsMonsters(roam)) {
             Roam__DropTreasure(roam, unit->treasure, unit->level, unit->x, unit->y); // what it had
+            Roam__QuestKill(roam, unit);
         }
         const bool dying = Roam__HasMode(roam, unit, "dt");
         unit->vanished   = !dying && !Roam__HasMode(roam, unit, "dd");
@@ -1423,6 +1430,10 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     }
     unit->used = true;
     Roam__ObjectSound(unit);
+    if (Roam__QuestObject(roam, unit)) {
+        Roam__FinishOperate(roam, unit, now);
+        return; // a quest's chest, altar, orifice or orb
+    }
     // Chests, caskets, urns, barrels, crates, corpses and racks have something in them (multiplayer: the player the
     // server let open it drops it, once, for everyone)
     const int fn = unit->object.operate_fn;
@@ -2045,9 +2056,10 @@ static void Roam__Populate(SceneRoam *roam) {
     if (roam->speech_text[0] != '\0') {
         Sounds_StopSpeech();
     }
-    roam->speech_npc     = -1;
-    roam->speech_text[0] = '\0';
-    roam->shop_npc       = -1; // (the store too)
+    roam->speech_npc        = -1;
+    roam->speech_text[0]    = '\0';
+    roam->quest_objects_key = 0;  // (the quests' missing objects go in again)
+    roam->shop_npc          = -1; // (the store too)
     if (roam->online) {
         // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,
         // so their numbers match between games

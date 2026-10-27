@@ -5,6 +5,7 @@
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
 #include "../game/Affixes.h"
+#include "../game/Cube.h"
 #include "../game/Inventory.h"
 #include "../game/Shop.h"
 #include "../game/Sockets.h"
@@ -44,7 +45,25 @@ static int belt_y = 568;
 #define BELT_Y    belt_y
 #define BELT_STEP 31
 
-typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND, ORIGIN_STASH, ORIGIN_TRADE } Origin;
+typedef enum Origin {
+    ORIGIN_GRID,
+    ORIGIN_EQUIP,
+    ORIGIN_BELT,
+    ORIGIN_GROUND,
+    ORIGIN_STASH,
+    ORIGIN_TRADE,
+    ORIGIN_CUBE
+} Origin;
+
+// The Horadric Cube, on the left (supertransmogrifier.dc6, inventory.txt's "Transmogrify Box Page 1"): its 3 x 4
+// inside, the Transmute button below it and the close button
+#define CUBE_PANEL       "/data/global/ui/PANEL/supertransmogrifier.dc6"
+#define CUBE_GRID_X      118
+#define CUBE_GRID_Y      139
+#define CUBE_TRANSMUTE_X 144
+#define CUBE_TRANSMUTE_Y 258
+#define CUBE_CLOSE_X     273
+#define CUBE_CLOSE_Y     383
 
 // The trade panel (trade.dc6): their grid above, yours below (inventory.txt's "Trade Page 1" and "2"), the gold boxes
 // and the accept / close buttons
@@ -100,6 +119,9 @@ struct GameInventory {
     int        difficulty;    // what they pay depends on it
     char       tip_extra[48]; // the price line under a tooltip while trading
     bool       stash_open;    // in town, at the stash
+    bool       cube_open;     // the Horadric Cube (right click it in the inventory)
+    Sprite    *cube_panel;
+    char       cube_message[200];
     IconCache  icons[ICON_CACHE];
     int        icon_count;
     Label     *text;  // tooltip lines (font16)
@@ -138,6 +160,7 @@ GameInventory *GameInventory_Create(void) {
     inventory->trade_panel  = Sprite_Create(TRADE_PANEL, PALETTE_SKY);
     inventory->shop_tabs    = Sprite_Create("/data/global/ui/PANEL/buysellTabs.dc6", PALETTE_SKY);
     inventory->shop_buttons = Sprite_Create("/data/global/ui/PANEL/buysellbtn.dc6", PALETTE_SKY);
+    inventory->cube_panel   = Sprite_Create(CUBE_PANEL, PALETTE_SKY);
     inventory->text         = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     inventory->small        = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     return inventory;
@@ -228,13 +251,35 @@ bool GameInventory_IsOver(const int mouse_x, const int mouse_y) {
     return mouse_x >= GAME_PANEL_X && mouse_y < GAME_PANEL_H;
 }
 
-void GameInventory_SetStash(GameInventory *inventory, const bool open) { inventory->stash_open = open; }
+void GameInventory_SetStash(GameInventory *inventory, const bool open) {
+    inventory->stash_open = open;
+    inventory->cube_open  = open ? false : inventory->cube_open;
+}
+
+bool GameInventory_CubeOpen(const GameInventory *inventory) { return inventory->cube_open; }
+
+static bool GameInventory__CubeCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
+    if (mouse_x < CUBE_GRID_X || mouse_y < CUBE_GRID_Y || mouse_x >= CUBE_GRID_X + (CUBE_W * CELL) ||
+        mouse_y >= CUBE_GRID_Y + (CUBE_H * CELL)) {
+        return false;
+    }
+    *cell_x = (mouse_x - CUBE_GRID_X) / CELL;
+    *cell_y = (mouse_y - CUBE_GRID_Y) / CELL;
+    return true;
+}
+
+static SDL_Rect GameInventory__CubeRect(const InventoryItem *it, const ItemBase *base) {
+    const SDL_Rect rect = {CUBE_GRID_X + (it->x * CELL), CUBE_GRID_Y + (it->y * CELL),
+                           (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
+    return rect;
+}
 
 void GameInventory_SetShop(GameInventory *inventory, ShopStock *stock, const int difficulty) {
     inventory->shop       = stock;
     inventory->difficulty = difficulty;
     if (stock != NULL) {
         inventory->stash_open = false;
+        inventory->cube_open  = false;
         // The first tab with something on it
         inventory->shop_tab = 0;
         for (int t = SHOP_TABS - 1; t >= 0; t--) {
@@ -251,6 +296,7 @@ void GameInventory_SetTrade(GameInventory *inventory, TradeView *trade) {
     inventory->trade = trade;
     if (trade != NULL) {
         inventory->stash_open = false;
+        inventory->cube_open  = false;
         inventory->shop       = NULL;
     }
 }
@@ -373,7 +419,7 @@ static void GameInventory__Sell(GameInventory *inventory, Character *character, 
 bool GameInventory_StashOpen(const GameInventory *inventory) { return inventory->stash_open; }
 
 bool GameInventory_IsOverStash(const GameInventory *inventory, const int mouse_x, const int mouse_y) {
-    return inventory->stash_open && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
+    return (inventory->stash_open || inventory->cube_open) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
 }
 
 static bool GameInventory__StashCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
@@ -510,6 +556,10 @@ bool GameInventory_PutBack(GameInventory *inventory, Character *character) {
     case ORIGIN_STASH:
         placed = Stash_Place(character, &inventory->held, inventory->origin_index % STASH_W,
                              inventory->origin_index / STASH_W);
+        break;
+    case ORIGIN_CUBE:
+        placed =
+            Cube_Place(character, &inventory->held, inventory->origin_index % CUBE_W, inventory->origin_index / CUBE_W);
         break;
     case ORIGIN_TRADE: // back in the inventory (taking it off the offer is what the trade sees)
         break;
@@ -675,6 +725,9 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     }
     if (open || !inventory->holding) {
         inventory->no_room = false;
+    }
+    if (inventory->cube_open && (!open || !Cube_Carried(character))) {
+        inventory->cube_open = false; // closed with the inventory, or the cube's gone from it
     }
     if (inventory->identifying) {
         if (!open || inventory->holding) {
@@ -855,6 +908,77 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         return events | INVENTORY_EVENT_MOVED;
     }
 
+    // The Horadric Cube: its inside (like the stash), Transmute and close
+    if (inventory->cube_open && (left_click || right_click) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H) {
+        if (left_click && !inventory->holding &&
+            GameInventory__InBox(mouse_x, mouse_y, CUBE_TRANSMUTE_X, CUBE_TRANSMUTE_Y)) {
+            const bool made = Cube_Transmute(character, inventory->cube_message, sizeof(inventory->cube_message));
+            *message        = inventory->cube_message;
+            snprintf(inventory->sound, sizeof(inventory->sound), "%s", made ? "cursor_convert_item" : "cursor_error");
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        if (left_click && GameInventory__InBox(mouse_x, mouse_y, CUBE_CLOSE_X, CUBE_CLOSE_Y)) {
+            if (!GameInventory_PutBack(inventory, character)) {
+                return events;
+            }
+            inventory->cube_open = false;
+            return events;
+        }
+        int cx;
+        int cy;
+        if (!GameInventory__CubeCellAt(mouse_x, mouse_y, &cx, &cy)) {
+            return events;
+        }
+        const int under = Cube_ItemAt(character, cx, cy);
+        if (right_click) {
+            if (under >= 0) {
+                *message = "Take it out of the cube first.";
+            }
+            return events;
+        }
+        if (inventory->holding) {
+            const ItemBase *base    = Items_Find(inventory->held.code);
+            const int       left    = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
+            const int       top     = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
+            const int       x       = left >= CUBE_GRID_X ? (left - CUBE_GRID_X) / CELL : -1;
+            const int       y       = top >= CUBE_GRID_Y ? (top - CUBE_GRID_Y) / CELL : -1;
+            const int       covered = Cube_Covered(character, base, x, y);
+            if (covered == -2) {
+                if (strcmp(inventory->held.code, CUBE_ITEM) == 0) {
+                    *message = "The cube doesn't go inside itself.";
+                }
+                return events;
+            }
+            if (inventory->still_worn) { // Modern: it comes off now, into the cube
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
+            Item lifted;
+            memset(&lifted, 0, sizeof(lifted));
+            int lifted_at = 0;
+            if (covered >= 0) {
+                lifted    = character->cube[covered].item;
+                lifted_at = character->cube[covered].x + (character->cube[covered].y * CUBE_W);
+                Cube_Remove(character, covered);
+            }
+            Cube_Place(character, &inventory->held, x, y);
+            GameInventory__PutDown(inventory, &inventory->held);
+            inventory->holding = false;
+            if (lifted.code[0] != '\0') {
+                GameInventory__Take(inventory, &lifted, ORIGIN_CUBE, lifted_at);
+            }
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        if (under >= 0) {
+            const InventoryItem it = character->cube[under];
+            Cube_Remove(character, under);
+            GameInventory__Take(inventory, &it.item, ORIGIN_CUBE, it.x + (it.y * CUBE_W));
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        return events;
+    }
+
     // The stash
     if (inventory->stash_open && left_click && !inventory->holding && GameInventory__OverStashGold(mouse_x, mouse_y)) {
         if (character->stash_gold > 0) {
@@ -931,6 +1055,14 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             const Item item = character->inventory[under].item; // right click sells, while trading
             Inventory_Remove(character, under);
             GameInventory__Sell(inventory, character, &item, message);
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        if (right_click && under >= 0 && !inventory->holding &&
+            strcmp(character->inventory[under].item.code, CUBE_ITEM) == 0 && inventory->shop == NULL &&
+            inventory->trade == NULL) {
+            inventory->cube_open  = true; // the cube opens on the left
+            inventory->stash_open = false;
+            snprintf(inventory->sound, sizeof(inventory->sound), "cursor_convert_ready");
             return events | INVENTORY_EVENT_MOVED;
         }
         if (right_click && under >= 0 && !inventory->holding) {
@@ -1101,6 +1233,51 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
 // ---------------------------------------------------------------------------------------------------------------------
 // Drawing
 
+// The cube on the left: its inside, Transmute and close
+static void GameInventory__DrawCube(GameInventory *inventory, const Character *character, const int mouse_x,
+                                    const int mouse_y) {
+    Sprite_DrawMulti(inventory->cube_panel, 0, 0, 0, 2, 2);
+    if (inventory->holding) {
+        const ItemBase *base = Items_Find(inventory->held.code);
+        const int       left = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
+        const int       top  = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
+        const int       x    = left >= CUBE_GRID_X ? (left - CUBE_GRID_X) / CELL : -1;
+        const int       y    = top >= CUBE_GRID_Y ? (top - CUBE_GRID_Y) / CELL : -1;
+        if (Cube_Covered(character, base, x, y) != -2 &&
+            GameInventory__CubeCellAt(mouse_x, mouse_y, &(int){0}, &(int){0})) {
+            const SDL_Rect area = {CUBE_GRID_X + (x * CELL), CUBE_GRID_Y + (y * CELL), base->width * CELL,
+                                   base->height * CELL};
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, 30, 100, 30, 110);
+            SDL_RenderFillRect(sdl_renderer, &area);
+        }
+    }
+    for (int i = 0; i < character->cube_count; i++) {
+        const InventoryItem *it   = &character->cube[i];
+        const ItemBase      *base = Items_Find(it->item.code);
+        const SDL_Rect       rect = GameInventory__CubeRect(it, base);
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90);
+        SDL_RenderFillRect(sdl_renderer, &rect);
+        GameInventory__DrawItem(inventory, &it->item, &rect, true);
+    }
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    const bool over_transmute = GameInventory__InBox(mouse_x, mouse_y, CUBE_TRANSMUTE_X, CUBE_TRANSMUTE_Y);
+    const bool over_close     = GameInventory__InBox(mouse_x, mouse_y, CUBE_CLOSE_X, CUBE_CLOSE_Y);
+    Sprite_Draw(inventory->shop_buttons, over_transmute && left_down ? 1 : 0, CUBE_TRANSMUTE_X,
+                CUBE_TRANSMUTE_Y + SHOP_BUTTON_SZ);
+    Sprite_Draw(inventory->shop_buttons, over_close && left_down ? 11 : 10, CUBE_CLOSE_X,
+                CUBE_CLOSE_Y + SHOP_BUTTON_SZ);
+    if (over_transmute || over_close) {
+        Label_SetAlignment(inventory->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
+        Label_SetText(inventory->text, over_transmute ? "Transmute" : "Close");
+        Label_Draw(inventory->text, (over_transmute ? CUBE_TRANSMUTE_X : CUBE_CLOSE_X) + (SHOP_BUTTON_SZ / 2),
+                   (over_transmute ? CUBE_TRANSMUTE_Y : CUBE_CLOSE_Y) - 10);
+    }
+}
+
 // The stash on the left: its items, its gold and the button to take some out
 static void GameInventory__DrawStash(GameInventory *inventory, const Character *character, const int mouse_x,
                                      const int mouse_y) {
@@ -1254,6 +1431,8 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         GameInventory__DrawShop(inventory, character, mouse_x, mouse_y);
     } else if (inventory->stash_open) {
         GameInventory__DrawStash(inventory, character, mouse_x, mouse_y);
+    } else if (inventory->cube_open) {
+        GameInventory__DrawCube(inventory, character, mouse_x, mouse_y);
     }
     Sprite_DrawMulti(inventory->panel, 4, GAME_PANEL_X, 0, 2, 2);
 
@@ -1495,6 +1674,8 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to drink");
     } else if (GameInventory__Identifies(item)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to identify an item");
+    } else if (strcmp(item->code, CUBE_ITEM) == 0) {
+        GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to open");
     }
 
     // A dark box, centred above the item, kept on the screen
@@ -1604,6 +1785,15 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
                 anchor_y                  = rect.y;
                 snprintf(inventory->tip_extra, sizeof(inventory->tip_extra), "Cost: %d",
                          Shop_Price(inventory->shop, item));
+            }
+        } else if (inventory->cube_open && GameInventory__CubeCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+            const int under = Cube_ItemAt(character, cell_x, cell_y);
+            if (under >= 0) {
+                const SDL_Rect rect =
+                    GameInventory__CubeRect(&character->cube[under], Items_Find(character->cube[under].item.code));
+                item     = &character->cube[under].item;
+                anchor_x = rect.x + (rect.w / 2);
+                anchor_y = rect.y;
             }
         } else if (inventory->stash_open && GameInventory__StashCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
             const int under = Stash_ItemAt(character, cell_x, cell_y);

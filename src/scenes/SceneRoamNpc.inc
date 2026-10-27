@@ -114,8 +114,11 @@ static void Roam__OpenShop(SceneRoam *roam, const int npc, const bool gamble) {
 }
 
 // Come up to them: healers heal, then the menu of what they do
+static bool Roam__QuestTalk(SceneRoam *roam, const Unit *unit);
+
 static void Roam__TalkTo(SceneRoam *roam, const int npc) {
     Unit *unit = &roam->units[npc];
+    Roam__QuestTalk(roam, unit); // (Meshif and the Jade Figurine)
     Roam__TurnTowards(&unit->turn, unit->x, unit->y, roam->player.x, roam->player.y);
     if (Roam__NpcHeals(unit) && roam->game) {
         roam->player.hp          = roam->player.max_hp;
@@ -341,9 +344,9 @@ static void Roam__NpcSpeak(SceneRoam *roam, const int npc) {
             if (!Sounds_Exists(sound)) {
                 snprintf(sound, sizeof(sound), "%s_act%d_intro", sound_name, act);
             }
-            if (roam->npc_heard_count < (int)(sizeof(roam->npc_heard) / sizeof(roam->npc_heard[0]))) {
-                snprintf(roam->npc_heard[roam->npc_heard_count++], sizeof(roam->npc_heard[0]), "%s", unit->id);
-            }
+            char id[40];
+            snprintf(id, sizeof(id), "%s", unit->id);
+            Roam__NpcHeard(roam, id, true);
         }
     }
     if (text == NULL) {

@@ -362,10 +362,26 @@ waiting, gold when done. Each difficulty has its own. What's in:
 | Siege on Harrogath | Shenk the Overseer is dead (put in the Bloody Foothills) | Qual-Kehk: sockets in the plain weapon in your hand (or your body armor) |
 | Prison of Ice | you reach the Frozen River | Malah: +10 to all resistances for good |
 | Betrayal of Harrogath, Eve of Destruction | Nihlathak, Baal dead | |
+| The Horadric Staff | the Horadric Cube (its chest in the Halls of the Dead), the Staff of Kings (its chest in the Maggot Lair) and the Amulet of the Viper put together in the cube, and the staff put in the orifice in Tal Rasha's true tomb | |
+| Tainted Sun | you use the altar in the Claw Viper Temple (it gives the Amulet of the Viper) | |
+| Khalim's Will | his Eye (Spider Cavern), Brain (Flayer Dungeon) and Heart (the Sewers) from their chests and his Flail from the High Council, put together in the cube; it smashes the Compelling Orb in Travincal | |
+| The Golden Bird | a unique monster in Act 3 drops the Jade Figurine; Meshif turns it into the Golden Bird | Alkor: +20 life for good |
+| The Blackened Temple | the three of the High Council (super uniques) dead in one game | |
 
-Go back to whoever rewards a quest and their menu has the reward ("Quest: Den of Evil"). The rest (the Horadric Staff,
-Tainted Sun, Khalim's Will, the Blade of the Old Religion, the Golden Bird, the Blackened Temple, Rescue on Mount
-Arreat, Rite of Passage) say "Not in this engine yet": they need quest items, the Horadric Cube and scripted events.
+Go back to whoever rewards a quest and their menu has the reward ("Quest: Den of Evil"). Objects the engine's
+version of an area leaves out (the temple's altar, the Staff of Kings' chest, the Compelling Orb) are put somewhere far
+from where you come in. The Blade of the Old Religion, Rescue on Mount Arreat and Rite of Passage say "Not in this
+engine yet": they need scripted events (the Gidbinn's altar, the barbarians' prisons, the Ancients).
+
+### The Horadric Cube
+
+Right click the cube in the inventory and it opens on the left: a 3 x 4 inside (items go in and out with the mouse, like
+the stash) and **Transmute**, which makes whatever recipe of the game's (`cubemain.txt`) is exactly what's inside: the
+quest items, three gems or runes into the next grade (with a gem for the higher runes), potions, three rings into an
+amulet (and back), rerolling a magic item with three perfect gems, magic weapons with a socket from three gems, the
+prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing. Recipes that need what
+this engine doesn't have (crafted items, exceptional and elite upgrades, low and superior quality, the cow level and
+Pandemonium portals) aren't there. What's inside is kept with the character; any cube you carry opens it.
 In multiplayer games bosses that aren't in the presets aren't put there yet.
 
 ## Text mode

@@ -811,6 +811,26 @@ static bool Affixes__MakeMagic(Item *item, const ItemBase *base, const int level
     return true;
 }
 
+bool Affixes_SetMagic(Item *item, const int prefix, const int suffix) {
+    Affixes__Load();
+    const bool has_prefix = prefix >= 0 && prefix < prefixes.count;
+    const bool has_suffix = suffix >= 0 && suffix < suffixes.count;
+    if (!has_prefix && !has_suffix) {
+        return false;
+    }
+    item->quality   = ITEM_MAGIC;
+    item->mod_count = 0;
+    item->name1     = (int16_t)(has_prefix ? prefix + 1 : 0);
+    item->name2     = (int16_t)(has_suffix ? suffix + 1 : 0);
+    if (has_prefix) {
+        Affixes__Apply(item, prefixes.rows[prefix].props, prefixes.rows[prefix].prop_count);
+    }
+    if (has_suffix) {
+        Affixes__Apply(item, suffixes.rows[suffix].props, suffixes.rows[suffix].prop_count);
+    }
+    return true;
+}
+
 bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality quality) {
     Affixes__Load();
     const ItemBase *base = Items_Find(item->code);

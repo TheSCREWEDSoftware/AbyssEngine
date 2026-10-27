@@ -96,12 +96,18 @@ static void Roam__SpawnQuestBoss(SceneRoam *roam, const Quest *quest, const MapA
 }
 
 static void Roam__QuestDone(SceneRoam *roam, const int index);
+static bool Roam__TakeItem(SceneRoam *roam, const char *code);
+static void Roam__PlaceQuestObjects(SceneRoam *roam);
 
 static void Roam__CheckQuests(SceneRoam *roam, const uint64_t now) {
     if (!roam->game || roam->character == NULL || roam->map == NULL || now < roam->quest_check_at) {
         return;
     }
     roam->quest_check_at = now + QUEST_CHECK_MS;
+    if (roam->quest_objects_key != Roam__MapKey(roam) + 1) {
+        roam->quest_objects_key = Roam__MapKey(roam) + 1;
+        Roam__PlaceQuestObjects(roam);
+    }
     const int level_here = Roam__LevelHere(roam);
     for (int q = 0; q < QUEST_COUNT; q++) {
         const Quest *quest = Quests_Get(q);
@@ -188,6 +194,10 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
         snprintf(text, sizeof(text), "All your resistances are %d higher for good.", quest->amount);
         break;
     case REWARD_LIFE:
+        if (quest->act == 2 && quest->number == 4 && !Roam__TakeItem(roam, "g34")) {
+            Roam__ShowMessage(roam, "Bring Alkor the Golden Bird.");
+            return false;
+        }
         c->quest_life += quest->amount;
         snprintf(text, sizeof(text), "You have %d more life for good.", quest->amount);
         break;
@@ -237,6 +247,9 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
     }
     if (text[0] != '\0') {
         Roam__ShowMessage(roam, text);
+    }
+    if (quest->reward == REWARD_LIFE || quest->reward == REWARD_RESIST) {
+        Roam__ApplyCharacter(roam); // (more life, resistances: on the globes and the character screen now)
     }
     Sounds_Play("cursor_questdone", SOUND_KIND_UI);
     return true;
@@ -372,6 +385,260 @@ static void Roam__DrawQuestPanel(SceneRoam *roam) {
                 step++;
             }
             lines++;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Quest items: found in the quests' chests and on certain monsters, put together in the Horadric Cube (cubemain.txt),
+// used on the quests' objects. The Horadric Staff (the Cube in the Halls of the Dead, the Staff of Kings in the Maggot
+// Lair, the Amulet of the Viper from the Claw Viper Temple's altar; the staff goes in the orifice in Tal Rasha's Tomb),
+// the Tainted Sun (that altar), Khalim's Will (his Eye, Brain and Heart in chests, his Flail from the High Council; it
+// smashes the Compelling Orb in Travincal), the Golden Bird (a Jade Figurine from a unique monster in Act 3: Meshif
+// makes it the Golden Bird, Alkor rewards it) and the Blackened Temple (the three of the High Council)
+
+static int Roam__QuestIndex(const int act, const int number) {
+    for (int q = 0; q < QUEST_COUNT; q++) {
+        if (Quests_Get(q)->act == act && Quests_Get(q)->number == number) {
+            return q;
+        }
+    }
+    return -1;
+}
+
+static bool Roam__QuestOpen(SceneRoam *roam, const int act, const int number) {
+    const int q = Roam__QuestIndex(act, number);
+    return q >= 0 && *Roam__QuestState(roam, q) == QUEST_OPEN;
+}
+
+// Where an item is among what you have: carried, worn or in the cube
+static Item *Roam__FindItem(SceneRoam *roam, const char *code) {
+    Character *c = roam->character;
+    for (int i = 0; i < c->inventory_count; i++) {
+        if (strcmp(c->inventory[i].item.code, code) == 0) {
+            return &c->inventory[i].item;
+        }
+    }
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        if (strcmp(c->equipped[s].code, code) == 0) {
+            return &c->equipped[s];
+        }
+    }
+    for (int i = 0; i < c->cube_count; i++) {
+        if (strcmp(c->cube[i].item.code, code) == 0) {
+            return &c->cube[i].item;
+        }
+    }
+    for (int i = 0; i < c->stash_count; i++) {
+        if (strcmp(c->stash[i].item.code, code) == 0) {
+            return &c->stash[i].item;
+        }
+    }
+    return NULL;
+}
+
+static bool Roam__TakeItem(SceneRoam *roam, const char *code) {
+    Character *c = roam->character;
+    for (int i = 0; i < c->inventory_count; i++) {
+        if (strcmp(c->inventory[i].item.code, code) == 0) {
+            Inventory_Remove(c, i);
+            return true;
+        }
+    }
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        if (strcmp(c->equipped[s].code, code) == 0) {
+            memset(&c->equipped[s], 0, sizeof(Item));
+            Roam__ApplyCharacter(roam);
+            return true;
+        }
+    }
+    for (int i = 0; i < c->cube_count; i++) {
+        if (strcmp(c->cube[i].item.code, code) == 0) {
+            Cube_Remove(c, i);
+            return true;
+        }
+    }
+    return false;
+}
+
+// One quest item on the ground (a game drops each once while you don't have it)
+static void Roam__DropQuestItem(SceneRoam *roam, const char *code, const float x, const float y) {
+    if (Items_Find(code) == NULL || Roam__FindItem(roam, code) != NULL) {
+        return;
+    }
+    for (int g = 0; g < roam->ground_count; g++) {
+        if (strcmp(roam->ground[g].item.code, code) == 0) {
+            return; // already lying somewhere
+        }
+    }
+    Item  item = Inventory_NewItem(code);
+    float spot_x;
+    float spot_y;
+    Roam__FreeSpotNear(roam, x, y, &spot_x, &spot_y);
+    if (!roam->online) {
+        Roam__AddGroundItem(roam, &item, Roam__MapKey(roam), spot_x, spot_y, true, 0);
+    } else {
+        Roam__PutOnGround(roam, &item, spot_x, spot_y);
+    }
+}
+
+// The quests' objects; true when this one was one of them (and it's been dealt with)
+static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
+    if (!roam->game || roam->character == NULL) {
+        return false;
+    }
+    const int fn = unit->object.operate_fn;
+    switch (fn) {
+    case 39: // the Horadric Cube's chest (Halls of the Dead)
+        Roam__DropQuestItem(roam, CUBE_ITEM, unit->x, unit->y);
+        return true;
+    case 41: // the Staff of Kings' chest (Maggot Lair)
+        Roam__DropQuestItem(roam, "msf", unit->x, unit->y);
+        return true;
+    case 24: { // the Tainted Sun's altar (Claw Viper Temple): the Amulet of the Viper, and the sun comes back
+        Roam__DropQuestItem(roam, "vip", unit->x, unit->y);
+        const int q = Roam__QuestIndex(1, 3);
+        if (q >= 0 && *Roam__QuestState(roam, q) == QUEST_OPEN) {
+            Roam__QuestDone(roam, q);
+        }
+        return true;
+    }
+    case 25: { // the orifice in Tal Rasha's Tomb: the Horadric Staff goes in
+        const int q = Roam__QuestIndex(1, 2);
+        if (q < 0 || *Roam__QuestState(roam, q) != QUEST_OPEN) {
+            return true;
+        }
+        if (!Roam__TakeItem(roam, "hst")) {
+            Roam__ShowMessage(roam, Roam__FindItem(roam, "msf") != NULL || Roam__FindItem(roam, "vip") != NULL
+                                        ? "The Horadric Staff goes here: put the Staff of Kings and the Amulet of the "
+                                          "Viper together in the Horadric Cube."
+                                        : "Something belongs here: the Horadric Staff.");
+            return true;
+        }
+        Roam__QuestDone(roam, q);
+        Roam__ShowMessage(roam, "The Horadric Staff is in place: the way to Duriel is open.");
+        return true;
+    }
+    case 57:
+    case 58:
+    case 59: { // Khalim's chests: his Eye (Spider Cavern), Brain (Flayer Dungeon), Heart (the Sewers)
+        const int   level = Roam__LevelHere(roam);
+        const char *piece = level == 85 ? "qey" : (level == 91 ? "qbr" : (level == 93 ? "qhr" : NULL));
+        if (piece == NULL) {
+            piece = fn == 57 ? "qhr" : (fn == 58 ? "qey" : "qbr");
+        }
+        Roam__DropQuestItem(roam, piece, unit->x, unit->y);
+        return true;
+    }
+    case 53: { // the Compelling Orb (Travincal): Khalim's Will smashes it
+        const int q = Roam__QuestIndex(2, 2);
+        if (q < 0 || *Roam__QuestState(roam, q) != QUEST_OPEN) {
+            return true;
+        }
+        if (!Roam__TakeItem(roam, "qf2")) {
+            Roam__ShowMessage(roam, "Only Khalim's Will can break the Compelling Orb.");
+            return true;
+        }
+        Roam__QuestDone(roam, q);
+        Roam__ShowMessage(roam, "The Compelling Orb shatters: the way into the Durance of Hate is open.");
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+// A monster died: what the quests take from it
+static void Roam__QuestKill(SceneRoam *roam, const Unit *victim) {
+    if (!roam->game || roam->character == NULL || victim->is_object || victim->ally) {
+        return;
+    }
+    const bool council = strncmp(victim->id, "councilmember", 13) == 0;
+    if (council && Roam__QuestOpen(roam, 2, 2) && Roam__FindItem(roam, "qf2") == NULL) {
+        Roam__DropQuestItem(roam, "qf1", victim->x, victim->y); // Khalim's Flail
+    }
+    if (council && victim->rank == RANK_SUPER_UNIQUE && Roam__QuestOpen(roam, 2, 5)) {
+        if (++roam->council_killed >= 3) {
+            Roam__QuestDone(roam, Roam__QuestIndex(2, 5)); // the Blackened Temple: the three of the High Council
+        }
+    }
+    if (Roam__Act(roam) == 2 && (victim->rank == RANK_UNIQUE || victim->rank == RANK_SUPER_UNIQUE) &&
+        Roam__QuestOpen(roam, 2, 4) && Roam__FindItem(roam, "g34") == NULL) {
+        Roam__DropQuestItem(roam, "j34", victim->x, victim->y); // the Jade Figurine
+    }
+}
+
+// Meshif and the Jade Figurine: he gives you the Golden Bird for it (the quest then waits at Alkor)
+static bool Roam__QuestTalk(SceneRoam *roam, const Unit *unit) {
+    if (!roam->game || strncmp(unit->id, "meshif", 6) != 0 || !Roam__QuestOpen(roam, 2, 4) ||
+        !Roam__TakeItem(roam, "j34")) {
+        return false;
+    }
+    Item bird = Inventory_NewItem("g34");
+    if (!Inventory_Add(roam->character, &bird)) {
+        Item figurine = Inventory_NewItem("j34");
+        Inventory_Add(roam->character, &figurine);
+        Roam__ShowMessage(roam, "Make room in your inventory first.");
+        return true;
+    }
+    Roam__QuestDone(roam, Roam__QuestIndex(2, 4));
+    Roam__ShowMessage(roam, "Meshif gives you a Golden Bird for the figurine. Alkor will want to see it.");
+    return true;
+}
+
+// The quests' objects that this engine's version of an area doesn't place (the Claw Viper Temple's altar, the Staff of
+// Kings' chest, the Compelling Orb): put far from where you come in, once a map
+static void Roam__PlaceQuestObjects(SceneRoam *roam) {
+    static const struct {
+        int         level;
+        int         fn;
+        int         row; // objects.txt
+        const char *token;
+    } needed[] = {
+        {61, 24, 149, "za"}, // the Tainted Sun's altar
+        {64, 41, 356, "xk"}, // the Staff of Kings' chest
+        {83, 53, 404, "55"}, // the Compelling Orb
+    };
+    for (size_t n = 0; n < sizeof(needed) / sizeof(needed[0]); n++) {
+        const MapArea *area = Roam__MapAreaFor(roam, needed[n].level);
+        if (area == NULL) {
+            continue;
+        }
+        bool there = false;
+        for (int i = 0; i < roam->unit_count && !there; i++) {
+            there = roam->units[i].is_object && roam->units[i].object.operate_fn == needed[n].fn;
+        }
+        if (there) {
+            continue;
+        }
+        // The walkable spot furthest from you, of a few tried across the area
+        const float left = (float)area->x0 * MAP_SUBTILES;
+        const float top  = (float)area->y0 * MAP_SUBTILES;
+        const float w    = (float)(area->x1 - area->x0 + 1) * MAP_SUBTILES;
+        const float h    = (float)(area->y1 - area->y0 + 1) * MAP_SUBTILES;
+        float       x    = -1.0f;
+        float       y    = -1.0f;
+        float       best = -1.0f;
+        for (int t = 0; t < 40; t++) {
+            float sx;
+            float sy;
+            Roam__ArrivalSpot(roam->map, left + (w * (float)Roam__Roll(10, 90) / 100.0f),
+                              top + (h * (float)Roam__Roll(10, 90) / 100.0f), &sx, &sy);
+            const float far = Roam__Distance(sx, sy, roam->player.x, roam->player.y);
+            if (Map_IsWalkable(roam->map, (int)sx, (int)sy) && far > best) {
+                best = far;
+                x    = sx;
+                y    = sy;
+            }
+        }
+        if (best < 0.0f) {
+            continue;
+        }
+        Unit *unit = Roam__AddUnit(roam, "objects", needed[n].token, x, y);
+        if (unit != NULL && Objects_Get(needed[n].row, &unit->object)) {
+            unit->is_object = true;
+            snprintf(unit->object_mode, sizeof(unit->object_mode), "%s", unit->object.idle_mode);
+            snprintf(unit->name, sizeof(unit->name), "%s", unit->object.name != NULL ? unit->object.name : "");
         }
     }
 }
