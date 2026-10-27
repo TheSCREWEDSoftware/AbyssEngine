@@ -152,6 +152,9 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   all back (into the inventory or at your feet if you've put on other things since). Saving and exiting before you get
   there gives it back to you next time. **Hardcore** characters die for good: they stay in the list as "Dead" and can't
   be played.
+- **/players 1-8**: Enter opens a command line; `/players 3` makes the monsters made from then on as tough as for
+  three players (half as much life and experience again for each player after the first) and drops come more often
+  (the game's NoDrop rule). It goes back to 1 in each new game, like the game's; `/players` alone says what it is.
 
 ### Monsters
 

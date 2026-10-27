@@ -38,7 +38,8 @@ playing in that game (your own, from a second copy of the game on the same compu
 game" and can't be picked until they leave. **Create New** makes the character
 on the dedicated server, or (hosted) on your computer, marked as made in that host's games. **Leave** goes back.
 
-In the game, **Enter** opens the chat line (Enter sends, Esc stops); what's said shows at the top left. **Esc ›
+In the game, **Enter** opens the chat line (Enter sends, Esc stops); what's said shows at the top left.
+**/w Name what** (or /m) whispers to that player alone ("Name whispers: ..."; you see "You whisper to Name: ..."). **Esc ›
 Save and Exit Game** leaves (and closes the game when you're the host). Losing the connection saves your character
 (hosted games) and takes you back to the Multiplayer screen, which says why.
 

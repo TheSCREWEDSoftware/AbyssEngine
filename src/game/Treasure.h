@@ -14,6 +14,7 @@
 // Rolls a class: fills items (up to TREASURE_MAX_DROPS) and returns how many. level: the monster's (gold's amount).
 int  Treasure_Roll(const char *treasure_class, int level, Item *items);
 bool Treasure_Exists(const char *treasure_class);
+void Treasure_SetPlayers(int count); // Single Player's /players (1-8): less chance of nothing dropping
 void Treasure_Release(void);
 
 #endif // ABYSS_TREASURE_H

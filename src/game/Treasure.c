@@ -5,6 +5,7 @@
 #include "Inventory.h"
 #include "Sockets.h"
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,6 +113,20 @@ static bool Treasure__Auto(const char *name, Item *item) {
     return false;
 }
 
+static int players = 1; // Treasure_SetPlayers
+
+void Treasure_SetPlayers(const int count) { players = count < 1 ? 1 : (count > 8 ? 8 : count); }
+
+// The game's chance of nothing with more players: NoDrop / items made smaller, (players + 1) / 2 times over
+static int Treasure__NoDrop(const int no_drop, const int items) {
+    const int times = (players + 1) / 2;
+    if (no_drop <= 0 || items <= 0 || times <= 1) {
+        return no_drop;
+    }
+    const double ratio = pow((double)(no_drop + items) / (double)no_drop, (double)times) - 1.0;
+    return ratio > 0.0 ? (int)((double)items / ratio) : no_drop;
+}
+
 static void Treasure__Pick(const char *name, const int level, Item *items, int *count, const int depth) {
     if (*count >= TREASURE_MAX_DROPS || depth > TC_DEPTH || name[0] == '\0') {
         return;
@@ -128,16 +143,18 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
             }
             return;
         }
-        int total = tc->no_drop;
+        int chances = 0;
         for (int i = 0; i < tc->count; i++) {
-            total += tc->chances[i];
+            chances += tc->chances[i];
         }
+        const int no_drop = Treasure__NoDrop(tc->no_drop, chances);
+        const int total   = no_drop + chances;
         for (int p = 0; p < (tc->picks > 0 ? tc->picks : 1) && total > 0; p++) {
             int roll = rand() % total;
-            if (roll < tc->no_drop) {
+            if (roll < no_drop) {
                 continue; // nothing this time
             }
-            roll -= tc->no_drop;
+            roll -= no_drop;
             for (int i = 0; i < tc->count; i++) {
                 if (roll < tc->chances[i]) {
                     Treasure__Pick(tc->items[i], level, items, count, depth + 1);

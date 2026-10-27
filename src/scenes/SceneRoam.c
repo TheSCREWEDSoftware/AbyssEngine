@@ -998,6 +998,8 @@ typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQ
 enum { CHAMPION_PLAIN, CHAMPION_FANATIC, CHAMPION_BERSERKER, CHAMPION_GHOSTLY, CHAMPION_POSSESSED };
 
 static int init_area_level = 0; // Roam__Populate: the area's monster level for the monsters being made (0: theirs)
+static int init_players    = 1; // Single Player's /players setting: monsters made with half as much life and
+                                // experience again for each player after the first (multiplayer: 1)
 
 // An object named the game's way: objects.txt's Name through the string tables ("chest" -> "Chest")
 static void Roam__NameObject(Unit *unit) {
@@ -1044,9 +1046,13 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         unit->defense       = stats.defense;
         unit->attack_rating = stats.attack_rating > 0 ? stats.attack_rating : 10;
         unit->experience    = stats.experience;
-        unit->undead        = stats.undead;
-        unit->demon         = stats.demon;
-        unit->boss          = stats.boss;
+        if (init_players > 1 && !stats.npc) { // (/players)
+            unit->max_hp     = unit->max_hp * (100 + (50 * (init_players - 1))) / 100;
+            unit->experience = unit->experience * (100 + (50 * (init_players - 1))) / 100;
+        }
+        unit->undead = stats.undead;
+        unit->demon  = stats.demon;
+        unit->boss   = stats.boss;
         snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure);
         memcpy(unit->resist, stats.resist, sizeof(unit->resist));
         unit->element        = stats.element;
@@ -3329,8 +3335,12 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->difficulty = roam->online ? 0 : Character_Difficulty();
         MonsterStats_SetDifficulty(Roam__Difficulty(roam));
         roam->spread_place = -1;
-        if (roam->online) {
-            roam->chat_box = TextBox_Create(FONTS_FONT16, 120, 500, 560, 22, "Say something (Enter sends, Esc stops)");
+        init_players       = 1; // (/players: back to one each game, like the game's)
+        Treasure_SetPlayers(1);
+        if (roam->online || roam->game) { // (Single Player: for commands, /players)
+            roam->chat_box   = TextBox_Create(FONTS_FONT16, 120, 500, 560, 22,
+                                            roam->online ? "Say something (Enter sends, Esc stops)"
+                                                           : "A command: /players 1-8 (Enter, Esc stops)");
             roam->chat_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
             Label_SetAlignment(roam->chat_label, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
         }
@@ -5947,6 +5957,8 @@ static void Roam__SendLooks(SceneRoam *roam) {
     free(writer);
 }
 
+static bool Roam__ChatCommand(SceneRoam *roam, const char *text);
+
 static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     if (NetClient_Stage() != NETC_IN_GAME) {
         // Lost the game (or the host closed it): keep the character as it is, then the Multiplayer screen says why
@@ -5999,7 +6011,9 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     if (TextBox_IsFocused(roam->chat_box)) {
         TextBox_Update(roam->chat_box);
         if (InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN) || InputManager_ConsumeKeyPress(SDL_SCANCODE_KP_ENTER)) {
-            NetClient_SendChat(TextBox_GetText(roam->chat_box));
+            if (!Roam__ChatCommand(roam, TextBox_GetText(roam->chat_box))) {
+                NetClient_SendChat(TextBox_GetText(roam->chat_box));
+            }
             TextBox_Clear(roam->chat_box);
             TextBox_Blur(roam->chat_box);
         } else if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
@@ -6009,6 +6023,30 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
         InputManager_ClearPresses(); // typing isn't playing
     }
     return false;
+}
+
+// A command typed on the chat line: /players N (Single Player). True when it was one (it isn't sent as chat)
+static bool Roam__ChatCommand(SceneRoam *roam, const char *text) {
+    if (strncmp(text, "/players", 8) != 0 || (text[8] != ' ' && text[8] != '\0')) {
+        return false;
+    }
+    if (roam->online) {
+        Roam__ShowMessage(roam, "/players is for Single Player games.");
+        return true;
+    }
+    const int count = atoi(text + 8);
+    if (count < 1 || count > 8) {
+        char now[48];
+        snprintf(now, sizeof(now), "Players: %d (/players 1-8 changes it)", init_players);
+        Roam__ShowMessage(roam, now);
+        return true;
+    }
+    init_players = count;
+    Treasure_SetPlayers(count);
+    char said[40];
+    snprintf(said, sizeof(said), "Players set to %d", count);
+    Roam__ShowMessage(roam, said);
+    return true;
 }
 
 // The game's clock: real time, sped up by the multiplayer game's speed (Diablo's Fast, Faster, Fastest)
@@ -6179,6 +6217,27 @@ static void Roam__Update(SceneRoam *roam) {
         Roam__SendLooks(roam);
         if (!TextBox_IsFocused(roam->chat_box) && roam->options_panel == NULL && !roam->menu_open &&
             Controls_Pressed(ACTION_CHAT)) {
+            TextBox_Focus(roam->chat_box);
+            InputManager_ClearPresses();
+        }
+    } else if (roam->game && roam->chat_box != NULL) {
+        // Single Player: Enter opens the command line (/players), Enter runs it, Esc closes it
+        if (TextBox_IsFocused(roam->chat_box)) {
+            TextBox_Update(roam->chat_box);
+            if (InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN) ||
+                InputManager_ConsumeKeyPress(SDL_SCANCODE_KP_ENTER)) {
+                const char *text = TextBox_GetText(roam->chat_box);
+                if (text[0] != '\0' && !Roam__ChatCommand(roam, text)) {
+                    Roam__ShowMessage(roam, "Commands: /players 1-8");
+                }
+                TextBox_Clear(roam->chat_box);
+                TextBox_Blur(roam->chat_box);
+            } else if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+                TextBox_Clear(roam->chat_box);
+                TextBox_Blur(roam->chat_box);
+            }
+            InputManager_ClearPresses(); // typing isn't playing
+        } else if (roam->options_panel == NULL && !roam->menu_open && Controls_Pressed(ACTION_CHAT)) {
             TextBox_Focus(roam->chat_box);
             InputManager_ClearPresses();
         }
@@ -7343,7 +7402,7 @@ static void Roam__Render(SceneRoam *roam) {
         }
     }
 
-    if (roam->online) {
+    if (roam->online || TextBox_IsFocused(roam->chat_box)) {
         Roam__DrawChat(roam);
     }
     Roam__DrawLog(roam);

@@ -839,6 +839,15 @@ static void Server__State(Peer *peer, NetReader *reader) {
     snprintf(peer->mode, sizeof(peer->mode), "%s", mode);
 }
 
+static bool Server__SameName(const char *a, const char *b) {
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return false;
+        }
+    }
+    return *a == *b;
+}
+
 static void Server__ChatFrom(NetServer *server, Peer *peer, NetReader *reader) {
     char text[NET_CHAT_MAX];
     NetReader_String(reader, text, sizeof(text));
@@ -847,6 +856,42 @@ static void Server__ChatFrom(NetServer *server, Peer *peer, NetReader *reader) {
     }
     for (char *c = text; *c != '\0'; c++) {
         *c = (unsigned char)*c < 32 ? ' ' : *c; // no control characters
+    }
+    // A whisper: "/w Name what" (or /m) goes to that player alone
+    if ((strncmp(text, "/w ", 3) == 0 || strncmp(text, "/m ", 3) == 0) && text[3] != '\0') {
+        char     *name = text + 3;
+        char     *what = strchr(name, ' ');
+        Peer     *to   = NULL;
+        NetWriter writer;
+        char      line[NET_CHAT_MAX + CHARACTER_NAME_MAX + 24];
+        if (what != NULL) {
+            *what++ = '\0';
+        }
+        for (int p = 0; p < MAX_CONNECTIONS && to == NULL; p++) {
+            Peer *other = &server->peers[p];
+            if (other->connection != NULL && other->stage == STAGE_IN_GAME &&
+                Server__SameName(other->character.name, name)) {
+                to = other;
+            }
+        }
+        NetWriter_Begin(&writer);
+        if (to == NULL || what == NULL || what[0] == '\0') {
+            snprintf(line, sizeof(line), to == NULL ? "%s is not in this game." : "Whisper what to %s?", name);
+            NetWriter_U8(&writer, 0);
+            NetWriter_String(&writer, line);
+            Server__Send(peer, MSG_CHAT_FROM, &writer);
+            return;
+        }
+        snprintf(line, sizeof(line), "%s whispers: %s", peer->character.name, what);
+        NetWriter_U8(&writer, 0);
+        NetWriter_String(&writer, line);
+        Server__Send(to, MSG_CHAT_FROM, &writer);
+        snprintf(line, sizeof(line), "You whisper to %s: %s", to->character.name, what);
+        NetWriter_Begin(&writer);
+        NetWriter_U8(&writer, 0);
+        NetWriter_String(&writer, line);
+        Server__Send(peer, MSG_CHAT_FROM, &writer);
+        return;
     }
     Server__Chat(server, peer->id, text, NULL);
 }
