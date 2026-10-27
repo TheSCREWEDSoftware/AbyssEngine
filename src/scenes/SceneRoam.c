@@ -270,6 +270,7 @@ typedef struct Unit {
     bool            spectral;     // a unique's Spectral Hit: each blow fire, cold or lightning, picked each time
     bool            mana_burn;    // a unique's Mana Burn: its blows take mana as well as life
     char            power[48];    // a unique's powers, shown under its name ("Extra Strong, Cursed")
+    uint64_t        next_neutral; // its idle sound's next time (0: not set yet)
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -2845,8 +2846,8 @@ static float Roam__WeatherLevel(const SceneRoam *roam, const uint64_t now) { // 
     return cycle < 0.33f ? sinf(cycle / 0.33f * 3.14159f) : 0.0f;
 }
 
-// Lightning in a heavy shower now and then (a flash every half a minute or so, at its heaviest): when the one in this stretch of time flashes
-// (0: none in it)
+// Lightning in a heavy shower now and then (a flash every half a minute or so, at its heaviest): when the one in this
+// stretch of time flashes (0: none in it)
 static uint64_t Roam__LightningAt(const SceneRoam *roam, const uint64_t now) {
     if (roam->atmosphere.snow) {
         return 0;
@@ -4307,11 +4308,22 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
         // Combat: everyone nearby that can fight (NPCs included) comes for the nearest player
         const float distance = Roam__Distance(unit->x, unit->y, target_x, target_y);
         if (distance > AGGRO_RANGE && !unit->provoked) {
+            // Its idle sound now and then (a growl, a hiss, a chuckle), when you're near enough to hear it
+            if (roam->game && distance < AGGRO_RANGE * 2.0f && now >= unit->next_neutral) {
+                if (unit->next_neutral != 0) {
+                    Roam__UnitSound(roam, unit, MONSTER_SOUND_NEUTRAL);
+                }
+                unit->next_neutral = now + 6000 + (uint64_t)Roam__Roll(0, 12000);
+            }
             Roam__Wander(roam, unit, seconds, now);
             continue;
         }
         unit->wandering = false;
         if (roam->game) {
+            if (!unit->provoked && unit->next_neutral != 0) {
+                Roam__UnitSound(roam, unit, MONSTER_SOUND_INIT); // (once it's heard you, its call when it sees you)
+                unit->next_neutral = now + 6000;
+            }
             unit->provoked = true; // it's seen you: its pack comes too
             Roam__CallPack(roam, unit);
             if (unit->fight_ally == 0 &&

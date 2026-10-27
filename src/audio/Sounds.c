@@ -257,7 +257,7 @@ const char *Sounds_MonsterSound(const char *monstats_id, const MonsterSound whic
     if (set == NULL || set[0] == '\0') {
         return NULL;
     }
-    static const char *columns[] = {"Attack1", "HitSound", "DeathSound"};
+    static const char *columns[] = {"Attack1", "HitSound", "DeathSound", "Neutral", "Init"};
     const int          c_set     = DataTable_GetColumnIndex(monsounds, "Id");
     const int          c_value   = DataTable_GetColumnIndex(monsounds, columns[which]);
     for (int row = 0; row < DataTable_GetRowCount(monsounds); row++) {

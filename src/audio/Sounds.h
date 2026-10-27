@@ -8,7 +8,13 @@
 
 typedef enum SoundKind { SOUND_KIND_SFX, SOUND_KIND_UI } SoundKind;
 
-typedef enum MonsterSound { MONSTER_SOUND_ATTACK, MONSTER_SOUND_HIT, MONSTER_SOUND_DEATH } MonsterSound;
+typedef enum MonsterSound {
+    MONSTER_SOUND_ATTACK,
+    MONSTER_SOUND_HIT,
+    MONSTER_SOUND_DEATH,
+    MONSTER_SOUND_NEUTRAL, // now and then, before it's seen you (MonSounds.txt Neutral)
+    MONSTER_SOUND_INIT,    // when it first sees you (Init)
+} MonsterSound;
 
 bool Sounds_Play(const char *name, SoundKind kind); // false if there's no such sound
 // A sound in the world, dx / dy sub-tiles from the listener: quieter further away (full within
