@@ -1286,6 +1286,18 @@ static int Roam__Resisted(const int damage, const int resist) {
     return damage * (100 - resist) / 100;
 }
 
+// Fire, cold or lightning damage reaching the player: after resistance, less "Magic Damage Reduced by N"
+static int Roam__ElementTaken(const SceneRoam *roam, const Element element, const int damage) {
+    if (!roam->game) {
+        return damage;
+    }
+    int taken = Roam__Resisted(damage, Character_Resist(roam->character, element, Roam__ResistPenalty(roam)));
+    if (element == ELEMENT_FIRE || element == ELEMENT_COLD || element == ELEMENT_LIGHTNING) {
+        taken -= taken > 0 ? Affixes_Total(roam->character, MOD_MAGIC_DAMAGE_REDUCED) : 0;
+    }
+    return taken > 0 ? taken : 0;
+}
+
 // The player's blow, each kind of damage rolled: physical, then fire, cold, lightning, poison (what's worn)
 static void Roam__RollPlayerDamage(const SceneRoam *roam, int damage[ELEMENT_COUNT]) {
     damage[ELEMENT_PHYSICAL] = Roam__Roll(roam->player.damage_min, roam->player.damage_max);
@@ -3502,10 +3514,8 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         int damage = Roam__Roll(unit->damage_min, unit->damage_max);
                         if (unit->element > 0 && Roam__Roll(1, 100) <= unit->element_chance) {
                             // Its fire, cold, lightning or poison, against our resistance to it
-                            const int resist = roam->game ? Character_Resist(roam->character, (Element)unit->element,
-                                                                             Roam__ResistPenalty(roam))
-                                                          : 0;
-                            damage += Roam__Resisted(Roam__Roll(unit->element_min, unit->element_max), resist);
+                            damage += Roam__ElementTaken(roam, (Element)unit->element,
+                                                         Roam__Roll(unit->element_min, unit->element_max));
                         }
                         damage = damage * Roam__MonsterDamageFactor(roam, unit, now) / 100; // Weaken
                         if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
@@ -4912,11 +4922,8 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         const int  level         = NetReader_I32(reader);
         int        damage        = 0;
         for (int e = 0; e < ELEMENT_COUNT; e++) { // physical as it is; the rest against our resistances
-            const int part = NetReader_I32(reader);
-            damage +=
-                e == ELEMENT_PHYSICAL
-                    ? part
-                    : Roam__Resisted(part, Character_Resist(roam->character, (Element)e, Roam__ResistPenalty(roam)));
+            const int part  = NetReader_I32(reader);
+            damage         += e == ELEMENT_PHYSICAL ? part : Roam__ElementTaken(roam, (Element)e, part);
         }
         Unit *player = &roam->player;
         if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until ||
@@ -6085,9 +6092,13 @@ static void Roam__Render(SceneRoam *roam) {
         }
     }
     // Indoors it's dark but for the light around you (the game's light radius); "auto" picks it by the area
-    const bool  dark_inside = light_level == 0 && roam->atmosphere.inside;
-    const int   darkness    = dark_inside ? 150 : light_levels[light_level].darkness;
-    const float radius      = dark_inside ? 15.0f : light_levels[light_level].radius;
+    const bool dark_inside = light_level == 0 && roam->atmosphere.inside;
+    const int  darkness    = dark_inside ? 150 : light_levels[light_level].darkness;
+    float      radius      = dark_inside ? 15.0f : light_levels[light_level].radius;
+    if (roam->game && roam->character != NULL) {
+        radius += (float)Affixes_Total(roam->character, MOD_LIGHT_RADIUS); // "+N to Light Radius" (or -N)
+        radius  = radius < 4.0f ? 4.0f : radius;
+    }
     if (darkness > 0) {
         float light_x;
         float light_y;

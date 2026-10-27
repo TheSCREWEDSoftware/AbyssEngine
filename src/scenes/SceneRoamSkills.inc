@@ -538,8 +538,7 @@ static void Roam__MissileHitsPlayer(SceneRoam *roam, Missile *missile, const uin
     }
     int damage = missile->damage[ELEMENT_PHYSICAL];
     for (int e = ELEMENT_FIRE; e < ELEMENT_COUNT; e++) {
-        const int resist  = roam->game ? Character_Resist(roam->character, (Element)e, Roam__ResistPenalty(roam)) : 0;
-        damage           += Roam__Resisted(missile->damage[e], resist);
+        damage += Roam__ElementTaken(roam, (Element)e, missile->damage[e]);
     }
     if (damage > 0) {
         Roam__Damage(roam, &roam->player, damage, now);
