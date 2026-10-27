@@ -3843,12 +3843,28 @@ static int Roam__DruidCharge(SceneRoam *roam, const SkillRow *skill, const int l
     return roam->charges;
 }
 
-// The Druid's shape-shifted blows, as the game does them: Hunger steals life and mana, Feral Rage builds charges that
+// Blows with a skill that does more, as the game does them: Conversion turns the monster, Vengeance adds the
+// elements; the Druid's shape-shifted blows: Hunger steals life and mana, Feral Rage builds charges that
 // steal life (and quicken you), Maul's add damage and stun, Rabies' poison spreads to the monsters around, Fury
 // strikes several at once
-static void Roam__DruidBlow(SceneRoam *roam, const SkillRow *skill, const int level, Unit *target,
+static void Roam__SkillBlow(SceneRoam *roam, const SkillRow *skill, const int level, Unit *target,
                             int rolled[ELEMENT_COUNT], int *life_steal, int *mana_steal, const uint64_t now) {
-    if (skill->do_func == 122) { // Hunger
+    if (skill->do_func == 79 && Roam__RunsMonsters(roam) && !target->boss && target->rank != RANK_UNIQUE &&
+        target->rank != RANK_SUPER_UNIQUE && Roam__IsAlive(target) &&
+        Roam__Roll(1, 100) <= SkillData_Eval(roam->character, skill, level, skill->calc[0])) {
+        // Conversion: the monster fights for you a while
+        const int frames   = SkillData_Eval(roam->character, skill, level, skill->aura_length);
+        target->ally       = true;
+        target->turned     = true;
+        target->ally_until = now + ((uint64_t)(frames > 0 ? frames : 400) * 40);
+    } else if (skill->start_func == 35) {
+        // Vengeance: its percents of the blow's damage added as fire, cold and lightning
+        static const Element elements[3] = {ELEMENT_FIRE, ELEMENT_COLD, ELEMENT_LIGHTNING};
+        const int            base        = rolled[ELEMENT_PHYSICAL];
+        for (int e = 0; e < 3; e++) {
+            rolled[elements[e]] += base * SkillData_Eval(roam->character, skill, level, skill->calc[e]) / 100;
+        }
+    } else if (skill->do_func == 122) { // Hunger
         *life_steal += SkillData_Eval(roam->character, skill, level, skill->calc[1]);
         *mana_steal += SkillData_Eval(roam->character, skill, level, skill->calc[2]);
     } else if (skill->do_func == 120 && strcmp(skill->id, "Maul") == 0) {
@@ -3921,7 +3937,8 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (skill != NULL) {
         // The skill's extra damage (Zeal, Fury and Fend keep it in their second calc), and what it adds
         const int percent = SkillData_Eval(roam->character, skill, level, skill->calc[skill->do_func == 13 ? 1 : 0]);
-        if (!skill->progressive) { // (a charging blow is a plain one: its bonus comes with the finisher)
+        if (!skill->progressive &&
+            skill->start_func != 35) { // (a charging blow is a plain one: its bonus comes with the finisher)
             rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * percent / 100;
         }
         int low    = 0;
@@ -3962,7 +3979,7 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     int life_steal = 0;
     int mana_steal = 0;
     if (roam->game && skill != NULL) {
-        Roam__DruidBlow(roam, skill, level, target, rolled, &life_steal, &mana_steal, now);
+        Roam__SkillBlow(roam, skill, level, target, rolled, &life_steal, &mana_steal, now);
     }
     if (roam->game && skill != NULL && skill->finishing) {
         Roam__ReleaseCharges(roam, target, rolled, now); // a finishing move: the charges go into this blow

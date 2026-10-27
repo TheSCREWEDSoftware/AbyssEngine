@@ -1932,6 +1932,27 @@ static void Roam__SkillPulse(SceneRoam *roam, const uint64_t now) {
                     roam->player.hp + heal < roam->player.max_hp ? roam->player.hp + heal : roam->player.max_hp;
             }
         }
+        if (aura->do_func == 82 && Roam__RunsMonsters(roam)) {
+            // Redemption: now and then a corpse near you goes, giving back life and mana
+            const float radius = Roam__SkillRadius(roam, aura, level, 8.0f);
+            for (int i = 0; i < roam->unit_count; i++) {
+                Unit *body = &roam->units[i];
+                if (body->state != UNIT_DEAD || body->vanished || body->is_object || body->npc || body->ally ||
+                    Roam__Distance(body->x, body->y, roam->player.x, roam->player.y) > radius) {
+                    continue;
+                }
+                if (Roam__Roll(1, 100) <= SkillData_Eval(roam->character, aura, level, aura->calc[0])) {
+                    const int life = SkillData_Eval(roam->character, aura, level, aura->calc[1]);
+                    const int mana = SkillData_Eval(roam->character, aura, level, aura->calc[2]);
+                    roam->player.hp =
+                        roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
+                    roam->mana     = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
+                    body->vanished = true;
+                    Roam__SpawnEffect(roam, "redemption", body->x, body->y, 1.0f, 0.0f);
+                }
+                break; // (one corpse a pulse)
+            }
+        }
         if (aura->do_func == 66 || aura->do_func == 81) {
             int damage[ELEMENT_COUNT];
             int cold   = 0;
@@ -1947,10 +1968,23 @@ static void Roam__SkillPulse(SceneRoam *roam, const uint64_t now) {
             }
             const float radius = Roam__SkillRadius(roam, aura, level, 8.0f);
             for (int i = 0; i < roam->unit_count; i++) {
-                Unit *unit = &roam->units[i];
-                if (!Roam__IsAlive(unit) || unit->is_object || unit->npc || unit->ally ||
-                    Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) > radius) {
+                Unit       *unit = &roam->units[i];
+                const float away = Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y);
+                if (!Roam__IsAlive(unit) || unit->is_object || unit->npc || unit->ally || away > radius ||
+                    (aura->do_func == 66 && !unit->undead)) {
                     continue;
+                }
+                if (aura->do_func == 66 && Roam__RunsMonsters(roam) && away > 0.01f && !unit->boss) {
+                    // Sanctuary: the undead are pushed back out of it
+                    float kx;
+                    float ky;
+                    Roam__ArrivalSpot(roam->map, roam->player.x + ((unit->x - roam->player.x) / away * radius),
+                                      roam->player.y + ((unit->y - roam->player.y) / away * radius), &kx, &ky);
+                    if (Map_IsWalkable(roam->map, (int)kx, (int)ky)) {
+                        unit->x = unit->target_x = kx;
+                        unit->y = unit->target_y = ky;
+                        Roam__ClearPath(unit);
+                    }
                 }
                 if (aura->do_func == 81) {
                     unit->chill_until = now + SKILL_DOT_PULSE_MS + 100; // Holy Freeze slows everything in it
