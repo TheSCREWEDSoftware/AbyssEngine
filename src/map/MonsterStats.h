@@ -26,6 +26,8 @@ typedef struct MonsterStats {
     bool undead;                    // lUndead / hUndead (skeletons, zombies, ...): holy damage and items against undead
     bool demon;                     // demon (items against demons)
     char missile[32];               // MissA1: what its first attack shoots (archers), "" = a blow
+    char spawn[32];                 // spawn: what a nest, an egg or a mother makes ("" none)
+    char ai[24];                    // AI: how it behaves (FoulCrowNest, MaggotEgg, SuicideMinion, ...)
     char skill[MONSTER_SKILLS][32]; // Skill1..8 (skills.txt: Shaman fire, Andariel's poison bolts, curses, Leap, ...)
     int  skill_level[MONSTER_SKILLS];
     // Resistances in percent (100 or more: immune): 0 physical, 1 fire, 2 cold, 3 lightning, 4 poison (Character.h's

@@ -273,6 +273,10 @@ typedef struct Unit {
     uint64_t        next_neutral; // its idle sound's next time (0: not set yet)
     uint64_t        next_raise;   // a Fallen Shaman's / Greater Mummy's next raising, a Zakarum priest's healing
     int             leader;       // a minion: its unique (index + 1), whom it keeps close to; 0 none
+    char            spawn[32];    // a nest's, egg's or mother's young (monstats spawn), "" none
+    uint8_t         spawner;      // SPAWNER_*: how it makes them
+    int             spawned;      // how many it's made
+    bool            suicide;      // a suicide minion: blows itself up next to you
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -998,6 +1002,9 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
 static int Roam__Roll(const int low, const int high) { return high > low ? low + (rand() % (high - low + 1)) : low; }
 
 typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQUE, RANK_MINION } UnitRank;
+// Monsters that make others (monstats spawn and AI): eggs hatch when you come near, nests and mothers keep making them
+enum { SPAWNER_NONE, SPAWNER_EGG, SPAWNER_NEST };
+
 // The game's kinds of champion: plain, Fanatic (fast), Berserker (hits hard, little defense), Ghostly (see-through,
 // slow, cold, half physical damage), Possessed (Hell only: twice the life)
 enum { CHAMPION_PLAIN, CHAMPION_FANATIC, CHAMPION_BERSERKER, CHAMPION_GHOSTLY, CHAMPION_POSSESSED };
@@ -1056,8 +1063,17 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
             unit->experience = unit->experience * (100 + (50 * (init_players - 1))) / 100;
         }
         unit->undead = stats.undead;
-        unit->demon  = stats.demon;
-        unit->boss   = stats.boss;
+        if (stats.spawn[0] != '\0') {
+            snprintf(unit->spawn, sizeof(unit->spawn), "%s", stats.spawn);
+            unit->spawner = strcmp(stats.ai, "MaggotEgg") == 0 ? SPAWNER_EGG
+                            : (strstr(stats.ai, "Nest") != NULL || strcmp(stats.ai, "VileMother") == 0 ||
+                               strcmp(stats.ai, "SandMaggotQueen") == 0 || strcmp(stats.ai, "MinionSpawner") == 0)
+                                ? SPAWNER_NEST
+                                : SPAWNER_NONE;
+        }
+        unit->suicide = strcmp(stats.ai, "SuicideMinion") == 0;
+        unit->demon   = stats.demon;
+        unit->boss    = stats.boss;
         snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure);
         memcpy(unit->resist, stats.resist, sizeof(unit->resist));
         unit->element        = stats.element;
@@ -4362,6 +4378,25 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             unit->provoked = false;
             Roam__Wander(roam, unit, seconds, now);
             continue;
+        }
+
+        // Nests, eggs and suicide minions do their own thing (they've no blow of their own)
+        if (unit->spawner != SPAWNER_NONE || unit->suicide) {
+            const float distance = Roam__Distance(unit->x, unit->y, target_x, target_y);
+            if (Roam__MonsterSpawns(roam, unit, distance, now)) {
+                continue;
+            }
+            if (unit->suicide && distance < AGGRO_RANGE * 1.5f) { // runs at you
+                Roam__TurnTowards(&unit->turn, unit->x, unit->y, target_x, target_y);
+                const bool moved = Roam__Step(roam->map, unit, target_x, target_y,
+                                              unit->speed * Roam__UnitSpeedFactor(roam, unit, now), seconds);
+                Roam__SetState(unit, moved ? UNIT_WALK : UNIT_IDLE, now);
+                continue;
+            }
+            if (!Roam__CanAttack(roam, unit)) {
+                Roam__SetState(unit, UNIT_IDLE, now);
+                continue;
+            }
         }
 
         // Only units that can attack (have an attack animation) fight back; the rest carry on strolling

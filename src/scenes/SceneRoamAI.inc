@@ -98,6 +98,54 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
     return true;
 }
 
+// Nests, eggs and mothers (monstats spawn): an egg hatches its young when you come near and is gone; a nest, a
+// mother or a maggot queen makes one now and then while you're about, up to a dozen in all. Suicide minions blow up
+// next to you. Single Player (in multiplayer everyone's monsters have to match). True when it did something
+static bool Roam__MonsterSpawns(SceneRoam *roam, Unit *unit, const float distance, const uint64_t now) {
+    if (roam->online || !roam->game) {
+        return false;
+    }
+    if (unit->suicide && distance < 2.0f) { // fire all round, and it's gone
+        int damage = Roam__ElementTaken(roam, ELEMENT_FIRE, Roam__Roll(unit->damage_min * 2, unit->damage_max * 3));
+        damage     = Roam__AbsorbDamage(roam, damage);
+        if (damage > 0 && Roam__IsAlive(&roam->player)) {
+            Roam__Damage(roam, &roam->player, damage, now);
+        }
+        Roam__SpawnEffect(roam, "fireexplode", unit->x, unit->y, 0.0f, 1.0f);
+        Roam__Damage(roam, unit, unit->hp, now);
+        return true;
+    }
+    if (unit->spawner == SPAWNER_NONE || unit->spawn[0] == '\0' || now < unit->next_raise) {
+        return false;
+    }
+    const bool egg = unit->spawner == SPAWNER_EGG;
+    if ((egg && distance > 8.0f) || (!egg && (distance > 18.0f || unit->spawned >= 12))) {
+        return false;
+    }
+    unit->next_raise     = now + 5000 + (uint64_t)Roam__Roll(0, 4000);
+    const int      count = egg ? Roam__Roll(2, 3) : 1;
+    const MapArea *area  = Map_AreaAt(roam->map, unit->x, unit->y);
+    for (int n = 0; n < count && roam->unit_count < MAX_UNITS - 8; n++) {
+        float x = unit->x;
+        float y = unit->y;
+        Roam__ArrivalSpot(roam->map, unit->x + (float)Roam__Roll(-1, 1), unit->y + 1.0f, &x, &y);
+        init_area_level = MonsterStats_AreaLevel(area != NULL ? area->level_id : roam->area_level);
+        Unit *young     = Roam__AddUnit(roam, "monsters", unit->spawn, x, y);
+        init_area_level = 0;
+        if (young != NULL) {
+            young->provoked = true;
+            unit->spawned++;
+        }
+    }
+    if (egg) {
+        Roam__Damage(roam, unit, unit->hp, now); // hatched: the egg is done
+    } else {
+        Roam__SetState(unit, UNIT_ATTACK, now); // (laying)
+        unit->ranged_swing = true;
+    }
+    return true;
+}
+
 // Raising the dead and healing (MonStats AI): Fallen Shamans bring back the Fallen, Fetish Shamans the fetishes,
 // Greater Mummies the undead near them; Zakarum priests (Cantors) heal the hurt around them. True when it did
 static bool Roam__MonsterRaises(SceneRoam *roam, Unit *unit, const uint64_t now) {
