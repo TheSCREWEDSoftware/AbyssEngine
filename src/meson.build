@@ -211,3 +211,13 @@ ring_buffer_test = executable('ring_buffer_test',
     dependencies: dependencies,
 )
 test('ring_buffer_test', ring_buffer_test)
+
+# The data readers (tables, DC6, DCC, DS1, DT1) and the network's item messages, on bytes made by the test itself:
+# known input read right, broken and random input never crashing
+readers_test = executable('readers_test',
+    sources: ['../tests/ReadersTest.c', '../tests/TestStubs.c', 'data/DataTable.c',
+              'types/DC6.c', 'types/DC6Frame.c', 'types/DCC.c', 'types/DS1.c', 'types/DT1.c',
+              'net/Protocol.c', 'net/NetMessage.c'],
+    dependencies: [cc.find_library('m', required: false)],
+)
+test('readers_test', readers_test)

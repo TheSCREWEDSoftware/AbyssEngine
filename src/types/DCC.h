@@ -17,7 +17,8 @@ typedef struct DCCFrame {
 
 typedef struct DCC DCC;
 
-DCC *DCC_Load(const char *path); // NULL when the file is missing or malformed
+DCC *DCC_Load(const char *path);                         // NULL when the file is missing or malformed
+DCC *DCC_LoadMemory(const uint8_t *data, uint32_t size); // (a copy is read)
 // Some composite layers (e.g. Mephisto) are stored as DC6; load one into the same frame structure.
 DCC            *DCC_LoadFromDC6(const char *path);
 void            DCC_Destroy(DCC **dcc);

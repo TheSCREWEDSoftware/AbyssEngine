@@ -135,6 +135,8 @@ static void DT1__DecodeTile(DT1Tile *tile, const uint8_t *file, const uint32_t s
     free(blocks);
 }
 
+static DT1 *DT1__Parse(uint8_t *data, uint32_t size, const char *path);
+
 DT1 *DT1_Load(const char *path) {
     if (!FileManager_FileExists(path)) {
         return NULL;
@@ -146,7 +148,20 @@ DT1 *DT1_Load(const char *path) {
     FAIL_IF_NULL(data);
     MpqStream_Read(stream, data, 0, size);
     MpqStream_Destroy(&stream);
+    return DT1__Parse(data, size, path);
+}
 
+DT1 *DT1_LoadMemory(const uint8_t *bytes, const uint32_t size) {
+    uint8_t *data = malloc(size > 0 ? size : 1);
+    FAIL_IF_NULL(data);
+    if (size > 0) {
+        memcpy(data, bytes, size);
+    }
+    return DT1__Parse(data, size, "(memory)");
+}
+
+// (takes data and frees it)
+static DT1 *DT1__Parse(uint8_t *data, const uint32_t size, const char *path) {
     if (size < DT1_HEADER_SIZE || DT1__I32(data) != 7 || DT1__I32(data + 4) != 6) {
         LOG_WARN("'%s' is not a DT1 file.", path);
         free(data);

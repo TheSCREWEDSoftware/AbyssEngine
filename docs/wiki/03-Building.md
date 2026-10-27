@@ -87,6 +87,16 @@ AbyssEngine rev. 5e4998c1d2a3 2026-10-10 17:20:03 +0100 (main branch) (Win64, Re
 That's the git commit (a `+` after it means the build has uncommitted changes), its date, the branch, the platform,
 the configuration and how the libraries are linked. Quote it when reporting a problem.
 
+## Tests
+
+`ctest --test-dir build -C Release --output-on-failure` (CMake) or `meson test -C <build folder>` runs them; the
+CI does too, on each platform. They need no game files:
+
+- `ring_buffer_test`: the audio's ring buffer.
+- `readers_test`: the data readers (tables, DC6, DCC, DS1, DT1) and the network's item messages: input made by the
+  test read right, then thousands of cut-short, changed and random ones that must never crash. `ABYSS_FUZZ_SEED=n`
+  gives other random input; built with `-fsanitize=address,undefined` it also catches reads out of bounds.
+
 ---
 
 **Next step:** [4. Game Files and Configuration](04-Game-Files-and-Configuration.md)

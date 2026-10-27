@@ -121,6 +121,10 @@ jobs:
             -   name: Build
                 run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config Release
 
+            # The ring buffer, and the data readers and network messages on made-up and random input
+            -   name: Test
+                run: ctest --test-dir ${{ steps.strings.outputs.build-output-dir }} -C Release --output-on-failure
+
             -   name: Upload Artifacts
                 if: github.ref == 'refs/heads/main'
                 uses: actions/upload-artifact@v4

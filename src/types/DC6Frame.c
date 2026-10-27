@@ -30,8 +30,18 @@ DC6Frame *DC6Frame_Create(MpqStream *mpq_stream) {
     FAIL_IF_NULL(result);
 
     MpqStream_Read(mpq_stream, &result->header, 0, sizeof(DC6FrameHeader));
-    result->frame_data = malloc(result->header.data_length);
-
+    // A broken file (or a mod's): sizes past what's there make an empty frame instead of a crash
+    const uint32_t left = MpqStream_GetSize(mpq_stream) > MpqStream_Tell(mpq_stream)
+                              ? MpqStream_GetSize(mpq_stream) - MpqStream_Tell(mpq_stream)
+                              : 0;
+    if (result->header.data_length > left || result->header.width > 4096 || result->header.height > 4096) {
+        result->header.data_length = result->header.data_length > left ? left : result->header.data_length;
+        if (result->header.width > 4096 || result->header.height > 4096) {
+            result->header.width  = 0;
+            result->header.height = 0;
+        }
+    }
+    result->frame_data = calloc(result->header.data_length > 0 ? result->header.data_length : 1, 1);
     FAIL_IF_NULL(result->frame_data);
 
     MpqStream_Read(mpq_stream, result->frame_data, 0, result->header.data_length);
@@ -82,17 +92,20 @@ void DC6Frame__Decode(DC6Frame *dc6_frame) {
     DC6Frame_GetFrameSize(dc6_frame, &frame_width, &frame_height);
     const uint32_t total_pixels = frame_height * frame_width;
 
-    dc6_frame->indexed_pixel_data = malloc((size_t)total_pixels);
+    dc6_frame->indexed_pixel_data = calloc(total_pixels > 0 ? (size_t)total_pixels : 1, 1);
     FAIL_IF_NULL(dc6_frame->indexed_pixel_data);
-    memset(dc6_frame->indexed_pixel_data, 0, (size_t)total_pixels);
+    if (total_pixels == 0) {
+        return;
+    }
 
-    uint32_t x      = 0;
-    uint32_t y      = frame_height - 1;
-    int      offset = 0;
-
-    for (;;) {
+    // Run lengths from the bottom row up: 0x80 ends a row, 0x80 | n skips n, n copies n pixels. Nothing is read or
+    // written outside the frame (a broken file draws what it can)
+    const uint32_t length = dc6_frame->header.data_length;
+    uint32_t       x      = 0;
+    uint32_t       y      = frame_height - 1;
+    uint32_t       offset = 0;
+    while (offset < length) {
         const int b = dc6_frame->frame_data[offset++];
-
         if (b == 0x80) {
             if (y == 0) {
                 return;
@@ -101,16 +114,15 @@ void DC6Frame__Decode(DC6Frame *dc6_frame) {
             x = 0;
             continue;
         }
-
         if ((b & 0x80) > 0) {
             x += b & 0x7F;
             continue;
         }
-
-        for (int i = 0; i < b; i++) {
-            dc6_frame->indexed_pixel_data[x + (y * frame_width) + i] = dc6_frame->frame_data[offset++];
+        for (int i = 0; i < b && offset < length; i++, offset++) {
+            if (x + (uint32_t)i < frame_width) {
+                dc6_frame->indexed_pixel_data[x + (uint32_t)i + (y * frame_width)] = dc6_frame->frame_data[offset];
+            }
         }
-
-        x += b;
+        x += (uint32_t)b;
     }
 }

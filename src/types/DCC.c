@@ -189,6 +189,11 @@ static bool DCC__DecodeDirection(DCC *dcc, const int direction, const uint8_t *d
         optional_total        += DCC__ReadBits(&bits, optional_bits);
         DCC__ReadBits(&bits, coded_bits);
         const bool bottom_up = DCC__ReadBits(&bits, 1) != 0;
+        if (frame->width < 0 || frame->width > 4096 || frame->height < 0 || frame->height > 4096 || xoffset < -100000 ||
+            xoffset > 100000 || yoffset < -100000 || yoffset > 100000) {
+            free(frames); // a broken file (pictures are never this big)
+            return false;
+        }
 
         frame->xmin = xoffset;
         frame->xmax = xoffset + frame->width - 1;
@@ -212,6 +217,10 @@ static bool DCC__DecodeDirection(DCC *dcc, const int direction, const uint8_t *d
     if (!ok) {
         free(frames);
         return dir_xmax < dir_xmin; // a direction with only empty frames is fine
+    }
+    if (dir_xmax - dir_xmin >= 4096 || dir_ymax - dir_ymin >= 4096) {
+        free(frames); // (frames far apart: a broken file)
+        return false;
     }
 
     if (optional_total > 0) {
@@ -446,6 +455,8 @@ static bool DCC__DecodeDirection(DCC *dcc, const int direction, const uint8_t *d
 
 // --- Public API -------------------------------------------------------------------------------------------------
 
+static DCC *DCC__Parse(uint8_t *data, uint32_t size, const char *path);
+
 DCC *DCC_Load(const char *path) {
     if (!FileManager_FileExists(path)) {
         return NULL;
@@ -458,7 +469,20 @@ DCC *DCC_Load(const char *path) {
     memset(data, 0, size + 4);
     MpqStream_Read(stream, data, 0, size);
     MpqStream_Destroy(&stream);
+    return DCC__Parse(data, size, path);
+}
 
+DCC *DCC_LoadMemory(const uint8_t *bytes, const uint32_t size) {
+    uint8_t *data = calloc((size_t)size + 4, 1); // (4 to spare: the bit reader looks a little ahead)
+    FAIL_IF_NULL(data);
+    if (size > 0) {
+        memcpy(data, bytes, size);
+    }
+    return DCC__Parse(data, size, "(memory)");
+}
+
+// (takes data, with 4 zero bytes after it, and frees it)
+static DCC *DCC__Parse(uint8_t *data, const uint32_t size, const char *path) {
     // Header: signature, version, directions, frames per direction (u32), tag (u32), size (u32), dir offsets
     if (size < 15 || data[0] != DCC_SIGNATURE) {
         LOG_WARN("'%s' is not a DCC file.", path);

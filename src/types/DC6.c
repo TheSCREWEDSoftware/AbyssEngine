@@ -22,29 +22,51 @@ struct DC6 {
     DC6Frame       **dc6_frames;
 };
 
-DC6 *DC6_Load(const char *path) {
+#define DC6_MAX_FRAMES 4096 // directions x frames: more is a broken file
+
+static DC6 *DC6__FromStream(MpqStream *stream);
+
+DC6 *DC6_Load(const char *path) { return DC6__FromStream(FileManager_OpenFile(path)); }
+
+DC6 *DC6_LoadMemory(const uint8_t *data, const uint32_t size) {
+    uint8_t *copy = malloc(size > 0 ? size : 1);
+    FAIL_IF_NULL(copy);
+    if (size > 0) {
+        memcpy(copy, data, size);
+    }
+    MpqStream *stream = MpqStream_CreateFromMemory("(memory)", copy, size); // (the stream frees it)
+    return DC6__FromStream(stream);
+}
+
+// (closes the stream)
+static DC6 *DC6__FromStream(MpqStream *stream) {
     DC6 *result = malloc(sizeof(DC6));
     FAIL_IF_NULL(result);
-
-    MpqStream *stream = FileManager_OpenFile(path);
     memset(&result->header, 0, sizeof(DC6Header));
-    if (MpqStream_GetSize(stream) < sizeof(DC6Header)) {
+    const uint64_t present = MpqStream_GetSize(stream) >= sizeof(DC6Header) ? 1 : 0;
+    if (present != 0) {
+        MpqStream_Read(stream, &result->header, 0, sizeof(DC6Header));
+    }
+    const uint64_t total = (uint64_t)result->header.directions * result->header.frames_per_direction;
+    if (present == 0 || total > DC6_MAX_FRAMES ||
+        sizeof(DC6Header) + (total * sizeof(uint32_t)) > MpqStream_GetSize(stream)) {
+        result->header.directions           = 0; // (none, or broken: no frames)
+        result->header.frames_per_direction = 0;
         // Not there (text mode, from an extracted folder): no frames
         result->frame_pointers = NULL;
         result->dc6_frames     = NULL;
         MpqStream_Destroy(&stream);
         return result;
     }
-    MpqStream_Read(stream, &result->header, 0, sizeof(DC6Header));
 
-    const uint32_t total_frames = result->header.directions * result->header.frames_per_direction;
-    result->frame_pointers      = malloc(sizeof(uint32_t) * total_frames);
+    const uint32_t total_frames = (uint32_t)total;
+    result->frame_pointers      = calloc(total_frames > 0 ? total_frames : 1, sizeof(uint32_t));
 
     FAIL_IF_NULL(result->frame_pointers);
 
     MpqStream_Read(stream, result->frame_pointers, 0, sizeof(uint32_t) * total_frames);
 
-    result->dc6_frames = malloc(sizeof(DC6Frame *) * total_frames);
+    result->dc6_frames = malloc(sizeof(DC6Frame *) * (total_frames > 0 ? total_frames : 1));
     FAIL_IF_NULL(result->dc6_frames);
 
     for (uint32_t i = 0; i < total_frames; i++) {

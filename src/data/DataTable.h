@@ -9,6 +9,7 @@
 typedef struct DataTable DataTable;
 
 DataTable  *DataTable_Load(const char *path);
+DataTable  *DataTable_FromText(const char *text, int size); // tab-separated, header first (a copy is kept)
 void        DataTable_Destroy(DataTable **table);
 int         DataTable_GetRowCount(const DataTable *table);
 int         DataTable_GetColumnIndex(const DataTable *table, const char *column_name); // -1 when missing

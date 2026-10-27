@@ -77,6 +77,15 @@ DS1 *DS1_Load(const char *path) {
     return DS1__Parse(data, size, path);
 }
 
+DS1 *DS1_LoadMemory(const uint8_t *data, const uint32_t size) {
+    uint8_t *copy = malloc(size > 0 ? size : 1);
+    FAIL_IF_NULL(copy);
+    if (size > 0) {
+        memcpy(copy, data, size);
+    }
+    return DS1__Parse(copy, size, "(memory)");
+}
+
 DS1 *DS1_LoadDiskFile(const char *path) {
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
@@ -121,12 +130,16 @@ static DS1 *DS1__Parse(uint8_t *data, const uint32_t size, const char *path) {
     }
 
     if (ds1->version >= 3) {
-        const int32_t count = DS1__Read(&reader);
-        ds1->files          = calloc(count > 0 ? (size_t)count : 1, sizeof(char *));
+        int32_t count = DS1__Read(&reader);
+        if (count < 0 || (uint32_t)count > size - reader.position) { // (each name takes a byte at least)
+            count         = 0;
+            reader.failed = true;
+        }
+        ds1->files = calloc(count > 0 ? (size_t)count : 1, sizeof(char *));
         FAIL_IF_NULL(ds1->files);
         for (int f = 0; f < count && !reader.failed; f++) {
             const char *name = (const char *)data + reader.position;
-            const void *end  = memchr(name, 0, size - reader.position);
+            const void *end  = reader.position < size ? memchr(name, 0, size - reader.position) : NULL;
             if (end == NULL) {
                 reader.failed = true;
                 break;
@@ -150,7 +163,9 @@ static DS1 *DS1__Parse(uint8_t *data, const uint32_t size, const char *path) {
     }
     if (ds1->wall_layer_count < 0 || ds1->wall_layer_count > DS1_MAX_WALL_LAYERS || ds1->floor_layer_count < 0 ||
         ds1->floor_layer_count > DS1_MAX_FLOOR_LAYERS) {
-        reader.failed = true;
+        reader.failed          = true;
+        ds1->wall_layer_count  = 0; // (nothing made for layers that can't be)
+        ds1->floor_layer_count = 0;
     }
 
     const size_t cells = (size_t)ds1->width * (size_t)ds1->height;

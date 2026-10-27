@@ -61,19 +61,36 @@ static void DataTable__SplitRow(char *line, DataTableRow *row) {
     }
 }
 
+static DataTable *DataTable__Parse(char *buffer, const char *path);
+
 DataTable *DataTable_Load(const char *path) {
     MpqStream     *stream = FileManager_OpenFile(path);
     const uint32_t size   = MpqStream_GetSize(stream);
+    char          *buffer = malloc(size + 1);
+    FAIL_IF_NULL(buffer);
+    MpqStream_Read(stream, buffer, 0, size);
+    buffer[size] = '\0';
+    MpqStream_Destroy(&stream);
+    return DataTable__Parse(buffer, path);
+}
 
+DataTable *DataTable_FromText(const char *text, const int size) {
+    const int length = size > 0 ? size : 0;
+    char     *buffer = malloc((size_t)length + 1);
+    FAIL_IF_NULL(buffer);
+    if (length > 0) {
+        memcpy(buffer, text, (size_t)length);
+    }
+    buffer[length] = '\0';
+    return DataTable__Parse(buffer, "(text)");
+}
+
+// (takes the buffer)
+static DataTable *DataTable__Parse(char *buffer, const char *path) {
     DataTable *table = malloc(sizeof(DataTable));
     FAIL_IF_NULL(table);
     memset(table, 0, sizeof(DataTable));
-
-    table->buffer = malloc(size + 1);
-    FAIL_IF_NULL(table->buffer);
-    MpqStream_Read(stream, table->buffer, 0, size);
-    table->buffer[size] = '\0';
-    MpqStream_Destroy(&stream);
+    table->buffer = buffer;
 
     int capacity = 64;
     table->rows  = malloc(sizeof(DataTableRow) * capacity);

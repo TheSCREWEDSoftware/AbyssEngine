@@ -6,6 +6,7 @@
 typedef struct DC6 DC6;
 
 DC6           *DC6_Load(const char *path);
+DC6           *DC6_LoadMemory(const uint8_t *data, uint32_t size); // (a copy is read)
 void           DC6_Destroy(DC6 **dc6);
 uint32_t       DC6_GetTotalFrameCount(const DC6 *dc6);
 uint32_t       DC6_GetDirectionCount(const DC6 *dc6);
