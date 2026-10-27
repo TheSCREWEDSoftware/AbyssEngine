@@ -142,6 +142,14 @@ static bool Roam__MonsterSpecial(SceneRoam *roam, Unit *unit, const float tx, co
         Roam__ClearPath(unit);
         return true;
     }
+    if (unit->move_skill == MOVE_SKILL_BURROW && unit->state == UNIT_IDLE &&
+        (distance > 4.0f || Roam__Roll(1, 3) == 1)) {
+        // Down under the ground for a moment, to come up by you (Roam__Burrowed)
+        unit->burrowed     = true;
+        unit->next_special = now + 1200 + (uint64_t)Roam__Roll(0, 1800);
+        Roam__ClearPath(unit);
+        return true;
+    }
     if (unit->move_skill == MOVE_SKILL_LEAP && distance > 3.0f && distance < 9.0f &&
         Map_HasClearLine(roam->map, unit->x, unit->y, tx, ty)) {
         // At you, through the air: lands a step short
@@ -180,6 +188,26 @@ static void Roam__MonsterAura(SceneRoam *roam, Unit *unit, const uint64_t now) {
             Roam__Damage(roam, player, damage, now);
         }
     }
+}
+
+// A monster under the ground: it comes up by you after a moment (or where it is, if you're not near)
+static void Roam__Burrowed(SceneRoam *roam, Unit *unit, const bool player_alive, const uint64_t now) {
+    if (now < unit->next_special) {
+        return;
+    }
+    const Unit *player = &roam->player;
+    if (player_alive && Roam__Distance(unit->x, unit->y, player->x, player->y) < AGGRO_RANGE * 1.5f) {
+        const float angle = (float)Roam__Roll(0, 359) * 0.01745f;
+        float       x;
+        float       y;
+        Roam__ArrivalSpot(roam->map, player->x + (cosf(angle) * 2.0f), player->y + (sinf(angle) * 2.0f), &x, &y);
+        unit->x = unit->target_x = x;
+        unit->y = unit->target_y = y;
+        Roam__TurnTowards(&unit->turn, x, y, player->x, player->y);
+    }
+    unit->burrowed     = false;
+    unit->next_special = now + 5000 + (uint64_t)Roam__Roll(0, 4000);
+    Roam__SetState(unit, UNIT_IDLE, now);
 }
 
 // The Fallen: when one of theirs falls nearby, the rest scatter for a moment

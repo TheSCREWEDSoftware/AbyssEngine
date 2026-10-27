@@ -168,7 +168,7 @@ static void Roam__TimeOfDay(int *darkness, float *radius) {
 }
 
 // How a monster closes in besides walking (monstats skills)
-enum { MOVE_SKILL_NONE, MOVE_SKILL_TELEPORT, MOVE_SKILL_LEAP };
+enum { MOVE_SKILL_NONE, MOVE_SKILL_TELEPORT, MOVE_SKILL_LEAP, MOVE_SKILL_BURROW };
 
 typedef enum UnitState {
     UNIT_IDLE,
@@ -262,6 +262,7 @@ typedef struct Unit {
     const SkillRow *aura;         // a unique's aura (aura enchanted: Might, Holy Fire, Holy Freeze, Holy Shock)
     int             aura_level;
     uint64_t        aura_pulse; // its next pulse
+    bool            burrowed;   // under the ground (Submerge / Emerge: frog demons, tentacles)
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -690,7 +691,10 @@ static void Roam__TurnTowards(int *turn, const float from_x, const float from_y,
 
 static bool Roam__IsPlayer(const SceneRoam *roam, const Unit *unit) { return unit == &roam->player; }
 
-static bool Roam__IsAlive(const Unit *unit) { return unit->state != UNIT_DYING && unit->state != UNIT_DEAD; }
+// (a monster under the ground counts as gone until it comes up: it can't be seen, hit or targeted)
+static bool Roam__IsAlive(const Unit *unit) {
+    return unit->state != UNIT_DYING && unit->state != UNIT_DEAD && !unit->burrowed;
+}
 
 // Monsters and NPCs can fight; objects can't
 static bool Roam__IsCombatant(const Unit *unit) { return unit->max_hp > 0; }
@@ -1033,6 +1037,8 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
                 unit->move_skill = MOVE_SKILL_TELEPORT;
             } else if (strcmp(name, "Leap") == 0) {
                 unit->move_skill = MOVE_SKILL_LEAP;
+            } else if (strcmp(name, "Submerge") == 0) {
+                unit->move_skill = MOVE_SKILL_BURROW;
             }
         }
     } else if (strcmp(base, "chars") == 0) {
@@ -3887,6 +3893,10 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                 Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
             }
         }
+        if (unit->burrowed) {
+            Roam__Burrowed(roam, unit, player_alive, now);
+            continue;
+        }
         if (!Roam__IsAlive(unit) || !Roam__IsCombatant(unit)) {
             continue;
         }
@@ -6272,8 +6282,8 @@ static bool Roam__GivesLight(const Unit *unit) {
 }
 
 static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable) {
-    if (unit->state == UNIT_DEAD && unit->vanished) {
-        return false; // no corpse graphics: it's gone
+    if ((unit->state == UNIT_DEAD && unit->vanished) || unit->burrowed) {
+        return false; // no corpse graphics: it's gone (or it's under the ground)
     }
     Figure *figure = Roam__Figure(roam, unit);
     if (figure == NULL) {
