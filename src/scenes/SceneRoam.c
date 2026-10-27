@@ -1,5 +1,6 @@
 #include "../audio/Sounds.h"
 #include "../common/AbyssConfiguration.h"
+#include "../common/FileManager.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
@@ -33,6 +34,7 @@
 #include "../game/Treasure.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
+#include "../managers/VideoManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
@@ -2147,6 +2149,24 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
 
 static void Roam__PlaceQuestObjects(SceneRoam *roam);
 
+// The acts' films (the game's cut-scenes, from d2video.mpq / d2xvideo.mpq), each once a character: 0-2 Act II-IV's
+// start, 3 Diablo's end, 4 Baal's end. Not in multiplayer or text mode, nor when the film isn't there.
+static void Roam__PlayFilm(SceneRoam *roam, const int film) {
+    static const char *const films[5] = {
+        "/data/local/video/act02start640x480.bik", "/data/local/video/act03start640x480.bik",
+        "/data/local/video/act04start640x480.bik", "/data/local/video/act04end640x480.bik",
+        "/data/local/video/d2x_out_640x480.bik",
+    };
+    if (!roam->game || roam->character == NULL || film < 0 || film >= 5 ||
+        (roam->character->films & (1u << film)) != 0) {
+        return;
+    }
+    roam->character->films |= (uint8_t)(1u << film);
+    if (!roam->online && !roam->text_mode && FileManager_FileExists(films[film])) {
+        VideoManager_PlayVideo(films[film]);
+    }
+}
+
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     roam->npc_menu     = -1;
@@ -2499,6 +2519,10 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         }
     }
     if (roam->game) {
+        // The film of a new act, the first time you come to its town (Act II, III, IV)
+        if (roam->in_town && place->act > roam->character->act && place->act >= 1 && place->act <= 3) {
+            Roam__PlayFilm(roam, place->act - 1);
+        }
         roam->character->act = place->act;
         roam->exhausted      = false;
         roam->panel          = PANEL_NONE;

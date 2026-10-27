@@ -382,7 +382,9 @@ Click one of the town folk and you walk up to them; a box lists what they do:
 
 **Q** (or the mini panel's Quest Log) shows the quests on the left, act by act, with the game's names and steps from
 its string tables ("Den of Evil: Kill all the monsters in the Den"): white while open, green when there's a reward
-waiting, gold when done. Each difficulty has its own. What's in:
+waiting, gold when done. Each difficulty has its own. The game's films come at their moments, once a character (from
+`d2video.mpq` / `d2xvideo.mpq`, when you have them; not in multiplayer or text mode): Act II, III and IV's the first
+time you reach the act's town, Diablo's end when he dies, and Lord of Destruction's end when Baal does. What's in:
 
 | Quest | Done when | Reward |
 |---|---|---|

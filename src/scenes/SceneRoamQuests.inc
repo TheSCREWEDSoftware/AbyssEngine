@@ -277,6 +277,8 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
     return true;
 }
 
+static int Roam__QuestIndex(int act, int number);
+
 static void Roam__QuestDone(SceneRoam *roam, const int index) {
     const Quest *quest = Quests_Get(index);
     char         text[128];
@@ -290,6 +292,12 @@ static void Roam__QuestDone(SceneRoam *roam, const int index) {
         snprintf(text, sizeof(text), "Quest completed: %s", Quests_Name(index));
         Roam__ShowMessage(roam, text);
         Roam__GiveQuestReward(roam, index);
+    }
+    // Diablo's and Baal's ends: their films
+    if (index == Roam__QuestIndex(3, 2)) {
+        Roam__PlayFilm(roam, 3);
+    } else if (index == Roam__QuestIndex(4, 6)) {
+        Roam__PlayFilm(roam, 4);
     }
     Roam__StoreCharacter(roam);
 }

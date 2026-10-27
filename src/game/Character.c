@@ -625,6 +625,9 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
         }
     }
     Character__Print(file, "waypoints %llx\n", (unsigned long long)character->waypoints);
+    if (character->films != 0) {
+        Character__Print(file, "films %d\n", character->films);
+    }
     if (character->realm[0] != '\0') {
         Character__Print(file, "realm %s\n", character->realm);
     }
@@ -753,6 +756,8 @@ bool Character_ReadText(const char *text, Character *character) {
             const SkillRow *from_item = k < 0 ? SkillData_Get(value) : NULL; // (an item's skill)
             *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
                 k >= 0 ? k : (from_item != NULL ? SKILL_FROM_ITEM + from_item->row : SKILL_ATTACK);
+        } else if (strcmp(key, "films") == 0) {
+            character->films = (uint8_t)(number > 0 ? number : 0);
         } else if (strcmp(key, "waypoints") == 0) {
             character->waypoints = strtoull(value, NULL, 16) | 1ull; // the Rogue Encampment's is always known
         } else if (strcmp(key, "realm") == 0) {

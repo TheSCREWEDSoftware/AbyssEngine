@@ -184,6 +184,7 @@ typedef struct Character {
     Item     corpse_belt[BELT_MAX];
     int      quest_life;
     uint64_t waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
+    uint8_t  films;     // the acts' films seen (bit: CharacterFilm), so each plays once
     int      bonus[BONUS_COUNT]; // from skills right now (not saved)
     char     realm[40];          // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
