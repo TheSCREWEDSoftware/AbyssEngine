@@ -158,6 +158,30 @@ static bool Roam__MonsterSpecial(SceneRoam *roam, Unit *unit, const float tx, co
     return false;
 }
 
+// A unique's aura (aura enchanted), pulsing once a second on our player near it: Holy Fire burns, Holy Shock
+// shocks, Holy Freeze chills (Might strengthens its own blows)
+static void Roam__MonsterAura(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (unit->aura == NULL || !roam->game || now < unit->aura_pulse) {
+        return;
+    }
+    unit->aura_pulse = now + 1000;
+    Unit *player     = &roam->player;
+    if (!Roam__IsAlive(player) || Roam__Distance(unit->x, unit->y, player->x, player->y) > 6.0f) {
+        return;
+    }
+    const char *id    = unit->aura->id;
+    const int   level = unit->aura_level;
+    if (strcmp(id, "Holy Freeze") == 0) {
+        player->chill_until = now + 1100;
+    } else if (strcmp(id, "Holy Fire") == 0 || strcmp(id, "Holy Shock") == 0) {
+        const Element element = strcmp(id, "Holy Fire") == 0 ? ELEMENT_FIRE : ELEMENT_LIGHTNING;
+        const int     damage  = Roam__ElementTaken(roam, element, Roam__Roll(level * 2, (level * 5) + 2));
+        if (damage > 0) {
+            Roam__Damage(roam, player, damage, now);
+        }
+    }
+}
+
 // The Fallen: when one of theirs falls nearby, the rest scatter for a moment
 static bool Roam__MonsterFlees(SceneRoam *roam, Unit *unit, const float tx, const float ty, const uint64_t now,
                                const float seconds) {

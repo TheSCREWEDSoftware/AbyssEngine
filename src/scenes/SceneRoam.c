@@ -255,10 +255,14 @@ typedef struct Unit {
     const SkillRow *hex;  // a curse it casts on you (Amplify Damage, Weaken, Decrepify); NULL none
     const SkillRow *hex2; // a second one it picks between (the Succubus witches: Amplify Damage, Weaken)
 
-    bool           hex_any; // MonCurseCast: one of the curses, picked each time
-    int            hex_level;
-    uint8_t        move_skill;   // MOVE_SKILL_*: how it closes in (Teleport, Leap)
-    uint64_t       next_special; // when it can curse or teleport / leap again
+    bool            hex_any; // MonCurseCast: one of the curses, picked each time
+    int             hex_level;
+    uint8_t         move_skill;   // MOVE_SKILL_*: how it closes in (Teleport, Leap)
+    uint64_t        next_special; // when it can curse or teleport / leap again
+    const SkillRow *aura;         // a unique's aura (aura enchanted: Might, Holy Fire, Holy Freeze, Holy Shock)
+    int             aura_level;
+    uint64_t        aura_pulse; // its next pulse
+
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
     bool           pack_called;  // provoked: its pack has been called
@@ -718,11 +722,13 @@ static float Roam__PlayerSpeed(const SceneRoam *roam) {
         return SPRINT_SPEED;
     }
     const float speed = Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED;
-    // Faster Run/Walk on what's worn; slower under Decrepify
-    return roam->game ? speed * fmaxf(0.1f, 1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
-                                                            roam->character->bonus[BONUS_SPEED_PCT] +
-                                                            Roam__PlayerCurse(roam, "velocitypercent")) /
-                                                    100.0f))
+    // Faster Run/Walk on what's worn; slower under Decrepify, or chilled (a monster's cold, Holy Freeze)
+    const float chilled = roam->game && SDL_GetTicks64() < roam->player.chill_until ? 0.6f : 1.0f;
+    return roam->game ? speed * chilled *
+                            fmaxf(0.1f, 1.0f + ((float)(Affixes_Total(roam->character, MOD_FASTER_RUN) +
+                                                        roam->character->bonus[BONUS_SPEED_PCT] +
+                                                        Roam__PlayerCurse(roam, "velocitypercent")) /
+                                                100.0f))
                       : speed;
 }
 
@@ -2261,7 +2267,13 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
         unit->experience    *= 5;
         unit->level         += 3;
         // One of the game's powers (MonUMod.txt's commonest)
-        switch (rand() % 6) {
+        switch (rand() % 7) {
+        case 6: { // aura enchanted
+            static const char *const auras[4] = {"Might", "Holy Fire", "Holy Freeze", "Holy Shock"};
+            unit->aura                        = SkillData_Get(auras[rand() % 4]);
+            unit->aura_level                  = 1 + (unit->level / 4);
+            break;
+        }
         case 0: // extra strong
             unit->damage_min += unit->damage_min / 2;
             unit->damage_max += unit->damage_max / 2;
@@ -3829,6 +3841,12 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                                                          Roam__Roll(unit->element_min, unit->element_max));
                         }
                         damage = damage * Roam__MonsterDamageFactor(roam, unit, now) / 100; // Weaken
+                        if (unit->aura != NULL && strcmp(unit->aura->id, "Might") == 0) {
+                            damage += damage / 2; // its Might
+                        }
+                        if (unit->element == ELEMENT_COLD) {
+                            player->chill_until = now + 2000; // its cold slows you
+                        }
                         // Amplify Damage / Decrepify on you: more of it gets through
                         damage = damage * (100 - Roam__PlayerCurse(roam, "damageresist")) / 100;
                         if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
@@ -3869,7 +3887,11 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                 Roam__SetState(unit, unit->state == UNIT_DYING ? UNIT_DEAD : UNIT_IDLE, now);
             }
         }
-        if (!Roam__IsAlive(unit) || !Roam__IsCombatant(unit) || unit->state == UNIT_ATTACK || unit->state == UNIT_HIT) {
+        if (!Roam__IsAlive(unit) || !Roam__IsCombatant(unit)) {
+            continue;
+        }
+        Roam__MonsterAura(roam, unit, now);
+        if (unit->state == UNIT_ATTACK || unit->state == UNIT_HIT) {
             continue;
         }
 
@@ -6278,9 +6300,14 @@ static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable
         for (int s = 0; id >= 0 && id <= NET_MAX_PLAYERS && s < roam->other_state_count[id]; s++) {
             snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", roam->other_states[id][s]);
         }
-    } else if (unit->curse != NULL && SDL_GetTicks64() < unit->curse_until && Roam__IsAlive(unit) &&
-               unit->curse->target_state[0] != '\0') {
-        snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->curse->target_state);
+    } else {
+        if (unit->aura != NULL && unit->aura->state[0] != '\0' && Roam__IsAlive(unit)) {
+            snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->aura->state); // a unique's aura
+        }
+        if (unit->curse != NULL && SDL_GetTicks64() < unit->curse_until && Roam__IsAlive(unit) &&
+            unit->curse->target_state[0] != '\0') {
+            snprintf(unit->draw.states[unit->draw.state_count++], 32, "%s", unit->curse->target_state);
+        }
     }
     drawable->x        = unit->x;
     drawable->y        = unit->y;

@@ -138,8 +138,9 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 - **Champions and uniques**: about one pack in ten is special. Champions (named in blue) have three times the life,
   hit harder and faster and drop better (`TreasureClass2`). A unique (gold, named the game's way from
   `UniquePrefix.txt`, `UniqueSuffix.txt` and `UniqueAppellation.txt`: "Bane Burn the Sharp") has four times the life,
-  hits harder, has one of the game's powers (extra strong, extra fast, stone skin, or fire, cold or lightning
-  enchanted) and comes with its minions; it drops from `TreasureClass3`. The super uniques the area presets place
+  hits harder, has one of the game's powers (extra strong, extra fast, stone skin, fire, cold or lightning
+  enchanted, or aura enchanted: Might, Holy Fire, Holy Freeze or Holy Shock round it, seen on it) and comes with its
+  minions; it drops from `TreasureClass3`. The super uniques the area presets place
   (Bishibosh, Rakanishu, Griswold, ...) are named and tough too, with their own treasure (`SuperUniques.txt`).
 - **What they do**: archers (`monstats.txt` MissA1: the Dark Wood's corrupt archers, skeleton archers) stand back and
   shoot, stepping away when you get close; casters throw their spells now and then (Skill1/Skill2 with a missile: the
@@ -148,7 +149,8 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   Some curse you (the Succubus witches: Amplify Damage or Weaken; the Summoner: Weaken; Doom Knights: Decrepify or
   another): Amplify Damage lets more of their blows through, Weaken takes from your damage, Decrepify does a bit of
   both and slows you; it shows over your head while it lasts. Zakarum priests and imps teleport next to you, Sand
-  Leapers leap at you. In multiplayer games a curse lands on the host's own player only, for now.
+  Leapers leap at you. A monster's cold slows you for a moment. In multiplayer games curses and auras reach the
+  host's own player only, for now.
 - **Waypoints**: you start knowing the Rogue Encampment's. Click a waypoint to light it up ("Waypoint found."); it
   then shows in the waypoint list (V in town or next to a waypoint), and travelling to it puts you next to it. Found
   waypoints are kept with the character.
