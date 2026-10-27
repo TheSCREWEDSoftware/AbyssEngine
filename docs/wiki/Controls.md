@@ -53,7 +53,7 @@ own bindings, next to `abyss.ini`.
 |---|---|---|---|---|
 | Attack | - | `E` | `Pad Button 1 (Left)` |  |
 | Right skill / drop monster | `Mouse Right` | - | - |  |
-| Swap weapons \* | - | `W` | - |  |
+| Swap weapons | - | `W` | - |  |
 | Skill 1 | - | `F1` | - |  |
 | Skill 2 | - | `F2` | - |  |
 | Skill 3 | - | `F3` | - |  |
@@ -68,7 +68,7 @@ own bindings, next to `abyss.ini`.
 | Skill speed bar | - | `S` | - |  |
 
 > [!NOTE]
-> \* **Not implemented yet:** Swap weapons, Previous skill, Next skill. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
+> \* **Not implemented yet:** Previous skill, Next skill. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Belt
 

@@ -1841,6 +1841,26 @@ static void Roam__ShowMessage(SceneRoam *roam, const char *text) {
     roam->message_until = SDL_GetTicks64() + MESSAGE_MS;
 }
 
+static void Roam__ApplyCharacter(SceneRoam *roam);
+
+// Swap weapons (W, or the inventory's I / II tabs): the expansion's other weapon set and its skills
+static void Roam__SwapWeapons(SceneRoam *roam) {
+    if (!roam->game || roam->character == NULL) {
+        return;
+    }
+    if (GameInventory_Holding(roam->inventory_ui)) {
+        Roam__ShowMessage(roam, "Put down what you're carrying first.");
+        return;
+    }
+    if (!Character_SwapWeapons(roam->character)) {
+        Roam__ShowMessage(roam, "Weapon sets are the expansion's: classic characters have one.");
+        return;
+    }
+    Roam__ApplyCharacter(roam); // damage and defense from what's in your hands now
+    Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    Roam__ShowMessage(roam, roam->character->second_set ? "Weapon set II" : "Weapon set I");
+}
+
 // The party screen (P, or the mini panel's Party): multiplayer only
 static void Roam__ToggleParty(SceneRoam *roam) {
     if (roam->online) {
@@ -5014,6 +5034,9 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     if (item_events & INVENTORY_EVENT_PORTAL) {
         Roam__OpenTownPortal(roam);
+    }
+    if ((item_events & INVENTORY_EVENT_SWAP) || Controls_Pressed(ACTION_SWAP_WEAPONS)) {
+        Roam__SwapWeapons(roam);
     }
     if ((item_events & INVENTORY_EVENT_GOLD) && GameInventory_StashOpen(roam->inventory_ui)) {
         const int room = Stash_GoldLimit(character) - character->stash_gold;

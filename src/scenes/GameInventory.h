@@ -31,6 +31,7 @@ typedef enum GameInventoryEvent {
     INVENTORY_EVENT_HIRELING   = 1024, // what the hireling wears changed (their numbers need working out again)
     INVENTORY_EVENT_HIRE_CLOSE = 2048, // the hireling's screen's close button
     INVENTORY_EVENT_PORTAL     = 4096, // a Town Portal was read (the scroll or the tome's charge is used up)
+    INVENTORY_EVENT_SWAP       = 8192, // a weapon set tab: the other set (the scene swaps, Character_SwapWeapons)
 } GameInventoryEvent;
 
 // Your hireling's screen, on the left (NpcInv.dc6): what they wear (helm, armor, weapon, the sorcerers' shield) and

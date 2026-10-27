@@ -128,7 +128,7 @@ they can be set up already; they're marked "not in the engine yet".
 | Stand still | Left Shift, Right Shift | ✅ |
 | Attack | E, Pad Button 1 (Left) | ✅ Modern and Combined |
 | Right skill / drop monster | Mouse Right | ✅ Single Player (casts the right skill); Free Roam (drop) |
-| Swap weapons | W | |
+| Swap weapons | W | ✅ the expansion's second weapon set (also the I / II tabs in the inventory) |
 | Skill 1-8 | F1-F8 | ✅ Single Player: over a skill in a picker, binds it; otherwise puts it on its button |
 | Previous / next skill | (the game: mouse wheel; here the wheel zooms) | |
 | Skill tree | T | ✅ Single Player |

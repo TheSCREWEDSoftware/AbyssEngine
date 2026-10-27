@@ -155,6 +155,11 @@ typedef struct Character {
     uint8_t skill_levels[CHARACTER_SKILLS];
     int     left_skill; // a skill's index, or SKILL_ATTACK (-1)
     int     right_skill;
+    // The expansion's second weapon set (Swap weapons): what's in the other set's hands, its skills, which is on
+    Item swap_arms[2]; // the right arm's, the left arm's
+    int  swap_left_skill;
+    int  swap_right_skill;
+    bool second_set; // set II is the one in your hands
     // The skill keys F1-F8 (Skill 1-8): which skill each puts on which button (bound from the skill pickers)
     bool hotkey_set[8];
     bool hotkey_left[8];
@@ -213,6 +218,8 @@ bool Character_LooksFromText(const char *text, CharacterLooks *looks);
 
 #define CHARACTER_TEXT_MAX 49152 // a character as text (Character_WriteText): the save file's contents
 
+// The expansion's Swap weapons: the other set's weapons in your hands, and its left and right skills (false: classic)
+bool        Character_SwapWeapons(Character *character);
 const char *Character_ClassName(CharacterClass class_id);  // "Amazon"
 const char *Character_ClassToken(CharacterClass class_id); // "am" (graphics)
 bool        Character_ClassIsExpansion(CharacterClass class_id);

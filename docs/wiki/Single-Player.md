@@ -88,6 +88,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Stand still | - | `Left Shift`, `Right Shift` | - | Attack without walking; clicks don't move you |
 | Attack | - | `E` | `Pad Button 1 (Left)` | Modern and Combined movement: attack what's under the mouse, or the nearest monster |
 | Right skill / drop monster | `Mouse Right` | - | - | Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet) |
+| Swap weapons | - | `W` | - | Expansion: swap weapon sets |
 | Skill 1 | - | `F1` | - | Over a skill in a skill picker: bind it to this key; otherwise put it on its button |
 | Skill 2 | - | `F2` | - | (like Skill 1) |
 | Skill 3 | - | `F3` | - | (like Skill 1) |
@@ -178,6 +179,8 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
   the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
   own music.
+- **Two weapon sets** (expansion characters): **W** or the **I** / **II** tabs above the hands in the inventory swap
+  to the other set, with its own left and right skills, like the game. Both are saved.
 - **Town Portal**: right click a scroll or tome of Town Portal (in the inventory or the belt; text mode: **u** on it)
   outside town and a blue portal opens beside you. Through it you're in the act's town, by its other end; back
   through that one you're where you opened it, and it closes. A new portal closes the old one. In multiplayer games

@@ -190,12 +190,14 @@ void Character_Create(Character *character, const char *name, const CharacterCla
     character->level      = 1;
     const ClassInfo *info = Character__Info(character);
     memcpy(character->stats, info->stats, sizeof(character->stats));
-    character->life        = Character_MaxLife(character);
-    character->mana        = Character_MaxMana(character);
-    character->stamina     = Character_MaxStamina(character);
-    character->left_skill  = SKILL_ATTACK;
-    character->right_skill = SKILL_ATTACK;
-    character->waypoints   = 1; // the Rogue Encampment's
+    character->life             = Character_MaxLife(character);
+    character->mana             = Character_MaxMana(character);
+    character->stamina          = Character_MaxStamina(character);
+    character->left_skill       = SKILL_ATTACK;
+    character->right_skill      = SKILL_ATTACK;
+    character->swap_left_skill  = SKILL_ATTACK;
+    character->swap_right_skill = SKILL_ATTACK;
+    character->waypoints        = 1; // the Rogue Encampment's
     // The class's starting skill (charstats StartSkill: the Sorceress's Fire Bolt, the Necromancer's Raise Skeleton),
     // ready on the right mouse button
     const SkillClass *skills = Skills_ForClass(character->class_id);
@@ -298,6 +300,26 @@ static const Item *Character__WeaponItem(const Character *character) {
         }
     }
     return NULL;
+}
+
+bool Character_SwapWeapons(Character *character) {
+    if (!character->expansion) {
+        return false;
+    }
+    for (int s = 0; s < 2; s++) {
+        Item      *hand         = &character->equipped[s == 0 ? EQUIP_RIGHT_ARM : EQUIP_LEFT_ARM];
+        const Item held         = *hand;
+        *hand                   = character->swap_arms[s];
+        character->swap_arms[s] = held;
+    }
+    const int left              = character->left_skill;
+    const int right             = character->right_skill;
+    character->left_skill       = character->swap_left_skill;
+    character->right_skill      = character->swap_right_skill;
+    character->swap_left_skill  = left;
+    character->swap_right_skill = right;
+    character->second_set       = !character->second_set;
+    return true;
 }
 
 void Character_Damage(const Character *character, int *minimum, int *maximum) {
@@ -537,6 +559,19 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
                          : hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id
                                                                      : "attack");
     }
+    // The other weapon set's skills, and which set is on
+    const int swap_hands[2] = {character->swap_left_skill, character->swap_right_skill};
+    for (int h = 0; h < 2 && character->expansion; h++) {
+        const SkillRow *from_item =
+            swap_hands[h] >= SKILL_FROM_ITEM ? SkillData_ByRow(swap_hands[h] - SKILL_FROM_ITEM) : NULL;
+        Character__Print(file, "%s %s\n", h == 0 ? "swapleftskill" : "swaprightskill",
+                         from_item != NULL                                     ? from_item->id
+                         : swap_hands[h] >= 0 && swap_hands[h] < skills->count ? skills->skills[swap_hands[h]].id
+                                                                               : "attack");
+    }
+    if (character->second_set) {
+        Character__Print(file, "weaponset 2\n");
+    }
     // The skill keys: "hotkey <1-8> <left|right> <skill>"
     for (int h = 0; h < 8; h++) {
         const int s = character->hotkey_skill[h];
@@ -604,6 +639,14 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
             char magic[400];
             Affixes_Format(it, magic, sizeof(magic));
             Character__Print(file, "item equip %d %s %d %d%s\n", e, it->code, it->defense, it->quantity, magic);
+        }
+    }
+    for (int s = 0; s < 2; s++) { // the other weapon set: "item swap <0 right arm | 1 left arm>"
+        const Item *it = &character->swap_arms[s];
+        if (it->code[0] != '\0') {
+            char magic[400];
+            Affixes_Format(it, magic, sizeof(magic));
+            Character__Print(file, "item swap %d %s %d %d%s\n", s, it->code, it->defense, it->quantity, magic);
         }
     }
     for (int b = 0; b < BELT_MAX; b++) {
@@ -703,11 +746,13 @@ bool Character_ReadText(const char *text, Character *character) {
         version > CHARACTER_VERSION) {
         return false;
     }
-    character->level       = 1;
-    character->left_skill  = SKILL_ATTACK;
-    character->right_skill = SKILL_ATTACK;
-    character->waypoints   = 1; // saves from before waypoints were kept
-    bool has_items         = false;
+    character->level            = 1;
+    character->left_skill       = SKILL_ATTACK;
+    character->right_skill      = SKILL_ATTACK;
+    character->swap_left_skill  = SKILL_ATTACK;
+    character->swap_right_skill = SKILL_ATTACK;
+    character->waypoints        = 1; // saves from before waypoints were kept
+    bool has_items              = false;
     while (Character__Line(&at, line, sizeof(line))) {
         line[strcspn(line, "\r")] = '\0';
         char key[32];
@@ -759,11 +804,17 @@ bool Character_ReadText(const char *text, Character *character) {
                     character->skill_levels[k] = (uint8_t)(pt < 0 ? 0 : (pt > SKILL_MAX_LEVEL ? SKILL_MAX_LEVEL : pt));
                 }
             }
-        } else if (strcmp(key, "leftskill") == 0 || strcmp(key, "rightskill") == 0) {
+        } else if (strcmp(key, "leftskill") == 0 || strcmp(key, "rightskill") == 0 ||
+                   strcmp(key, "swapleftskill") == 0 || strcmp(key, "swaprightskill") == 0) {
             const int       k         = Skills_Find(Skills_ForClass(character->class_id), value);
             const SkillRow *from_item = k < 0 ? SkillData_Get(value) : NULL; // (an item's skill)
-            *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
-                k >= 0 ? k : (from_item != NULL ? SKILL_FROM_ITEM + from_item->row : SKILL_ATTACK);
+            int            *hand      = strcmp(key, "leftskill") == 0       ? &character->left_skill
+                                        : strcmp(key, "rightskill") == 0    ? &character->right_skill
+                                        : strcmp(key, "swapleftskill") == 0 ? &character->swap_left_skill
+                                                                            : &character->swap_right_skill;
+            *hand = k >= 0 ? k : (from_item != NULL ? SKILL_FROM_ITEM + from_item->row : SKILL_ATTACK);
+        } else if (strcmp(key, "weaponset") == 0) {
+            character->second_set = number == 2;
         } else if (strcmp(key, "hotkey") == 0) {
             int  h = 0;
             char side[8];
@@ -856,6 +907,8 @@ bool Character_ReadText(const char *text, Character *character) {
                     }
                 } else if (strcmp(where, "equip") == 0 && a >= 0 && a < EQUIP_COUNT) {
                     character->equipped[a] = item;
+                } else if (strcmp(where, "swap") == 0 && a >= 0 && a < 2) {
+                    character->swap_arms[a] = item;
                 } else if (strcmp(where, "belt") == 0 && a >= 0 && a < BELT_MAX) {
                     character->belt[a] = item;
                 } else if (strcmp(where, "hire") == 0 && a >= 0 && a < HIRE_SLOTS) {

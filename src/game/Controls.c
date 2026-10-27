@@ -70,7 +70,7 @@ static const ActionInfo actions[ACTION_COUNT] = {
                             {"Mouse Right"},
                             "Free Roam: drop the selected monster; Single Player: the right skill (casting isn't in yet)"                                              },
     [ACTION_SWAP_WEAPONS] =
-        {"swap_weapons",   "Swap weapons",       GROUP_COMBAT,   G, false, {"W"},          "Expansion: swap weapon sets"                            },
+        {"swap_weapons",   "Swap weapons",       GROUP_COMBAT,   G, true,  {"W"},          "Expansion: swap weapon sets"                            },
     [ACTION_SKILL_1]        = {"skill_1",
                             "Skill 1",                              GROUP_COMBAT,
                             G,                                                         true,

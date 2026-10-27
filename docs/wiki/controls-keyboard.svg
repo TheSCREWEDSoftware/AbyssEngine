@@ -90,7 +90,7 @@
 <text x="148" y="227" font-size="9.5">Quest log</text>
 <rect x="222" y="196" width="76" height="62" rx="6" fill="#e68c8c" stroke="#606060" stroke-width="1"/>
 <text x="228" y="212" font-size="13" font-weight="bold">W</text>
-<text x="228" y="227" font-size="9.5" fill="#555555" font-style="italic">Swap weapons</text>
+<text x="228" y="227" font-size="9.5">Swap weapons</text>
 <rect x="302" y="196" width="76" height="62" rx="6" fill="#e68c8c" stroke="#606060" stroke-width="1"/>
 <text x="308" y="212" font-size="13" font-weight="bold">E</text>
 <text x="308" y="227" font-size="9.5">Attack</text>

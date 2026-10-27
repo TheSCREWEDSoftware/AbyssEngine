@@ -41,6 +41,13 @@ static const SDL_Rect slot_rects[EQUIP_COUNT] = {
       [EQUIP_GLOVES] = {341 + LAYOUT_DX, 181, 54, 53 },
 };
 
+// The expansion's weapon set tabs (I, II) above each hand
+static SDL_Rect GameInventory__SetTab(const int arm, const int set) {
+    const SDL_Rect slot = slot_rects[arm == 0 ? EQUIP_RIGHT_ARM : EQUIP_LEFT_ARM];
+    const SDL_Rect tab  = {slot.x + (set * (slot.w / 2)), slot.y - 15, (slot.w / 2) - 1, 13};
+    return tab;
+}
+
 // The belt's slots on the control panel (the bottom row; keys 1-4)
 static int belt_x = 422; // the belt's bottom row on the control panel (GameInventory_SetBeltPosition)
 static int belt_y = 568;
@@ -880,6 +887,16 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
                          const int mouse_y, const bool left_click, const bool right_click, const bool shift,
                          Item *drunk, const char **message) {
     GameInventory__StashLayout(character);
+    // The weapon set tabs (the expansion): the other one swaps
+    for (int arm = 0; open && left_click && character->expansion && arm < 2; arm++) {
+        for (int set = 0; set < 2; set++) {
+            const SDL_Rect tab = GameInventory__SetTab(arm, set);
+            if (GameInventory__In(&tab, mouse_x, mouse_y)) {
+                *message = NULL;
+                return set == (character->second_set ? 1 : 0) ? INVENTORY_EVENT_NONE : INVENTORY_EVENT_SWAP;
+            }
+        }
+    }
     if (inventory->stash_open && inventory->shared_ok && SharedStash_Allowed(character) && left_click) {
         for (int tab = 0; tab < 2; tab++) {
             const SDL_Rect rect = GameInventory__StashTab(tab);
@@ -1834,6 +1851,24 @@ static void GameInventory__DrawInner(GameInventory *inventory, const Character *
             }
         }
     }
+
+    // The weapon set tabs (the expansion): I and II above each hand, the one in use lit
+    for (int arm = 0; character->expansion && arm < 2; arm++) {
+        for (int set = 0; set < 2; set++) {
+            const SDL_Rect tab = GameInventory__SetTab(arm, set);
+            const bool     on  = set == (character->second_set ? 1 : 0);
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, on ? 90 : 20, on ? 70 : 18, on ? 30 : 12, 220);
+            SDL_RenderFillRect(sdl_renderer, &tab);
+            SDL_SetRenderDrawColor(sdl_renderer, 0x80, 0x70, 0x48, 0xFF);
+            SDL_RenderDrawRect(sdl_renderer, &tab);
+            Label_SetText(inventory->small, set == 0 ? "I" : "II");
+            Label_SetColor(inventory->small, on ? 0xFF : 0x90, on ? 0xE8 : 0x90, on ? 0x80 : 0x90, 0xFF);
+            Label_SetAlignment(inventory->small, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+            Label_Draw(inventory->small, tab.x + (tab.w / 2), tab.y + (tab.h / 2));
+        }
+    }
+    Label_SetAlignment(inventory->small, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
 
     // Where the carried item would land in the grid
     if (inventory->holding) {
