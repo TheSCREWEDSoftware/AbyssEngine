@@ -152,6 +152,12 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
   the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
   own music.
+- **Shrines** do the game's shrine effects (`shrines.txt`): health and mana shrines fill you up; the others are one
+  of Refilling, Armor (+100% defense), Combat (+200% attack rating and damage), the four Resist shrines (+75%), Skill
+  (+2 to your skills), Mana Recharge (+400%), Stamina (running doesn't tire you), Experience (+50%), Gem (one of your
+  gems a grade up, or a chipped one), Fire (everything near it, you too, loses half its life) and Monster (the nearest
+  monster becomes a champion), the rarer ones less often. A booster lasts its time from the table (one at a time: a
+  new one replaces it) and shows in the message line. **Wells** fill life, mana and stamina. Each is used once.
 - The game is **saved** when you travel, level up, die and exit. Saves are text files in the `save` folder next to
   `abyss.ini` (`<name>.abc`); they're not compatible with the original game's `.d2s` files.
 
@@ -463,5 +469,5 @@ ten times a second. It still reads the game's MPQs, pictures included, because t
 
 ## Not yet
 
-Some skills (see above), the quests above that need quest items, NPC dialogue. Each game has its own random world seed: the
-areas keep their layout while you play.
+Some skills (see above); the shrines that open a portal, throw exploding or poison potions or reverse your name; town
+portals. Each game has its own random world seed: the areas keep their layout while you play.

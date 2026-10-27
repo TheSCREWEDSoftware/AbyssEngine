@@ -36,6 +36,7 @@ static int        c_frames[OBJECT_MODE_COUNT];
 static int        c_start[OBJECT_MODE_COUNT];
 static int        c_cycle_on;
 static int        c_operate;
+static int        c_parm[OBJECT_PARMS];
 static int        c_automap;
 
 static void Objects__Load(void) {
@@ -56,7 +57,12 @@ static void Objects__Load(void) {
     c_is_door    = DataTable_GetColumnIndex(objects, "IsDoor");
     c_cycle_on   = DataTable_GetColumnIndex(objects, "CycleAnim2");
     c_operate    = DataTable_GetColumnIndex(objects, "OperateFn");
-    c_automap    = DataTable_GetColumnIndex(objects, "AutoMap");
+    for (int p = 0; p < OBJECT_PARMS; p++) {
+        char column[8];
+        snprintf(column, sizeof(column), "Parm%d", p);
+        c_parm[p] = DataTable_GetColumnIndex(objects, column);
+    }
+    c_automap = DataTable_GetColumnIndex(objects, "AutoMap");
     for (int m = 0; m < OBJECT_MODE_COUNT; m++) {
         char column[24];
         snprintf(column, sizeof(column), "Mode%d", m);
@@ -116,7 +122,10 @@ bool Objects_Get(const int row, ObjectInfo *info) {
     info->selectable    = DataTable_GetInt(objects, row, c_selectable) != 0;
     info->is_door       = DataTable_GetInt(objects, row, c_is_door) != 0;
     info->operate_fn    = DataTable_GetInt(objects, row, c_operate);
-    info->automap       = c_automap >= 0 ? DataTable_GetInt(objects, row, c_automap) : 0;
+    for (int p = 0; p < OBJECT_PARMS; p++) {
+        info->parm[p] = c_parm[p] >= 0 ? DataTable_GetInt(objects, row, c_parm[p]) : 0;
+    }
+    info->automap = c_automap >= 0 ? DataTable_GetInt(objects, row, c_automap) : 0;
     for (int m = 0; m < OBJECT_MODE_COUNT; m++) {
         info->has_mode[m]    = DataTable_GetInt(objects, row, c_mode[m]) != 0;
         info->collision[m]   = DataTable_GetInt(objects, row, c_collision[m]) != 0;

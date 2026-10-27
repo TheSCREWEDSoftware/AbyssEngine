@@ -399,6 +399,10 @@ typedef struct SceneRoam {
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
     bool            night_sounds;     // the area's night sounds are on (outdoors at night)
+    int             shrine_code;      // the shrine booster on (shrines.txt Code; 0 none) and until when
+    int             shrine_arg0;
+    int             shrine_arg1;
+    uint64_t        shrine_until;
 
     // Player
     Unit     player;
@@ -1481,6 +1485,8 @@ static void Roam__ApplyUsedObjects(SceneRoam *roam) {
 
 static void Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void Roam__RefreshList(SceneRoam *roam);
+static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
+static void Roam__UseWell(SceneRoam *roam);
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (unit->object.operate_fn == 32) {
@@ -1527,6 +1533,11 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (Roam__QuestObject(roam, unit)) {
         Roam__FinishOperate(roam, unit, now);
         return; // a quest's chest, altar, orifice or orb
+    }
+    if (unit->object.operate_fn == 2) {
+        Roam__UseShrine(roam, unit, now);
+    } else if (unit->object.operate_fn == 22) {
+        Roam__UseWell(roam);
     }
     // Chests, caskets, urns, barrels, crates, corpses and racks have something in them (multiplayer: the player the
     // server let open it drops it, once, for everyone)
@@ -3021,7 +3032,11 @@ static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
     if (!roam->game || amount <= 0) {
         return;
     }
-    const int levels = Character_AddExperience(roam->character, (uint32_t)amount);
+    // The Experience Shrine: half as much again
+    const int boosted = roam->shrine_code == 15 && SDL_GetTicks64() < roam->shrine_until
+                            ? amount + (amount * roam->shrine_arg0 / 100)
+                            : amount;
+    const int levels  = Character_AddExperience(roam->character, (uint32_t)boosted);
     if (levels > 0) {
         roam->player.hp = Character_MaxLife(roam->character); // a new level fills you up
         roam->mana      = (float)Character_MaxMana(roam->character);
@@ -3200,6 +3215,8 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
     Roam__UnitSound(roam, player, MONSTER_SOUND_ATTACK);
 }
 
+static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+#include "SceneRoamShrines.inc"
 #include "SceneRoamSkills.inc"
 
 // Softcore death, the game's way: some of the experience towards your next level goes (5% on Normal, 10% Nightmare,
@@ -3324,7 +3341,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             roam->potion_mana  -= gained;
             roam->mana          = fminf(max_mana, roam->mana + gained);
         }
-        if (Roam__IsRunning(roam) && !roam->sprinting &&
+        if (Roam__IsRunning(roam) && !roam->sprinting && !(roam->shrine_code == 14 && now < roam->shrine_until) &&
             (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
             // charstats RunDrain is per frame (25 a second), in 256ths
             roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;

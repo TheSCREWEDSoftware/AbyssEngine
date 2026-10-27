@@ -1179,7 +1179,8 @@ int Affixes_SkillBonus(const Character *character, const int skill) {
             }
         }
     }
-    const int own = (learned ? bonus : 0) + given;
+    bonus         += character->bonus[BONUS_ALL_SKILLS];
+    const int own  = (learned ? bonus : 0) + given;
     return own > 0 || learned ? own : charged;
 }
 

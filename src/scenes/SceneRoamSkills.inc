@@ -148,6 +148,11 @@ static int Roam__PlayerStates(const SceneRoam *roam, char states[][32], const in
             snprintf(states[count++], 32, "%s", roam->buffs[b].skill->state);
         }
     }
+    const uint64_t    now    = SDL_GetTicks64();
+    const ShrineInfo *shrine = Roam__ShrineInfo(Roam__ShrineBoost(roam, now));
+    if (shrine != NULL && shrine->state != NULL && count < max) {
+        snprintf(states[count++], 32, "%s", shrine->state);
+    }
     int             level = 0;
     const SkillRow *aura  = roam->character != NULL ? Roam__ActiveAura(roam, &level) : NULL;
     if (aura != NULL && aura->state[0] != '\0' && count < max) {
@@ -178,6 +183,7 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     int        before[BONUS_COUNT];
     memcpy(before, character->bonus, sizeof(before));
     memset(character->bonus, 0, sizeof(character->bonus));
+    Roam__ShrineBonuses(roam, now); // first: the Skill Shrine raises the passives below too
     const SkillClass *skills = Skills_ForClass(character->class_id);
     for (int k = 0; k < skills->count && k < CHARACTER_SKILLS; k++) {
         const int       level = character->skill_levels[k] + Affixes_SkillBonus(character, k);

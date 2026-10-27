@@ -97,6 +97,7 @@ typedef enum CharacterBonus {
     BONUS_FIRE_SKILL_PCT, // the masteries: more damage from those skills
     BONUS_LIGHTNING_SKILL_PCT,
     BONUS_COLD_PIERCE, // lowers monsters' cold resistance
+    BONUS_ALL_SKILLS,  // +N to the skills you have points in (the Skill Shrine)
     BONUS_COUNT
 } CharacterBonus;
 
