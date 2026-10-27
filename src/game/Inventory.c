@@ -1,6 +1,7 @@
 #include "Inventory.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "Affixes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +145,26 @@ bool Inventory_MeetsRequirements(const Character *character, const ItemBase *bas
            character->level >= base->required_level;
 }
 
+int Inventory_Requirement(const Item *item, const int stat) {
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL) {
+        return 0;
+    }
+    const int need = stat == STAT_STRENGTH    ? base->required_strength
+                     : stat == STAT_DEXTERITY ? base->required_dexterity
+                                              : base->required_level;
+    const int pct  = Affixes_ItemTotal(item, MOD_REQUIREMENTS); // "Requirements -20%"
+    const int less = need + (need * pct / 100);
+    return less > 0 ? less : 0;
+}
+
+bool Inventory_ItemMeetsRequirements(const Character *character, const Item *item) {
+    return Items_Find(item->code) != NULL &&
+           Character_Stat(character, STAT_STRENGTH) >= Inventory_Requirement(item, STAT_STRENGTH) &&
+           Character_Stat(character, STAT_DEXTERITY) >= Inventory_Requirement(item, STAT_DEXTERITY) &&
+           character->level >= Inventory_Requirement(item, -1);
+}
+
 static bool Inventory__IsTwoHanded(const Item *item) {
     const ItemBase *base = item->code[0] != '\0' ? Items_Find(item->code) : NULL;
     return base != NULL && base->kind == ITEM_KIND_WEAPON && base->two_handed;
@@ -154,7 +175,7 @@ bool Inventory_CanEquip(const Character *character, const Item *item, const Equi
     const char     *reason = NULL;
     if (base == NULL || slot >= EQUIP_COUNT || !base->slots[slot]) {
         reason = "That doesn't go there.";
-    } else if (!Inventory_MeetsRequirements(character, base)) {
+    } else if (!Inventory_ItemMeetsRequirements(character, item)) {
         reason = "You can't use that yet.";
     } else if (slot == EQUIP_RIGHT_ARM || slot == EQUIP_LEFT_ARM) {
         const EquipSlot other      = slot == EQUIP_RIGHT_ARM ? EQUIP_LEFT_ARM : EQUIP_RIGHT_ARM;

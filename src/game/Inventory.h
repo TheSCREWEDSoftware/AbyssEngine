@@ -33,8 +33,12 @@ bool Inventory_Add(Character *character, const Item *item);                 // a
 void Inventory_Remove(Character *character, int index);
 
 // Wearing
-bool            Inventory_CanEquip(const Character *character, const Item *item, EquipSlot slot, const char **why);
-bool            Inventory_MeetsRequirements(const Character *character, const ItemBase *base);
+bool Inventory_CanEquip(const Character *character, const Item *item, EquipSlot slot, const char **why);
+bool Inventory_MeetsRequirements(const Character *character, const ItemBase *base);
+// An item's own requirements (stat: STAT_STRENGTH, STAT_DEXTERITY, or -1 for the level), less what "Requirements -N%"
+// on it takes off; and whether you meet them
+int             Inventory_Requirement(const Item *item, int stat);
+bool            Inventory_ItemMeetsRequirements(const Character *character, const Item *item);
 const ItemBase *Inventory_Weapon(const Character *character); // NULL: bare hands
 
 // The stash (in town): the same as the grid, 6 x 8 (the expansion's big one; classic characters' is 6 x 4), one page

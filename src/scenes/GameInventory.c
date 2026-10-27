@@ -1460,7 +1460,7 @@ static void GameInventory__DrawStash(GameInventory *inventory, const Character *
         SDL_RenderFillRect(sdl_renderer, &rect);
         GameInventory__DrawItem(inventory, &it->item, &rect,
                                 base == NULL || base->kind == ITEM_KIND_MISC ||
-                                    Inventory_MeetsRequirements(character, base));
+                                    Inventory_ItemMeetsRequirements(character, &it->item));
     }
     bool left_down = false;
     InputManager_GetMouseButtons(&left_down, NULL, NULL);
@@ -1501,7 +1501,7 @@ static void GameInventory__DrawShop(GameInventory *inventory, const Character *c
         SDL_RenderFillRect(sdl_renderer, &rect);
         GameInventory__DrawItem(inventory, &it->item, &rect,
                                 base == NULL || base->kind == ITEM_KIND_MISC ||
-                                    Inventory_MeetsRequirements(character, base));
+                                    Inventory_ItemMeetsRequirements(character, &it->item));
     }
     char text[48];
     snprintf(text, sizeof(text), "Gold: %d", character->gold);
@@ -1527,7 +1527,7 @@ static void GameInventory__DrawTradeItems(GameInventory *inventory, const Charac
         SDL_RenderFillRect(sdl_renderer, &rect);
         GameInventory__DrawItem(inventory, &items[i].item, &rect,
                                 base == NULL || base->kind == ITEM_KIND_MISC ||
-                                    Inventory_MeetsRequirements(character, base));
+                                    Inventory_ItemMeetsRequirements(character, &items[i].item));
     }
 }
 
@@ -1607,7 +1607,8 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         }
         if (worn->code[0] != '\0') {
             const ItemBase *base = Items_Find(worn->code);
-            GameInventory__DrawItem(inventory, worn, &slot_rects[s], Inventory_MeetsRequirements(character, base));
+            (void)base;
+            GameInventory__DrawItem(inventory, worn, &slot_rects[s], Inventory_ItemMeetsRequirements(character, worn));
             if (inventory->holding && inventory->still_worn && s == inventory->origin_index) {
                 SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND); // Modern: still worn, on the cursor
                 SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 185);
@@ -1644,7 +1645,7 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         SDL_RenderFillRect(sdl_renderer, &rect);
         GameInventory__DrawItem(inventory, &it->item, &rect,
                                 base == NULL || base->kind == ITEM_KIND_MISC ||
-                                    Inventory_MeetsRequirements(character, base));
+                                    Inventory_ItemMeetsRequirements(character, &it->item));
     }
 
     // Gold, and its button
@@ -1788,9 +1789,9 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         int         need;
         int         have;
     } requirements[3] = {
-        {"Required Strength", base->required_strength, Character_Stat(character, STAT_STRENGTH)},
-        {"Required Dexterity", base->required_dexterity, Character_Stat(character, STAT_DEXTERITY)},
-        {"Required Level", base->required_level, character->level},
+        {"Required Strength", Inventory_Requirement(item, STAT_STRENGTH), Character_Stat(character, STAT_STRENGTH)},
+        {"Required Dexterity", Inventory_Requirement(item, STAT_DEXTERITY), Character_Stat(character, STAT_DEXTERITY)},
+        {"Required Level", Inventory_Requirement(item, -1), character->level},
     };
     for (int r = 0; r < 3; r++) {
         if (requirements[r].need > 0) {

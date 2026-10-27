@@ -93,6 +93,7 @@ static const ModInfo mod_info[MOD_TYPE_COUNT] = {
     [MOD_SKILL_ON_HIT]         = {"hit-skill",    "Chance to cast a skill on striking"              },
     [MOD_SKILL_ON_STRUCK]      = {"gethit-skill", "Chance to cast a skill when struck"              },
     [MOD_AURA]                 = {"aura",         "An aura when equipped"                           },
+    [MOD_REQUIREMENTS]         = {"ease",         "Requirements %+d%%"                              },
 };
 
 // Properties.txt codes we know: one property, or a pair (minimum to the first, maximum to the second). IGNORE: fine
@@ -188,6 +189,7 @@ static const struct {
     {"hit-skill",    MOD_SKILL_ON_HIT,         -1               },
     {"gethit-skill", MOD_SKILL_ON_STRUCK,      -1               },
     {"aura",         MOD_AURA,                 -1               },
+    {"ease",         MOD_REQUIREMENTS,         -1               },
 };
 
 static const char *const class_codes[CHARACTER_CLASS_COUNT] = {"ama", "sor", "nec", "pal", "bar", "dru", "ass"};
