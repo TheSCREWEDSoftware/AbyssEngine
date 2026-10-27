@@ -37,5 +37,8 @@ typedef struct AutomapMark {
 // Draws it over the view, centred on the player, with the objects' marks
 void Automap_Draw(Automap *automap, const SDL_Rect *view, float player_x, float player_y, const AutomapMark *marks,
                   int mark_count);
+// The same at 1/shrink the size, without the labels (the corner map: 2)
+void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, float player_x, float player_y,
+                        const AutomapMark *marks, int mark_count, int shrink);
 
 #endif // ABYSS_AUTOMAP_H

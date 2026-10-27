@@ -117,7 +117,8 @@ static const char *movement_choices[MOVEMENT_TYPE_COUNT] = {
     "Modern: keys walk, mouse attacks",
     "Combined: both",
 };
-static const char *pickup_choices[2] = {"Classic: comes off at once", "Modern: worn until put down"};
+static const char *pickup_choices[2]  = {"Classic: comes off at once", "Modern: worn until put down"};
+static const char *automap_choices[2] = {"Full view", "Corner"};
 
 static const char *movement_help[MOVEMENT_TYPE_COUNT] = {
     "Like Diablo II: click where to walk, click a monster to attack it, click a chest to open it.",
@@ -188,6 +189,7 @@ typedef struct SceneOptions {
     Checkbox *confirm_entrances;
     Checkbox *even_speed;
     Dropdown *worn_pickup;
+    Dropdown *automap_size;
     Slider   *inventory_pages;
     Slider   *stash_pages;
     Slider   *shared_pages;
@@ -309,7 +311,7 @@ static bool Options__AnyDropdownOpen(const SceneOptions *options) {
            Dropdown_IsOpen(options->autosave) || Dropdown_IsOpen(options->copy_to) ||
            Dropdown_IsOpen(options->group_filter) || Dropdown_IsOpen(options->frame_mode) ||
            Dropdown_IsOpen(options->player_color) || Dropdown_IsOpen(options->worn_pickup) ||
-           Dropdown_IsOpen(options->control_panel);
+           Dropdown_IsOpen(options->control_panel) || Dropdown_IsOpen(options->automap_size);
 }
 
 // The widgets showing what's set now
@@ -392,6 +394,7 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Checkbox_SetChecked(options->confirm_entrances, settings->confirm_entrances);
     Checkbox_SetChecked(options->even_speed, settings->even_screen_speed);
     Dropdown_SetSelected(options->worn_pickup, settings->modern_pickup ? 1 : 0);
+    Dropdown_SetSelected(options->automap_size, settings->corner_automap ? 1 : 0);
     Slider_SetValue(options->inventory_pages, settings->inventory_pages);
     Slider_SetValue(options->stash_pages, settings->stash_pages);
     Slider_SetValue(options->shared_pages, settings->shared_pages);
@@ -555,6 +558,8 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->confirm_entrances =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H) + 6, "Ask before going through an entrance");
     options->worn_pickup = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (7 * ROW_H) + 4, 260, pickup_choices, 2);
+    options->automap_size =
+        Dropdown_Create(CONTENT_X + LABEL_W + 372, CONTENT_Y + (7 * ROW_H) + 4, 110, automap_choices, 2);
     options->inventory_pages = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (8 * ROW_H) + 6, 50, 1, 255);
     options->stash_pages     = Slider_Create(CONTENT_X + LABEL_W + 180, CONTENT_Y + (8 * ROW_H) + 6, 50, 1, 255);
     options->shared_pages    = Slider_Create(CONTENT_X + LABEL_W + 380, CONTENT_Y + (8 * ROW_H) + 6, 45, 1, 255);
@@ -721,6 +726,7 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     }
     Checkbox_Destroy(&options->even_speed);
     Dropdown_Destroy(&options->worn_pickup);
+    Dropdown_Destroy(&options->automap_size);
     Slider_Destroy(&options->inventory_pages);
     Slider_Destroy(&options->stash_pages);
     Slider_Destroy(&options->shared_pages);
@@ -1497,6 +1503,12 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 settings.modern_pickup    = Dropdown_GetSelected(options->worn_pickup) == 1;
                 Settings_SetGameplay(options->profile, &settings);
             }
+        } else if (Dropdown_IsOpen(options->automap_size)) {
+            if (Dropdown_Update(options->automap_size)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.corner_automap   = Dropdown_GetSelected(options->automap_size) == 1;
+                Settings_SetGameplay(options->profile, &settings);
+            }
         } else if (Dropdown_IsOpen(options->player_color)) {
             Dropdown_Update(options->player_color);
         } else if (Dropdown_IsOpen(options->autosave)) {
@@ -1594,6 +1606,11 @@ static void OptionsPanel__Update(SceneOptions *options) {
             if (editable && Dropdown_Update(options->worn_pickup)) {
                 GameplaySettings settings = *Settings_GetGameplay(options->profile);
                 settings.modern_pickup    = Dropdown_GetSelected(options->worn_pickup) == 1;
+                Settings_SetGameplay(options->profile, &settings);
+            }
+            if (editable && Dropdown_Update(options->automap_size)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.corner_automap   = Dropdown_GetSelected(options->automap_size) == 1;
                 Settings_SetGameplay(options->profile, &settings);
             }
             if (editable && Slider_Update(options->inventory_pages)) {
@@ -1799,6 +1816,9 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           CONTENT_Y + (5 * ROW_H) + 20);
         Options__Name(options, "Worn gear", CONTENT_Y + (7 * ROW_H));
         Dropdown_Draw(options->worn_pickup);
+        Options__Text(options, options->text_label, "Automap", CONTENT_X + LABEL_W + 296, CONTENT_Y + (7 * ROW_H) + 10,
+                      0xC7, 0xB3, 0x77);
+        Dropdown_Draw(options->automap_size);
         Options__Name(options, "Inventory pages", CONTENT_Y + (8 * ROW_H) + 2);
         Slider_Draw(options->inventory_pages);
         Options__Text(options, options->text_label, "Stash", CONTENT_X + LABEL_W + 132, CONTENT_Y + (8 * ROW_H) + 12,
@@ -1808,6 +1828,7 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                       0xC7, 0xB3, 0x77);
         Slider_Draw(options->shared_pages);
         Dropdown_DrawList(options->worn_pickup);
+        Dropdown_DrawList(options->automap_size);
         break;
     }
     case TAB_MULTIPLAYER:

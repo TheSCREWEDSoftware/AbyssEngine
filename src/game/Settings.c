@@ -98,6 +98,7 @@ void Settings_GameplayDefaults(GameplaySettings *settings) {
     settings->inventory_pages   = 1;
     settings->stash_pages       = 1;
     settings->shared_pages      = 1;
+    settings->corner_automap    = false;
 }
 
 void Settings_Load(void) {
@@ -177,6 +178,8 @@ void Settings_Load(void) {
             gameplay[profile].confirm_entrances = strcmp(value, "true") == 0;
         } else if (strcmp(key, "EvenScreenSpeed") == 0) {
             gameplay[profile].even_screen_speed = strcmp(value, "true") == 0;
+        } else if (strcmp(key, "Automap") == 0) {
+            gameplay[profile].corner_automap = strcmp(value, "Corner") == 0;
         } else if (strcmp(key, "WornGearPickup") == 0) {
             gameplay[profile].modern_pickup = strcmp(value, "Modern") == 0;
         } else if (strcmp(key, "InventoryPages") == 0) {
@@ -229,6 +232,10 @@ void Settings_Save(void) {
                           "# sideways looks twice as fast as up and down); true: the same speed on screen\n");
         }
         fprintf(file, "EvenScreenSpeed = %s\n", gameplay[p].even_screen_speed ? "true" : "false");
+        if (p == 0) {
+            fprintf(file, "# Full: the automap (Tab) over the whole view, like the game; Corner: small, top right\n");
+        }
+        fprintf(file, "Automap = %s\n", gameplay[p].corner_automap ? "Corner" : "Full");
         if (p == 0) {
             fprintf(file, "# Classic: picking up something you wear takes it off at once, like the game; Modern: it\n"
                           "# stays worn until you put it down somewhere else\n");

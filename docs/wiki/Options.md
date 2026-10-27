@@ -78,6 +78,7 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | | `Combined` | Both: movement keys or clicks walk, clicks or the attack key attack |
 | `SeeThroughObstructions` | `true` / `false` | Walls, trees, tents and roofs between you and the camera get a round, soft-edged see-through hole around you where they really cover you (their pixels, not their box); walls behind you never fade. It opens and closes smoothly |
 | `ConfirmEntrances` | `true` / `false` | Ask before going through a cave mouth, tomb door or stairs ("To The Den of Evil?": Go in / Stay). Off by default |
+| `Automap` | `Full` / `Corner` | The automap (Tab): **Full** over the whole view, like the game; **Corner** half size in a box at the top right, without the exits' names (Automap, beside Worn gear) |
 | `WornGearPickup` | `Classic` / `Modern` | Picking up something you wear in the inventory. **Classic** (the game's): it comes off at once. **Modern**: it stays worn (faded in its slot, still counting) until you put it in the grid or another slot; put back in its own slot or closing the inventory, nothing changes. Default from the build's `DEFAULT_STYLE` |
 | `InventoryPages` | `1` to `255` | Pages of the inventory grid in Single Player (a multiplayer game sets its own). Arrows under the grid turn the page; an item carried along can be put down on another page. Never fewer pages than have something on them |
 | `StashPages` | `1` to `255` | Pages of the stash, the same way (Stash, beside it on the Gameplay tab; a multiplayer game sets its own) |

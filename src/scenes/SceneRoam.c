@@ -6556,7 +6556,19 @@ static void Roam__Render(SceneRoam *roam) {
                 marks[mark_count++] = (AutomapMark){roam->others[o].x, roam->others[o].y, -1,
                                                     ((uint32_t)r << 16) | ((uint32_t)g << 8) | b, roam->others[o].name};
             }
-            Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
+            if (Roam__Gameplay(roam)->corner_automap) {
+                // Small in the top right corner (Options > Gameplay > Automap), on a dark box
+                const SDL_Rect corner = {view.x + view.w - 214, view.y + 34, 204, 154};
+                SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 150);
+                SDL_RenderFillRect(sdl_renderer, &corner);
+                SDL_SetRenderDrawColor(sdl_renderer, 0x80, 0x70, 0x48, 0xFF);
+                SDL_RenderDrawRect(sdl_renderer, &corner);
+                const SDL_Rect inside = {corner.x + 2, corner.y + 2, corner.w - 4, corner.h - 4};
+                Automap_DrawScaled(roam->automap, &inside, roam->player.x, roam->player.y, marks, mark_count, 2);
+            } else {
+                Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
+            }
         }
     }
     // Indoors it's dark but for the light around you (the game's light radius) and the torches and fires; outside

@@ -24,6 +24,7 @@ typedef struct GameplaySettings {
     int          inventory_pages; // 1..255: pages of the inventory grid (Single Player; a multiplayer game has its own)
     int          stash_pages;     // 1..255: pages of the stash (the same)
     int          shared_pages;    // 1..255: pages of the shared stash (Single Player only)
+    bool         corner_automap;  // the automap (Tab) small in the top right corner, rather than over the whole view
 } GameplaySettings;
 
 // The defaults' style (CMake DEFAULT_STYLE / meson default_style): Classic like Diablo II, or Modern

@@ -365,18 +365,24 @@ void Automap_Reveal(Automap *automap, const float subtile_x, const float subtile
     }
 }
 
-void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,
-                  const AutomapMark *marks, const int mark_count) {
-    const Map *map  = automap->map;
-    SeenArea  *seen = Automap__Seen(automap);
+void Automap_DrawScaled(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,
+                        const AutomapMark *marks, const int mark_count, const int shrink) {
+    // shrink: 1 the game's size, 2 half (the corner map)
+    const int  half_w = TILE_HALF_W / shrink;
+    const int  half_h = TILE_HALF_H / shrink;
+    const int  cell_w = CELL_W / shrink;
+    const int  cell_h = CELL_H / shrink;
+    const int  base_y = CELL_BASE_Y / shrink;
+    const Map *map    = automap->map;
+    SeenArea  *seen   = Automap__Seen(automap);
     if (map == NULL || seen == NULL || automap->cels == NULL) {
         return;
     }
     SDL_RenderSetClipRect(sdl_renderer, view);
 
     // Automap pixels: a tile's top corner is at ((tx - ty) * 8, (tx + ty) * 4); the player is in the middle
-    const float player_ax = ((player_x - player_y) / MAP_SUBTILES) * TILE_HALF_W;
-    const float player_ay = ((player_x + player_y) / MAP_SUBTILES) * TILE_HALF_H;
+    const float player_ax = ((player_x - player_y) / MAP_SUBTILES) * half_w;
+    const float player_ay = ((player_x + player_y) / MAP_SUBTILES) * half_h;
     const int   origin_x  = view->x + (view->w / 2) - (int)player_ax;
     const int   origin_y  = view->y + (view->h / 2) - (int)player_ay;
 
@@ -389,16 +395,16 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
                 if (!seen->tiles[c]) {
                     continue;
                 }
-                const int sx = origin_x + ((tx - ty) * TILE_HALF_W) - TILE_HALF_W;
-                const int sy = origin_y + ((tx + ty) * TILE_HALF_H) - CELL_BASE_Y;
-                if (sx + CELL_W < view->x || sy + CELL_H < view->y || sx > view->x + view->w ||
+                const int sx = origin_x + ((tx - ty) * half_w) - half_w;
+                const int sy = origin_y + ((tx + ty) * half_h) - base_y;
+                if (sx + cell_w < view->x || sy + cell_h < view->y || sx > view->x + view->w ||
                     sy > view->y + view->h) {
                     continue;
                 }
                 for (int l = first; l < last; l++) {
                     SDL_Texture *texture = Automap__Texture(automap, automap->cels[(c * automap->layers) + l]);
                     if (texture != NULL) {
-                        const SDL_Rect dest = {sx, sy, CELL_W, CELL_H};
+                        const SDL_Rect dest = {sx, sy, cell_w, cell_h};
                         SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
                     }
                 }
@@ -412,8 +418,8 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
         const int ty = (int)(marks[m].y / MAP_SUBTILES);
         if (marks[m].cel < 0) {
             // Another player (your party): a cross in their colour wherever they are, and their name
-            const int     px = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * TILE_HALF_W);
-            const int     py = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * TILE_HALF_H);
+            const int     px = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * half_w);
+            const int     py = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * half_h);
             const uint8_t r  = (uint8_t)(marks[m].color >> 16);
             const uint8_t g  = (uint8_t)(marks[m].color >> 8);
             const uint8_t b  = (uint8_t)marks[m].color;
@@ -422,7 +428,7 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
             SDL_RenderDrawLine(sdl_renderer, px - 4, py + 2, px + 4, py - 2);
             SDL_RenderDrawLine(sdl_renderer, px - 4, py - 1, px + 4, py + 3);
             SDL_RenderDrawLine(sdl_renderer, px - 4, py + 3, px + 4, py - 1);
-            if (marks[m].name != NULL) {
+            if (marks[m].name != NULL && shrink == 1) {
                 if (automap->name_label == NULL) {
                     automap->name_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
                     Label_SetAlignment(automap->name_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
@@ -443,14 +449,16 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
         int w;
         int h;
         SDL_QueryTexture(texture, NULL, NULL, &w, &h);
-        const int      mx   = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * TILE_HALF_W);
-        const int      my   = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * TILE_HALF_H);
-        const SDL_Rect dest = {mx - (w / 2), my - h + TILE_HALF_H, w, h};
+        const int mx         = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * half_w);
+        const int my         = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * half_h);
+        w                   /= shrink;
+        h                   /= shrink;
+        const SDL_Rect dest  = {mx - (w / 2), my - h + half_h, w, h};
         SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
     }
 
     // The ways out you've seen, labelled
-    for (int e = 0; e < map->exit_count && e < MAX_EXIT_LABELS; e++) {
+    for (int e = 0; shrink == 1 && e < map->exit_count && e < MAX_EXIT_LABELS; e++) {
         const MapExit *exit = &map->exits[e];
         const float    ex   = (float)(exit->x0 + exit->x1) / 2.0f;
         const float    ey   = (float)(exit->y0 + exit->y1) / 2.0f;
@@ -459,8 +467,8 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
         if (tx < 0 || ty < 0 || tx >= map->width || ty >= map->height || !seen->tiles[(ty * map->width) + tx]) {
             continue;
         }
-        const int lx = origin_x + (int)(((ex - ey) / MAP_SUBTILES) * TILE_HALF_W);
-        const int ly = origin_y + (int)(((ex + ey) / MAP_SUBTILES) * TILE_HALF_H);
+        const int lx = origin_x + (int)(((ex - ey) / MAP_SUBTILES) * half_w);
+        const int ly = origin_y + (int)(((ex + ey) / MAP_SUBTILES) * half_h);
         Label_SetColor(automap->labels[e], 0xFF, 0xFF, 0xFF, 0xFF);
         Label_Draw(automap->labels[e], lx, ly - 6);
     }
@@ -476,4 +484,9 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
     SDL_RenderDrawLine(sdl_renderer, cx - 4, cy + 3, cx + 4, cy - 1);
 
     SDL_RenderSetClipRect(sdl_renderer, NULL);
+}
+
+void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, const float player_y,
+                  const AutomapMark *marks, const int mark_count) {
+    Automap_DrawScaled(automap, view, player_x, player_y, marks, mark_count, 1);
 }
