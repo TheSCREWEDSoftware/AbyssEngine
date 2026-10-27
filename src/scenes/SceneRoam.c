@@ -300,6 +300,7 @@ typedef struct Unit {
     bool            ally;        // summoned by the player: fights the monsters
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
+    bool            corpse_used; // a corpse a skill has already been used on (Find Item, Find Potion, Grim Ward)
     bool            decoy;       // the Amazon's Decoy: stands there drawing the monsters, never strikes
     bool            shadow;      // the Assassin's Shadow Warrior / Master: fights with your own skills
     int             crit;        // the Valkyrie: your Critical Strike's chance of double damage
@@ -544,6 +545,11 @@ typedef struct SceneRoam {
     uint64_t last_monsters; // the map's owner: monsters last sent at
     uint64_t last_allies;   // our summons last sent at
     int      attack_other;  // PvP: the player being attacked (their id), 0 = none
+    // Grim Wards: corpses turned into totems the monsters run from, while they last
+    struct {
+        float    x, y, radius;
+        uint64_t until;
+    } wards[4];
     // By player id: a party member's aura and warcries, which reach us when we're near them (Might, Battle Orders, ...)
     const SkillRow *party_aura[NET_MAX_PLAYERS + 1];
     int             party_aura_level[NET_MAX_PLAYERS + 1];

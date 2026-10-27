@@ -356,6 +356,18 @@ static bool Roam__MonsterFlees(SceneRoam *roam, Unit *unit, const float tx, cons
                                const float seconds) {
     const bool fallen =
         strncmp(unit->id, "fallen", 6) == 0 && strncmp(unit->id, "fallenshaman", 12) != 0 && unit->rank == 0;
+    for (int w = 0; w < 4 && !unit->boss && !unit->ally; w++) { // Grim Ward: they keep away from it
+        if (now < roam->wards[w].until &&
+            Roam__Distance(unit->x, unit->y, roam->wards[w].x, roam->wards[w].y) < roam->wards[w].radius) {
+            Roam__ClearPath(unit);
+            const float ax = unit->x + (unit->x - roam->wards[w].x);
+            const float ay = unit->y + (unit->y - roam->wards[w].y);
+            Roam__TurnTowards(&unit->turn, unit->x, unit->y, ax, ay);
+            Roam__SetState(
+                unit, Roam__Step(roam->map, unit, ax, ay, unit->speed * 1.2f, seconds) ? UNIT_WALK : UNIT_IDLE, now);
+            return true;
+        }
+    }
     if (!fallen && now >= unit->flee_until) {
         return false; // (anything else only runs from a blow that makes it: Hit Causes Monster to Flee)
     }

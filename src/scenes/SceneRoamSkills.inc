@@ -1463,6 +1463,23 @@ static void Roam__ItemCasts(SceneRoam *roam, const int type, const Unit *target,
     }
 }
 
+// The Barbarian's corpse skills (Find Potion, Find Item, Grim Ward): the corpse nearest the spot, not yet used, in
+// reach
+static int Roam__UsableCorpse(const SceneRoam *roam, const float x, const float y) {
+    int   best     = -1;
+    float distance = 3.0f;
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        if (unit->state == UNIT_DEAD && !unit->vanished && !unit->corpse_used && !unit->is_object && !unit->npc &&
+            !unit->ally && unit->remote_owner == 0 && Roam__Distance(unit->x, unit->y, x, y) < distance &&
+            Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) < 10.0f) {
+            distance = Roam__Distance(unit->x, unit->y, x, y);
+            best     = i;
+        }
+    }
+    return best;
+}
+
 // The skills that don't fit the kinds above, by what they do (skills.txt srvdofunc). True when it's one of them.
 static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int level, const float tx, const float ty,
                                const uint64_t now) {
@@ -1488,6 +1505,43 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
             memset(damage, 0, sizeof(damage));
             damage[ELEMENT_LIGHTNING] = unit->hp / 4 > 0 ? unit->hp / 4 : 1;
             Roam__SkillHit(roam, unit, damage, 0, 0, true, now);
+        }
+        return true;
+    }
+    case 69:   // Find Potion: a potion from the corpse, by your level
+    case 72:   // Find Item: a chance at what the monster could have dropped
+    case 75: { // Grim Ward: the corpse becomes a totem the monsters around run from
+        const int corpse = Roam__UsableCorpse(roam, tx, ty);
+        if (corpse < 0) {
+            return true;
+        }
+        Unit *body        = &roam->units[corpse];
+        body->corpse_used = true;
+        if (s->do_func == 75) {
+            int slot = 0;
+            for (int w = 1; w < 4; w++) {
+                slot = roam->wards[w].until < roam->wards[slot].until ? w : slot;
+            }
+            const int frames         = s->params[2] > 0 ? s->params[2] : 1000;
+            roam->wards[slot].x      = body->x;
+            roam->wards[slot].y      = body->y;
+            roam->wards[slot].radius = fminf(12.0f, fmaxf(4.0f, Roam__SkillRadius(roam, s, level, 4.0f) * 0.4f));
+            roam->wards[slot].until  = now + (uint64_t)frames * 40;
+            body->vanished           = true; // (the totem stands in its place)
+            Roam__SpawnEffect(roam, "grimwardmedium", body->x, body->y, 1.0f, 0.0f);
+            return true;
+        }
+        if (Roam__Roll(1, 100) > SkillData_Eval(roam->character, s, level, s->calc[0])) {
+            return true; // nothing found
+        }
+        if (s->do_func == 69) {
+            char      tc[16];
+            const int clvl = roam->character->level;
+            snprintf(tc, sizeof(tc), "Hpotion %d",
+                     clvl < 12 ? 1 : (clvl < 24 ? 2 : (clvl < 36 ? 3 : (clvl < 48 ? 4 : (clvl < 60 ? 5 : 6)))));
+            Roam__DropTreasure(roam, tc, clvl, body->x, body->y);
+        } else if (body->treasure[0] != '\0') {
+            Roam__DropTreasure(roam, body->treasure, body->level, body->x, body->y);
         }
         return true;
     }
@@ -1909,7 +1963,13 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         Sounds_Play("cursor_cantdo", SOUND_KIND_UI);
         return true;
     }
-    if (s != NULL && s->kind == SKILL_KIND_MELEE) {
+    if (s != NULL && (s->do_func == 69 || s->do_func == 72 || s->do_func == 75) &&
+        Roam__UsableCorpse(roam, hovered >= 0 ? roam->units[hovered].x : x, hovered >= 0 ? roam->units[hovered].y : y) <
+            0) {
+        Roam__ShowMessage(roam, "That needs a corpse nearby.");
+        return true; // (and no mana spent)
+    }
+    if (s != NULL && s->kind == SKILL_KIND_MELEE && s->do_func != 69 && s->do_func != 72 && s->do_func != 75) {
         // A stronger blow at the monster: walk up and swing with it
         if (hovered < 0 || !Roam__IsCombatant(&roam->units[hovered]) || roam->units[hovered].ally) {
             return false;
