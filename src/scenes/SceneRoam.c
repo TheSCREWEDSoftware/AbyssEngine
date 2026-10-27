@@ -3244,6 +3244,7 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
 
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
 #include "SceneRoamPortals.inc"
+static void Roam__OpenTownPortal(SceneRoam *roam);
 #include "SceneRoamShrines.inc"
 #include "SceneRoamSkills.inc"
 

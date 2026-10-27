@@ -28,6 +28,9 @@ static const ShrineInfo shrine_infos[] = {
     {18, "Gem Shrine",              NULL                     },
     {19, "Fire Shrine",             NULL                     },
     {20, "Monster Shrine",          NULL                     },
+    {17, "Portal Shrine",           NULL                     },
+    {21, "Exploding Shrine",        NULL                     },
+    {22, "Poison Shrine",           NULL                     },
 };
 #define SHRINE_INFO_COUNT (int)(sizeof(shrine_infos) / sizeof(shrine_infos[0]))
 
@@ -208,6 +211,25 @@ static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, const uint64_t 
     case 18:
         Roam__GemShrine(roam, shrine);
         return;
+    case 17:
+        Roam__OpenTownPortal(roam); // a Town Portal, free
+        break;
+    case 21:
+    case 22: {
+        // Arg0 to Arg1 throwing potions (exploding / gas), stronger in later areas
+        static const char *const potions[2][3] = {
+            {"ops", "opm", "opl"},
+            {"gps", "gpm", "gpl"},
+        };
+        const int grade = roam->area_level >= 75 ? 2 : (roam->area_level >= 40 ? 1 : 0);
+        const int count = Roam__Roll(arg0 > 0 ? arg0 : 5, arg1 > arg0 ? arg1 : 10);
+        for (int i = 0; i < count; i++) {
+            Item potion     = Inventory_NewItem(potions[code - 21][grade]);
+            potion.quantity = potion.quantity > 0 ? potion.quantity : 1;
+            Roam__DropItemNear(roam, &potion, shrine->x, shrine->y);
+        }
+        break;
+    }
     case 19: {
         // Everything near the shrine loses half the life it has (you too)
         const float radius = 12.0f;
