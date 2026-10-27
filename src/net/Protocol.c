@@ -19,6 +19,41 @@ void NetSettings_Defaults(NetSettings *settings) {
     settings->port            = NET_DEFAULT_PORT;
 }
 
+void NetItem_Write(NetWriter *writer, const Item *item) {
+    NetWriter_String(writer, item->code);
+    NetWriter_I32(writer, item->defense);
+    NetWriter_I32(writer, item->quantity);
+    NetWriter_U8(writer, item->quality);
+    NetWriter_U16(writer, (uint16_t)item->name1);
+    NetWriter_U16(writer, (uint16_t)item->name2);
+    const int count = item->mod_count < ITEM_MODS_MAX ? item->mod_count : ITEM_MODS_MAX;
+    NetWriter_U8(writer, (uint8_t)count);
+    for (int m = 0; m < count; m++) {
+        NetWriter_U8(writer, item->mods[m].type);
+        NetWriter_U16(writer, (uint16_t)item->mods[m].value);
+    }
+}
+
+void NetItem_Read(NetReader *reader, Item *item) {
+    memset(item, 0, sizeof(Item));
+    NetReader_String(reader, item->code, sizeof(item->code));
+    item->defense   = NetReader_I32(reader);
+    item->quantity  = NetReader_I32(reader);
+    item->quality   = NetReader_U8(reader);
+    item->quality   = item->quality < ITEM_QUALITY_COUNT ? item->quality : ITEM_NORMAL;
+    item->name1     = (int16_t)NetReader_U16(reader);
+    item->name2     = (int16_t)NetReader_U16(reader);
+    const int count = NetReader_U8(reader);
+    for (int m = 0; m < count && !reader->failed; m++) {
+        const int type  = NetReader_U8(reader);
+        const int value = (int16_t)NetReader_U16(reader);
+        if (type < MOD_TYPE_COUNT && item->mod_count < ITEM_MODS_MAX) {
+            item->mods[item->mod_count].type    = (uint8_t)type;
+            item->mods[item->mod_count++].value = (int16_t)value;
+        }
+    }
+}
+
 void NetSettings_Write(const NetSettings *settings, NetWriter *writer, const bool with_password) {
     NetWriter_String(writer, settings->name);
     NetWriter_String(writer, with_password ? settings->password : "");

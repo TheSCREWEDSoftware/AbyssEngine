@@ -3,6 +3,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "Affixes.h"
 #include "Inventory.h"
 #include "Skills.h"
 #include <ctype.h>
@@ -194,38 +195,63 @@ static int Character__Grow(const int start, const int points, const int per_poin
     return start + ((points * per_point) / 4) + ((levels * per_level) / 4);
 }
 
+int Character_Stat(const Character *character, const CharacterStat stat) {
+    static const ItemModType mods[STAT_COUNT] = {MOD_STRENGTH, MOD_DEXTERITY, MOD_VITALITY, MOD_ENERGY};
+    return stat < STAT_COUNT ? character->stats[stat] + Affixes_Total(character, mods[stat]) : 0;
+}
+
 int Character_MaxLife(const Character *character) {
     const ClassInfo *info = Character__Info(character);
     return Character__Grow(info->stats[STAT_VITALITY] + info->hp_add,
-                           character->stats[STAT_VITALITY] - info->stats[STAT_VITALITY], info->life_per_vitality,
-                           character->level - 1, info->life_per_level);
+                           Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
+                           info->life_per_vitality, character->level - 1, info->life_per_level) +
+           Affixes_Total(character, MOD_LIFE);
 }
 
 int Character_MaxMana(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    return Character__Grow(info->stats[STAT_ENERGY], character->stats[STAT_ENERGY] - info->stats[STAT_ENERGY],
-                           info->mana_per_energy, character->level - 1, info->mana_per_level);
+    return Character__Grow(info->stats[STAT_ENERGY], Character_Stat(character, STAT_ENERGY) - info->stats[STAT_ENERGY],
+                           info->mana_per_energy, character->level - 1, info->mana_per_level) +
+           Affixes_Total(character, MOD_MANA);
 }
 
 int Character_MaxStamina(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    return Character__Grow(info->stamina, character->stats[STAT_VITALITY] - info->stats[STAT_VITALITY],
-                           info->stamina_per_vitality, character->level - 1, info->stamina_per_level);
+    return Character__Grow(info->stamina, Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
+                           info->stamina_per_vitality, character->level - 1, info->stamina_per_level) +
+           Affixes_Total(character, MOD_STAMINA);
 }
 
-// Dexterity's share, and what's worn
+int Character_ItemDefense(const Item *item) {
+    return item->defense + (item->defense * Affixes_ItemTotal(item, MOD_DEFENSE_PCT) / 100);
+}
+
+// Dexterity's share, and what's worn (each item with its own enhanced defense, and flat defense from any)
 int Character_Defense(const Character *character) {
-    int defense = character->stats[STAT_DEXTERITY] / 4;
+    int defense = Character_Stat(character, STAT_DEXTERITY) / 4;
     for (int s = 0; s < EQUIP_COUNT; s++) {
-        defense += character->equipped[s].code[0] != '\0' ? character->equipped[s].defense : 0;
+        defense += character->equipped[s].code[0] != '\0' ? Character_ItemDefense(&character->equipped[s]) : 0;
     }
-    return defense;
+    return defense + Affixes_Total(character, MOD_DEFENSE);
 }
 
 int Character_AttackRating(const Character *character) {
     const ClassInfo *info = Character__Info(character);
-    const int        ar   = (character->stats[STAT_DEXTERITY] * 5) - 35 + info->to_hit_factor;
+    int              ar   = (Character_Stat(character, STAT_DEXTERITY) * 5) - 35 + info->to_hit_factor +
+             Affixes_Total(character, MOD_ATTACK_RATING);
+    ar += ar * Affixes_Total(character, MOD_ATTACK_RATING_PCT) / 100;
     return ar > 1 ? ar : 1;
+}
+
+// The weapon item held (the weapon hand, or the other hand's when that's empty)
+static const Item *Character__WeaponItem(const Character *character) {
+    for (int s = EQUIP_RIGHT_ARM; s <= EQUIP_LEFT_ARM; s++) {
+        const ItemBase *base = character->equipped[s].code[0] != '\0' ? Items_Find(character->equipped[s].code) : NULL;
+        if (base != NULL && base->kind == ITEM_KIND_WEAPON) {
+            return &character->equipped[s];
+        }
+    }
+    return NULL;
 }
 
 void Character_Damage(const Character *character, int *minimum, int *maximum) {
@@ -238,13 +264,25 @@ void Character_Damage(const Character *character, int *minimum, int *maximum) {
         weapon_min = weapon->min_damage;
         weapon_max = weapon->max_damage;
     }
-    // Strength (and for some weapons dexterity) adds a percentage to the weapon's damage
+    // The weapon's own enhanced damage and added damage
+    const Item *held        = Character__WeaponItem(character);
+    const int   weapon_pct  = held != NULL ? Affixes_ItemTotal(held, MOD_DAMAGE_PCT) : 0;
+    weapon_min             += weapon_min * weapon_pct / 100;
+    weapon_max             += weapon_max * weapon_pct / 100;
+    // Strength (and for some weapons dexterity) adds a percentage to the weapon's damage, and so does enhanced damage
+    // on other things worn
     const int str_bonus = weapon != NULL && weapon->str_bonus > 0 ? weapon->str_bonus : 100;
     const int dex_bonus = weapon != NULL ? weapon->dex_bonus : 0;
-    const int bonus =
-        ((character->stats[STAT_STRENGTH] * str_bonus) / 100) + ((character->stats[STAT_DEXTERITY] * dex_bonus) / 100);
-    *minimum = weapon_min + ((weapon_min * bonus) / 100);
-    *maximum = weapon_max + ((weapon_max * bonus) / 100);
+    const int bonus     = ((Character_Stat(character, STAT_STRENGTH) * str_bonus) / 100) +
+                      ((Character_Stat(character, STAT_DEXTERITY) * dex_bonus) / 100) +
+                      (Affixes_Total(character, MOD_DAMAGE_PCT) - weapon_pct);
+    // Added damage, and fire, cold and lightning (no resistances yet: it's all damage)
+    *minimum = weapon_min + ((weapon_min * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MIN) +
+               Affixes_Total(character, MOD_FIRE_MIN) + Affixes_Total(character, MOD_COLD_MIN) +
+               Affixes_Total(character, MOD_LIGHTNING_MIN);
+    *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX) +
+               Affixes_Total(character, MOD_FIRE_MAX) + Affixes_Total(character, MOD_COLD_MAX) +
+               Affixes_Total(character, MOD_LIGHTNING_MAX);
     *minimum = *minimum > 0 ? *minimum : 1;
     *maximum = *maximum > *minimum ? *maximum : *minimum;
 }
@@ -424,19 +462,25 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
     for (int i = 0; i < character->inventory_count; i++) {
         const InventoryItem *it = &character->inventory[i];
         // The page last, so builds before pages read the line too (onto the first page)
-        Character__Print(file, "item inv %d %d %s %d %d %d\n", it->x, it->y, it->item.code, it->item.defense,
-                         it->item.quantity, it->page);
+        char magic[400];
+        Affixes_Format(&it->item, magic, sizeof(magic)); // after the page (older builds read up to it)
+        Character__Print(file, "item inv %d %d %s %d %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity, it->page, magic);
     }
     for (int e = 0; e < EQUIP_COUNT; e++) {
         const Item *it = &character->equipped[e];
         if (it->code[0] != '\0') {
-            Character__Print(file, "item equip %d %s %d %d\n", e, it->code, it->defense, it->quantity);
+            char magic[400];
+            Affixes_Format(it, magic, sizeof(magic));
+            Character__Print(file, "item equip %d %s %d %d%s\n", e, it->code, it->defense, it->quantity, magic);
         }
     }
     for (int b = 0; b < BELT_MAX; b++) {
         const Item *it = &character->belt[b];
         if (it->code[0] != '\0') {
-            Character__Print(file, "item belt %d %s %d %d\n", b, it->code, it->defense, it->quantity);
+            char magic[400];
+            Affixes_Format(it, magic, sizeof(magic));
+            Character__Print(file, "item belt %d %s %d %d%s\n", b, it->code, it->defense, it->quantity, magic);
         }
     }
     if (character->realm[0] != '\0') {
@@ -565,12 +609,19 @@ bool Character_ReadText(const char *text, Character *character) {
             Item item;
             memset(&item, 0, sizeof(item));
             int page = 0;
-            if (sscanf(value, "inv %d %d %7s %d %d %d", &a, &b, code, &item.defense, &item.quantity, &page) >= 5) {
+            int used = 0;
+            if (sscanf(value, "inv %d %d %7s %d %d %d%n", &a, &b, code, &item.defense, &item.quantity, &page, &used) >=
+                5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
+                if (used > 0) {
+                    Affixes_Parse(&item, value + used); // magic, after the page
+                }
                 Inventory_PlaceOnPage(character, &item, a, b, page);
-            } else if (sscanf(value, "%7s %d %7s %d %d", where, &a, code, &item.defense, &item.quantity) == 5 &&
+            } else if (sscanf(value, "%7s %d %7s %d %d%n", where, &a, code, &item.defense, &item.quantity, &used) ==
+                           5 &&
                        Items_Find(code) != NULL) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
+                Affixes_Parse(&item, value + used);
                 if (strcmp(where, "equip") == 0 && a >= 0 && a < EQUIP_COUNT) {
                     character->equipped[a] = item;
                 } else if (strcmp(where, "belt") == 0 && a >= 0 && a < BELT_MAX) {

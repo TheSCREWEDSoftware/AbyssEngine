@@ -14,6 +14,7 @@
 #include "../drawing/Screenshot.h"
 #include "../drawing/Sprite.h"
 #include "../drawing/TextBox.h"
+#include "../game/Affixes.h"
 #include "../game/Character.h"
 #include "../game/Controls.h"
 #include "../game/Inventory.h"
@@ -461,7 +462,12 @@ static bool Roam__IsRunning(const SceneRoam *roam) {
 
 // The player's speed: walking, running or (Free Roam) sprinting
 static float Roam__PlayerSpeed(const SceneRoam *roam) {
-    return roam->sprinting ? SPRINT_SPEED : (Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED);
+    if (roam->sprinting) {
+        return SPRINT_SPEED;
+    }
+    const float speed = Roam__IsRunning(roam) ? RUN_SPEED : WALK_SPEED;
+    // Faster Run/Walk on what's worn
+    return roam->game ? speed * (1.0f + ((float)Affixes_Total(roam->character, MOD_FASTER_RUN) / 100.0f)) : speed;
 }
 
 // How fast you're going, over the last half second: over the ground (sub-tiles) and on screen (pixels)
@@ -830,9 +836,13 @@ static void Roam__DropTreasure(SceneRoam *roam, const char *treasure, int level,
 static int  Roam__Act(const SceneRoam *roam);
 static bool Roam__RunsMonsters(const SceneRoam *roam);
 
-static void Roam__Damage(SceneRoam *roam, Unit *unit, const int amount, const uint64_t now) {
+static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
+    }
+    if (roam->game && unit == &roam->player) {
+        const int reduced = Affixes_Total(roam->character, MOD_DAMAGE_REDUCED); // "Damage Reduced by N"
+        amount            = amount - reduced > 1 ? amount - reduced : 1;
     }
     unit->hp -= amount;
     if (unit->hp <= 0) {
@@ -1287,9 +1297,7 @@ static void Roam__PutOnGround(SceneRoam *roam, const Item *item, const float x, 
     NetWriter_I32(writer, Roam__MapKey(roam));
     NetWriter_F32(writer, x);
     NetWriter_F32(writer, y);
-    NetWriter_String(writer, item->code);
-    NetWriter_I32(writer, item->defense);
-    NetWriter_I32(writer, item->quantity);
+    NetItem_Write(writer, item);
     NetClient_Send(MSG_ITEM_DROP, writer);
     free(writer);
 }
@@ -1353,9 +1361,9 @@ static int Roam__GoldLimit(const SceneRoam *roam) { return roam->character->leve
 
 static bool Roam__GiveItem(SceneRoam *roam, const Item *item) {
     if (strcmp(item->code, "gld") == 0) {
-        const int limit = Roam__GoldLimit(roam);
-        roam->character->gold =
-            roam->character->gold + item->quantity > limit ? limit : roam->character->gold + item->quantity;
+        const int limit       = Roam__GoldLimit(roam);
+        const int amount      = item->quantity + (item->quantity * Affixes_Total(roam->character, MOD_GOLD_FIND) / 100);
+        roam->character->gold = roam->character->gold + amount > limit ? limit : roam->character->gold + amount;
         return true;
     }
     const ItemBase *base = Items_Find(item->code);
@@ -2287,6 +2295,13 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
         return; // missed
     }
     const int damage = Roam__Roll(player->damage_min, player->damage_max);
+    if (roam->game) {
+        // Life and mana stolen with each blow that lands
+        const int life  = damage * Affixes_Total(roam->character, MOD_LIFE_STEAL) / 100;
+        const int mana  = damage * Affixes_Total(roam->character, MOD_MANA_STEAL) / 100;
+        roam->player.hp = roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
+        roam->mana      = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
+    }
     if (!Roam__RunsMonsters(roam)) {
         // Multiplayer: the map's owner takes it off (and says if it died: then the experience is ours)
         NetWriter *writer = malloc(sizeof(NetWriter));
@@ -2379,14 +2394,18 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
         const float max_stamina = (float)Character_MaxStamina(roam->character);
         const int   regen       = Character_ManaRegenSeconds(roam->character);
         roam->mana              = fminf(max_mana, roam->mana + (max_mana * seconds / (float)(regen > 0 ? regen : 120)));
+        // Replenish Life on what's worn: the game's N/256 a frame, 25 frames a second
+        roam->life_carry += (float)Affixes_Total(roam->character, MOD_REPLENISH_LIFE) * 25.0f / 256.0f * seconds;
         // Potions drunk give their life and mana over a few seconds
         if (roam->potion_life > 0.0f) {
             const float healed  = fminf(roam->potion_life, roam->potion_life_rate * seconds);
             roam->potion_life  -= healed;
             roam->life_carry   += healed;
-            const int whole     = (int)roam->life_carry;
-            roam->life_carry   -= (float)whole;
-            player->hp          = player->hp + whole > player->max_hp ? player->max_hp : player->hp + whole;
+        }
+        if (roam->life_carry >= 1.0f) { // whole points of life
+            const int whole   = (int)roam->life_carry;
+            roam->life_carry -= (float)whole;
+            player->hp        = player->hp + whole > player->max_hp ? player->max_hp : player->hp + whole;
         }
         if (roam->potion_mana > 0.0f) {
             const float gained  = fminf(roam->potion_mana, roam->potion_mana_rate * seconds);
@@ -2805,8 +2824,10 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
 
     for (int stat = 0; stat < STAT_COUNT; stat++) {
         Roam__PanelText(roam, small, Character_StatName((CharacterStat)stat), 44, stat_rows[stat], 0xC7, 0xB3, 0x77);
-        snprintf(text, sizeof(text), "%d", character->stats[stat]);
-        Roam__PanelText(roam, value, text, 97, stat_rows[stat], 0xFF, 0xFF, 0xFF);
+        const int  shown   = Character_Stat(character, (CharacterStat)stat); // with what's worn: blue, like the game
+        const bool boosted = shown != character->stats[stat];
+        snprintf(text, sizeof(text), "%d", shown);
+        Roam__PanelText(roam, value, text, 97, stat_rows[stat], boosted ? 0x69 : 0xFF, boosted ? 0x69 : 0xFF, 0xFF);
         if (character->stat_points > 0) {
             // Where the game shows its "+" button
             const SDL_Rect box = {116, stat_rows[stat] - 8, 16, 16};
@@ -3747,10 +3768,7 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         const float    x       = NetReader_F32(reader);
         const float    y       = NetReader_F32(reader);
         Item           item;
-        memset(&item, 0, sizeof(item));
-        NetReader_String(reader, item.code, sizeof(item.code));
-        item.defense  = NetReader_I32(reader);
-        item.quantity = NetReader_I32(reader);
+        NetItem_Read(reader, &item);
         if (!reader->failed && Items_Find(item.code) != NULL) {
             Roam__AddGroundItem(roam, &item, map, x, y, dropper != 0, id);
         }
@@ -4510,7 +4528,8 @@ static void Roam__DrawItemLabels(SceneRoam *roam) {
         } else if (base != NULL && base->stackable && ground->item.quantity > 1) {
             snprintf(text, sizeof(text), "%s (%d)", base->name, ground->item.quantity);
         } else {
-            snprintf(text, sizeof(text), "%s", base != NULL ? base->name : ground->item.code);
+            char line2[80];
+            Affixes_Name(&ground->item, text, sizeof(text), line2, sizeof(line2)); // magic: its full name
         }
         Label_SetText(roam->item_label, text);
         int w = 0;
@@ -4533,7 +4552,11 @@ static void Roam__DrawItemLabels(SceneRoam *roam) {
         SDL_SetRenderDrawColor(sdl_renderer, hovered ? 24 : 0, hovered ? 36 : 0, hovered ? 120 : 0,
                                hovered ? 220 : 170);
         SDL_RenderFillRect(sdl_renderer, &box);
-        Label_SetColor(roam->item_label, 0xFF, 0xFF, 0xFF, 0xFF);
+        uint8_t cr;
+        uint8_t cg;
+        uint8_t cb;
+        Affixes_QualityColor(&ground->item, &cr, &cg, &cb); // magic blue, rare yellow, unique gold
+        Label_SetColor(roam->item_label, cr, cg, cb, 0xFF);
         Label_Draw(roam->item_label, box.x + 3, box.y + 1);
     }
 }

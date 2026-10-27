@@ -10,7 +10,7 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 3    // 2: items on the ground, monsters and combat; 3: chests and doors, parties
+#define NET_PROTOCOL_VERSION 4    // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic
 #define NET_DEFAULT_PORT     4000 // Diablo II's own TCP/IP game port
 #define NET_DISCOVERY_PORT   4001 // LAN: "is anyone hosting?" over UDP broadcast
 #define NET_LOBBY_PORT       4002 // abyss-lobby: the list of online games
@@ -94,8 +94,11 @@ typedef struct NetSettings {
     uint16_t port;
 } NetSettings;
 
-void        NetSettings_Defaults(NetSettings *settings);
-void        NetSettings_Write(const NetSettings *settings, NetWriter *writer, bool with_password);
+void NetSettings_Defaults(NetSettings *settings);
+void NetSettings_Write(const NetSettings *settings, NetWriter *writer, bool with_password);
+// An item (dropped, picked up): its code, defense, quantity, quality, names and magic
+void        NetItem_Write(NetWriter *writer, const Item *item);
+void        NetItem_Read(NetReader *reader, Item *item);
 void        NetSettings_Read(NetSettings *settings, NetReader *reader);
 const char *NetSettings_DifficultyName(int difficulty);
 const char *NetSettings_SpeedName(int speed);

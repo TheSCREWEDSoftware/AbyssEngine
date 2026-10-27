@@ -35,11 +35,18 @@ typedef enum CharacterClass {
 
 typedef enum CharacterStat { STAT_STRENGTH, STAT_DEXTERITY, STAT_VITALITY, STAT_ENERGY, STAT_COUNT } CharacterStat;
 
-// One item a character has (a base item from Items.h; no magic properties yet). code[0] == '\0': none.
+// One item a character has (a base item from Items.h, maybe with magic: Affixes.h). code[0] == '\0': none.
 typedef struct Item {
-    char code[ITEM_CODE_MAX];
-    int  defense;  // armor: rolled between the base's minimum and maximum
-    int  quantity; // stacks (books, javelins)
+    char    code[ITEM_CODE_MAX];
+    int     defense;  // armor: rolled between the base's minimum and maximum
+    int     quantity; // stacks (books, javelins), gold's amount
+    uint8_t quality;  // ItemQuality
+    // Its names, as table row + 1 (0: none): magic: the prefix (MagicPrefix.txt) and suffix (MagicSuffix.txt); rare:
+    // the two made-up names (RarePrefix.txt, RareSuffix.txt); unique: name1 is its UniqueItems.txt row
+    int16_t name1;
+    int16_t name2;
+    uint8_t mod_count;
+    ItemMod mods[ITEM_MODS_MAX];
 } Item;
 
 typedef struct InventoryItem {
@@ -89,6 +96,9 @@ const char *Character_StatName(CharacterStat stat);
 void Character_Create(Character *character, const char *name, CharacterClass class_id, bool expansion, bool hardcore);
 
 // Derived numbers
+// A stat with what's worn added (requirements, damage, life and mana use this one)
+int         Character_Stat(const Character *character, CharacterStat stat);
+int         Character_ItemDefense(const Item *item); // an armor's defense with its enhanced defense
 int         Character_MaxLife(const Character *character);
 int         Character_MaxMana(const Character *character);
 int         Character_MaxStamina(const Character *character);

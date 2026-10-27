@@ -66,6 +66,7 @@ sources = [
     'game/Inventory.c',
     'game/Items.c',
     'game/Treasure.c',
+    'game/Affixes.c',
     'game/Settings.c',
     'game/Skills.c',
 

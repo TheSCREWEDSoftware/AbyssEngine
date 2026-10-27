@@ -163,12 +163,35 @@ page number under the grid, next to the gold). The square button in its bottom c
 - **Monsters drop things** when they die, the game's way: each names a treasure class (`monstats.txt`
   TreasureClass1, e.g. "Act 1 H2H A") and `TreasureClassEx.txt` says what it picks, maybe nothing: gold, potions,
   scrolls, keys, arrows, weapons and armor of about the monster's level (the game's own "weap3", "armo6" groups,
-  from the items' levels). Up to six things a monster. Only normal items for now: no magic, rare, set or unique ones,
-  and no gems or jewelry worth having yet (rings and amulets drop plain).
+  from the items' levels). Up to six things a monster. Weapons, armor, rings, amulets and jewels can come out
+  [magic, rare or unique](#magic-rare-and-unique-items); gems drop but don't do anything yet.
 - **Chests, caskets, urns, barrels, crates, corpses and racks** drop the act's chest treasure ("Act 1 Chest A") when
   opened.
 - **Gold** shows as "35 Gold" on the ground and goes straight to your gold when picked up; you can carry 10,000 a
-  level ("You can't carry any more gold").
+  level ("You can't carry any more gold"). Extra Gold on what you wear adds to it.
+
+### Magic, rare and unique items
+
+Drops are rolled the way the game words them, from its own tables:
+
+| Quality | Colour | How often | What it has |
+|---|---|---|---|
+| Magic | Blue | 1 in 4 weapons and armor; rings, amulets and jewels always (at least) | A prefix and/or a suffix from `MagicPrefix.txt` / `MagicSuffix.txt` ("Jagged Hand Axe of the Fox") |
+| Rare | Yellow | 1 in 20 | A made-up name (`RarePrefix.txt` + `RareSuffix.txt`: "Grim Bite") and 3 to 6 affixes (only the ones the game allows on rares, never two of the same kind) |
+| Unique | Gold | 1 in 100, when the item has a unique of the monster's level or below | One of `UniqueItems.txt`'s named items ("The Gnasher"), with its own picture and properties |
+
+Affixes are picked as the game picks them: the item's type must suit them (`itype` / `etype`), their level can't be
+above the item's (the monster's level), and the more common ones (`frequency`) come up more. Only affixes whose every
+property the engine knows are used, so what an item says is what it does; uniques keep the properties the engine
+knows and leave out the rest (skills, charges, sockets).
+
+| Works | Shown, but doesn't do anything yet |
+|---|---|
+| Strength, Dexterity, Vitality, Energy (requirements count them, like the game; the character screen shows them in blue), Life, Mana, Stamina, Attack Rating (and %), Defense, Enhanced Defense (of the item it's on), Enhanced Damage (on a weapon: its damage; elsewhere: added to strength's bonus), minimum / maximum damage, fire / cold / lightning damage (added to each blow; no resistances yet), Life and Mana Stolen per Hit, Replenish Life, Faster Run/Walk, Damage Reduced, Extra Gold | Resistances, poison damage, Magic Find, attack speed, hit recovery, block, light radius, thorns, magic damage reduced |
+
+The name on the ground and the tooltip are in the quality's colour; the tooltip shows damage and defense with the
+item's own magic in (blue when it changed them), then the properties in blue. Saved with the character (after an
+item's other numbers, so older builds still read the save, as plain items).
 
 ## Skills
 

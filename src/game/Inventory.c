@@ -137,8 +137,9 @@ void Inventory_Remove(Character *character, const int index) {
 // Wearing
 
 bool Inventory_MeetsRequirements(const Character *character, const ItemBase *base) {
-    return base != NULL && character->stats[STAT_STRENGTH] >= base->required_strength &&
-           character->stats[STAT_DEXTERITY] >= base->required_dexterity && character->level >= base->required_level;
+    return base != NULL && Character_Stat(character, STAT_STRENGTH) >= base->required_strength &&
+           Character_Stat(character, STAT_DEXTERITY) >= base->required_dexterity &&
+           character->level >= base->required_level;
 }
 
 static bool Inventory__IsTwoHanded(const Item *item) {

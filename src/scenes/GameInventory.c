@@ -4,6 +4,7 @@
 #include "../common/ResourcePaths.h"
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
+#include "../game/Affixes.h"
 #include "../game/Inventory.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
@@ -13,7 +14,7 @@
 #define INVENTORY_PANEL "/data/global/ui/PANEL/invchar6.dc6" // frames 4-7: the inventory (0-3: the character)
 #define CELL            29                                   // a grid cell, in pixels
 #define ICON_CACHE      64
-#define TOOLTIP_LINES   10
+#define TOOLTIP_LINES   26
 
 // inventory.txt's 640 x 480 layout ("Amazon" .. "Assassin", all the same), moved to the panel's place on 800 x 600
 #define LAYOUT_DX (GAME_PANEL_X - 320)
@@ -98,12 +99,12 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Pictures
 
-static Sprite *GameInventory__Icon(GameInventory *inventory, const ItemBase *base) {
-    if (base == NULL || base->inv_file[0] == '\0') {
+static Sprite *GameInventory__Icon(GameInventory *inventory, const char *file) {
+    if (file == NULL || file[0] == '\0') {
         return NULL;
     }
     for (int i = 0; i < inventory->icon_count; i++) {
-        if (strcmp(inventory->icons[i].file, base->inv_file) == 0) {
+        if (strcmp(inventory->icons[i].file, file) == 0) {
             return inventory->icons[i].sprite;
         }
     }
@@ -111,17 +112,17 @@ static Sprite *GameInventory__Icon(GameInventory *inventory, const ItemBase *bas
         return NULL;
     }
     char path[96];
-    snprintf(path, sizeof(path), "/data/global/items/%s.dc6", base->inv_file);
+    snprintf(path, sizeof(path), "/data/global/items/%s.dc6", file);
     IconCache *entry = &inventory->icons[inventory->icon_count++];
-    snprintf(entry->file, sizeof(entry->file), "%s", base->inv_file);
+    snprintf(entry->file, sizeof(entry->file), "%s", file);
     entry->sprite = Sprite_Create(path, PALETTE_UNITS);
     return entry->sprite;
 }
 
 // An item's picture, centred in a box; tinted red when it can't be used
-static void GameInventory__DrawItem(GameInventory *inventory, const ItemBase *base, const SDL_Rect *box,
+static void GameInventory__DrawItem(GameInventory *inventory, const Item *item, const SDL_Rect *box,
                                     const bool usable) {
-    Sprite *icon = GameInventory__Icon(inventory, base);
+    Sprite *icon = GameInventory__Icon(inventory, Affixes_InvFile(item)); // (uniques have their own picture)
     if (icon == NULL) {
         return;
     }
@@ -547,7 +548,7 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         }
         if (worn->code[0] != '\0') {
             const ItemBase *base = Items_Find(worn->code);
-            GameInventory__DrawItem(inventory, base, &slot_rects[s], Inventory_MeetsRequirements(character, base));
+            GameInventory__DrawItem(inventory, worn, &slot_rects[s], Inventory_MeetsRequirements(character, base));
             if (inventory->holding && inventory->still_worn && s == inventory->origin_index) {
                 SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND); // Modern: still worn, on the cursor
                 SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 185);
@@ -582,7 +583,7 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90); // the game's blue behind items
         SDL_RenderFillRect(sdl_renderer, &rect);
-        GameInventory__DrawItem(inventory, base, &rect,
+        GameInventory__DrawItem(inventory, &it->item, &rect,
                                 base == NULL || base->kind == ITEM_KIND_MISC ||
                                     Inventory_MeetsRequirements(character, base));
     }
@@ -628,7 +629,7 @@ void GameInventory_DrawBelt(GameInventory *inventory, const Character *character
         const SDL_Rect rect = GameInventory__BeltRect(s);
         const Item    *item = &character->belt[s];
         if (item->code[0] != '\0') {
-            GameInventory__DrawItem(inventory, Items_Find(item->code), &rect, true);
+            GameInventory__DrawItem(inventory, item, &rect, true);
         }
         char key[4];
         snprintf(key, sizeof(key), "%d", s + 1);
@@ -662,19 +663,41 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
     uint8_t colors[TOOLTIP_LINES][3];
     int     count = 0;
     char    text[96];
-    GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, base->name);
+    // The name in the quality's colour: magic blue, rare yellow (and the base below it), unique gold
+    uint8_t qr;
+    uint8_t qg;
+    uint8_t qb;
+    Affixes_QualityColor(item, &qr, &qg, &qb);
+    char name1[96];
+    char name2[96];
+    Affixes_Name(item, name1, sizeof(name1), name2, sizeof(name2));
+    GameInventory__AddLine(lines, colors, &count, qr, qg, qb, name1);
+    if (name2[0] != '\0') {
+        GameInventory__AddLine(lines, colors, &count, qr, qg, qb, name2);
+    }
+    // Damage and defense with the item's own magic in (blue when it changes them, like the game)
+    const int  dmg_pct  = Affixes_ItemTotal(item, MOD_DAMAGE_PCT);
+    const int  dmg_min  = Affixes_ItemTotal(item, MOD_DAMAGE_MIN);
+    const int  dmg_max  = Affixes_ItemTotal(item, MOD_DAMAGE_MAX);
+    const bool dmg_blue = dmg_pct != 0 || dmg_min != 0 || dmg_max != 0;
     if (base->kind == ITEM_KIND_WEAPON) {
         if (base->max_damage > 0) {
-            snprintf(text, sizeof(text), "One-Hand Damage: %d to %d", base->min_damage, base->max_damage);
-            GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, text);
+            snprintf(text, sizeof(text), "One-Hand Damage: %d to %d",
+                     base->min_damage + (base->min_damage * dmg_pct / 100) + dmg_min,
+                     base->max_damage + (base->max_damage * dmg_pct / 100) + dmg_max);
+            GameInventory__AddLine(lines, colors, &count, dmg_blue ? 0x69 : 0xFF, dmg_blue ? 0x69 : 0xFF, 0xFF, text);
         }
         if (base->two_hand_max > 0) {
-            snprintf(text, sizeof(text), "Two-Hand Damage: %d to %d", base->two_hand_min, base->two_hand_max);
-            GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, text);
+            snprintf(text, sizeof(text), "Two-Hand Damage: %d to %d",
+                     base->two_hand_min + (base->two_hand_min * dmg_pct / 100) + dmg_min,
+                     base->two_hand_max + (base->two_hand_max * dmg_pct / 100) + dmg_max);
+            GameInventory__AddLine(lines, colors, &count, dmg_blue ? 0x69 : 0xFF, dmg_blue ? 0x69 : 0xFF, 0xFF, text);
         }
     } else if (base->kind == ITEM_KIND_ARMOR) {
-        snprintf(text, sizeof(text), "Defense: %d", item->defense);
-        GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, text);
+        const int defense = Character_ItemDefense(item) + Affixes_ItemTotal(item, MOD_DEFENSE);
+        snprintf(text, sizeof(text), "Defense: %d", defense);
+        const bool blue = defense != item->defense;
+        GameInventory__AddLine(lines, colors, &count, blue ? 0x69 : 0xFF, blue ? 0x69 : 0xFF, 0xFF, text);
         if (base->block > 0) {
             snprintf(text, sizeof(text), "Chance to Block: %d%%", base->block);
             GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, text);
@@ -700,9 +723,9 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         int         need;
         int         have;
     } requirements[3] = {
-        {"Required Strength",  base->required_strength,  character->stats[STAT_STRENGTH] },
-        {"Required Dexterity", base->required_dexterity, character->stats[STAT_DEXTERITY]},
-        {"Required Level",     base->required_level,     character->level                },
+        {"Required Strength", base->required_strength, Character_Stat(character, STAT_STRENGTH)},
+        {"Required Dexterity", base->required_dexterity, Character_Stat(character, STAT_DEXTERITY)},
+        {"Required Level", base->required_level, character->level},
     };
     for (int r = 0; r < 3; r++) {
         if (requirements[r].need > 0) {
@@ -710,6 +733,11 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
             snprintf(text, sizeof(text), "%s: %d", requirements[r].name, requirements[r].need);
             GameInventory__AddLine(lines, colors, &count, 0xFF, met ? 0xFF : 0x40, met ? 0xFF : 0x40, text);
         }
+    }
+    // The magic, in blue
+    for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+        Affixes_ModText(&item->mods[m], text, sizeof(text));
+        GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);
     }
     if (Items_IsPotion(base)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to drink");
@@ -747,7 +775,7 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
         const SDL_Rect  box  = {mouse_x - ((base != NULL ? base->width : 1) * CELL / 2),
                                 mouse_y - ((base != NULL ? base->height : 1) * CELL / 2),
                                 (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
-        GameInventory__DrawItem(inventory, base, &box, true);
+        GameInventory__DrawItem(inventory, &inventory->held, &box, true);
         return;
     }
     // What's under the mouse

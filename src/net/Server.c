@@ -49,9 +49,7 @@ typedef struct ServerItem {
     int      map;
     float    x;
     float    y;
-    char     code[ITEM_CODE_MAX];
-    int      defense;
-    int      quantity;
+    Item     item;
 } ServerItem;
 
 struct NetServer {
@@ -421,9 +419,7 @@ static void Server__WriteItem(NetWriter *writer, const ServerItem *item, const i
     NetWriter_I32(writer, item->map);
     NetWriter_F32(writer, item->x);
     NetWriter_F32(writer, item->y);
-    NetWriter_String(writer, item->code);
-    NetWriter_I32(writer, item->defense);
-    NetWriter_I32(writer, item->quantity);
+    NetItem_Write(writer, &item->item);
 }
 
 static void Server__WritePlayer(NetWriter *writer, const Peer *peer) {
@@ -832,10 +828,8 @@ static void Server__ItemDrop(NetServer *server, Peer *peer, NetReader *reader) {
     item.map = NetReader_I32(reader);
     item.x   = NetReader_F32(reader);
     item.y   = NetReader_F32(reader);
-    NetReader_String(reader, item.code, sizeof(item.code));
-    item.defense  = NetReader_I32(reader);
-    item.quantity = NetReader_I32(reader);
-    if (reader->failed || item.code[0] == '\0' || item.x != item.x || item.y != item.y || item.x < 0.0f ||
+    NetItem_Read(reader, &item.item);
+    if (reader->failed || item.item.code[0] == '\0' || item.x != item.x || item.y != item.y || item.x < 0.0f ||
         item.y < 0.0f || item.x > 100000.0f || item.y > 100000.0f) {
         return;
     }

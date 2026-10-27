@@ -2,6 +2,7 @@
 #define ABYSS_ITEMS_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // The game's base items (weapons.txt, armor.txt, misc.txt, with itemtypes.txt for where they go): what an item is,
 // its size in the inventory, its picture, damage or defense, requirements, and what a potion does. Only normal items
@@ -10,6 +11,62 @@
 #define ITEM_CODE_MAX 8
 
 typedef enum ItemKind { ITEM_KIND_WEAPON, ITEM_KIND_ARMOR, ITEM_KIND_MISC } ItemKind;
+
+// An item's quality: normal (white), magic (blue: a prefix and/or a suffix), rare (yellow: a made-up name and up to
+// six affixes), unique (gold: one of the game's named items)
+typedef enum ItemQuality { ITEM_NORMAL, ITEM_MAGIC, ITEM_RARE, ITEM_UNIQUE, ITEM_QUALITY_COUNT } ItemQuality;
+
+// What magic does (the game's properties we know; Affixes.c turns Properties.txt codes into these). The ones marked *
+// are shown but don't do anything yet.
+typedef enum ItemModType {
+    MOD_STRENGTH,
+    MOD_DEXTERITY,
+    MOD_VITALITY,
+    MOD_ENERGY,
+    MOD_LIFE,
+    MOD_MANA,
+    MOD_STAMINA,
+    MOD_ATTACK_RATING,
+    MOD_ATTACK_RATING_PCT,
+    MOD_DEFENSE,
+    MOD_DEFENSE_PCT, // enhanced defense: of the item it's on
+    MOD_DAMAGE_PCT,  // enhanced damage: on a weapon, of its damage; elsewhere, added to strength's bonus
+    MOD_DAMAGE_MIN,
+    MOD_DAMAGE_MAX,
+    MOD_FIRE_MIN, // elemental damage: added to each blow (no resistances yet)
+    MOD_FIRE_MAX,
+    MOD_COLD_MIN,
+    MOD_COLD_MAX,
+    MOD_LIGHTNING_MIN,
+    MOD_LIGHTNING_MAX,
+    MOD_POISON,               // * poison damage over time
+    MOD_RES_FIRE,             // *
+    MOD_RES_COLD,             // *
+    MOD_RES_LIGHTNING,        // *
+    MOD_RES_POISON,           // *
+    MOD_RES_ALL,              // *
+    MOD_LIFE_STEAL,           // life back from each blow's damage
+    MOD_MANA_STEAL,           // mana back from each blow's damage
+    MOD_MAGIC_FIND,           // *
+    MOD_GOLD_FIND,            // more gold picked up
+    MOD_REPLENISH_LIFE,       // life back each second
+    MOD_FASTER_RUN,           // faster walking and running
+    MOD_ATTACK_SPEED,         // *
+    MOD_HIT_RECOVERY,         // *
+    MOD_BLOCK,                // *
+    MOD_LIGHT_RADIUS,         // *
+    MOD_THORNS,               // * attacker takes damage
+    MOD_DAMAGE_REDUCED,       // each blow taken does this much less
+    MOD_MAGIC_DAMAGE_REDUCED, // *
+    MOD_TYPE_COUNT
+} ItemModType;
+
+#define ITEM_MODS_MAX 12
+
+typedef struct ItemMod {
+    uint8_t type; // ItemModType
+    int16_t value;
+} ItemMod;
 
 // Where an item can be worn (bodylocs.txt)
 typedef enum EquipSlot {
@@ -33,14 +90,15 @@ typedef struct ItemBase {
     ItemKind kind;
     int      width; // inventory cells
     int      height;
-    char     inv_file[32];  // data/global/items/<inv_file>.dc6
-    char     use_sound[32]; // sounds.txt: put down in the inventory, worn, drunk
-    char flippy_file[32];   // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
-    char drop_sound[32];    // sounds.txt: landing on the ground
-    int  drop_sound_frame;  // ... played at this frame of the flip
-    int  level;             // its item level: which drops it can be in (weap3 has the weapons up to level 3)
-    bool spawnable;         // can drop
-    char kinds[8][8];       // its type and what that counts as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
+    char     inv_file[32];        // data/global/items/<inv_file>.dc6
+    char     unique_inv_file[32]; // its picture when unique (empty: the normal one)
+    char     use_sound[32];       // sounds.txt: put down in the inventory, worn, drunk
+    char flippy_file[32];  // data/global/items/<flippy_file>.dc6: on the ground (it flips through the air, then lies)
+    char drop_sound[32];   // sounds.txt: landing on the ground
+    int  drop_sound_frame; // ... played at this frame of the flip
+    int  level;            // its item level: which drops it can be in (weap3 has the weapons up to level 3)
+    bool spawnable;        // can drop
+    char kinds[8][8];      // its type and what that counts as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
     int  kind_count;
     bool slots[EQUIP_COUNT];
     int  min_damage; // one hand (or the only damage)

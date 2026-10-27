@@ -1,6 +1,7 @@
 #include "Treasure.h"
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
+#include "Affixes.h"
 #include "Inventory.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -148,6 +149,7 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
     }
     Item item;
     if (Treasure__Auto(name, &item)) {
+        Affixes_Roll(&item, level); // magic, rare or unique, maybe
         items[(*count)++] = item;
         return;
     }
@@ -161,6 +163,8 @@ static void Treasure__Pick(const char *name, const int level, Item *items, int *
         item.quantity = Treasure__Roll(l, (l * 8) + 10); // gold: more from tougher monsters
     } else if (base->stackable && base->max_stack > 1) {
         item.quantity = Treasure__Roll((base->max_stack / 2) > 0 ? base->max_stack / 2 : 1, base->max_stack);
+    } else {
+        Affixes_Roll(&item, level); // rings and amulets, armor and weapons named in the class itself
     }
     items[(*count)++] = item;
 }
