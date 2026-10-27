@@ -60,6 +60,9 @@ struct MapRenderer {
 
     SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
     uint8_t        light_darkness;
+    SDL_Texture   *dark_mask; // MapRenderer_DrawLights: the darkness at a quarter of the view's size
+    int            dark_w;
+    int            dark_h;
     TextureEntry  *entries; // open addressing, keyed by tile pointer
     int            capacity;
     int            count;
@@ -125,6 +128,9 @@ void MapRenderer_ClearCache(MapRenderer *renderer) {
 void MapRenderer_Destroy(MapRenderer **renderer) {
     if (renderer == NULL || *renderer == NULL) {
         return;
+    }
+    if ((*renderer)->dark_mask != NULL) {
+        SDL_DestroyTexture((*renderer)->dark_mask);
     }
     if ((*renderer)->light != NULL) {
         SDL_DestroyTexture((*renderer)->light);
@@ -1075,6 +1081,76 @@ void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT
         SDL_RenderFillRect(sdl_renderer, &dest);
     }
     SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
+}
+
+void MapRenderer_DrawLights(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view,
+                            const MapLight *lights, const int count, const uint8_t darkness) {
+    if (darkness == 0 || view->w <= 0 || view->h <= 0) {
+        return;
+    }
+    const int w = (view->w + 3) / 4;
+    const int h = (view->h + 3) / 4;
+    if (renderer->dark_mask == NULL || renderer->dark_w != w || renderer->dark_h != h) {
+        if (renderer->dark_mask != NULL) {
+            SDL_DestroyTexture(renderer->dark_mask);
+        }
+        renderer->dark_mask =
+            SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+        renderer->dark_w = w;
+        renderer->dark_h = h;
+        if (renderer->dark_mask == NULL) {
+            return;
+        }
+        SDL_SetTextureBlendMode(renderer->dark_mask, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(renderer->dark_mask, SDL_ScaleModeLinear);
+    }
+    // Each pool on screen: its middle and half width (the pools are flat ellipses, twice as wide as high)
+    enum { POOLS = 64 };
+    float px[POOLS];
+    float py[POOLS];
+    float pr[POOLS];
+    int   pools = 0;
+    for (int l = 0; l < count && pools < POOLS; l++) {
+        int sx;
+        int sy;
+        MapView_WorldToScreen(camera, view, lights[l].world_x, lights[l].world_y, &sx, &sy);
+        const float half = lights[l].radius * SUBTILE_HALF_W * 2.0f * camera->zoom;
+        if (half <= 0.0f || sx + half < view->x || sx - half > view->x + view->w || sy + half < view->y ||
+            sy - (half / 2.0f) > view->y + view->h) {
+            continue;
+        }
+        px[pools]   = (float)(sx - view->x) / 4.0f;
+        py[pools]   = (float)(sy - view->y) / 4.0f;
+        pr[pools++] = half / 4.0f;
+    }
+    void *raw   = NULL;
+    int   pitch = 0;
+    if (SDL_LockTexture(renderer->dark_mask, NULL, &raw, &pitch) != 0) {
+        return;
+    }
+    for (int y = 0; y < h; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)raw + ((size_t)y * (size_t)pitch));
+        for (int x = 0; x < w; x++) {
+            float shade = 1.0f; // the least dark of the pools over this spot
+            for (int p = 0; p < pools && shade > 0.0f; p++) {
+                const float dx = ((float)x + 0.5f - px[p]) / pr[p];
+                const float dy = ((float)y + 0.5f - py[p]) / (pr[p] / 2.0f);
+                const float d2 = (dx * dx) + (dy * dy);
+                if (d2 >= 1.0f) {
+                    continue;
+                }
+                const float d = sqrtf(d2);
+                const float t = d * d * (3.0f - (2.0f * d)); // smooth fall-off
+                shade         = t < shade ? t : shade;
+            }
+            row[x] = (uint32_t)(shade * (float)darkness); // RGBA8888: black, alpha
+        }
+    }
+    SDL_UnlockTexture(renderer->dark_mask);
+    SDL_RenderSetClipRect(sdl_renderer, view);
+    const SDL_Rect dest = {view->x, view->y, w * 4, h * 4};
+    SDL_RenderCopy(sdl_renderer, renderer->dark_mask, NULL, &dest);
+    SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
 
 void MapRenderer_DrawLight(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view, const float world_x,

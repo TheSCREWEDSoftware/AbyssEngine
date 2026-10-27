@@ -134,13 +134,30 @@ static const struct {
     uint8_t     darkness;
     float       radius; // sub-tiles
 } light_levels[] = {
-    {"auto",  0,   0    }, // by the area: dark with a pool of light indoors, day outside
+    {"auto",  0,   0    }, // by the area: dark with a pool of light indoors; outside, the time of day
     {"day",   0,   0    },
     {"dusk",  120, 16.0f},
     {"night", 215, 11.0f},
 };
 #define LIGHT_LEVEL_COUNT (int)(sizeof(light_levels) / sizeof(light_levels[0]))
 static int light_level = 0; // kept between visits
+
+// The time of day outdoors: a day is 20 minutes (12 day, 2 dusk, 4 night, 2 dawn), counted from midday when the
+// program started; darkness and the light radius around you go smoothly between day and night
+#define DAY_MS 1200000ull
+static void Roam__TimeOfDay(int *darkness, float *radius) {
+    const float t     = (float)(SDL_GetTicks64() % DAY_MS) / (float)DAY_MS * 20.0f; // minutes into the day
+    float       night = 0.0f;                                                       // 0 day .. 1 night
+    if (t >= 12.0f && t < 14.0f) {
+        night = (t - 12.0f) / 2.0f;
+    } else if (t >= 14.0f && t < 18.0f) {
+        night = 1.0f;
+    } else if (t >= 18.0f) {
+        night = 1.0f - ((t - 18.0f) / 2.0f);
+    }
+    *darkness = (int)(night * 190.0f);
+    *radius   = 30.0f - (night * 16.0f);
+}
 
 typedef enum UnitState {
     UNIT_IDLE,
@@ -5953,6 +5970,32 @@ static void Roam__DrawItemLabels(SceneRoam *roam) {
     }
 }
 
+// Whether word (lower case) is in text, whatever its case
+static bool Roam__HasWord(const char *text, const char *word) {
+    const size_t length = strlen(word);
+    for (const char *at = text; *at != '\0'; at++) {
+        size_t k = 0;
+        while (k < length && at[k] != '\0' && tolower((unsigned char)at[k]) == word[k]) {
+            k++;
+        }
+        if (k == length) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Torches, braziers, fires, candles: objects that light up the dark around them (by their name)
+static bool Roam__GivesLight(const Unit *unit) {
+    static const char *const words[] = {"torch", "fire", "brazier", "candle", "lamp", "flame", "bonfire", "lantern"};
+    for (size_t w = 0; w < sizeof(words) / sizeof(words[0]); w++) {
+        if (Roam__HasWord(unit->name, words[w]) || Roam__HasWord(unit->id, words[w])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool Roam__PrepareDraw(SceneRoam *roam, Unit *unit, MapDrawable *drawable) {
     if (unit->state == UNIT_DEAD && unit->vanished) {
         return false; // no corpse graphics: it's gone
@@ -6316,20 +6359,40 @@ static void Roam__Render(SceneRoam *roam) {
             Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
         }
     }
-    // Indoors it's dark but for the light around you (the game's light radius); "auto" picks it by the area
+    // Indoors it's dark but for the light around you (the game's light radius) and the torches and fires; outside
+    // ("auto") the day goes round: day, dusk, night, dawn
     const bool dark_inside = light_level == 0 && roam->atmosphere.inside;
-    const int  darkness    = dark_inside ? 150 : light_levels[light_level].darkness;
+    int        darkness    = dark_inside ? 150 : light_levels[light_level].darkness;
     float      radius      = dark_inside ? 15.0f : light_levels[light_level].radius;
+    if (light_level == 0 && !roam->atmosphere.inside) {
+        Roam__TimeOfDay(&darkness, &radius);
+    }
     if (roam->game && roam->character != NULL) {
         radius += (float)Affixes_Total(roam->character, MOD_LIGHT_RADIUS); // "+N to Light Radius" (or -N)
         radius  = radius < 4.0f ? 4.0f : radius;
     }
     if (darkness > 0) {
-        float light_x;
-        float light_y;
-        MapView_SubtileToWorld(roam->player.x, roam->player.y, &light_x, &light_y);
-        MapRenderer_DrawLight(roam->renderer, &roam->camera, &view, light_x, light_y - 30.0f, radius,
-                              (uint8_t)darkness);
+        MapLight lights[64];
+        int      count = 0;
+        MapView_SubtileToWorld(roam->player.x, roam->player.y, &lights[0].world_x, &lights[0].world_y);
+        lights[0].world_y      -= 30.0f;
+        lights[count++].radius  = radius;
+        for (int o = 0; o < roam->other_count && count < 64; o++) { // the others carry their light too
+            MapView_SubtileToWorld(roam->others[o].x, roam->others[o].y, &lights[count].world_x,
+                                   &lights[count].world_y);
+            lights[count].world_y  -= 30.0f;
+            lights[count++].radius  = 12.0f;
+        }
+        for (int i = 0; i < roam->unit_count && count < 64; i++) {
+            const Unit *unit = &roam->units[i];
+            if (unit->is_object && !unit->vanished && Roam__GivesLight(unit) &&
+                Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) < 60.0f) {
+                MapView_SubtileToWorld(unit->x, unit->y, &lights[count].world_x, &lights[count].world_y);
+                lights[count].world_y  -= 20.0f;
+                lights[count++].radius  = 8.0f;
+            }
+        }
+        MapRenderer_DrawLights(roam->renderer, &roam->camera, &view, lights, count, (uint8_t)darkness);
     }
     Roam__DrawWeather(roam, &view);
 

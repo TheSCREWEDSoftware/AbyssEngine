@@ -51,6 +51,14 @@ void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT
 // radius in sub-tiles.
 void MapRenderer_DrawLight(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view, float world_x,
                            float world_y, float radius, uint8_t darkness);
+// The same with several pools: the player's, torches', fires' (world positions and radii in sub-tiles)
+typedef struct MapLight {
+    float world_x;
+    float world_y;
+    float radius;
+} MapLight;
+void MapRenderer_DrawLights(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view,
+                            const MapLight *lights, int count, uint8_t darkness);
 // Outline of a tile's floor diamond.
 void MapRenderer_DrawTileOutline(const MapCamera *camera, const SDL_Rect *view, int tx, int ty, SDL_Color color);
 
