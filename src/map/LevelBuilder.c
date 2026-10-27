@@ -1574,6 +1574,76 @@ static int Builder__GrowRooms(const MazeArea *area, Room *rooms, const int wante
     return count;
 }
 
+// The Arcane Sanctuary, like the game's: a crossroads in the middle and a long walkway out on each side, winding
+// as it goes, with short dead-end spurs off it (the Summoner waits at the end of the furthest one)
+static int Builder__GrowArcane(Room *rooms, const int grid_w, const int grid_h, Rng *rng) {
+    int count      = 1;
+    rooms[0].gx    = grid_w / 2;
+    rooms[0].gy    = grid_h / 2;
+    rooms[0].exits = 0;
+    for (int arm = 0; arm < 4; arm++) {
+        int       from   = 0;
+        int       dir    = arm; // N, S, E, W
+        const int back   = arm == 0 ? 1 : (arm == 1 ? 0 : (arm == 2 ? 3 : 2));
+        const int length = 6 + Rng_Below(rng, 3);
+        int       path[12];
+        int       steps = 0;
+        for (int s = 0; s < length && count < MAX_ROOMS - 6; s++) {
+            // On the way out: ahead mostly, sometimes to a side (never back towards the middle)
+            int tries[3] = {arm, -1, -1};
+            if (s > 0 && Rng_Chance(rng, 35)) {
+                const int side_a = arm < 2 ? 2 : 0;
+                const int side_b = arm < 2 ? 3 : 1;
+                tries[0]         = Rng_Chance(rng, 50) ? side_a : side_b;
+                tries[1]         = arm;
+            }
+            bool placed = false;
+            for (int t = 0; t < 3 && !placed && tries[t] >= 0; t++) {
+                dir = tries[t];
+                if (dir == back) {
+                    continue;
+                }
+                const int gx = rooms[from].gx + dir_dx[dir];
+                const int gy = rooms[from].gy + dir_dy[dir];
+                if (gx < 1 || gy < 1 || gx >= grid_w - 1 || gy >= grid_h - 1 ||
+                    Builder__RoomAt(rooms, count, gx, gy) >= 0) {
+                    continue;
+                }
+                rooms[count].gx     = gx;
+                rooms[count].gy     = gy;
+                rooms[count].exits  = dir_back[dir];
+                rooms[from].exits  |= dir_exit[dir];
+                from                = count++;
+                path[steps++]       = from;
+                placed              = true;
+            }
+            if (!placed) {
+                break;
+            }
+        }
+        // A spur or two: a room or two off the walkway to a side, ending there
+        for (int spur = 0; spur < 2 && steps > 2 && count < MAX_ROOMS - 2; spur++) {
+            const int at   = path[1 + Rng_Below(rng, steps - 2)];
+            const int side = arm < 2 ? (Rng_Chance(rng, 50) ? 2 : 3) : (Rng_Chance(rng, 50) ? 0 : 1);
+            int       on   = at;
+            for (int k = 0; k < 1 + Rng_Below(rng, 2) && count < MAX_ROOMS; k++) {
+                const int gx = rooms[on].gx + dir_dx[side];
+                const int gy = rooms[on].gy + dir_dy[side];
+                if (gx < 1 || gy < 1 || gx >= grid_w - 1 || gy >= grid_h - 1 ||
+                    Builder__RoomAt(rooms, count, gx, gy) >= 0) {
+                    break;
+                }
+                rooms[count].gx     = gx;
+                rooms[count].gy     = gy;
+                rooms[count].exits  = dir_back[side];
+                rooms[on].exits    |= dir_exit[side];
+                on                  = count++;
+            }
+        }
+    }
+    return count;
+}
+
 static float builder_exit_x = -1.0f; // sub-tiles: the middle of the last room of the dungeon just built
 static float builder_exit_y = -1.0f;
 
@@ -1609,7 +1679,12 @@ static Map *Builder__BuildMaze(const MazeArea *maze, const LevelInfo *level, Rng
     int  exit_at = -1;
     int  special = -1;
     for (int attempt = 0; attempt < 40; attempt++) {
-        count = Builder__GrowRooms(area, rooms, wanted, grid_w, grid_h, rng);
+        if (level->id == 74) {
+            count  = Builder__GrowArcane(rooms, grid_w, grid_h, rng);
+            wanted = count;
+        } else {
+            count = Builder__GrowRooms(area, rooms, wanted, grid_w, grid_h, rng);
+        }
         if (area->grid_w > 0) {
             // The jungle: every block used, with a few extra paths between neighbours
             for (int i = 0; i < count; i++) {
