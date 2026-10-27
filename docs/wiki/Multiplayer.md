@@ -45,7 +45,8 @@ on the dedicated server, or (hosted) on your computer, marked as made in that ho
 In the game, **Enter** opens the chat line (Enter sends, Esc stops); what's said shows at the top left.
 **/w Name what** (or /m) whispers to that player alone ("Name whispers: ..."; you see "You whisper to Name: ..."). **Esc ›
 Save and Exit Game** leaves (and closes the game when you're the host). Losing the connection saves your character
-(hosted games) and takes you back to the Multiplayer screen, which says why.
+(hosted games) and takes you back to the Multiplayer screen, which says why; **Rejoin** there connects to the same
+game again (you pick your character as usual).
 
 **Options › Debug › Free Roam in Single Player and Multiplayer** works here too: travel to any area from anywhere,
 and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)).

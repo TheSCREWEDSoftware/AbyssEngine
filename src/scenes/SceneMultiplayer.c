@@ -52,6 +52,8 @@ typedef struct SceneMultiplayer {
     char    status[200];
     bool    connecting;
     Button *cancel_button;
+    Button *rejoin_button; // after losing the connection: the same game again
+    bool    can_rejoin;
     bool    prev_left;
 
     // Browse
@@ -88,6 +90,14 @@ typedef struct SceneMultiplayer {
     Slider     *pages;
     Slider     *stash_pages;
 } SceneMultiplayer;
+
+// The game last joined (for Rejoin, while the program runs)
+static struct {
+    bool     set;
+    char     host[256];
+    uint16_t port;
+    char     password[NET_NAME_MAX];
+} last_join;
 
 DEFINE_SCENE_CALLBACKS(MultiplayerMenu);
 
@@ -268,6 +278,8 @@ void *MultiplayerMenu_Create(void) {
     menu->back_button   = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     menu->action_button = Button_Create(BUTTON_TYPE_MEDIUM, "Join");
     menu->cancel_button = Button_Create(BUTTON_TYPE_MEDIUM, "Cancel");
+    menu->rejoin_button = Button_Create(BUTTON_TYPE_MEDIUM, "Rejoin");
+    Button_SetPosition(menu->rejoin_button, 400 - 64, BUTTONS_Y);
     Button_SetPosition(menu->back_button, PANEL_X, BUTTONS_Y);
     Button_SetPosition(menu->action_button, PANEL_X + PANEL_W - 128, BUTTONS_Y);
     Button_SetPosition(menu->cancel_button, 400 - 64, 330);
@@ -308,6 +320,8 @@ void *MultiplayerMenu_Create(void) {
     // Back from a game that ended (or a host that turned us away): say why
     if (NetClient_Stage() == NETC_FAILED) {
         snprintf(menu->status, sizeof(menu->status), "%s", NetClient_Error());
+        // The connection dropped mid-game: Rejoin goes back to the same game (a host's own game is gone with it)
+        menu->can_rejoin = last_join.set && strstr(NetClient_Error(), "Lost the connection") != NULL;
     }
     Multiplayer_Leave();
     Menu__StartSearch(menu);
@@ -323,7 +337,8 @@ void MultiplayerMenu_Free(void **scene_ref) {
     Label_Destroy(&menu->title);
     Label_Destroy(&menu->text);
     Label_Destroy(&menu->small);
-    Button *buttons[] = {menu->back_button, menu->action_button, menu->cancel_button, menu->refresh_button};
+    Button *buttons[] = {menu->back_button, menu->action_button, menu->cancel_button, menu->refresh_button,
+                         menu->rejoin_button};
     for (size_t b = 0; b < sizeof(buttons) / sizeof(buttons[0]); b++) {
         Button_Destroy(&buttons[b]);
     }
@@ -354,6 +369,10 @@ void MultiplayerMenu_Free(void **scene_ref) {
 static void Menu__Join(SceneMultiplayer *menu, const char *host, const uint16_t port, const char *password) {
     Browse_Stop();
     menu->status[0] = '\0';
+    last_join.set   = true;
+    last_join.port  = port;
+    snprintf(last_join.host, sizeof(last_join.host), "%s", host);
+    snprintf(last_join.password, sizeof(last_join.password), "%s", password != NULL ? password : "");
     if (NetClient_Connect(host, port, password)) {
         menu->connecting = true;
     } else {
@@ -503,6 +522,11 @@ void MultiplayerMenu_Update(void *scene_ref, const uint64_t delta) {
     InputManager_GetMouseButtons(&left, NULL, NULL);
     menu->prev_left = left;
 
+    if (menu->can_rejoin && Button_Update(menu->rejoin_button)) {
+        menu->can_rejoin = false;
+        Menu__Join(menu, last_join.host, last_join.port, last_join.password);
+        return;
+    }
     if (Button_Update(menu->action_button) || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN)) {
         Menu__Action(menu, tab);
         return;
@@ -627,6 +651,9 @@ void MultiplayerMenu_Render(void *scene_ref) {
 
     Button_Draw(menu->back_button);
     Button_Draw(menu->action_button);
+    if (menu->can_rejoin) {
+        Button_Draw(menu->rejoin_button);
+    }
     if (menu->status[0] != '\0') {
         Label_SetAlignment(menu->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
         Menu__Text(menu->text, menu->status, 400, PANEL_Y + PANEL_H - 14, 0xFF, 0x80, 0x60);
