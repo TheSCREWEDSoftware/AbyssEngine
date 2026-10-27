@@ -44,7 +44,19 @@ static int belt_y = 568;
 #define BELT_Y    belt_y
 #define BELT_STEP 31
 
-typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND, ORIGIN_STASH } Origin;
+typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND, ORIGIN_STASH, ORIGIN_TRADE } Origin;
+
+// The trade panel (trade.dc6): their grid above, yours below (inventory.txt's "Trade Page 1" and "2"), the gold boxes
+// and the accept / close buttons
+#define TRADE_PANEL      "/data/global/ui/PANEL/trade.dc6"
+#define TRADE_GRID_X     20
+#define TRADE_THEIR_Y    41
+#define TRADE_MY_Y       255
+#define TRADE_ACCEPT_X   222
+#define TRADE_CLOSE_X    274
+#define TRADE_BUTTONS_Y  383
+#define TRADE_THEIR_OK_X 274
+#define TRADE_THEIR_OK_Y 170
 
 // The stash, on the left (TradeStash.dc6, inventory.txt's "Big Bank Page 1"), and its gold with the withdraw button
 #define STASH_PANEL  "/data/global/ui/PANEL/TradeStash.dc6"
@@ -82,6 +94,8 @@ struct GameInventory {
     Sprite    *shop_tabs;
     Sprite    *shop_buttons; // buysellbtn.dc6
     ShopStock *shop;         // trading with a merchant (NULL: not)
+    TradeView *trade;        // trading with another player (NULL: not)
+    Sprite    *trade_panel;
     int        shop_tab;
     int        difficulty;    // what they pay depends on it
     char       tip_extra[48]; // the price line under a tooltip while trading
@@ -116,6 +130,7 @@ GameInventory *GameInventory_Create(void) {
     inventory->stash_panel  = Sprite_Create(STASH_PANEL, PALETTE_SKY);
     inventory->socket       = Sprite_Create("/data/global/ui/PANEL/gemsocket.dc6", PALETTE_UNITS);
     inventory->shop_panel   = Sprite_Create(SHOP_PANEL, PALETTE_SKY);
+    inventory->trade_panel  = Sprite_Create(TRADE_PANEL, PALETTE_SKY);
     inventory->shop_tabs    = Sprite_Create("/data/global/ui/PANEL/buysellTabs.dc6", PALETTE_SKY);
     inventory->shop_buttons = Sprite_Create("/data/global/ui/PANEL/buysellbtn.dc6", PALETTE_SKY);
     inventory->text         = Label_Create(FONTS_FONT16, PALETTE_STATIC);
@@ -133,6 +148,7 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
     Sprite_Destroy(&inventory->stash_panel);
     Sprite_Destroy(&inventory->socket);
     Sprite_Destroy(&inventory->shop_panel);
+    Sprite_Destroy(&inventory->trade_panel);
     Sprite_Destroy(&inventory->shop_tabs);
     Sprite_Destroy(&inventory->shop_buttons);
     for (int i = 0; i < inventory->icon_count; i++) {
@@ -226,8 +242,95 @@ void GameInventory_SetShop(GameInventory *inventory, ShopStock *stock, const int
 
 bool GameInventory_ShopOpen(const GameInventory *inventory) { return inventory->shop != NULL; }
 
+void GameInventory_SetTrade(GameInventory *inventory, TradeView *trade) {
+    inventory->trade = trade;
+    if (trade != NULL) {
+        inventory->stash_open = false;
+        inventory->shop       = NULL;
+    }
+}
+
+bool GameInventory_TradeOpen(const GameInventory *inventory) { return inventory->trade != NULL; }
+
+int GameInventory_TradeAt(const InventoryItem *items, const int count, const int cell_x, const int cell_y) {
+    for (int i = 0; i < count; i++) {
+        const ItemBase *base = Items_Find(items[i].item.code);
+        const int       w    = base != NULL ? base->width : 1;
+        const int       h    = base != NULL ? base->height : 1;
+        if (cell_x >= items[i].x && cell_x < items[i].x + w && cell_y >= items[i].y && cell_y < items[i].y + h) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// What putting an item there would lift: -1 nothing, an index, -2 more than one or off the grid
+static int GameInventory__TradeCovered(const InventoryItem *items, const int count, const ItemBase *base, const int x,
+                                       const int y) {
+    if (base == NULL || x < 0 || y < 0 || x + base->width > TRADE_W || y + base->height > TRADE_H) {
+        return -2;
+    }
+    int found = -1;
+    for (int cy = y; cy < y + base->height; cy++) {
+        for (int cx = x; cx < x + base->width; cx++) {
+            const int at = GameInventory_TradeAt(items, count, cx, cy);
+            if (at >= 0 && found >= 0 && at != found) {
+                return -2;
+            }
+            found = at >= 0 ? at : found;
+        }
+    }
+    return found;
+}
+
+bool GameInventory_TradePlace(InventoryItem *items, int *count, const Item *item, const int x, const int y) {
+    const ItemBase *base = Items_Find(item->code);
+    if (*count >= TRADE_ITEMS || GameInventory__TradeCovered(items, *count, base, x, y) != -1) {
+        return false;
+    }
+    items[*count].item = *item;
+    items[*count].x    = x;
+    items[*count].y    = y;
+    items[*count].page = 0;
+    (*count)++;
+    return true;
+}
+
+bool GameInventory_TradeAdd(InventoryItem *items, int *count, const Item *item) {
+    const ItemBase *base = Items_Find(item->code);
+    for (int x = 0; base != NULL && x + base->width <= TRADE_W; x++) {
+        for (int y = 0; y + base->height <= TRADE_H; y++) {
+            if (GameInventory_TradePlace(items, count, item, x, y)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void GameInventory__TradeRemove(InventoryItem *items, int *count, const int index) {
+    for (int i = index; i + 1 < *count; i++) {
+        items[i] = items[i + 1];
+    }
+    (*count)--;
+}
+
+static bool GameInventory__TradeCellAt(const int mouse_x, const int mouse_y, const int top, int *cell_x, int *cell_y) {
+    if (mouse_x < TRADE_GRID_X || mouse_y < top || mouse_x >= TRADE_GRID_X + (TRADE_W * CELL) ||
+        mouse_y >= top + (TRADE_H * CELL)) {
+        return false;
+    }
+    *cell_x = (mouse_x - TRADE_GRID_X) / CELL;
+    *cell_y = (mouse_y - top) / CELL;
+    return true;
+}
+
+static bool GameInventory__InBox(const int mouse_x, const int mouse_y, const int x, const int y) {
+    return mouse_x >= x && mouse_x < x + SHOP_BUTTON_SZ && mouse_y >= y && mouse_y < y + SHOP_BUTTON_SZ;
+}
+
 bool GameInventory_IsOverShop(const GameInventory *inventory, const int mouse_x, const int mouse_y) {
-    return inventory->shop != NULL && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
+    return (inventory->shop != NULL || inventory->trade != NULL) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
 }
 
 static bool GameInventory__ShopCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
@@ -403,6 +506,8 @@ bool GameInventory_PutBack(GameInventory *inventory, Character *character) {
         placed = Stash_Place(character, &inventory->held, inventory->origin_index % STASH_W,
                              inventory->origin_index / STASH_W);
         break;
+    case ORIGIN_TRADE: // back in the inventory (taking it off the offer is what the trade sees)
+        break;
     case ORIGIN_GROUND: // picked up off the ground: anywhere it fits
         break;
     }
@@ -520,6 +625,62 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             return events | INVENTORY_EVENT_GOLD;
         }
         *message = "You have no gold.";
+        return events;
+    }
+
+    // Trading with another player: your offer's grid (to and from the inventory), your gold, accept and close
+    if (inventory->trade != NULL && left_click && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H) {
+        TradeView *trade = inventory->trade;
+        if (GameInventory__InBox(mouse_x, mouse_y, TRADE_ACCEPT_X, TRADE_BUTTONS_Y)) {
+            return events | INVENTORY_EVENT_TRADE_OK;
+        }
+        if (GameInventory__InBox(mouse_x, mouse_y, TRADE_CLOSE_X, TRADE_BUTTONS_Y)) {
+            return events | INVENTORY_EVENT_TRADE_END;
+        }
+        if (mouse_x >= 156 && mouse_x < 306 && mouse_y >= 225 && mouse_y < 245 && !inventory->holding) {
+            return events | INVENTORY_EVENT_TRADE_GOLD;
+        }
+        int tx;
+        int ty;
+        if (!GameInventory__TradeCellAt(mouse_x, mouse_y, TRADE_MY_Y, &tx, &ty)) {
+            return events; // (their side is only to look at)
+        }
+        if (inventory->holding) {
+            const ItemBase *base    = Items_Find(inventory->held.code);
+            const int       left    = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
+            const int       top     = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
+            const int       x       = left >= TRADE_GRID_X ? (left - TRADE_GRID_X) / CELL : -1;
+            const int       y       = top >= TRADE_MY_Y ? (top - TRADE_MY_Y) / CELL : -1;
+            const int       covered = GameInventory__TradeCovered(trade->mine, trade->mine_count, base, x, y);
+            if (covered == -2) {
+                return events;
+            }
+            if (inventory->still_worn) {
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
+            Item lifted;
+            memset(&lifted, 0, sizeof(lifted));
+            if (covered >= 0) {
+                lifted = trade->mine[covered].item;
+                GameInventory__TradeRemove(trade->mine, &trade->mine_count, covered);
+            }
+            GameInventory_TradePlace(trade->mine, &trade->mine_count, &inventory->held, x, y);
+            GameInventory__PutDown(inventory, &inventory->held);
+            inventory->holding = false;
+            if (lifted.code[0] != '\0') {
+                GameInventory__Take(inventory, &lifted, ORIGIN_TRADE, 0);
+            }
+            return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_TRADE;
+        }
+        const int under = GameInventory_TradeAt(trade->mine, trade->mine_count, tx, ty);
+        if (under >= 0) {
+            const Item item = trade->mine[under].item;
+            GameInventory__TradeRemove(trade->mine, &trade->mine_count, under);
+            GameInventory__Take(inventory, &item, ORIGIN_TRADE, 0);
+            return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_TRADE;
+        }
         return events;
     }
 
@@ -892,8 +1053,73 @@ static void GameInventory__DrawShop(GameInventory *inventory, const Character *c
                 SHOP_CLOSE_X, SHOP_CLOSE_Y + SHOP_BUTTON_SZ);
 }
 
+// Trading: the panel, both offers, the gold, who has accepted
+static void GameInventory__DrawTradeItems(GameInventory *inventory, const Character *character,
+                                          const InventoryItem *items, const int count, const int top) {
+    for (int i = 0; i < count; i++) {
+        const ItemBase *base = Items_Find(items[i].item.code);
+        const SDL_Rect  rect = {TRADE_GRID_X + (items[i].x * CELL), top + (items[i].y * CELL),
+                                (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90);
+        SDL_RenderFillRect(sdl_renderer, &rect);
+        GameInventory__DrawItem(inventory, &items[i].item, &rect,
+                                base == NULL || base->kind == ITEM_KIND_MISC ||
+                                    Inventory_MeetsRequirements(character, base));
+    }
+}
+
+static void GameInventory__DrawCheck(const int x, const int y, const bool on) {
+    if (!on) {
+        return;
+    }
+    SDL_SetRenderDrawColor(sdl_renderer, 60, 230, 60, 255);
+    for (int t = 0; t < 3; t++) { // a tick
+        SDL_RenderDrawLine(sdl_renderer, x + 6, y + 16 + t, x + 13, y + 23 + t);
+        SDL_RenderDrawLine(sdl_renderer, x + 13, y + 23 + t, x + 26, y + 8 + t);
+    }
+}
+
+static void GameInventory__DrawTrade(GameInventory *inventory, const Character *character, const int mouse_x,
+                                     const int mouse_y) {
+    const TradeView *trade = inventory->trade;
+    Sprite_DrawMulti(inventory->trade_panel, 0, 0, 0, 2, 2);
+    GameInventory__DrawTradeItems(inventory, character, trade->theirs, trade->their_count, TRADE_THEIR_Y);
+    GameInventory__DrawTradeItems(inventory, character, trade->mine, trade->mine_count, TRADE_MY_Y);
+    char text[48];
+    Label_SetAlignment(inventory->text, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+    Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
+    Label_SetText(inventory->text, trade->their_name);
+    Label_Draw(inventory->text, 24, 19);
+    snprintf(text, sizeof(text), "Gold: %d", trade->their_gold);
+    Label_SetText(inventory->text, text);
+    Label_Draw(inventory->text, 162, 19);
+    Label_SetText(inventory->text, character->name);
+    Label_Draw(inventory->text, 24, 235);
+    snprintf(text, sizeof(text), "Gold: %d", trade->my_gold);
+    Label_SetText(inventory->text, text);
+    Label_Draw(inventory->text, 162, 235);
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    Sprite_Draw(inventory->shop_buttons,
+                (uint8_t)(16 + (GameInventory__InBox(mouse_x, mouse_y, TRADE_ACCEPT_X, TRADE_BUTTONS_Y) && left_down)),
+                TRADE_ACCEPT_X, TRADE_BUTTONS_Y + SHOP_BUTTON_SZ);
+    Sprite_Draw(inventory->shop_buttons,
+                (uint8_t)(10 + (GameInventory__InBox(mouse_x, mouse_y, TRADE_CLOSE_X, TRADE_BUTTONS_Y) && left_down)),
+                TRADE_CLOSE_X, TRADE_BUTTONS_Y + SHOP_BUTTON_SZ);
+    GameInventory__DrawCheck(TRADE_THEIR_OK_X, TRADE_THEIR_OK_Y, trade->their_accept);
+    if (trade->my_accept) {
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 30, 120, 30, 120);
+        const SDL_Rect box = {TRADE_ACCEPT_X, TRADE_BUTTONS_Y, SHOP_BUTTON_SZ, SHOP_BUTTON_SZ};
+        SDL_RenderFillRect(sdl_renderer, &box);
+    }
+}
+
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
-    if (inventory->shop != NULL) {
+    if (inventory->trade != NULL) {
+        GameInventory__DrawTrade(inventory, character, mouse_x, mouse_y);
+    } else if (inventory->shop != NULL) {
         GameInventory__DrawShop(inventory, character, mouse_x, mouse_y);
     } else if (inventory->stash_open) {
         GameInventory__DrawStash(inventory, character, mouse_x, mouse_y);
@@ -1203,9 +1429,24 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
         item     = &character->belt[belt];
         anchor_y = BELT_Y - 4;
     } else if (open) {
-        int cell_x;
-        int cell_y;
-        if (inventory->shop != NULL && GameInventory__ShopCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+        int              cell_x;
+        int              cell_y;
+        const TradeView *trade       = inventory->trade;
+        int              trade_index = -1;
+        bool             theirs      = false;
+        if (trade != NULL && GameInventory__TradeCellAt(mouse_x, mouse_y, TRADE_THEIR_Y, &cell_x, &cell_y)) {
+            trade_index = GameInventory_TradeAt(trade->theirs, trade->their_count, cell_x, cell_y);
+            theirs      = true;
+        } else if (trade != NULL && GameInventory__TradeCellAt(mouse_x, mouse_y, TRADE_MY_Y, &cell_x, &cell_y)) {
+            trade_index = GameInventory_TradeAt(trade->mine, trade->mine_count, cell_x, cell_y);
+        }
+        if (trade_index >= 0) {
+            const InventoryItem *it   = theirs ? &trade->theirs[trade_index] : &trade->mine[trade_index];
+            const ItemBase      *base = Items_Find(it->item.code);
+            item                      = &it->item;
+            anchor_x                  = TRADE_GRID_X + (it->x * CELL) + ((base != NULL ? base->width : 1) * CELL / 2);
+            anchor_y                  = (theirs ? TRADE_THEIR_Y : TRADE_MY_Y) + (it->y * CELL);
+        } else if (inventory->shop != NULL && GameInventory__ShopCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
             const int under = Shop_ItemAt(inventory->shop, inventory->shop_tab, cell_x, cell_y);
             if (under >= 0) {
                 const InventoryItem *it   = &inventory->shop->items[under];

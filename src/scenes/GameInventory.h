@@ -18,12 +18,16 @@ typedef struct GameInventory GameInventory;
 
 typedef enum GameInventoryEvent {
     INVENTORY_EVENT_NONE       = 0,
-    INVENTORY_EVENT_EQUIPMENT  = 1,  // what's worn changed: damage and defense need working out again
-    INVENTORY_EVENT_DRINK      = 2,  // a potion was drunk: *drunk says which
-    INVENTORY_EVENT_MOVED      = 4,  // something was picked up or put down (a sound)
-    INVENTORY_EVENT_GOLD       = 8,  // the gold button: drop some, or at the stash put some in (the scene asks)
-    INVENTORY_EVENT_STASH_GOLD = 16, // the stash's gold button: take some out
-    INVENTORY_EVENT_SHOP_CLOSE = 32, // the store's close button
+    INVENTORY_EVENT_EQUIPMENT  = 1,   // what's worn changed: damage and defense need working out again
+    INVENTORY_EVENT_DRINK      = 2,   // a potion was drunk: *drunk says which
+    INVENTORY_EVENT_MOVED      = 4,   // something was picked up or put down (a sound)
+    INVENTORY_EVENT_GOLD       = 8,   // the gold button: drop some, or at the stash put some in (the scene asks)
+    INVENTORY_EVENT_STASH_GOLD = 16,  // the stash's gold button: take some out
+    INVENTORY_EVENT_SHOP_CLOSE = 32,  // the store's close button
+    INVENTORY_EVENT_TRADE      = 64,  // trading: your offer changed
+    INVENTORY_EVENT_TRADE_OK   = 128, // trading: the accept button
+    INVENTORY_EVENT_TRADE_GOLD = 256, // trading: your gold box (how much to offer)
+    INVENTORY_EVENT_TRADE_END  = 512, // trading: the close button
 } GameInventoryEvent;
 
 GameInventory *GameInventory_Create(void);
@@ -58,9 +62,31 @@ bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int 
 // A merchant's store on the left (NULL closes it): click an item to buy it (Shift: potions into the belt), put an item
 // on it or right click one in the inventory to sell it
 struct ShopStock;
+
+// Trading with another player (multiplayer): the game's trade panel on the left, their offer above (to look at),
+// yours below (put items from the inventory in it, take them back out), the gold each offers, and who has accepted
+#define TRADE_W     10
+#define TRADE_H     4
+#define TRADE_ITEMS (TRADE_W * TRADE_H)
+typedef struct TradeView {
+    char          their_name[16];
+    InventoryItem theirs[TRADE_ITEMS];
+    int           their_count;
+    int           their_gold;
+    bool          their_accept;
+    InventoryItem mine[TRADE_ITEMS];
+    int           mine_count;
+    int           my_gold;
+    bool          my_accept;
+} TradeView;
+void GameInventory_SetTrade(GameInventory *inventory, TradeView *trade); // NULL: not trading
+bool GameInventory_TradeOpen(const GameInventory *inventory);
+int  GameInventory_TradeAt(const InventoryItem *items, int count, int cell_x, int cell_y);
+bool GameInventory_TradePlace(InventoryItem *items, int *count, const Item *item, int x, int y); // where it's free
+bool GameInventory_TradeAdd(InventoryItem *items, int *count, const Item *item);                 // anywhere free
 void GameInventory_SetShop(GameInventory *inventory, struct ShopStock *stock, int difficulty);
 bool GameInventory_ShopOpen(const GameInventory *inventory);
-bool GameInventory_IsOverShop(const GameInventory *inventory, int mouse_x, int mouse_y);
+bool GameInventory_IsOverShop(const GameInventory *inventory, int mouse_x, int mouse_y); // (the trade panel too)
 bool GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);

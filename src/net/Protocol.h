@@ -11,8 +11,20 @@
 // they do; the server checks it and tells everyone.
 
 #define NET_PROTOCOL_VERSION                                                                                           \
-    7 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
-      // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets
+    8 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+      // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading
+
+// Trading between players (MSG_TRADE / MSG_TRADE_FROM): the server only passes them on; both games check and make
+// the swap when each has accepted the other's offer as it stands (their versions)
+typedef enum TradeOp {
+    TRADE_ASK = 1, // would you trade with me?
+    TRADE_YES,     // yes: the trade screen opens on both sides
+    TRADE_NO,      // no (or busy)
+    TRADE_OFFER,   // what I offer now: version, gold, items (x, y, item)
+    TRADE_ACCEPT,  // I accept: your offer's version, mine
+    TRADE_CANCEL,  // closed
+} TradeOp;
+
 #define NET_DEFAULT_PORT     4000 // Diablo II's own TCP/IP game port
 #define NET_DISCOVERY_PORT   4001 // LAN: "is anyone hosting?" over UDP broadcast
 #define NET_LOBBY_PORT       4002 // abyss-lobby: the list of online games
@@ -55,6 +67,7 @@ typedef enum NetMessageType {
     MSG_CAST,  // map, skill (skills.txt row, 0xFFFF: the bow's attack), level, from x, y, at x, y: the others see it
                // (the caster does the damage)
     MSG_LOOKS, // what I wear and hold (Character_LooksToText), when it changes
+    MSG_TRADE, // to (player id), what (TradeOp), then: an offer's version, gold and items; a confirm's two versions
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
@@ -76,6 +89,7 @@ typedef enum NetMessageType {
     MSG_OBJECT_USED,         // who opened it (0: was open already), map, object index
     MSG_PARTY_INVITED,       // who invites you
     MSG_CAST_FROM,           // someone's skill, to see
+    MSG_TRADE_FROM,          // a trade message from someone: their id, then what MSG_TRADE carried
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;

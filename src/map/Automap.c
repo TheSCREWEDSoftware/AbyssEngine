@@ -61,6 +61,7 @@ struct Automap {
     int           texture_act;
 
     Label *labels[MAX_EXIT_LABELS]; // "To The Cold Plains" at each way out
+    Label *name_label;              // other players' names
 };
 
 // AutoMap.txt's tile names for the orientations
@@ -210,6 +211,7 @@ void Automap_Destroy(Automap **automap_ref) {
     for (int i = 0; i < MAX_EXIT_LABELS; i++) {
         Label_Destroy(&automap->labels[i]);
     }
+    { Label_Destroy(&automap->name_label); }
     free(automap->rows);
     free(automap->cels);
     free(automap);
@@ -408,6 +410,29 @@ void Automap_Draw(Automap *automap, const SDL_Rect *view, const float player_x, 
     for (int m = 0; m < mark_count; m++) {
         const int tx = (int)(marks[m].x / MAP_SUBTILES);
         const int ty = (int)(marks[m].y / MAP_SUBTILES);
+        if (marks[m].cel < 0) {
+            // Another player (your party): a cross in their colour wherever they are, and their name
+            const int     px = origin_x + (int)(((marks[m].x - marks[m].y) / MAP_SUBTILES) * TILE_HALF_W);
+            const int     py = origin_y + (int)(((marks[m].x + marks[m].y) / MAP_SUBTILES) * TILE_HALF_H);
+            const uint8_t r  = (uint8_t)(marks[m].color >> 16);
+            const uint8_t g  = (uint8_t)(marks[m].color >> 8);
+            const uint8_t b  = (uint8_t)marks[m].color;
+            SDL_SetRenderDrawColor(sdl_renderer, r, g, b, 255);
+            SDL_RenderDrawLine(sdl_renderer, px - 4, py - 2, px + 4, py + 2);
+            SDL_RenderDrawLine(sdl_renderer, px - 4, py + 2, px + 4, py - 2);
+            SDL_RenderDrawLine(sdl_renderer, px - 4, py - 1, px + 4, py + 3);
+            SDL_RenderDrawLine(sdl_renderer, px - 4, py + 3, px + 4, py - 1);
+            if (marks[m].name != NULL) {
+                if (automap->name_label == NULL) {
+                    automap->name_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+                    Label_SetAlignment(automap->name_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+                }
+                Label_SetText(automap->name_label, marks[m].name);
+                Label_SetColor(automap->name_label, r, g, b, 0xFF);
+                Label_Draw(automap->name_label, px, py - 10);
+            }
+            continue;
+        }
         if (tx < 0 || ty < 0 || tx >= map->width || ty >= map->height || !seen->tiles[(ty * map->width) + tx]) {
             continue;
         }

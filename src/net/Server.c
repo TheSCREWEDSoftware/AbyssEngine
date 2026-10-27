@@ -19,6 +19,7 @@
 
 #define MAX_CONNECTIONS  (NET_MAX_PLAYERS + 4) // a few more, to tell them the game is full
 #define HELLO_TIMEOUT_MS 10000                 // to say who they are
+#define NET_BEHIND_BYTES (256 * 1024)          // queued for a player: they're not keeping up (skip what can be skipped)
 #define LOBBY_EVERY_MS   30000                 // re-register a public game this often
 #define LOBBY_TIMEOUT_MS 5000
 #define MAX_SERVER_CHARS 32 // characters one player keeps on a dedicated server
@@ -965,6 +966,12 @@ static void Server__PassOn(NetServer *server, const Peer *from, const uint8_t ty
         if (peer->connection == NULL || peer->stage != STAGE_IN_GAME || peer == from) {
             continue;
         }
+        // Monster positions are sent 15 times a second and each one replaces the last: a player whose game isn't
+        // reading (loading an area, which can take seconds) misses some rather than have them pile up until the
+        // connection gives up on them
+        if (type == MSG_MONSTERS_FROM && peer->connection->out_size > NET_BEHIND_BYTES) {
+            continue;
+        }
         if (to_id > 0 ? peer->id == to_id : (peer->has_state && peer->place == map)) {
             Server__Send(peer, type, writer);
         }
@@ -1045,6 +1052,13 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
     case MSG_PARTY_LEAVE:
         if (peer->stage == STAGE_IN_GAME) {
             Server__LeaveParty(server, peer);
+        }
+        break;
+    case MSG_TRADE:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek = *reader;
+            const int to   = NetReader_U8(&peek);
+            Server__PassOn(server, peer, MSG_TRADE_FROM, reader, 0, to > 0 ? to : 255);
         }
         break;
     case MSG_LOOKS:

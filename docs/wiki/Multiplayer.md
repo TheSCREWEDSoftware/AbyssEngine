@@ -63,17 +63,28 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Parties**: **P** opens the party screen: everyone in the game, with **Invite** next to each (or **Accept** when
   they've invited you; the chat says so), and **Leave Party** when you're in one. Party members share the experience
   of kills made within about two screens of each other, with the game's bonus of 35% for each member after the first
-  (two players get 67.5% each), and can't attack each other with PvP on. Leaving the game leaves the party.
+  (two players get 67.5% each), and can't attack each other with PvP on. Leaving the game leaves the party. Your
+  party shows on the automap: a cross in each one's colour with their name.
+- **Trading**: **Trade** next to someone on the party screen asks them ("So-and-so wants to trade with you"); their
+  **Accept Trade** opens the game's trade screen on both sides: their offer above, yours below, with the gold each
+  puts in (click your gold box). Put items from your inventory in your offer, or take them back out; any change takes
+  back both acceptances. When you've both pressed the accept button on the offers as they are, the items and gold
+  change hands (it won't let you accept what you have no room for). The close button, closing the inventory or
+  either of you leaving ends it and gives your offer back.
 - **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On
   a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
   around stays for the others until the game ends.
 - **Skills**: the others see your missiles, novas and the spots your area skills land on, coming from where you
   stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
   Buffs, auras, curses and summons aren't shown to the others yet.
-
 - **What you wear** shows on your figure for the others, and changes as you change it.
+- **The same map for everyone**: an act's joined-up outdoors is always built from its town outwards, whichever area
+  you come into it by, so everyone in it sees everyone else where they are (it used to depend on where you came in,
+  and someone who left for a neighbouring area could vanish until you were back in the same one).
+- **Joining while the others are busy**: a game that's loading an area (which can take seconds) skips monster updates
+  until it's caught up, rather than have them pile up until the connection gives up on it.
 
-Each of these changed what games send each other (now protocol version 7: what players wear, and items' sockets):
+Each of these changed what games send each other (now protocol version 8: trading):
 everyone needs the same build, or the game says the host runs a different version.
 
 ## Game settings

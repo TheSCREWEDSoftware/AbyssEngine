@@ -309,7 +309,7 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define ROAM_SHOPS       8    // merchants' stock kept in a game
 
 // What the "how much gold" dialog is for
-enum { AMOUNT_FOR_DROP = 1, AMOUNT_FOR_STASH_PUT, AMOUNT_FOR_STASH_TAKE };
+enum { AMOUNT_FOR_DROP = 1, AMOUNT_FOR_STASH_PUT, AMOUNT_FOR_STASH_TAKE, AMOUNT_FOR_TRADE };
 #define ITEM_SPRITES   48 // flippy pictures kept loaded
 #define PLACEHOLDER_ID 0xFFFFFFFFu
 
@@ -456,6 +456,13 @@ typedef struct SceneRoam {
     ShopStock *shops[ROAM_SHOPS];
     int        shop_count;
     int        shop_npc; // trading with (unit index), -1 = none
+    // Trading with another player (SceneRoamTrade.inc)
+    int        trade_state;
+    int        trade_with;     // their player id
+    int        trade_asked_by; // who asked us (0: nobody)
+    uint32_t   trade_my_version;
+    uint32_t   trade_their_version;
+    TradeView *trade;
     HireOffer  hire_offers[HIRE_OFFERS];
     uint64_t   quest_check_at; // quests (SceneRoamQuests.inc): when to look again
     int        quest_left;     // monsters left in the area being cleared
@@ -2701,6 +2708,7 @@ static void Roam__Free(void **scene_ref) {
     for (int s = 0; s < roam->shop_count; s++) {
         free(roam->shops[s]);
     }
+    free(roam->trade);
     roam->shop_count = 0;
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
@@ -3975,6 +3983,8 @@ static void Roam__Drink(SceneRoam *roam, const Item *item) {
 // Multiplayer: the party screen (P). Everyone in the game, and a button to invite them, accept their invitation, or
 // leave your party. A party shares the experience of kills made near each other, and can't fight each other.
 
+#include "SceneRoamTrade.inc"
+
 #define PARTY_X     150
 #define PARTY_Y     80
 #define PARTY_W     500
@@ -3991,6 +4001,11 @@ static bool Roam__InMyParty(const NetPlayer *player) {
 
 static SDL_Rect Roam__PartyButton(const int row) {
     return (SDL_Rect){PARTY_X + PARTY_W - PARTY_BTN_W - 12, PARTY_TOP + (row * PARTY_ROW) + 2, PARTY_BTN_W, 21};
+}
+
+static SDL_Rect Roam__PartyTradeButton(const int row) {
+    const SDL_Rect invite = Roam__PartyButton(row);
+    return (SDL_Rect){invite.x - PARTY_BTN_W - 8, invite.y, PARTY_BTN_W, invite.h};
 }
 
 static SDL_Rect Roam__PartyLeaveButton(const int rows) {
@@ -4025,6 +4040,12 @@ static bool Roam__UpdatePartyPanel(SceneRoam *roam, const int mouse_x, const int
         return true;
     }
     for (int r = 0; r < rows; r++) {
+        const SDL_Rect trade = Roam__PartyTradeButton(r);
+        if (SDL_PointInRect(&mouse, &trade)) {
+            Roam__TradeButton(roam, &players[r]);
+            Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+            return true;
+        }
         const SDL_Rect button = Roam__PartyButton(r);
         if (!SDL_PointInRect(&mouse, &button) || Roam__InMyParty(&players[r])) {
             continue;
@@ -4094,6 +4115,9 @@ static void Roam__DrawPartyPanel(SceneRoam *roam, const int mouse_x, const int m
         Label_SetText(roam->item_label, text);
         Label_SetColor(roam->item_label, cr, cg, cb, 0xFF);
         Label_Draw(roam->item_label, PARTY_X + 14, PARTY_TOP + (r * PARTY_ROW) + 4);
+        const SDL_Rect trade = Roam__PartyTradeButton(r);
+        Roam__PartyButtonDraw(roam, &trade, roam->trade_asked_by == player->id ? "Accept Trade" : "Trade",
+                              SDL_PointInRect(&mouse, &trade));
         const SDL_Rect button = Roam__PartyButton(r);
         if (Roam__InMyParty(player)) {
             Label_SetText(roam->item_label, "In your party");
@@ -4133,6 +4157,9 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     Roam__KeepShop(roam);
     Roam__KeepHireling(roam);
+    if (roam->online) {
+        Roam__KeepTrade(roam);
+    }
     Roam__CheckQuests(roam, SDL_GetTicks64());
     if (Controls_Pressed(ACTION_QUESTS)) {
         roam->quest_panel = !roam->quest_panel;
@@ -4248,6 +4275,20 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     } else if (item_events & INVENTORY_EVENT_GOLD) {
         AmountDialog_Open(roam->amount, "Drop Gold", "How much gold do you want to drop?", character->gold,
                           character->gold, AMOUNT_FOR_DROP);
+    }
+    if (item_events & INVENTORY_EVENT_TRADE) {
+        Roam__TradeChanged(roam);
+    }
+    if (item_events & INVENTORY_EVENT_TRADE_OK) {
+        Roam__TradeAccept(roam);
+    }
+    if (item_events & INVENTORY_EVENT_TRADE_END) {
+        Roam__TradeClose(roam, true);
+        roam->inventory_panel = false;
+    }
+    if (item_events & INVENTORY_EVENT_TRADE_GOLD) {
+        AmountDialog_Open(roam->amount, "Offer Gold", "How much gold do you want to offer?", character->gold,
+                          roam->trade != NULL ? roam->trade->my_gold : 0, AMOUNT_FOR_TRADE);
     }
     if (item_events & INVENTORY_EVENT_SHOP_CLOSE) {
         Roam__CloseShop(roam);
@@ -4558,6 +4599,9 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         }
         break;
     }
+    case MSG_TRADE_FROM:
+        Roam__TradeMessage(roam, reader);
+        break;
     case MSG_CAST_FROM: {
         NetReader_U8(reader); // who (seen through their missiles)
         const int   map   = NetReader_I32(reader);
@@ -4813,6 +4857,12 @@ static void Roam__AmountChosen(SceneRoam *roam, const int amount) {
     switch (AmountDialog_Tag(roam->amount)) {
     case AMOUNT_FOR_DROP:
         Roam__DropGold(roam, amount);
+        break;
+    case AMOUNT_FOR_TRADE:
+        if (roam->trade != NULL && roam->trade_state == TRADE_STATE_OPEN) {
+            roam->trade->my_gold = amount < roam->character->gold ? amount : roam->character->gold;
+            Roam__TradeChanged(roam);
+        }
         break;
     case AMOUNT_FOR_STASH_PUT: {
         Character *c     = roam->character;
@@ -5780,8 +5830,21 @@ static void Roam__Render(SceneRoam *roam) {
                 const int cel = unit->object.operate_fn == 23 && unit->object.automap == 0 ? AUTOMAP_WAYPOINT_CEL
                                                                                            : unit->object.automap;
                 if (cel > 0) {
-                    marks[mark_count++] = (AutomapMark){unit->x, unit->y, cel};
+                    marks[mark_count++] = (AutomapMark){unit->x, unit->y, cel, 0, NULL};
                 }
+            }
+            // Multiplayer: your party on this map, in their colours
+            for (int o = 0; o < roam->other_count && mark_count < MAX_AUTOMAP_MARKS; o++) {
+                const NetPlayer *player = NetClient_Player(roam->other_ids[o]);
+                if (!Roam__InMyParty(player)) {
+                    continue;
+                }
+                uint8_t r;
+                uint8_t g;
+                uint8_t b;
+                NetColor_Get(roam->other_colors[o], &r, &g, &b);
+                marks[mark_count++] = (AutomapMark){roam->others[o].x, roam->others[o].y, -1,
+                                                    ((uint32_t)r << 16) | ((uint32_t)g << 8) | b, roam->others[o].name};
             }
             Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
         }

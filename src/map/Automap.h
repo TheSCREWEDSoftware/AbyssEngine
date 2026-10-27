@@ -25,9 +25,11 @@ void Automap_Reveal(Automap *automap, float subtile_x, float subtile_y);
 // An object's mark on the automap (waypoints, shrines, wells, stairs, ...): where it is, and which piece of the act's
 // MaxiMap.dc6 (objects.txt AutoMap). Shown once its tile has been seen.
 typedef struct AutomapMark {
-    float x; // sub-tiles
-    float y;
-    int   cel;
+    float       x; // sub-tiles
+    float       y;
+    int         cel;   // the piece to draw; -1: a player (a cross in their colour, with their name)
+    uint32_t    color; // a player's: 0xRRGGBB
+    const char *name;
 } AutomapMark;
 
 #define AUTOMAP_WAYPOINT_CEL 307 // objects.txt gives it to only some waypoints; the game marks them all

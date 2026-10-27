@@ -297,13 +297,47 @@ static int Places__JoinScore(const Map *a, const Map *b, const WorldSide side, c
 // An act's outdoors as one map, like the game: the town and every area you can walk to from it, side by side where
 // they join, so walking from one into the next is just walking. Each area is built on its own from the world seed
 // (the same as when it's loaded alone), then placed so the way out of one meets the way into the next.
+// The area the act's joined outdoors grows from: the lowest Levels.txt Id walkable to from here (the town, mostly).
+// Growing from it whichever area you come in by gives everyone the same map (same areas, same places): multiplayer
+// games need that, as they tell each other where they are in it.
+static int Places__OutdoorsRoot(const int level_id) {
+    int seen[64];
+    int count     = 0;
+    int lowest    = level_id;
+    seen[count++] = level_id;
+    for (int i = 0; i < count; i++) {
+        int       targets[4];
+        WorldSide sides[4];
+        const int links = World_GetWalkLinks(seen[i], targets, sides, 4);
+        for (int l = 0; l < links && count < 64; l++) {
+            bool known = Places__ByLevel(targets[l]) == NULL;
+            for (int k = 0; k < count && !known; k++) {
+                known = seen[k] == targets[l];
+            }
+            if (!known) {
+                seen[count++] = targets[l];
+                lowest        = targets[l] < lowest ? targets[l] : lowest;
+            }
+        }
+    }
+    return lowest;
+}
+
+static Map *Places__LoadOutdoorsFrom(const Place *requested, int root);
+
 static Map *Places__LoadOutdoors(const Place *requested) {
+    const int root = Places__OutdoorsRoot(requested->level_id);
+    return Places__LoadOutdoorsFrom(
+        requested, root != requested->level_id && Places__ByLevel(root) != NULL ? root : requested->level_id);
+}
+
+static Map *Places__LoadOutdoorsFrom(const Place *requested, const int root) {
     int  levels[MAP_MAX_AREAS];
     Map *maps[MAP_MAX_AREAS];
     int  pos_x[MAP_MAX_AREAS]; // tiles
     int  pos_y[MAP_MAX_AREAS];
     int  count      = 0;
-    levels[count++] = requested->level_id;
+    levels[count++] = root;
 
     // Every area joined on foot (breadth first, so each one is placed next to one already placed)
     int parent[MAP_MAX_AREAS];
@@ -324,6 +358,13 @@ static Map *Places__LoadOutdoors(const Place *requested) {
         }
     }
 
+    bool has_requested = false;
+    for (int i = 0; i < count; i++) {
+        has_requested = has_requested || levels[i] == requested->level_id;
+    }
+    if (!has_requested) {
+        return Places__LoadOutdoorsFrom(requested, requested->level_id); // too far from the root to be joined to it
+    }
     for (int i = 0; i < count; i++) {
         maps[i] = Places__LoadArea(Places__ByLevel(levels[i]));
         if (maps[i] == NULL) {
@@ -483,8 +524,15 @@ static Map *Places__LoadOutdoors(const Place *requested) {
     Map_Finish(world);
 
     world->has_start = true;
-    world->start_x   = world->areas[0].start_x; // the requested area
+    world->start_x   = world->areas[0].start_x;
     world->start_y   = world->areas[0].start_y;
+    for (int a = 0; a < world->area_count; a++) {
+        if (world->areas[a].level_id == requested->level_id) {
+            world->start_x = world->areas[a].start_x; // the requested area
+            world->start_y = world->areas[a].start_y;
+        }
+    }
+    snprintf(world->name, sizeof(world->name), "%s", requested->name);
     return world;
 }
 
