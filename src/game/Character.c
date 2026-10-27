@@ -633,6 +633,9 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
             Character__Print(file, "quests %d %s\n", d, states);
         }
     }
+    if (character->personalized) {
+        Character__Print(file, "personalized 1\n");
+    }
     if (character->quest_resist != 0 || character->quest_life != 0) {
         Character__Print(file, "questbonus %d %d\n", character->quest_resist, character->quest_life);
     }
@@ -873,6 +876,8 @@ bool Character_ReadText(const char *text, Character *character) {
                     character->quests[d][q] = (uint8_t)(states[q] - '0');
                 }
             }
+        } else if (strcmp(key, "personalized") == 0) {
+            character->personalized = atoi(value) != 0;
         } else if (strcmp(key, "questbonus") == 0) {
             sscanf(value, "%d %d", &character->quest_resist, &character->quest_life);
         } else if (strcmp(key, "hireling") == 0) {

@@ -1240,7 +1240,18 @@ void Affixes_Roll(Item *item, const int item_level) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Showing
 
+static void Affixes__Name(const Item *item, char *line1, size_t size1, char *line2, size_t size2);
+
 void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2, const size_t size2) {
+    Affixes__Name(item, line1, size1, line2, size2);
+    if (item->owner[0] != '\0' && !item->unidentified && size1 > 0) { // personalized: "Owner's ..."
+        char named[160];
+        snprintf(named, sizeof(named), "%s's %s", item->owner, line1);
+        snprintf(line1, size1, "%s", named);
+    }
+}
+
+static void Affixes__Name(const Item *item, char *line1, const size_t size1, char *line2, const size_t size2) {
     Affixes__Load();
     const ItemBase *base      = Items_Find(item->code);
     const char     *base_name = base != NULL ? base->name : item->code;
@@ -1798,7 +1809,10 @@ void Affixes_Format(const Item *item, char *text, const size_t size) {
         used += (size_t)snprintf(text + used, size - used, " q%d", item->grade); // low quality, superior
     }
     if (item->ethereal && used < size) {
-        snprintf(text + used, size - used, " e");
+        used += (size_t)snprintf(text + used, size - used, " e");
+    }
+    if (item->owner[0] != '\0' && used < size) {
+        snprintf(text + used, size - used, " n:%s", item->owner); // (names have no spaces)
     }
 }
 
@@ -1840,6 +1854,8 @@ void Affixes_Parse(Item *item, const char *text) {
             item->grade = (uint8_t)a;
         } else if (strcmp(word, "e") == 0) {
             item->ethereal = true;
+        } else if (strncmp(word, "n:", 2) == 0 && word[2] != '\0') {
+            snprintf(item->owner, sizeof(item->owner), "%s", word + 2);
         }
     }
     if (item->socketed_count > item->sockets) {

@@ -462,7 +462,7 @@ time you reach the act's town, Diablo's end when he dies, and Lord of Destructio
 | The Guardian, Terror's End, Hell's Forge | Mephisto, Diablo, Hephasto dead (Diablo and Hephasto are put in their areas) | |
 | The Fallen Angel | Izual is dead (put in the Plains of Despair) | Tyrael: 2 skill points |
 | Siege on Harrogath | Shenk the Overseer is dead (put in the Bloody Foothills) | Qual-Kehk: sockets in the plain weapon in your hand (or your body armor) |
-| Prison of Ice | you reach the Frozen River | Malah: +10 to all resistances for good |
+| Prison of Ice | you reach the Frozen River | Malah: +10 to all resistances for good; Anya: **Personalize an item** once (the magic, rare, set or unique weapon in your hand, else your body armor or helm, becomes "Name's ...") |
 | Betrayal of Harrogath, Eve of Destruction | Nihlathak, Baal dead | |
 | The Horadric Staff | the Horadric Cube (its chest in the Halls of the Dead), the Staff of Kings (its chest in the Maggot Lair) and the Amulet of the Viper put together in the cube, and the staff put in the orifice in Tal Rasha's true tomb | |
 | Tainted Sun | you use the altar in the Claw Viper Temple (it gives the Amulet of the Viper) | |

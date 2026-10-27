@@ -44,6 +44,9 @@ void NetItem_Write(NetWriter *writer, const Item *item) {
     NetWriter_U16(writer, (uint16_t)item->durability);
     NetWriter_U16(writer, (uint16_t)item->max_durability);
     NetWriter_U8(writer, item->unidentified ? 1 : 0);
+    NetWriter_U8(writer, item->grade); // (protocol 16: superior / low quality, ethereal, personalized)
+    NetWriter_U8(writer, item->ethereal ? 1 : 0);
+    NetWriter_String(writer, item->owner);
 }
 
 void NetItem_Read(NetReader *reader, Item *item) {
@@ -81,6 +84,13 @@ void NetItem_Read(NetReader *reader, Item *item) {
     item->durability     = (int16_t)NetReader_U16(reader);
     item->max_durability = (int16_t)NetReader_U16(reader);
     item->unidentified   = NetReader_U8(reader) != 0;
+    const int grade      = NetReader_U8(reader);
+    item->grade          = (uint8_t)(grade <= ITEM_GRADE_SUPERIOR ? grade : 0);
+    item->ethereal       = NetReader_U8(reader) != 0;
+    NetReader_String(reader, item->owner, sizeof(item->owner));
+    for (char *c = item->owner; *c != '\0'; c++) {
+        *c = *c == ' ' || (unsigned char)*c < 32 ? '_' : *c; // (one word, as it's saved)
+    }
 }
 
 void NetSettings_Write(const NetSettings *settings, NetWriter *writer, const bool with_password) {

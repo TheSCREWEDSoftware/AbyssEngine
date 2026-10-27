@@ -127,6 +127,7 @@ typedef struct Item {
     // damage or defense, can't be repaired, easier to wear)
     uint8_t grade;
     bool    ethereal;
+    char    owner[CHARACTER_NAME_MAX]; // personalized (Anya, Prison of Ice): "Owner's ..." ("" none)
 } Item;
 
 #define ITEM_GRADE_SUPERIOR 9
@@ -199,6 +200,7 @@ typedef struct Character {
     // Quests: each one's QuestState (Quests.h) for Normal, Nightmare and Hell, and what rewards added for good
     uint8_t quests[3][CHARACTER_QUESTS];
     int     quest_resist;
+    bool    personalized; // Anya's reward (an item named after you) has been had
     // Your corpse (softcore death): what you wore and had in the belt stays on it until you get back to it (not saved
     // as such: a save puts it back on you, the game's way of not losing it)
     bool     has_corpse;

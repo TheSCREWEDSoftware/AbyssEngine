@@ -19,10 +19,12 @@ enum {
     NPC_GAMBLE,
     NPC_REPAIR,
     NPC_IDENTIFY,
+    NPC_PERSONALIZE, // Anya, after the Prison of Ice: an item named after you
     NPC_OFFER = 10,
     NPC_QUEST = 40
 };
 static int  Roam__QuestsFor(SceneRoam *roam, const Unit *unit, int *out, int most);
+static bool Roam__PrisonOfIceDone(SceneRoam *roam);
 static void Roam__ClaimQuest(SceneRoam *roam, int index);
 
 static const struct {
@@ -156,6 +158,10 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
     }
     if (roam->game && Shop_Identifies(unit->id)) {
         roam->npc_options[roam->npc_option_count++] = NPC_IDENTIFY;
+    }
+    if (roam->game && strcasecmp(unit->id, "drehya") == 0 && !roam->character->personalized &&
+        Roam__PrisonOfIceDone(roam)) {
+        roam->npc_options[roam->npc_option_count++] = NPC_PERSONALIZE;
     }
     const int travel = Roam__NpcTravel(unit);
     if (travel >= 0) {
@@ -471,6 +477,45 @@ static void Roam__DrawSpeech(SceneRoam *roam) {
     SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
 
+// The Prison of Ice is done (Anya's back): she names an item after you, once
+static bool Roam__PrisonOfIceDone(SceneRoam *roam) {
+    for (int q = 0; q < QUEST_COUNT; q++) {
+        const Quest *quest = Quests_Get(q);
+        if (quest->act == 4 && quest->number == 3) {
+            return *Roam__QuestState(roam, q) >= QUEST_REWARD;
+        }
+    }
+    return false;
+}
+
+// The weapon in hand (or else the body armor) gets your name: magic or better, not named already
+static void Roam__Personalize(SceneRoam *roam) {
+    Character       *c       = roam->character;
+    static const int order[] = {EQUIP_RIGHT_ARM, EQUIP_LEFT_ARM, EQUIP_TORSO, EQUIP_HEAD};
+    Item            *item    = NULL;
+    for (size_t s = 0; s < sizeof(order) / sizeof(order[0]) && item == NULL; s++) {
+        Item *worn = &c->equipped[order[s]];
+        if (worn->code[0] != '\0' && worn->quality != ITEM_NORMAL && !worn->unidentified && worn->owner[0] == '\0') {
+            item = worn;
+        }
+    }
+    if (item == NULL) {
+        Roam__ShowMessage(roam,
+                          "Wear the magic, rare, set or unique weapon (or armor) you want named, then come back.");
+        return;
+    }
+    snprintf(item->owner, sizeof(item->owner), "%s", c->name);
+    c->personalized = true;
+    char line1[160];
+    char line2[96];
+    Affixes_Name(item, line1, sizeof(line1), line2, sizeof(line2));
+    char text[200];
+    snprintf(text, sizeof(text), "It's yours now: %s.", line1);
+    Roam__ShowMessage(roam, text);
+    Sounds_Play("cursor_repair_item", SOUND_KIND_SFX);
+    Roam__StoreCharacter(roam);
+}
+
 static bool Roam__CanTalk(const SceneRoam *roam, const Unit *unit) {
     bool gives = false;
     for (int q = 0; q < QUEST_COUNT && !gives; q++) {
@@ -525,6 +570,8 @@ static const char *Roam__NpcOptionText(SceneRoam *roam, const int option) {
     }
     case NPC_IDENTIFY:
         return "Identify Items";
+    case NPC_PERSONALIZE:
+        return "Personalize an item (your reward)";
     case NPC_TRAVEL: {
         const int travel = Roam__NpcTravel(&roam->units[roam->npc_menu]);
         return travel >= 0 ? npc_travel[travel].label : "Travel";
@@ -597,6 +644,9 @@ static void Roam__NpcChoose(SceneRoam *roam, const int option) {
         }
         break;
     }
+    case NPC_PERSONALIZE:
+        Roam__Personalize(roam);
+        break;
     case NPC_IDENTIFY: {
         const int count = Shop_IdentifyAll(roam->character);
         if (count > 0) {
