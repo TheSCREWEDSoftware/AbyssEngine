@@ -749,6 +749,9 @@ static bool Roam__SkillUsesWeapon(const SkillRow *s) {
                                             strcmp(s->anim, "a1") == 0 || strcmp(s->anim, "th") == 0);
 }
 
+static Item *Roam__Ammo(SceneRoam *roam, bool use, const char **why);
+static bool  Roam__OutOfAmmo(SceneRoam *roam);
+
 // A ranged weapon in hand: its basic attack fires (arrows, bolts, javelins, throwing axes and knives)
 static const char *Roam__WeaponMissile(const SceneRoam *roam) {
     if (!roam->game) {
@@ -1565,6 +1568,10 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
             Roam__ShowMessage(roam, "Double Throw needs throwing weapons.");
             return true;
         }
+        if (Roam__Ammo(roam, true, NULL) == NULL) {
+            Roam__OutOfAmmo(roam);
+            return true;
+        }
         Roam__FireMissiles(roam, name, NULL, 0, 2, 8.0f, false, target != NULL ? target->x : tx,
                            target != NULL ? target->y : ty);
         return true;
@@ -1572,6 +1579,58 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
     default:
         return false;
     }
+}
+
+// Arrows, bolts and throwing weapons: what fires the weapon's missile (the quiver in the other hand for a bow or a
+// crossbow, the stack itself for a throwing weapon). use: take one. NULL when there's nothing to fire; *why says what
+static Item *Roam__Ammo(SceneRoam *roam, const bool use, const char **why) {
+    Character      *c      = roam->character;
+    const ItemBase *weapon = Inventory_Weapon(c);
+    Item           *ammo   = NULL;
+    const char     *need   = NULL;
+    if (weapon == NULL) {
+        return NULL;
+    }
+    if (Items_IsA(weapon, "bow") || Items_IsA(weapon, "xbow")) {
+        const bool      bow    = Items_IsA(weapon, "bow");
+        Item           *other  = &c->equipped[EQUIP_LEFT_ARM];
+        const ItemBase *holder = other->code[0] != '\0' ? Items_Find(other->code) : NULL;
+        ammo                   = holder != NULL && Items_IsA(holder, bow ? "bowq" : "xboq") ? other : NULL;
+        need = bow ? "You need arrows (a quiver in your other hand)." : "You need bolts (a quiver in your other hand).";
+    } else if (Items_IsAmmo(weapon)) {
+        ammo = &c->equipped[EQUIP_RIGHT_ARM];
+        need = "Out of ammo: a blacksmith fills it up again (Repair).";
+        if (ammo->code[0] == '\0' || strcmp(ammo->code, weapon->code) != 0) {
+            ammo = &c->equipped[EQUIP_LEFT_ARM]; // (held in the other hand)
+        }
+    } else {
+        return NULL; // not a ranged weapon
+    }
+    if (ammo == NULL || ammo->quantity <= 0) {
+        if (why != NULL) {
+            *why = need;
+        }
+        return NULL;
+    }
+    if (use) {
+        ammo->quantity--;
+        if (ammo->quantity <= 0 &&
+            (Items_IsA(Items_Find(ammo->code), "bowq") || Items_IsA(Items_Find(ammo->code), "xboq"))) {
+            memset(ammo, 0, sizeof(Item)); // an empty quiver is gone, like the game's
+            Roam__ApplyCharacter(roam);
+        }
+    }
+    return ammo;
+}
+
+// Out of arrows / bolts / throwing weapons: says so (true: the weapon fires nothing)
+static bool Roam__OutOfAmmo(SceneRoam *roam) {
+    const char *why = NULL;
+    if (Roam__WeaponMissile(roam) == NULL || Roam__Ammo(roam, false, &why) != NULL) {
+        return false;
+    }
+    Roam__ShowMessage(roam, why != NULL ? why : "Out of ammo.");
+    return true;
 }
 
 // The skill's effect, half way through the animation
@@ -1588,7 +1647,7 @@ static void Roam__ApplyCast(SceneRoam *roam, const uint64_t now) {
     if (s == NULL) {
         // The basic attack with a bow or javelin: one missile
         const char *name = Roam__WeaponMissile(roam);
-        if (name != NULL) {
+        if (name != NULL && Roam__Ammo(roam, true, NULL) != NULL) {
             Roam__FireMissiles(roam, name, NULL, 0, 1, 0.0f, false, tx, ty);
         }
         return;
@@ -1598,10 +1657,13 @@ static void Roam__ApplyCast(SceneRoam *roam, const uint64_t now) {
     }
     switch (s->kind) {
     case SKILL_KIND_MISSILE: {
-        int         count   = 1;
-        float       spread  = 0.0f;
-        bool        scatter = false;
-        const char *name    = Roam__MissileVolley(roam, s, level, &count, &spread, &scatter);
+        int   count   = 1;
+        float spread  = 0.0f;
+        bool  scatter = false;
+        if (Roam__SkillUsesWeapon(s) && Roam__WeaponMissile(roam) != NULL && Roam__Ammo(roam, true, NULL) == NULL) {
+            break; // (one arrow a shot, however many it splits into, like the game's)
+        }
+        const char *name = Roam__MissileVolley(roam, s, level, &count, &spread, &scatter);
         Roam__FireMissiles(roam, name, s, level, count, spread, scatter, tx, ty);
         break;
     }
@@ -1683,6 +1745,11 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         if (Roam__WeaponMissile(roam) == NULL) {
             return false; // a plain blow: walk up and hit
         }
+        if (Roam__OutOfAmmo(roam)) {
+            return true;
+        }
+    } else if (s != NULL && Roam__SkillUsesWeapon(s) && Roam__OutOfAmmo(roam)) {
+        return true;
     } else if (s == NULL || Roam__SkillPoints(roam, skill) <= 0) {
         return false;
     } else if (s->kind == SKILL_KIND_PASSIVE || s->kind == SKILL_KIND_AURA) {

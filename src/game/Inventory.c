@@ -173,6 +173,11 @@ static bool Inventory__IsTwoHanded(const Item *item) {
     return base != NULL && base->kind == ITEM_KIND_WEAPON && base->two_handed;
 }
 
+static bool Inventory__QuiverAndBow(const ItemBase *quiver, const ItemBase *bow) {
+    return quiver != NULL && bow != NULL && (Items_IsA(quiver, "bowq") || Items_IsA(quiver, "xboq")) &&
+           (Items_IsA(bow, "bow") || Items_IsA(bow, "xbow"));
+}
+
 bool Inventory_CanEquip(const Character *character, const Item *item, const EquipSlot slot, const char **why) {
     const ItemBase *base   = Items_Find(item->code);
     const char     *reason = NULL;
@@ -184,7 +189,11 @@ bool Inventory_CanEquip(const Character *character, const Item *item, const Equi
         const EquipSlot other      = slot == EQUIP_RIGHT_ARM ? EQUIP_LEFT_ARM : EQUIP_RIGHT_ARM;
         const Item     *other_item = &character->equipped[other];
         const ItemBase *other_base = other_item->code[0] != '\0' ? Items_Find(other_item->code) : NULL;
-        if (Inventory__IsTwoHanded(item) && other_base != NULL) {
+        // A bow or a crossbow is held in both hands, but its quiver goes in the other one
+        const bool quiver = Inventory__QuiverAndBow(base, other_base) || Inventory__QuiverAndBow(other_base, base);
+        if (quiver) {
+            reason = NULL;
+        } else if (Inventory__IsTwoHanded(item) && other_base != NULL) {
             reason = "A two-handed weapon needs both hands free.";
         } else if (Inventory__IsTwoHanded(other_item)) {
             reason = "Your other hand holds a two-handed weapon.";

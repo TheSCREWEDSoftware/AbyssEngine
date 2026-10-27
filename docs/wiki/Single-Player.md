@@ -272,6 +272,10 @@ magic. What's in a socket stays there.
   random worn piece). The tooltip shows "Durability: 12 of 24" (red when it's low); the game warns when something is
   about to break. At 0 it's **broken**: tinted red, and it does nothing (a broken weapon fights like bare hands, broken
   armor gives no defense or magic) until it's repaired.
+- **Arrows, bolts and throwing weapons** are used up: a bow needs a quiver of arrows in the other hand and a crossbow
+  a quiver of bolts (they go with the two-handed bow), one taken for each shot (Multiple Shot and the like too: one a
+  shot, however many it splits into); an empty quiver is gone. Javelins, throwing axes and knives use up their stack;
+  at none they don't throw ("Out of ammo") until a blacksmith's **Repair everything** fills them up (a gold each).
 - **Repair**: the blacksmiths (Charsi, Fara, Hratli, Halbu, Larzuk) have **Repair everything** in their menu, with
   the price: each item's worth times the part worn away times `npc.txt`'s "rep mult". It covers what you wear and
   what you carry.

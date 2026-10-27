@@ -269,6 +269,10 @@ static long Shop__RepairOne(const Item *item, const int repair_mult) {
             recharge += (long)(mod->extra - ItemMod_Charges(mod)) * (10 + (ItemMod_ChargeLevel(mod) * 15));
         }
     }
+    const ItemBase *base = item->code[0] != '\0' ? Items_Find(item->code) : NULL;
+    if (Items_IsAmmo(base) && item->quantity < base->max_stack) { // arrows, bolts and throwing weapons: a gold each
+        recharge += base->max_stack - item->quantity;
+    }
     if (item->code[0] == '\0' || item->max_durability <= 0 || item->durability >= item->max_durability ||
         item->ethereal) {
         return recharge; // (ethereal items can't be repaired)
@@ -291,14 +295,24 @@ int Shop_RepairCost(const char *npc_id, const Character *character) {
     return total > 100000000 ? 100000000 : (int)total;
 }
 
+// Quivers and throwing weapons filled up again
+static void Shop__Refill(Item *item) {
+    const ItemBase *base = item->code[0] != '\0' ? Items_Find(item->code) : NULL;
+    if (Items_IsAmmo(base) && item->quantity < base->max_stack) {
+        item->quantity = base->max_stack;
+    }
+}
+
 void Shop_RepairAll(Character *character) {
     for (int s = 0; s < EQUIP_COUNT; s++) {
+        Shop__Refill(&character->equipped[s]);
         if (!character->equipped[s].ethereal) { // (ethereal items can't be repaired)
             character->equipped[s].durability = character->equipped[s].max_durability;
         }
         Affixes_Recharge(&character->equipped[s]);
     }
     for (int i = 0; i < character->inventory_count; i++) {
+        Shop__Refill(&character->inventory[i].item);
         if (!character->inventory[i].item.ethereal) {
             character->inventory[i].item.durability = character->inventory[i].item.max_durability;
         }

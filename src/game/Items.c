@@ -37,6 +37,12 @@ bool Items_IsPotion(const ItemBase *base) {
            (base->life > 0 || base->mana > 0 || base->rejuvenate_pct > 0 || Items_SpecialPotion(base) != 0);
 }
 
+// Used up as it's fired: throwing weapons (javelins, axes, knives) and quivers (arrows, bolts)
+bool Items_IsAmmo(const ItemBase *base) {
+    return base != NULL && base->stackable &&
+           (Items_IsA(base, "thro") || Items_IsA(base, "bowq") || Items_IsA(base, "xboq"));
+}
+
 // Stamina, antidote and thawing potions (by their code): 1, 2, 3; 0 for anything else
 int Items_SpecialPotion(const ItemBase *base) {
     if (base == NULL) {
