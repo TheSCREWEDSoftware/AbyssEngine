@@ -11,6 +11,9 @@
 #include "../drawing/ListBox.h"
 #include "../drawing/Sprite.h"
 #include "../drawing/TextBox.h"
+#include "../game/Affixes.h"
+#include "../game/Inventory.h"
+#include "../game/Items.h"
 #include "../managers/AudioManager.h"
 #include "CatalogCharacters.h"
 #include "CatalogClasses.h"
@@ -48,6 +51,7 @@ typedef enum CatalogCategory {
     CATALOG_CATEGORY_CLASSES,
     CATALOG_CATEGORY_SPRITES,
     CATALOG_CATEGORY_CHARACTERS,
+    CATALOG_CATEGORY_MAGIC, // uniques, set items and runewords
     CATALOG_CATEGORY_COUNT
 } CatalogCategory;
 
@@ -466,6 +470,145 @@ static void Catalog__LoadCategory(CatalogItemList *list, const CatalogCategory c
     LOG_INFO("Catalog: %d items in '%s'", list->count, path);
 }
 
+// One property as the game words it, with its range ("+120-150% Enhanced Damage"): the text at the least and at the
+// most, joined where their numbers differ
+static void Catalog__PropertyLine(CatalogItem *item, const char *code, const char *param, const int min,
+                                  const int max) {
+    Item low      = Inventory_NewItem("rin");
+    Item high     = Inventory_NewItem("rin");
+    low.mod_count = high.mod_count = 0;
+    Affixes_AddPropertyParam(&low, code, param, min, min);
+    Affixes_AddPropertyParam(&high, code, param, max > min ? max : min, max > min ? max : min);
+    for (int m = 0; m < low.mod_count && m < high.mod_count; m++) {
+        char a[CATALOG_TEXT_LEN];
+        char b[CATALOG_TEXT_LEN];
+        Affixes_ModText(&low.mods[m], a, sizeof(a));
+        Affixes_ModText(&high.mods[m], b, sizeof(b));
+        if (strcmp(a, b) == 0) {
+            Catalog__AddLine(item, "%s", a);
+            continue;
+        }
+        // Where they first differ: back to the start of that number, then each number to its end
+        size_t at = 0;
+        while (a[at] != '\0' && a[at] == b[at]) {
+            at++;
+        }
+        while (at > 0 && isdigit((unsigned char)a[at - 1])) {
+            at--;
+        }
+        size_t end_a = at;
+        size_t end_b = at;
+        while (isdigit((unsigned char)a[end_a])) {
+            end_a++;
+        }
+        while (isdigit((unsigned char)b[end_b])) {
+            end_b++;
+        }
+        if (end_a > at && end_b > at && strcmp(a + end_a, b + end_b) == 0) {
+            Catalog__AddLine(item, "%.*s%.*s-%.*s%s", (int)at, a, (int)(end_a - at), a + at, (int)(end_b - at), b + at,
+                             a + end_a);
+        } else {
+            Catalog__AddLine(item, "%s", b);
+        }
+    }
+}
+
+// The Uniques tab: UniqueItems.txt, SetItems.txt and Runes.txt (runewords), each with its level and properties
+static void Catalog__LoadMagic(CatalogItemList *list) {
+    DataTable *uniques   = DataTable_Load("/data/global/excel/UniqueItems.txt");
+    DataTable *sets      = DataTable_Load("/data/global/excel/SetItems.txt");
+    DataTable *runewords = DataTable_Load("/data/global/excel/Runes.txt");
+    const int  total = DataTable_GetRowCount(uniques) + DataTable_GetRowCount(sets) + DataTable_GetRowCount(runewords);
+    list->items      = calloc((size_t)(total > 0 ? total : 1), sizeof(CatalogItem));
+    FAIL_IF_NULL(list->items);
+    list->count = 0;
+    const struct {
+        DataTable  *table;
+        const char *kind;
+        const char *name;
+        int         props;
+    } sources[3] = {
+        {uniques,   "Unique",   "index",     12},
+        {sets,      "Set",      "index",     9 },
+        {runewords, "Runeword", "Rune Name", 7 },
+    };
+    for (int s = 0; s < 3; s++) {
+        DataTable *t = sources[s].table;
+        for (int row = 0; row < DataTable_GetRowCount(t); row++) {
+            const char *name = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, sources[s].name));
+            const bool  on   = s == 2 ? DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "complete")) == 1
+                                      : DataTable_HasValue(t, row, DataTable_GetColumnIndex(t, "lvl"));
+            if (name[0] == '\0' || !on) {
+                continue;
+            }
+            CatalogItem *item = &list->items[list->count++];
+            const char  *real = StringTable_Find(name);
+            Catalog__Sanitize(item->name, sizeof(item->name), real != NULL ? real : name);
+            snprintf(item->type_name, sizeof(item->type_name), "%s", sources[s].kind);
+            Catalog__AddType(list, item->type_name);
+            if (s < 2) {
+                item->quality_level  = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "lvl"));
+                item->required_level = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "lvl req"));
+                const char *code = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, s == 0 ? "code" : "item"));
+                const ItemBase *base = Items_Find(code);
+                const char     *pic  = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "invfile"));
+                if (base != NULL) {
+                    snprintf(item->icon_path, sizeof(item->icon_path), "/data/global/items/%s.dc6",
+                             pic[0] != '\0' ? pic : base->inv_file);
+                }
+                Catalog__AddLine(item, "%s: %s", sources[s].kind,
+                                 s == 1 ? DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "set"))
+                                        : (base != NULL ? base->name : code));
+                Catalog__AddLine(item, "Required Level: %d", item->required_level);
+            } else {
+                char runes[64] = "";
+                for (int r = 1; r <= 6; r++) {
+                    char column[8];
+                    snprintf(column, sizeof(column), "Rune%d", r);
+                    const char     *code = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, column));
+                    const ItemBase *rune = code[0] != '\0' ? Items_Find(code) : NULL;
+                    if (rune != NULL) {
+                        const size_t used = strlen(runes);
+                        snprintf(runes + used, sizeof(runes) - used, "%s%.*s", used > 0 ? " " : "",
+                                 (int)(strchr(rune->name, ' ') != NULL ? strchr(rune->name, ' ') - rune->name
+                                                                       : (long)strlen(rune->name)),
+                                 rune->name);
+                        item->quality_level = item->quality_level > rune->level ? item->quality_level : rune->level;
+                    }
+                }
+                Catalog__AddLine(item, "Runes: %s", runes);
+                item->required_level = item->quality_level;
+            }
+            for (int p = 1; p <= sources[s].props && item->stat_line_count < CATALOG_MAX_STAT_LINES; p++) {
+                char c_prop[24], c_par[24], c_min[24], c_max[24];
+                if (s == 2) {
+                    snprintf(c_prop, sizeof(c_prop), "T1Code%d", p);
+                    snprintf(c_par, sizeof(c_par), "T1Param%d", p);
+                    snprintf(c_min, sizeof(c_min), "T1Min%d", p);
+                    snprintf(c_max, sizeof(c_max), "T1Max%d", p);
+                } else {
+                    snprintf(c_prop, sizeof(c_prop), "prop%d", p);
+                    snprintf(c_par, sizeof(c_par), "par%d", p);
+                    snprintf(c_min, sizeof(c_min), "min%d", p);
+                    snprintf(c_max, sizeof(c_max), "max%d", p);
+                }
+                const char *code = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, c_prop));
+                if (code[0] == '\0') {
+                    continue;
+                }
+                Catalog__PropertyLine(item, code, DataTable_GetString(t, row, DataTable_GetColumnIndex(t, c_par)),
+                                      DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, c_min)),
+                                      DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, c_max)));
+            }
+        }
+    }
+    DataTable_Destroy(&uniques);
+    DataTable_Destroy(&sets);
+    DataTable_Destroy(&runewords);
+    qsort(list->types, (size_t)list->type_count, sizeof(list->types[0]), Catalog__CompareStrings);
+    LOG_INFO("Catalog: %d uniques, set items and runewords", list->count);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Scene
 
@@ -502,12 +645,15 @@ void *Catalog_Create(void) {
     Label_SetText(result->empty_label, "No picture");
     Label_SetAlignment(result->empty_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
 
-    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor", "Classes", "Sprites", "Bestiary"};
+    static const char *category_names[CATALOG_CATEGORY_COUNT] = {"Weapons", "Armor",    "Classes",
+                                                                 "Sprites", "Bestiary", "Uniques"};
     for (int i = 0; i < CATALOG_CATEGORY_COUNT; i++) {
         result->category_buttons[i] = Button_Create(BUTTON_TYPE_MEDIUM, category_names[i]);
-        Button_SetPosition(result->category_buttons[i], CATALOG_LIST_X + (i * 136), 68);
+        Button_SetPosition(result->category_buttons[i], 8 + (i * 132), 68);
         if (i == CATALOG_CATEGORY_WEAPONS || i == CATALOG_CATEGORY_ARMOR) {
             Catalog__LoadCategory(&result->categories[i], (CatalogCategory)i);
+        } else if (i == CATALOG_CATEGORY_MAGIC) {
+            Catalog__LoadMagic(&result->categories[i]);
         }
     }
     result->classes    = CatalogClasses_Create();
@@ -597,7 +743,8 @@ static bool Catalog__HasCategoryBar(const CatalogCategory category) {
 }
 
 static bool Catalog__IsItemCategory(const SceneCatalog *catalog) {
-    return catalog->current_category == CATALOG_CATEGORY_WEAPONS || catalog->current_category == CATALOG_CATEGORY_ARMOR;
+    return catalog->current_category == CATALOG_CATEGORY_WEAPONS ||
+           catalog->current_category == CATALOG_CATEGORY_ARMOR || catalog->current_category == CATALOG_CATEGORY_MAGIC;
 }
 
 static const CatalogItemList *catalog_sort_items = NULL; // qsort has no context argument
@@ -810,7 +957,7 @@ static void Catalog__ShowItem(SceneCatalog *catalog, const int index) {
         Label_SetColor(catalog->stat_values[i], 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
-    if (FileManager_FileExists(item->icon_path)) {
+    if (item->icon_path[0] != '\0' && FileManager_FileExists(item->icon_path)) { // (runewords have none)
         catalog->icon_sprite = Sprite_Create(item->icon_path, PALETTE_UNITS);
         Sprite_GetFrameSize(catalog->icon_sprite, 0, &catalog->icon_width, &catalog->icon_height);
     } else {
