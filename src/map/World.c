@@ -355,14 +355,19 @@ bool World_GetAtmosphere(const int level_id, WorldAtmosphere *atmosphere) {
     if (environments == NULL || sounds == NULL || environment <= 0) {
         return true;
     }
-    int song     = 0;
-    int ambience = 0;
-    int event    = 0;
+    int song           = 0;
+    int ambience       = 0;
+    int event          = 0;
+    int night_ambience = 0;
+    int night_event    = 0;
     for (int r = 0; r < DataTable_GetRowCount(environments); r++) {
         if (DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Index")) == environment) {
             song     = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Song"));
             ambience = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Day Ambience"));
             event    = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Day Event"));
+            night_ambience =
+                DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Night Ambience"));
+            night_event = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Night Event"));
             atmosphere->event_delay =
                 DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Event Delay"));
             break;
@@ -371,13 +376,23 @@ bool World_GetAtmosphere(const int level_id, WorldAtmosphere *atmosphere) {
     const int c_index = DataTable_GetColumnIndex(sounds, "Index");
     const int c_file  = DataTable_GetColumnIndex(sounds, "FileName");
     const int c_name  = DataTable_GetColumnIndex(sounds, "Sound");
-    for (int r = 0; r < DataTable_GetRowCount(sounds) && (ambience > 0 || event > 0); r++) {
+    for (int r = 0;
+         r < DataTable_GetRowCount(sounds) && (ambience > 0 || event > 0 || night_ambience > 0 || night_event > 0);
+         r++) {
         const int index = DataTable_GetInt(sounds, r, c_index);
         if (ambience > 0 && index == ambience) {
             snprintf(atmosphere->ambience, sizeof(atmosphere->ambience), "%s", DataTable_GetString(sounds, r, c_name));
         }
         if (event > 0 && index == event) {
             snprintf(atmosphere->event, sizeof(atmosphere->event), "%s", DataTable_GetString(sounds, r, c_name));
+        }
+        if (night_ambience > 0 && index == night_ambience) {
+            snprintf(atmosphere->night_ambience, sizeof(atmosphere->night_ambience), "%s",
+                     DataTable_GetString(sounds, r, c_name));
+        }
+        if (night_event > 0 && index == night_event) {
+            snprintf(atmosphere->night_event, sizeof(atmosphere->night_event), "%s",
+                     DataTable_GetString(sounds, r, c_name));
         }
     }
     for (int r = 0; r < DataTable_GetRowCount(sounds) && song > 0; r++) {

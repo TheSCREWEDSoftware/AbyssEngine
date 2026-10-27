@@ -38,6 +38,8 @@ typedef struct WorldAtmosphere {
     // sound now and then (birds, drips) every so many frames (25 a second)
     char ambience[48];
     char event[48];
+    char night_ambience[48]; // at night outdoors ("" = the same as by day)
+    char night_event[48];
     int  event_delay;
 } WorldAtmosphere;
 bool World_GetAtmosphere(int level_id, WorldAtmosphere *atmosphere);

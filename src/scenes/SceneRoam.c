@@ -147,18 +147,24 @@ static int light_level = 0; // kept between visits
 // The time of day outdoors: a day is 20 minutes (12 day, 2 dusk, 4 night, 2 dawn), counted from midday when the
 // program started; darkness and the light radius around you go smoothly between day and night
 #define DAY_MS 1200000ull
-static void Roam__TimeOfDay(int *darkness, float *radius) {
-    const float t     = (float)(SDL_GetTicks64() % DAY_MS) / (float)DAY_MS * 20.0f; // minutes into the day
-    float       night = 0.0f;                                                       // 0 day .. 1 night
+static float Roam__Night(void) {                                                // 0 day .. 1 night
+    const float t = (float)(SDL_GetTicks64() % DAY_MS) / (float)DAY_MS * 20.0f; // minutes into the day
     if (t >= 12.0f && t < 14.0f) {
-        night = (t - 12.0f) / 2.0f;
-    } else if (t >= 14.0f && t < 18.0f) {
-        night = 1.0f;
-    } else if (t >= 18.0f) {
-        night = 1.0f - ((t - 18.0f) / 2.0f);
+        return (t - 12.0f) / 2.0f;
     }
-    *darkness = (int)(night * 190.0f);
-    *radius   = 30.0f - (night * 16.0f);
+    if (t >= 14.0f && t < 18.0f) {
+        return 1.0f;
+    }
+    if (t >= 18.0f) {
+        return 1.0f - ((t - 18.0f) / 2.0f);
+    }
+    return 0.0f;
+}
+
+static void Roam__TimeOfDay(int *darkness, float *radius) {
+    const float night = Roam__Night();
+    *darkness         = (int)(night * 190.0f);
+    *radius           = 30.0f - (night * 16.0f);
 }
 
 typedef enum UnitState {
@@ -392,6 +398,7 @@ typedef struct SceneRoam {
     int             area_level;       // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
+    bool            night_sounds;     // the area's night sounds are on (outdoors at night)
 
     // Player
     Unit     player;
@@ -1100,9 +1107,10 @@ static void Roam__UnitSound(const SceneRoam *roam, const Unit *unit, const Monst
         return;
     }
     if (strcmp(unit->base, "monsters") == 0) {
+        // From where the monster is: quieter far off, from its side of the screen
         const char *name = Sounds_MonsterSound(unit->id, which);
         if (name != NULL) {
-            Sounds_Play(name, SOUND_KIND_SFX);
+            Sounds_PlayAt(name, SOUND_KIND_SFX, unit->x - roam->player.x, unit->y - roam->player.y);
         }
     }
 }
@@ -1909,7 +1917,7 @@ static void Roam__UpdateGroundItems(SceneRoam *roam, const uint64_t now) {
         if (base == NULL || frame >= base->drop_sound_frame) {
             ground->landed = true;
             if (base != NULL && base->drop_sound[0] != '\0') {
-                Sounds_Play(base->drop_sound, SOUND_KIND_SFX);
+                Sounds_PlayAt(base->drop_sound, SOUND_KIND_SFX, ground->x - roam->player.x, ground->y - roam->player.y);
             }
         }
     }
@@ -2584,6 +2592,14 @@ static void Roam__ArrivalSpot(const Map *map, const float x, const float y, floa
     }
 }
 
+// Outdoors after dusk the area has its night sounds (SoundEnviron.txt's Night Ambience / Night Event)
+static bool Roam__NightSounds(const SceneRoam *roam) { return !roam->atmosphere.inside && Roam__Night() >= 0.5f; }
+
+static const char *Roam__AmbienceNow(const SceneRoam *roam) {
+    return roam->night_sounds && roam->atmosphere.night_ambience[0] != '\0' ? roam->atmosphere.night_ambience
+                                                                            : roam->atmosphere.ambience;
+}
+
 // Walked into another area of a joined-up map (or arrived in one): the game's caption, and town or not
 // The area's music, and whether it's dark or raining there
 static void Roam__UpdateAtmosphere(SceneRoam *roam) {
@@ -2591,13 +2607,23 @@ static void Roam__UpdateAtmosphere(SceneRoam *roam) {
     if (roam->atmosphere.music[0] != '\0') {
         AudioManager_PlayMusic(roam->atmosphere.music, true); // the same track carries on
     }
-    Sounds_PlayAmbience(roam->atmosphere.ambience); // the wind, a cave's hum (the same one carries on)
+    roam->night_sounds = Roam__NightSounds(roam);
+    // The wind, a cave's hum (the same one carries on); crickets and the like at night outdoors
+    Sounds_PlayAmbience(Roam__AmbienceNow(roam));
     roam->ambient_event_at = 0;
 }
 
 // The area's odd sounds now and then (birds, drips, distant howls): SoundEnviron.txt's event, about every Event Delay
 static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
-    if (roam->atmosphere.event[0] == '\0' || roam->atmosphere.event_delay <= 0) {
+    // Night falls or the day breaks: the background changes over
+    const bool night = Roam__NightSounds(roam);
+    if (night != roam->night_sounds) {
+        roam->night_sounds = night;
+        Sounds_PlayAmbience(Roam__AmbienceNow(roam));
+    }
+    const char *event =
+        night && roam->atmosphere.night_event[0] != '\0' ? roam->atmosphere.night_event : roam->atmosphere.event;
+    if (event[0] == '\0' || roam->atmosphere.event_delay <= 0) {
         return;
     }
     const uint64_t delay = (uint64_t)roam->atmosphere.event_delay * 40;
@@ -2606,7 +2632,10 @@ static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
         return;
     }
     if (now >= roam->ambient_event_at) {
-        Sounds_Play(roam->atmosphere.event, SOUND_KIND_SFX); // (a group: one of them at random)
+        // (a group: one of them at random), from somewhere around you
+        const float angle = (float)Roam__Roll(0, 359) * 0.01745f;
+        const float away  = (float)Roam__Roll(4, 14);
+        Sounds_PlayAt(event, SOUND_KIND_SFX, cosf(angle) * away, sinf(angle) * away);
         roam->ambient_event_at = now + (delay / 2) + (uint64_t)Roam__Roll(0, (int)delay);
     }
 }

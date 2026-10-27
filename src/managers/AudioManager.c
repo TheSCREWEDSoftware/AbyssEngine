@@ -3,15 +3,19 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "../managers/VideoManager.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 #define AUDIO_MAX_VOICES 32
+// A new track fades in over the old one for 2 seconds (in interleaved samples at 48 kHz stereo)
+#define MUSIC_FADE_SAMPLES (48000 * 2 * 2)
 
 typedef struct AudioVoice {
     const SoundEffect *sound;    // NULL = free
     int                position; // next sample (interleaved left/right)
     float              volume;
+    float              pan; // -1 all left, 0 middle, 1 all right
     bool               ui;
 } AudioVoice;
 
@@ -23,6 +27,8 @@ typedef struct AudioManager {
     enum AVSampleFormat out_sample_format;
     AVChannelLayout     channel_layout;
     struct AudioStream *background_music;
+    struct AudioStream *fading_music; // the track before, fading out (freed by AudioManager_Update)
+    int                 music_fade;   // samples left of the crossfade
     float               volume[AUDIO_SET_VOLUME_TYPE_MAX];
     float               volume_actual[AUDIO_SET_VOLUME_TYPE_MAX];
     AudioVoice          voices[AUDIO_MAX_VOICES];
@@ -58,8 +64,18 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
         if (VideoManager_IsPlayingVideo()) {
             sample = VideoManager_GetAudioSample();
         } else {
+            float fade_in  = 1.0f;
+            float fade_out = 0.0f;
+            if (manager->music_fade > 0) {
+                fade_out = (float)manager->music_fade / (float)MUSIC_FADE_SAMPLES;
+                fade_in  = 1.0f - fade_out;
+                manager->music_fade--;
+            }
             if (manager->background_music != NULL) {
-                sample += (int32_t)((double)AudioStream_GetSample(manager->background_music) * volume_bgm);
+                sample += (int32_t)((double)AudioStream_GetSample(manager->background_music) * volume_bgm * fade_in);
+            }
+            if (manager->fading_music != NULL && fade_out > 0.0f) {
+                sample += (int32_t)((double)AudioStream_GetSample(manager->fading_music) * volume_bgm * fade_out);
             }
         }
 
@@ -87,8 +103,12 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
             if (voice->sound == NULL) {
                 continue;
             }
-            const float volume  = voice->volume * (voice->ui ? volume_ui : volume_sfx);
-            sample             += (int32_t)((float)voice->sound->samples[voice->position] * volume);
+            float volume = voice->volume * (voice->ui ? volume_ui : volume_sfx);
+            // Panned: the far side gets quieter (even positions are the left channel)
+            if ((voice->position & 1) == 0 ? voice->pan > 0.0f : voice->pan < 0.0f) {
+                volume *= 1.0f - fabsf(voice->pan);
+            }
+            sample += (int32_t)((float)voice->sound->samples[voice->position] * volume);
             if (++voice->position >= voice->sound->frame_count * 2) {
                 voice->sound = NULL;
             }
@@ -172,12 +192,25 @@ void AudioManager_DestroySingleton(void) {
     if (audio_manager->background_music != NULL) {
         AudioStream_Destroy(&audio_manager->background_music);
     }
+    if (audio_manager->fading_music != NULL) {
+        AudioStream_Destroy(&audio_manager->fading_music);
+    }
 
     free(audio_manager);
     audio_manager = NULL;
 }
 
-void AudioManager_Update(void) {}
+// Frees the old track once the crossfade is over (not on the audio thread)
+void AudioManager_Update(void) {
+    if (audio_manager == NULL || audio_manager->fading_music == NULL || audio_manager->music_fade > 0) {
+        return;
+    }
+    SDL_LockAudioDevice(audio_manager->audio_device_id);
+    AudioStream *old            = audio_manager->fading_music;
+    audio_manager->fading_music = NULL;
+    SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+    AudioStream_Destroy(&old);
+}
 
 static char current_music_path[4096];
 
@@ -202,13 +235,16 @@ void AudioManager_PlayMusic(const char *path, const bool loop) {
         AudioStream_Play(music);
     }
 
-    // Swapped while the audio thread isn't reading it
-    AudioStream *old = audio_manager->background_music;
+    // Swapped while the audio thread isn't reading it: the old track fades out as the new one fades in (a track
+    // still fading from the last change stops)
     SDL_LockAudioDevice(audio_manager->audio_device_id);
+    AudioStream *drop               = audio_manager->fading_music;
+    audio_manager->fading_music     = audio_manager->background_music;
     audio_manager->background_music = music;
+    audio_manager->music_fade       = audio_manager->audio_available ? MUSIC_FADE_SAMPLES : 0;
     SDL_UnlockAudioDevice(audio_manager->audio_device_id);
-    if (old != NULL) {
-        AudioStream_Destroy(&old);
+    if (drop != NULL) {
+        AudioStream_Destroy(&drop);
     }
 }
 void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float volume) {
@@ -232,6 +268,10 @@ void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float
 }
 
 void AudioManager_PlaySound(const SoundEffect *sound, const float volume, const bool ui) {
+    AudioManager_PlaySoundPanned(sound, volume, ui, 0.0f);
+}
+
+void AudioManager_PlaySoundPanned(const SoundEffect *sound, const float volume, const bool ui, const float pan) {
     if (audio_manager == NULL || !audio_manager->audio_available || sound == NULL || sound->frame_count <= 0) {
         return;
     }
@@ -262,6 +302,7 @@ void AudioManager_PlaySound(const SoundEffect *sound, const float volume, const 
     chosen->sound    = sound;
     chosen->position = 0;
     chosen->volume   = volume;
+    chosen->pan      = pan < -1.0f ? -1.0f : (pan > 1.0f ? 1.0f : pan);
     chosen->ui       = ui;
     SDL_UnlockAudioDevice(audio_manager->audio_device_id);
 }

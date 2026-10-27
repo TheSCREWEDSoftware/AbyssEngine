@@ -5,6 +5,7 @@
 #include "../managers/AudioManager.h"
 #include "SoundEffect.h"
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -158,7 +159,26 @@ void Sounds_PlayAmbience(const char *name) {
     AudioManager_PlayAmbience(effect, (float)volume / 255.0f * 0.6f);
 }
 
-bool Sounds_Play(const char *name, const SoundKind kind) {
+static bool Sounds__Play(const char *name, SoundKind kind, float loudness, float pan);
+
+bool Sounds_Play(const char *name, const SoundKind kind) { return Sounds__Play(name, kind, 1.0f, 0.0f); }
+
+bool Sounds_PlayAt(const char *name, const SoundKind kind, const float dx, const float dy) {
+    // The game's view: a sub-tile is 32 pixels across the screen per step of (x - y)/2; sounds fade from a few
+    // steps away to silent past the edge of the screen, and come from the side they're on
+    const float distance = sqrtf((dx * dx) + (dy * dy));
+    if (distance >= SOUND_SILENT_DISTANCE) {
+        return Sounds_Exists(name);
+    }
+    float loudness = 1.0f;
+    if (distance > SOUND_FULL_DISTANCE) {
+        loudness = 1.0f - ((distance - SOUND_FULL_DISTANCE) / (SOUND_SILENT_DISTANCE - SOUND_FULL_DISTANCE));
+    }
+    const float screen_x = (dx - dy) * 16.0f;
+    return Sounds__Play(name, kind, loudness, (screen_x / 400.0f) * 0.75f);
+}
+
+static bool Sounds__Play(const char *name, const SoundKind kind, const float loudness, const float pan) {
     int row = Sounds__FindRow(name);
     if (row < 0) {
         return false;
@@ -187,7 +207,7 @@ bool Sounds_Play(const char *name, const SoundKind kind) {
         return true;
     }
     const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
-    AudioManager_PlaySound(effect, (float)volume / 255.0f, kind == SOUND_KIND_UI);
+    AudioManager_PlaySoundPanned(effect, ((float)volume / 255.0f) * loudness, kind == SOUND_KIND_UI, pan);
     return true;
 }
 

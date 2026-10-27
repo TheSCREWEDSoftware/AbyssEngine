@@ -23,12 +23,14 @@ void AudioManager_SetVolume(enum AudioSetVolumeType audio_set_volume_type, float
 void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len);
 // Sound effects: mixed over the music; the sound must stay alive while it plays (see AudioManager_StopSounds).
 void AudioManager_PlaySound(const SoundEffect *sound, float volume, bool ui);
+// The same, from one side: pan -1 (left) to 1 (right)
+void AudioManager_PlaySoundPanned(const SoundEffect *sound, float volume, bool ui, float pan);
 void AudioManager_StopSounds(void);
 // Speech (NPCs talking): one at a time, a new line cuts off the last; at the Speech volume
-void                AudioManager_PlaySpeech(const SoundEffect *sound, float volume);
+void AudioManager_PlaySpeech(const SoundEffect *sound, float volume);
 void AudioManager_StopSpeech(void);
 // The area's background loop (NULL: none); the same one again keeps playing where it is
-void AudioManager_PlayAmbience(const SoundEffect *sound, float volume);
+void                AudioManager_PlayAmbience(const SoundEffect *sound, float volume);
 int                 AudioManager_GetOutputRate(void); // 0 when there's no audio device
 SDL_AudioSpec       AudioManager_GetAudioSpec(void);
 AVChannelLayout     AudioManager_GetChannelLayout(void);
