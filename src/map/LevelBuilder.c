@@ -12,6 +12,7 @@
 #define EXCEL_LVLPREST "/data/global/excel/LvlPrest.txt"
 #define EXCEL_LVLMAZE  "/data/global/excel/LvlMaze.txt"
 #define EXCEL_LVLSUB   "/data/global/excel/LvlSub.txt"
+#define EXCEL_MONSTATS "/data/global/excel/monstats.txt"
 
 #define PRESET_MAX_FILES  6
 #define DS1_CACHE_SIZE    512
@@ -315,6 +316,8 @@ typedef struct LevelInfo {
     int  density;
     int  monster_count;
     char monsters[10][32];
+    int  group_min[10]; // monstats MinGrp / MaxGrp: how many in one of its packs
+    int  group_max[10];
     int  maze_rooms;
 } LevelInfo;
 
@@ -326,12 +329,13 @@ typedef struct SubFile {
     int  max[5];
 } SubFile;
 
-static Preset    *presets      = NULL;
-static int        preset_count = -1;
-static SubFile   *sub_files    = NULL;
-static int        sub_count    = 0;
-static DataTable *levels_table = NULL;
-static DataTable *maze_table   = NULL;
+static Preset    *presets        = NULL;
+static int        preset_count   = -1;
+static SubFile   *sub_files      = NULL;
+static int        sub_count      = 0;
+static DataTable *levels_table   = NULL;
+static DataTable *monstats_table = NULL; // (for the pack sizes)
+static DataTable *maze_table     = NULL;
 
 typedef struct CachedDS1 {
     char path[128];
@@ -433,8 +437,9 @@ static void Builder__LoadTables(void) {
         DataTable_Destroy(&table);
     }
 
-    levels_table = DataTable_Load(EXCEL_LEVELS);
-    maze_table   = DataTable_Load(EXCEL_LVLMAZE);
+    levels_table   = DataTable_Load(EXCEL_LEVELS);
+    maze_table     = DataTable_Load(EXCEL_LVLMAZE);
+    monstats_table = DataTable_Load(EXCEL_MONSTATS);
 }
 
 static const Preset *Builder__FindPreset(const char *name) {
@@ -444,6 +449,29 @@ static const Preset *Builder__FindPreset(const char *name) {
         }
     }
     return NULL;
+}
+
+// monstats.txt's MinGrp / MaxGrp for a monster (left as they are when it isn't there or has none)
+static void Builder__GroupSize(const char *id, int *low, int *high) {
+    if (monstats_table == NULL) {
+        return;
+    }
+    const DataTable *t     = monstats_table;
+    const int        c_id  = DataTable_GetColumnIndex(t, "Id");
+    const int        c_min = DataTable_GetColumnIndex(t, "MinGrp");
+    const int        c_max = DataTable_GetColumnIndex(t, "MaxGrp");
+    for (int row = 0; row < DataTable_GetRowCount(t) && c_id >= 0; row++) {
+        if (strcmp(DataTable_GetString(t, row, c_id), id) != 0) {
+            continue;
+        }
+        const int a = DataTable_GetInt(t, row, c_min);
+        const int b = DataTable_GetInt(t, row, c_max);
+        if (a > 0 && b >= a) {
+            *low  = a;
+            *high = b > 12 ? 12 : b;
+        }
+        return;
+    }
 }
 
 static bool Builder__GetLevel(const int level_id, LevelInfo *info) {
@@ -477,6 +505,9 @@ static bool Builder__GetLevel(const int level_id, LevelInfo *info) {
             snprintf(column, sizeof(column), "mon%d", m + 1);
             const char *id = DataTable_GetString(t, row, DataTable_GetColumnIndex(t, column));
             if (id[0] != '\0') {
+                info->group_min[info->monster_count] = 2; // (without monstats: 2 to 5)
+                info->group_max[info->monster_count] = 5;
+                Builder__GroupSize(id, &info->group_min[info->monster_count], &info->group_max[info->monster_count]);
                 snprintf(info->monsters[info->monster_count++], sizeof(info->monsters[0]), "%s", id);
             }
         }
@@ -737,7 +768,8 @@ static void Builder__Populate(Map *map, const LevelInfo *level, const uint8_t *m
     const int sub_w  = map->width * MAP_SUBTILES;
     const int sub_h  = map->height * MAP_SUBTILES;
     for (int g = 0; g < groups; g++) {
-        const char *monster = level->monsters[Rng_Below(rng, level->monster_count)];
+        const int   pick    = Rng_Below(rng, level->monster_count);
+        const char *monster = level->monsters[pick];
         for (int attempt = 0; attempt < 60; attempt++) {
             const int x = Rng_Below(rng, sub_w);
             const int y = Rng_Below(rng, sub_h);
@@ -761,11 +793,16 @@ static void Builder__Populate(Map *map, const LevelInfo *level, const uint8_t *m
             // Now and then a pack of champions, or a unique with its minions (the game: about one pack in ten)
             const int   kind = Rng_Below(rng, 100);
             const char *mark = kind < 7 ? "@champion" : (kind < 15 ? "@unique" : monster);
-            const int   size = kind < 7 ? 2 + Rng_Below(rng, 3) : 2 + Rng_Below(rng, 4);
+            // A pack's size: monstats' MinGrp to MaxGrp (champions 2 to 4, a unique and its minions 2 to 5)
+            const int low  = level->group_min[pick];
+            const int high = level->group_max[pick];
+            const int size = kind < 7 ? 2 + Rng_Below(rng, 3)
+                                      : (kind < 15 ? 2 + Rng_Below(rng, 4) : low + Rng_Below(rng, high - low + 1));
             for (int m = 0; m < size; m++) {
                 for (int spot = 0; spot < 12; spot++) {
-                    const int mx = x + Rng_Below(rng, 9) - 4;
-                    const int my = y + Rng_Below(rng, 9) - 4;
+                    const int spread = size > 6 ? 6 : 4; // (a big pack spreads out more)
+                    const int mx     = x + Rng_Below(rng, (spread * 2) + 1) - spread;
+                    const int my     = y + Rng_Below(rng, (spread * 2) + 1) - spread;
                     if (mx >= 0 && my >= 0 && mx < sub_w && my < sub_h && main_area[(my * sub_w) + mx]) {
                         const char *name = m > 0 && kind >= 7 && kind < 15 ? "@minion" : mark;
                         Map_AddEntity(map, "monsters", monster, name, (float)mx + 0.5f, (float)my + 0.5f);
@@ -2198,4 +2235,5 @@ void LevelBuilder_Release(void) {
     sub_count = 0;
     DataTable_Destroy(&levels_table);
     DataTable_Destroy(&maze_table);
+    DataTable_Destroy(&monstats_table);
 }
