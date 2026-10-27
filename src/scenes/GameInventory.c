@@ -9,6 +9,7 @@
 #include "../game/Cube.h"
 #include "../game/Hirelings.h"
 #include "../game/Inventory.h"
+#include "../game/SharedStash.h"
 #include "../game/Shop.h"
 #include "../game/Sockets.h"
 #include "../managers/InputManager.h"
@@ -137,6 +138,8 @@ struct GameInventory {
     int                 difficulty;    // what they pay depends on it
     char                tip_extra[48]; // the price line under a tooltip while trading
     bool                stash_open;    // in town, at the stash
+    bool                shared_ok;     // the shared stash can be used (Single Player, an expansion character)
+    bool                shared_tab;    // showing the shared stash instead of the character's
     bool                cube_open;     // the Horadric Cube (right click it in the inventory)
     const HirelingView *hire;          // the hireling's screen (NULL: closed)
     Sprite             *hire_panel;
@@ -307,6 +310,7 @@ bool GameInventory_IsOver(const int mouse_x, const int mouse_y) {
 
 void GameInventory_SetStash(GameInventory *inventory, const bool open) {
     inventory->stash_open = open;
+    inventory->shared_tab = false;
     inventory->cube_open  = open ? false : inventory->cube_open;
 }
 
@@ -794,9 +798,59 @@ static void GameInventory__StashLayout(const Character *character) {
     stash_rows   = Stash_Rows(character);
 }
 
+void GameInventory_SetSharedStash(GameInventory *inventory, const bool allowed) {
+    inventory->shared_ok  = allowed;
+    inventory->shared_tab = allowed ? inventory->shared_tab : false;
+}
+
+// The stash's two tabs under its grid: the character's own, and the shared one
+static SDL_Rect GameInventory__StashTab(const int tab) {
+    const SDL_Rect rect = {STASH_GRID_X + (tab * 88), stash_grid_y + (STASH_H * CELL) + 6, 86, 20};
+    return rect;
+}
+
+static bool GameInventory__Shared(const GameInventory *inventory, const Character *character) {
+    return inventory->stash_open && inventory->shared_ok && inventory->shared_tab && SharedStash_Allowed(character) &&
+           inventory->shop == NULL && inventory->trade == NULL;
+}
+
+static int GameInventory__UpdateInner(GameInventory *inventory, Character *character, bool open, int mouse_x,
+                                      int mouse_y, bool left_click, bool right_click, bool shift, Item *drunk,
+                                      const char **message);
+
 int GameInventory_Update(GameInventory *inventory, Character *character, const bool open, const int mouse_x,
                          const int mouse_y, const bool left_click, const bool right_click, const bool shift,
                          Item *drunk, const char **message) {
+    GameInventory__StashLayout(character);
+    if (inventory->stash_open && inventory->shared_ok && SharedStash_Allowed(character) && left_click) {
+        for (int tab = 0; tab < 2; tab++) {
+            const SDL_Rect rect = GameInventory__StashTab(tab);
+            if (GameInventory__In(&rect, mouse_x, mouse_y)) {
+                *message = NULL;
+                if (inventory->holding && inventory->origin == ORIGIN_STASH) {
+                    *message = "Put it down first."; // (it came from the other page)
+                } else {
+                    inventory->shared_tab = tab == 1;
+                }
+                return INVENTORY_EVENT_NONE;
+            }
+        }
+    }
+    const bool shared = GameInventory__Shared(inventory, character);
+    if (shared) {
+        SharedStash_Swap(character);
+    }
+    const int events = GameInventory__UpdateInner(inventory, character, open, mouse_x, mouse_y, left_click, right_click,
+                                                  shift, drunk, message);
+    if (shared) {
+        SharedStash_Swap(character);
+    }
+    return events;
+}
+
+static int GameInventory__UpdateInner(GameInventory *inventory, Character *character, const bool open,
+                                      const int mouse_x, const int mouse_y, const bool left_click,
+                                      const bool right_click, const bool shift, Item *drunk, const char **message) {
     GameInventory__StashLayout(character);
     *message            = NULL;
     inventory->sound[0] = '\0';
@@ -1610,8 +1664,39 @@ static void GameInventory__DrawTrade(GameInventory *inventory, const Character *
     }
 }
 
+static void GameInventory__DrawInner(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);
+
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
     GameInventory__StashLayout(character);
+    const bool shared = GameInventory__Shared(inventory, character);
+    if (shared) {
+        SharedStash_Swap((Character *)character); // (put back straight after)
+    }
+    GameInventory__DrawInner(inventory, character, mouse_x, mouse_y);
+    if (shared) {
+        SharedStash_Swap((Character *)character);
+    }
+    if (inventory->stash_open && inventory->shared_ok && SharedStash_Allowed(character) && inventory->shop == NULL &&
+        inventory->trade == NULL) {
+        static const char *const names[2] = {"Personal", "Shared"};
+        for (int tab = 0; tab < 2; tab++) {
+            const SDL_Rect rect = GameInventory__StashTab(tab);
+            const bool     on   = (tab == 1) == inventory->shared_tab;
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, on ? 60 : 15, on ? 50 : 15, on ? 30 : 15, 220);
+            SDL_RenderFillRect(sdl_renderer, &rect);
+            SDL_SetRenderDrawColor(sdl_renderer, on ? 200 : 110, on ? 170 : 100, on ? 100 : 80, 255);
+            SDL_RenderDrawRect(sdl_renderer, &rect);
+            Label_SetAlignment(inventory->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+            Label_SetColor(inventory->text, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, 0xFF);
+            Label_SetText(inventory->text, names[tab]);
+            Label_Draw(inventory->text, rect.x + (rect.w / 2), rect.y + (rect.h / 2));
+        }
+    }
+}
+
+static void GameInventory__DrawInner(GameInventory *inventory, const Character *character, const int mouse_x,
+                                     const int mouse_y) {
     if (inventory->trade != NULL) {
         GameInventory__DrawTrade(inventory, character, mouse_x, mouse_y);
     } else if (inventory->shop != NULL) {
@@ -1922,8 +2007,23 @@ static void GameInventory__DrawSockets(GameInventory *inventory, const Item *ite
     }
 }
 
+static void GameInventory__DrawOverlayInner(GameInventory *inventory, const Character *character, bool open,
+                                            int mouse_x, int mouse_y);
+
 void GameInventory_DrawOverlay(GameInventory *inventory, const Character *character, const bool open, const int mouse_x,
                                const int mouse_y) {
+    const bool shared = GameInventory__Shared(inventory, character);
+    if (shared) {
+        SharedStash_Swap((Character *)character);
+    }
+    GameInventory__DrawOverlayInner(inventory, character, open, mouse_x, mouse_y);
+    if (shared) {
+        SharedStash_Swap((Character *)character);
+    }
+}
+
+static void GameInventory__DrawOverlayInner(GameInventory *inventory, const Character *character, const bool open,
+                                            const int mouse_x, const int mouse_y) {
     if (inventory->identifying) {
         // The identify pointer: a question mark by the mouse
         Label_SetText(inventory->text, "?");

@@ -194,6 +194,11 @@ the inventory. Gold too: at the stash the inventory's coin button puts gold in (
 levels), and the stash's own coin button takes it out (no more than you can carry). Walking away, closing the
 inventory or opening the character screen closes it. The stash is kept with the character.
 
+**Shared stash** (expansion characters): the **Personal** / **Shared** tabs under the grid switch to a page every
+character on this computer shares (softcore and hardcore characters each have their own), for passing items between
+your characters. It's kept in `save/shared.stash` (`shared_hc.stash`), saved as soon as it changes. Not in
+multiplayer games.
+
 ### Sockets, gems and runes
 
 Weapons, shields, helms and body armor can drop with sockets (plain ones 1 in 8, magic ones 1 in 20; up to the

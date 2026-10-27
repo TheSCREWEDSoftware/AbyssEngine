@@ -78,6 +78,8 @@ void GameInventory_PutBackCopy(const GameInventory *inventory, Character *copy);
 bool GameInventory_IsOver(int mouse_x, int mouse_y); // over the panel
 // The stash panel on the left (in town, at the stash): its grid and gold, items carried between it and the inventory
 void GameInventory_SetStash(GameInventory *inventory, bool open);
+// Whether the stash shows its Personal / Shared tabs (Single Player, expansion characters: the shared stash)
+void GameInventory_SetSharedStash(GameInventory *inventory, bool allowed);
 bool GameInventory_StashOpen(const GameInventory *inventory);
 bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y); // (or the cube)
 bool GameInventory_CubeOpen(const GameInventory *inventory); // the Horadric Cube on the left (right click it to open)

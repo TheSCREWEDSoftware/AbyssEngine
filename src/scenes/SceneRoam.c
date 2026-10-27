@@ -1450,6 +1450,7 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
             roam->char_panel      = false;
             roam->panel           = PANEL_NONE;
             GameInventory_SetStash(roam->inventory_ui, true);
+            GameInventory_SetSharedStash(roam->inventory_ui, !roam->online); // (the shared page is this computer's)
             Sounds_Play("object_chest_large", SOUND_KIND_SFX);
         }
         return;

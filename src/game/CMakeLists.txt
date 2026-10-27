@@ -7,6 +7,7 @@ target_sources(${PROJECT_NAME}
         Quests.c Quests.h
         Shop.c Shop.h
         Cube.c Cube.h
+        SharedStash.c SharedStash.h
         Sockets.c Sockets.h
         Treasure.c Treasure.h
         Affixes.c Affixes.h
