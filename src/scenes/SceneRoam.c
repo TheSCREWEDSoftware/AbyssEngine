@@ -272,6 +272,7 @@ typedef struct Unit {
     char            power[48];    // a unique's powers, shown under its name ("Extra Strong, Cursed")
     uint64_t        next_neutral; // its idle sound's next time (0: not set yet)
     uint64_t        next_raise;   // a Fallen Shaman's / Greater Mummy's next raising, a Zakarum priest's healing
+    int             leader;       // a minion: its unique (index + 1), whom it keeps close to; 0 none
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -2632,6 +2633,7 @@ static void Roam__Populate(SceneRoam *roam) {
     roam->unit_count = 0;
     roam->hovered    = -1;
     roam->hover_exit = -1;
+    int unique       = -1; // the last unique made: its minions come right after it
     for (int e = 0; e < roam->map->entity_count; e++) {
         const MapEntity *entity = &roam->map->entities[e];
         // The expansion's monster levels: from the area (Levels.txt MonLvl for the difficulty)
@@ -2641,6 +2643,11 @@ static void Roam__Populate(SceneRoam *roam) {
         init_area_level     = 0;
         if (unit != NULL && roam->game && strcmp(entity->base, "monsters") == 0) {
             Roam__MakeRank(roam, unit, entity->name);
+            if (unit->rank == RANK_UNIQUE) {
+                unique = (int)(unit - roam->units);
+            } else if (unit->rank == RANK_MINION && unique >= 0) {
+                unit->leader = unique + 1;
+            }
         }
         if (unit != NULL) {
             unit->turn = entity->direction;
@@ -4118,6 +4125,14 @@ static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const
 
     if (now < unit->next_wander) {
         return;
+    }
+    // A minion keeps close to its unique: home is wherever the unique is
+    if (unit->leader > 0 && unit->leader <= roam->unit_count) {
+        const Unit *leader = &roam->units[unit->leader - 1];
+        if (leader->rank == RANK_UNIQUE && Roam__IsAlive(leader)) {
+            unit->home_x = leader->x;
+            unit->home_y = leader->y;
+        }
     }
     // Somewhere walkable near home (a few tries), then plan the way there
     const float radius = unit->npc ? WANDER_NPC_RADIUS : WANDER_MONSTER_RADIUS;
