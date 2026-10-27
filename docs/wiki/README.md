@@ -4,10 +4,9 @@ Abyss Engine is a clean-room reimplementation of the **Diablo II: Lord of Destru
 the game's original data files (the MPQs from your own copy of the game) and draws, plays and runs them on a modern,
 portable engine.
 
-> **Status:** early. The engine boots to the main menu and has a set of developer tools (Catalog, Map Editor, Testing
-> Grounds, Free Roam). Single Player is a first playable version: create a character, fight, gain levels, spend skill
-> points, wear items, drink potions, save; no casting, drops or quests yet. Multiplayer is a first version: host or
-> join a game (LAN, online or by address) and see each other walk around and chat; monsters aren't shared yet.
+> **Status:** playable from start to end, with rough edges. Single Player has the seven classes, their skills, every
+> quest, the game's items and the Horadric Cube; Multiplayer shares monsters, combat, items, parties, trading and
+> quests; there's a text mode, mods and a set of developer tools (Catalog, Map Editor, Testing Grounds, Free Roam).
 > See **[Feature Status](Feature-Status.md)** for exactly what works and what doesn't.
 
 ## Installation guide

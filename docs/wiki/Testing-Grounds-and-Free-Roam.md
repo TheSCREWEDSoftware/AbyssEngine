@@ -82,8 +82,7 @@ The list follows the game's order of areas, act by act.
   **N** for a new world. You start at the entrance room of a dungeon, and on
   open ground near the middle of the wilderness.
 
-Monsters that aren't fighting wander a little. Kurast, Travincal, the Arcane Sanctuary and the Chaos Sanctum aren't in
-the list yet (see [Feature Status](Feature-Status.md)).
+Monsters that aren't fighting wander a little.
 
 ## World seed
 
@@ -149,8 +148,8 @@ A debugging switch for fighting between you and the monsters:
 Areas come with their objects: chests, doors, shrines, waypoints, torches, campfires, corpses, ... Torches and fires
 burn. Hovering a chest, door, shrine or waypoint shows its name; click it and you walk over and open it (chests open,
 doors open and let you through, shrines and waypoints light up), with the game's sound. Clicking a waypoint opens the
-Places list. Objects block walking where the game says they do (a closed door, a chest, a shrine's base). Shrine
-effects and traps aren't in yet. In the Testing Grounds objects can be dropped from the Monsters list's **Others** tab.
+Places list. Objects block walking where the game says they do (a closed door, a chest, a shrine's base). What shrines,
+wells, locked and trapped chests do is Single Player's ([Single Player](Single-Player.md)). In the Testing Grounds objects can be dropped from the Monsters list's **Others** tab.
 
 Red portals stand where the game joins two areas by portal: Tristram at the Cairn Stones, the Arcane Sanctuary (in
 from the third Palace Cellar, out to the Canyon of the Magi from the Summoner's room), Duriel's Lair from the true one
