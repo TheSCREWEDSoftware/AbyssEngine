@@ -77,4 +77,6 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 
 Every push to `main` is built on all three by GitHub Actions (`.github/workflows/ci.yml`): Windows with vcpkg, Linux
 with the distribution's packages, macOS with Homebrew. The builds of `main` can be downloaded from the run's
-*Artifacts* (`unstable-Windows`, `unstable-Linux`, `unstable-macOS`).
+*Artifacts* (`unstable-Windows`, `unstable-Linux`, `unstable-macOS`). Releases: `.github/workflows/release.yml` builds
+a download for each (Windows `.zip` with its DLLs, Linux `.tar.gz`, macOS `.zip` of the app with its Homebrew
+libraries bundled in) when a `v*` tag is pushed, and makes a draft release of them; run by hand, it just builds them.

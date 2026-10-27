@@ -82,7 +82,13 @@ Meson works too: `meson setup build && ninja -C build`.
 
 Every push is built on Windows, Linux and macOS by GitHub Actions. The latest builds of `main` can be downloaded from
 the [Actions](https://github.com/TheSCREWEDSoftware/AbyssEngine/actions/workflows/ci.yml) page (the run's
-*Artifacts*). They are development builds: there are no releases yet.
+*Artifacts*). They are development builds.
+
+Releases are built by `.github/workflows/release.yml`: pushing a tag like `v0.2.0` builds downloads for all three
+(a Windows `.zip` with its DLLs, a Linux `.tar.gz`, a macOS `.zip` of the app with its libraries in it) and makes a
+draft release with them on the [Releases](https://github.com/TheSCREWEDSoftware/AbyssEngine/releases) page. Each has the engine,
+`abyss-lobby`, `abyss.ini.dist` (copy it to `abyss.ini`), this README and the licence. The Linux one uses the
+distribution's SDL2, FFmpeg and libarchive (the packages above).
 
 ### 3. Point it at your game files
 
