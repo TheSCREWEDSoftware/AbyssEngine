@@ -23,6 +23,7 @@ typedef enum GameInventoryEvent {
     INVENTORY_EVENT_MOVED      = 4,  // something was picked up or put down (a sound)
     INVENTORY_EVENT_GOLD       = 8,  // the gold button: drop some, or at the stash put some in (the scene asks)
     INVENTORY_EVENT_STASH_GOLD = 16, // the stash's gold button: take some out
+    INVENTORY_EVENT_SHOP_CLOSE = 32, // the store's close button
 } GameInventoryEvent;
 
 GameInventory *GameInventory_Create(void);
@@ -54,6 +55,12 @@ bool GameInventory_IsOver(int mouse_x, int mouse_y); // over the panel
 void GameInventory_SetStash(GameInventory *inventory, bool open);
 bool GameInventory_StashOpen(const GameInventory *inventory);
 bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y);
+// A merchant's store on the left (NULL closes it): click an item to buy it (Shift: potions into the belt), put an item
+// on it or right click one in the inventory to sell it
+struct ShopStock;
+void GameInventory_SetShop(GameInventory *inventory, struct ShopStock *stock, int difficulty);
+bool GameInventory_ShopOpen(const GameInventory *inventory);
+bool GameInventory_IsOverShop(const GameInventory *inventory, int mouse_x, int mouse_y);
 bool GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);

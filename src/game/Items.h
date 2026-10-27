@@ -137,6 +137,7 @@ typedef struct ItemBase {
     int  look_right_pad;
     int  look_left_pad;
     int  max_sockets; // gemsockets
+    int  cost;        // what a merchant asks for it (before npc.txt's multiplier)
     int  belt_rows;   // a belt: rows of four potions it holds
     bool beltable;    // potions and scrolls go in the belt
     bool stackable;

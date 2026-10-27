@@ -146,6 +146,14 @@ typedef struct Character {
     InventoryItem stash[STASH_MAX]; // in town: page is always 0
     int           stash_count;
     int           stash_gold;
+    // A hireling (hireling.txt): row + 1 (0 = none), their level, name (string table number), life; dead: to be
+    // brought back by whoever sells them, for gold
+    int  hireling;
+    int  hireling_level;
+    int  hireling_name;
+    int  hireling_life;
+    bool hireling_dead;
+    uint32_t hireling_experience;
     uint64_t      waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
     int           bonus[BONUS_COUNT]; // from skills right now (not saved)
     char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)

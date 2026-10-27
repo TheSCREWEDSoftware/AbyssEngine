@@ -1349,9 +1349,16 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
     if (Roam__Animate(roam, ally, now)) {
         if (ally->state == UNIT_ATTACK) {
             const int target = Roam__AllyTarget(roam, ally);
-            if (target >= 0 &&
-                Roam__Distance(ally->x, ally->y, roam->units[target].x, roam->units[target].y) <= ATTACK_RANGE + 1.0f) {
+            if (target >= 0 && Roam__Distance(ally->x, ally->y, roam->units[target].x, roam->units[target].y) <=
+                                   fmaxf(ATTACK_RANGE, ally->reach) + 1.0f) {
                 Unit *victim = &roam->units[target];
+                if (ally->reach > 0.0f) { // an arrow or a bolt on its way (the damage is done now)
+                    const char *shot = ally->element == ELEMENT_FIRE   ? "firearrow"
+                                       : ally->element == ELEMENT_COLD ? "coldarrow"
+                                                                       : "arrow";
+                    Roam__FireMissilesFrom(roam, shot, NULL, 0, 1, 0.0f, false, ally->x, ally->y, victim->x, victim->y,
+                                           true);
+                }
                 if (Roam__Roll(1, 100) <=
                     Character_HitChance(ally->attack_rating, ally->level, victim->defense, victim->level)) {
                     int damage[ELEMENT_COUNT] = {0};
@@ -1380,7 +1387,7 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
     float     goal_y = roam->player.y;
     if (target >= 0) {
         const Unit *victim = &roam->units[target];
-        if (Roam__Distance(ally->x, ally->y, victim->x, victim->y) <= ATTACK_RANGE) {
+        if (Roam__Distance(ally->x, ally->y, victim->x, victim->y) <= fmaxf(ATTACK_RANGE, ally->reach)) {
             Roam__TurnTowards(&ally->turn, ally->x, ally->y, victim->x, victim->y);
             Roam__ClearPath(ally);
             if (now >= ally->next_attack && Roam__CanAttack(roam, ally)) {

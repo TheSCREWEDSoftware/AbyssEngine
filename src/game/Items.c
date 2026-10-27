@@ -109,7 +109,7 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
               c_drop_frame = COL("dropsfxframe"), c_level = COL("level"), c_spawnable = COL("spawnable"),
               c_gfx = COL("alternategfx"), c_wclass = COL("wclass"), c_wclass2 = COL("2handedwclass"),
               c_1or2 = COL("1or2handed"), c_rarm = COL("rArm"), c_larm = COL("lArm"), c_torso = COL("Torso"),
-              c_legs = COL("Legs"), c_rpad = COL("rSPad"), c_lpad = COL("lSPad"), c_sockets = COL("gemsockets");
+              c_legs = COL("Legs"), c_rpad = COL("rSPad"), c_lpad = COL("lSPad"), c_sockets = COL("gemsockets"), c_cost = COL("cost");
 #undef COL
     const int rows  = DataTable_GetRowCount(t);
     ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
@@ -171,6 +171,7 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
         base->look_left_pad  = LOOK(c_lpad);
 #undef LOOK
         base->max_sockets = c_sockets >= 0 ? DataTable_GetInt(t, row, c_sockets) : 0;
+        base->cost        = c_cost >= 0 ? DataTable_GetInt(t, row, c_cost) : 0;
         Items__TypeInfo(types, base->type, base, 0);
         if (base->slots[EQUIP_BELT] && belts != NULL && c_belt >= 0) {
             // armor.txt's "belt" is a row of belts.txt, which says how many potions it holds

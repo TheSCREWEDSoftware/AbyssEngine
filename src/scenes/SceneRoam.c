@@ -19,9 +19,11 @@
 #include "../game/Affixes.h"
 #include "../game/Character.h"
 #include "../game/Controls.h"
+#include "../game/Hirelings.h"
 #include "../game/Inventory.h"
 #include "../game/MissileData.h"
 #include "../game/Settings.h"
+#include "../game/Shop.h"
 #include "../game/SkillData.h"
 #include "../game/Skills.h"
 #include "../game/Treasure.h"
@@ -204,6 +206,8 @@ typedef struct Unit {
     bool           used;           // opened / activated: can't be clicked again
     int            rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     char           net_mode[4];    // another player (multiplayer): the animation their game says they're in
+    bool           hireling;       // the character's hireling (an ally that comes along from area to area)
+    float          reach;          // an ally that attacks from afar (a Rogue Scout's bow): how far, 0 = melee
     bool           has_looks;      // a player: drawn in what they wear (looks), not the class's plain figure
     CharacterLooks looks;
     // Multiplayer monsters
@@ -291,6 +295,7 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define MAX_GROUND_ITEMS NET_GROUND_ITEMS_MAX
 #define ITEM_FLIP_MS     40   // the flip through the air, a frame each (the game's 25 a second)
 #define PICKUP_RANGE     2.0f // how close the player must be to pick one up
+#define ROAM_SHOPS       8    // merchants' stock kept in a game
 
 // What the "how much gold" dialog is for
 enum { AMOUNT_FOR_DROP = 1, AMOUNT_FOR_STASH_PUT, AMOUNT_FOR_STASH_TAKE };
@@ -426,15 +431,26 @@ typedef struct SceneRoam {
     Button        *menu_options_button;
     Button        *menu_leave_button;
     Button        *menu_return_button;
-    OptionsPanel  *options_panel;   // Options opened from that menu
-    ConfirmDialog *confirm;         // "Return to the main menu?" (Back and Leave in Free Roam / Testing Grounds)
-    AmountDialog  *amount;          // "How much gold?" (AMOUNT_FOR_*)
-    int            stash_object;    // the stash being used (a unit index), -1 = none
-    int            question;        // what it asks: ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER
-    int            question_level;  // ROAM_ASK_ENTER: where the entrance leads
-    int            hover_exit;      // the entrance under the mouse (its name is shown), -1 = none
-    bool           screenshot;      // take one at the end of this frame's drawing
-    bool           attack_in_place; // the swing under way was from where you stand: don't walk after the target
+    OptionsPanel  *options_panel; // Options opened from that menu
+    ConfirmDialog *confirm;       // "Return to the main menu?" (Back and Leave in Free Roam / Testing Grounds)
+    AmountDialog  *amount;        // "How much gold?" (AMOUNT_FOR_*)
+    int            stash_object;  // the stash being used (a unit index), -1 = none
+    int            difficulty;    // Single Player: 0 Normal, 1 Nightmare, 2 Hell (multiplayer: the game's setting)
+    // Town folk (SceneRoamNpc.inc): the menu of what the one you walked up to does, merchants' stock, the store open
+    int        npc_menu; // unit index, -1 = none
+    int        npc_options[HIRE_OFFERS + 4];
+    int        npc_option_count;
+    ShopStock *shops[ROAM_SHOPS];
+    int        shop_count;
+    int        shop_npc; // trading with (unit index), -1 = none
+    HireOffer  hire_offers[HIRE_OFFERS];
+    int        hire_offer_count;
+    char       hire_seller[40];
+    int        question;        // what it asks: ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER
+    int        question_level;  // ROAM_ASK_ENTER: where the entrance leads
+    int        hover_exit;      // the entrance under the mouse (its name is shown), -1 = none
+    bool       screenshot;      // take one at the end of this frame's drawing
+    bool       attack_in_place; // the swing under way was from where you stand: don't walk after the target
     bool exits_armed; // walked clear of every exit since arriving (so arriving on one doesn't send you straight back)
 
     // Single Player
@@ -1093,10 +1109,17 @@ static int Roam__OtherAt(const SceneRoam *roam, const float sub_x, const float s
     return nearest;
 }
 
+// Normal (0), Nightmare (1) or Hell (2): the multiplayer game's setting, or the Single Player game's
+static int Roam__Difficulty(const SceneRoam *roam) {
+    const int difficulty =
+        roam->online && NetClient_Settings() != NULL ? NetClient_Settings()->difficulty : roam->difficulty;
+    return difficulty >= 0 && difficulty < 3 ? difficulty : 0;
+}
+
 // The difficulty's penalty to the player's resistances: the game's 0, 40 (Nightmare), 100 (Hell)
 static int Roam__ResistPenalty(const SceneRoam *roam) {
     static const int penalties[3] = {0, 40, 100};
-    const int        difficulty   = roam->online && NetClient_Settings() != NULL ? NetClient_Settings()->difficulty : 0;
+    const int        difficulty   = Roam__Difficulty(roam);
     return difficulty >= 0 && difficulty < 3 ? penalties[difficulty] : 0;
 }
 
@@ -1716,11 +1739,25 @@ static void Roam__ResetPlayer(SceneRoam *roam) {
     }
 }
 
-// The player opens the object being walked to once close enough. Returns true when that's done (or there's nothing
-// to open any more).
+static bool Roam__CanTalk(const Unit *unit);
+static void Roam__TalkTo(SceneRoam *roam, int npc);
+
+// The player opens the object being walked to once close enough (or talks to the town folk). Returns true when that's
+// done (or there's nothing to open any more).
 static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     Unit *player = &roam->player;
     Unit *object = &roam->units[roam->use_target];
+    if (roam->game && Roam__CanTalk(object)) {
+        if (Roam__Distance(object->x, object->y, player->x, player->y) > 2.5f) {
+            return false;
+        }
+        Roam__TurnTowards(&player->turn, player->x, player->y, object->x, object->y);
+        roam->moving = false;
+        Roam__ClearPath(player);
+        Roam__TalkTo(roam, roam->use_target);
+        roam->use_target = -1;
+        return true;
+    }
     if (!Roam__CanUse(object)) {
         roam->use_target = -1;
         return true;
@@ -1732,7 +1769,7 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
-    if (roam->online && object->object.operate_fn != 23 && object->object.operate_fn != 32) {
+    if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32) {
         // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
         object->used      = true;
         NetWriter *writer = malloc(sizeof(NetWriter));
@@ -1770,6 +1807,8 @@ static void Roam__FindSpawn(SceneRoam *roam) {
 // Units for the map's NPCs, monsters and objects; then the player at the spawn point
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
+    roam->npc_menu     = -1;
+    roam->shop_npc     = -1; // (the store too)
     if (roam->online) {
         // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,
         // so their numbers match between games
@@ -2400,6 +2439,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     roam->confirm             = ConfirmDialog_Create();
     roam->amount              = AmountDialog_Create();
     roam->stash_object        = -1;
+    roam->npc_menu            = -1;
+    roam->shop_npc            = -1;
     Button_SetPosition(roam->menu_options_button, 264, 210);
     Button_SetPosition(roam->menu_leave_button, 264, 260);
     Button_SetPosition(roam->menu_return_button, 264, 310);
@@ -2512,6 +2553,10 @@ static void Roam__Free(void **scene_ref) {
     OptionsPanel_Destroy(&roam->options_panel);
     ConfirmDialog_Destroy(&roam->confirm);
     AmountDialog_Destroy(&roam->amount);
+    for (int s = 0; s < roam->shop_count; s++) {
+        free(roam->shops[s]);
+    }
+    roam->shop_count = 0;
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -3824,6 +3869,8 @@ static void Roam__DrawPartyPanel(SceneRoam *roam, const int mouse_x, const int m
     }
 }
 
+#include "SceneRoamNpc.inc"
+
 static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int mouse_y) {
     Character *character = roam->character;
     bool       left_down;
@@ -3838,6 +3885,12 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
         roam->ui_owns_press = left_down || right_down;
         return true; // the party screen's
     }
+    if (Roam__UpdateNpcMenu(roam, mouse_x, mouse_y, left_click)) {
+        roam->ui_owns_press = left_down || right_down;
+        return true; // what the town folk do
+    }
+    Roam__KeepShop(roam);
+    Roam__KeepHireling(roam);
     if (Controls_Pressed(ACTION_INVENTORY)) {
         roam->inventory_panel = !roam->inventory_panel;
         roam->skill_panel     = false;
@@ -3897,6 +3950,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     const bool picker_was_open = GameSkills_PickerOpen(roam->skills_ui);
     const bool over_panels = ((roam->inventory_panel || roam->skill_panel) && GameInventory_IsOver(mouse_x, mouse_y)) ||
                              GameInventory_IsOverStash(roam->inventory_ui, mouse_x, mouse_y) ||
+                             GameInventory_IsOverShop(roam->inventory_ui, mouse_x, mouse_y) ||
                              GameInventory_IsOverBelt(character, mouse_x, mouse_y) ||
                              GameSkills_IsOver(roam->skills_ui, roam->skill_panel, mouse_x, mouse_y);
     const char *message = NULL;
@@ -3934,6 +3988,10 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     } else if (item_events & INVENTORY_EVENT_GOLD) {
         AmountDialog_Open(roam->amount, "Drop Gold", "How much gold do you want to drop?", character->gold,
                           character->gold, AMOUNT_FOR_DROP);
+    }
+    if (item_events & INVENTORY_EVENT_SHOP_CLOSE) {
+        Roam__CloseShop(roam);
+        roam->inventory_panel = false;
     }
     if (item_events & INVENTORY_EVENT_STASH_GOLD) {
         const int room = Roam__GoldLimit(roam) - character->gold;
@@ -4756,7 +4814,8 @@ static void Roam__Update(SceneRoam *roam) {
                 roam->item_target = -1; // out of reach
                 Roam__ShowMessage(roam, "Too far away: walk up to it to pick it up.");
             }
-        } else if (roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+        } else if (roam->hovered >= 0 && (Roam__CanUse(&roam->units[roam->hovered]) ||
+                                          (roam->game && Roam__CanTalk(&roam->units[roam->hovered])))) {
             roam->use_target = roam->hovered;
             if (!Roam__TryUse(roam, now)) {
                 roam->use_target = -1; // out of reach
@@ -4810,7 +4869,9 @@ static void Roam__Update(SceneRoam *roam) {
             roam->use_target    = -1;
             roam->attack_target = -1;
             Roam__ClearPath(&roam->player);
-        } else if (!roam->prev_left && roam->hovered >= 0 && Roam__CanUse(&roam->units[roam->hovered])) {
+        } else if (!roam->prev_left && roam->hovered >= 0 &&
+                   (Roam__CanUse(&roam->units[roam->hovered]) ||
+                    (roam->game && Roam__CanTalk(&roam->units[roam->hovered])))) {
             roam->use_target    = roam->hovered; // walk over and open it
             roam->attack_target = -1;
             roam->item_target   = -1;
@@ -5591,6 +5652,8 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->party_panel) {
         Roam__DrawPartyPanel(roam, ui_mouse_x, ui_mouse_y);
     }
+    Roam__DrawNpcMenu(roam, ui_mouse_x, ui_mouse_y);
+    Roam__DrawHireling(roam);
     if (now < roam->caption_until) {
         const uint64_t left  = roam->caption_until - now;
         const uint8_t  alpha = left >= 1000 ? 255 : (uint8_t)((left * 255) / 1000);

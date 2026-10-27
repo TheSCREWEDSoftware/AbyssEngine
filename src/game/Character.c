@@ -527,6 +527,11 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
     }
     // The stash: "item stash x y <code> <defense> <quantity>"
     Character__Print(file, "stashgold %d\n", character->stash_gold);
+    if (character->hireling > 0) {
+        Character__Print(file, "hireling %d %d %d %d %d %u\n", character->hireling - 1, character->hireling_level,
+                         character->hireling_name, character->hireling_life, character->hireling_dead ? 1 : 0,
+                         character->hireling_experience);
+    }
     for (int i = 0; i < character->stash_count; i++) {
         const InventoryItem *it = &character->stash[i];
         char                 magic[400];
@@ -672,6 +677,17 @@ bool Character_ReadText(const char *text, Character *character) {
             character->gold = number > 0 ? number : 0;
         } else if (strcmp(key, "stashgold") == 0) {
             character->stash_gold = number > 0 ? number : 0;
+        } else if (strcmp(key, "hireling") == 0) {
+            int      row = -1, level = 1, name = 0, life = 0, dead = 0;
+            unsigned exp = 0;
+            if (sscanf(value, "%d %d %d %d %d %u", &row, &level, &name, &life, &dead, &exp) >= 5 && row >= 0) {
+                character->hireling            = row + 1;
+                character->hireling_level      = level > 0 ? level : 1;
+                character->hireling_name       = name;
+                character->hireling_life       = life;
+                character->hireling_dead       = dead != 0;
+                character->hireling_experience = exp;
+            }
         } else if (strcmp(key, "items") == 0) {
             has_items = true;
         } else if (strcmp(key, "item") == 0) {

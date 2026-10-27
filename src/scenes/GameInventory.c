@@ -6,6 +6,7 @@
 #include "../drawing/Sprite.h"
 #include "../game/Affixes.h"
 #include "../game/Inventory.h"
+#include "../game/Shop.h"
 #include "../game/Sockets.h"
 #include "../managers/InputManager.h"
 #include <SDL2/SDL.h>
@@ -46,9 +47,18 @@ static int belt_y = 568;
 typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND, ORIGIN_STASH } Origin;
 
 // The stash, on the left (TradeStash.dc6, inventory.txt's "Big Bank Page 1"), and its gold with the withdraw button
-#define STASH_PANEL         "/data/global/ui/PANEL/TradeStash.dc6"
-#define STASH_GRID_X        74
-#define STASH_GRID_Y        82
+#define STASH_PANEL  "/data/global/ui/PANEL/TradeStash.dc6"
+#define STASH_GRID_X 74
+#define STASH_GRID_Y 82
+// A merchant's store, on the left (buysell.dc6: tabs along the top, a 10 x 10 grid, your gold, the buttons)
+#define SHOP_PANEL          "/data/global/ui/PANEL/buysell.dc6"
+#define SHOP_GRID_X         15
+#define SHOP_GRID_Y         62
+#define SHOP_TAB_W          79
+#define SHOP_TAB_H          31
+#define SHOP_CLOSE_X        270
+#define SHOP_CLOSE_Y        383
+#define SHOP_BUTTON_SZ      32
 #define STASH_GOLD_BUTTON_X 75
 #define STASH_GOLD_BUTTON_Y 23
 
@@ -64,15 +74,22 @@ typedef struct IconCache {
 #define GOLD_BUTTON_H 18
 
 struct GameInventory {
-    Sprite   *panel;
-    Sprite   *gold_button;
-    Sprite   *stash_panel;
-    Sprite   *socket;     // gemsocket.dc6
-    bool      stash_open; // in town, at the stash
-    IconCache icons[ICON_CACHE];
-    int       icon_count;
-    Label    *text;  // tooltip lines (font16)
-    Label    *small; // belt keys, quantities
+    Sprite    *panel;
+    Sprite    *gold_button;
+    Sprite    *stash_panel;
+    Sprite    *socket; // gemsocket.dc6
+    Sprite    *shop_panel;
+    Sprite    *shop_tabs;
+    Sprite    *shop_buttons; // buysellbtn.dc6
+    ShopStock *shop;         // trading with a merchant (NULL: not)
+    int        shop_tab;
+    int        difficulty;    // what they pay depends on it
+    char       tip_extra[48]; // the price line under a tooltip while trading
+    bool       stash_open;    // in town, at the stash
+    IconCache  icons[ICON_CACHE];
+    int        icon_count;
+    Label     *text;  // tooltip lines (font16)
+    Label     *small; // belt keys, quantities
     // The item on the cursor, and where it came from (it goes back there if the panel closes)
     bool   holding;
     Item   held;
@@ -94,12 +111,15 @@ static void GameInventory__PutDown(GameInventory *inventory, const Item *item) {
 GameInventory *GameInventory_Create(void) {
     GameInventory *inventory = calloc(1, sizeof(GameInventory));
     FAIL_IF_NULL(inventory);
-    inventory->panel       = Sprite_Create(INVENTORY_PANEL, PALETTE_UNITS);
-    inventory->gold_button = Sprite_Create("/data/global/ui/PANEL/goldcoinbtn.dc6", PALETTE_SKY);
-    inventory->stash_panel = Sprite_Create(STASH_PANEL, PALETTE_SKY);
-    inventory->socket      = Sprite_Create("/data/global/ui/PANEL/gemsocket.dc6", PALETTE_UNITS);
-    inventory->text        = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-    inventory->small       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+    inventory->panel        = Sprite_Create(INVENTORY_PANEL, PALETTE_UNITS);
+    inventory->gold_button  = Sprite_Create("/data/global/ui/PANEL/goldcoinbtn.dc6", PALETTE_SKY);
+    inventory->stash_panel  = Sprite_Create(STASH_PANEL, PALETTE_SKY);
+    inventory->socket       = Sprite_Create("/data/global/ui/PANEL/gemsocket.dc6", PALETTE_UNITS);
+    inventory->shop_panel   = Sprite_Create(SHOP_PANEL, PALETTE_SKY);
+    inventory->shop_tabs    = Sprite_Create("/data/global/ui/PANEL/buysellTabs.dc6", PALETTE_SKY);
+    inventory->shop_buttons = Sprite_Create("/data/global/ui/PANEL/buysellbtn.dc6", PALETTE_SKY);
+    inventory->text         = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    inventory->small        = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     return inventory;
 }
 
@@ -112,6 +132,9 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
     Sprite_Destroy(&inventory->gold_button);
     Sprite_Destroy(&inventory->stash_panel);
     Sprite_Destroy(&inventory->socket);
+    Sprite_Destroy(&inventory->shop_panel);
+    Sprite_Destroy(&inventory->shop_tabs);
+    Sprite_Destroy(&inventory->shop_buttons);
     for (int i = 0; i < inventory->icon_count; i++) {
         Sprite_Destroy(&inventory->icons[i].sprite);
     }
@@ -185,6 +208,59 @@ bool GameInventory_IsOver(const int mouse_x, const int mouse_y) {
 }
 
 void GameInventory_SetStash(GameInventory *inventory, const bool open) { inventory->stash_open = open; }
+
+void GameInventory_SetShop(GameInventory *inventory, ShopStock *stock, const int difficulty) {
+    inventory->shop       = stock;
+    inventory->difficulty = difficulty;
+    if (stock != NULL) {
+        inventory->stash_open = false;
+        // The first tab with something on it
+        inventory->shop_tab = 0;
+        for (int t = SHOP_TABS - 1; t >= 0; t--) {
+            for (int i = 0; i < stock->count; i++) {
+                inventory->shop_tab = stock->items[i].page == t ? t : inventory->shop_tab;
+            }
+        }
+    }
+}
+
+bool GameInventory_ShopOpen(const GameInventory *inventory) { return inventory->shop != NULL; }
+
+bool GameInventory_IsOverShop(const GameInventory *inventory, const int mouse_x, const int mouse_y) {
+    return inventory->shop != NULL && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
+}
+
+static bool GameInventory__ShopCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
+    if (mouse_x < SHOP_GRID_X || mouse_y < SHOP_GRID_Y || mouse_x >= SHOP_GRID_X + (SHOP_W * CELL) ||
+        mouse_y >= SHOP_GRID_Y + (SHOP_H * CELL)) {
+        return false;
+    }
+    *cell_x = (mouse_x - SHOP_GRID_X) / CELL;
+    *cell_y = (mouse_y - SHOP_GRID_Y) / CELL;
+    return true;
+}
+
+static SDL_Rect GameInventory__ShopRect(const InventoryItem *it, const ItemBase *base) {
+    const SDL_Rect rect = {SHOP_GRID_X + (it->x * CELL), SHOP_GRID_Y + (it->y * CELL),
+                           (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
+    return rect;
+}
+
+static bool GameInventory__OverShopClose(const int mouse_x, const int mouse_y) {
+    return mouse_x >= SHOP_CLOSE_X && mouse_x < SHOP_CLOSE_X + SHOP_BUTTON_SZ && mouse_y >= SHOP_CLOSE_Y &&
+           mouse_y < SHOP_CLOSE_Y + SHOP_BUTTON_SZ;
+}
+
+// Selling to the merchant: gold for it, and it joins their wares
+static void GameInventory__Sell(GameInventory *inventory, Character *character, const Item *item,
+                                const char **message) {
+    const int price = Shop_SellPrice(inventory->shop, item, inventory->difficulty);
+    const int limit = Inventory_GoldLimit(character);
+    character->gold = character->gold + price > limit ? limit : character->gold + price;
+    Shop_Take(inventory->shop, item);
+    snprintf(inventory->sound, sizeof(inventory->sound), "item_gold");
+    (void)message;
+}
 
 bool GameInventory_StashOpen(const GameInventory *inventory) { return inventory->stash_open; }
 
@@ -447,6 +523,53 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         return events;
     }
 
+    // A merchant's store: the tabs, the close button, buying (click an item) and selling (put an item on it)
+    if (inventory->shop != NULL && (left_click || right_click) && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H) {
+        if (left_click && mouse_y < SHOP_TAB_H && mouse_x < SHOP_TAB_W * SHOP_TABS) {
+            inventory->shop_tab = mouse_x / SHOP_TAB_W;
+            return events;
+        }
+        if (left_click && GameInventory__OverShopClose(mouse_x, mouse_y)) {
+            return events | INVENTORY_EVENT_SHOP_CLOSE;
+        }
+        int shop_x;
+        int shop_y;
+        if (!GameInventory__ShopCellAt(mouse_x, mouse_y, &shop_x, &shop_y)) {
+            return events;
+        }
+        if (inventory->holding) {
+            if (inventory->still_worn) { // Modern: it comes off now, sold
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
+            GameInventory__Sell(inventory, character, &inventory->held, message);
+            inventory->holding = false;
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        const int under = Shop_ItemAt(inventory->shop, inventory->shop_tab, shop_x, shop_y);
+        if (under < 0) {
+            return events;
+        }
+        const Item item  = inventory->shop->items[under].item;
+        const int  price = Shop_Price(inventory->shop, &item);
+        if (price > character->gold) {
+            *message = "You don't have enough gold for that.";
+            return events;
+        }
+        const ItemBase *base   = Items_Find(item.code);
+        const bool      placed = (shift && base != NULL && base->beltable && Inventory_AddToBelt(character, &item)) ||
+                            Inventory_Add(character, &item);
+        if (!placed) {
+            *message = "You don't have room for that.";
+            return events;
+        }
+        character->gold -= price;
+        Shop_Remove(inventory->shop, under);
+        snprintf(inventory->sound, sizeof(inventory->sound), "item_gold");
+        return events | INVENTORY_EVENT_MOVED;
+    }
+
     // The stash
     if (inventory->stash_open && left_click && !inventory->holding && GameInventory__OverStashGold(mouse_x, mouse_y)) {
         if (character->stash_gold > 0) {
@@ -519,6 +642,12 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     int cell_y;
     if (GameInventory__CellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
         const int under = Inventory_ItemAt(character, cell_x, cell_y);
+        if (right_click && under >= 0 && inventory->shop != NULL && !inventory->holding) {
+            const Item item = character->inventory[under].item; // right click sells, while trading
+            Inventory_Remove(character, under);
+            GameInventory__Sell(inventory, character, &item, message);
+            return events | INVENTORY_EVENT_MOVED;
+        }
         if (right_click && under >= 0) {
             if (GameInventory__Drink(&character->inventory[under].item, drunk)) {
                 Inventory_Remove(character, under);
@@ -725,8 +854,48 @@ static void GameInventory__DrawStash(GameInventory *inventory, const Character *
     Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, STASH_GOLD_BUTTON_Y + 34);
 }
 
+// The merchant's store on the left
+static void GameInventory__DrawShop(GameInventory *inventory, const Character *character, const int mouse_x,
+                                    const int mouse_y) {
+    Sprite_DrawMulti(inventory->shop_panel, 0, 0, 0, 2, 2);
+    for (int t = 0; t < SHOP_TABS; t++) {
+        Sprite_Draw(inventory->shop_tabs, (uint8_t)(t == inventory->shop_tab ? t : t + 4), t * SHOP_TAB_W, SHOP_TAB_H);
+        Label_SetText(inventory->text, Shop_TabName(t));
+        Label_SetAlignment(inventory->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        Label_SetColor(inventory->text, t == inventory->shop_tab ? 0xFF : 0xA0, t == inventory->shop_tab ? 0xFF : 0xA0,
+                       t == inventory->shop_tab ? 0xFF : 0xA0, 0xFF);
+        Label_Draw(inventory->text, (t * SHOP_TAB_W) + (SHOP_TAB_W / 2), SHOP_TAB_H / 2 + 2);
+    }
+    for (int i = 0; i < inventory->shop->count; i++) {
+        const InventoryItem *it = &inventory->shop->items[i];
+        if (it->page != inventory->shop_tab) {
+            continue;
+        }
+        const ItemBase *base = Items_Find(it->item.code);
+        const SDL_Rect  rect = GameInventory__ShopRect(it, base);
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90);
+        SDL_RenderFillRect(sdl_renderer, &rect);
+        GameInventory__DrawItem(inventory, &it->item, &rect,
+                                base == NULL || base->kind == ITEM_KIND_MISC ||
+                                    Inventory_MeetsRequirements(character, base));
+    }
+    char text[48];
+    snprintf(text, sizeof(text), "Gold: %d", character->gold);
+    Label_SetText(inventory->text, text);
+    Label_SetAlignment(inventory->text, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+    Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
+    Label_Draw(inventory->text, 22, 367);
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    Sprite_Draw(inventory->shop_buttons, GameInventory__OverShopClose(mouse_x, mouse_y) && left_down ? 11 : 10,
+                SHOP_CLOSE_X, SHOP_CLOSE_Y + SHOP_BUTTON_SZ);
+}
+
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
-    if (inventory->stash_open) {
+    if (inventory->shop != NULL) {
+        GameInventory__DrawShop(inventory, character, mouse_x, mouse_y);
+    } else if (inventory->stash_open) {
         GameInventory__DrawStash(inventory, character, mouse_x, mouse_y);
     }
     Sprite_DrawMulti(inventory->panel, 4, GAME_PANEL_X, 0, 2, 2);
@@ -955,7 +1124,9 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
     if (Sockets_CanGoIn(item)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Put it on an item with sockets");
     }
-    if (Items_IsPotion(base)) {
+    if (inventory->tip_extra[0] != '\0') {
+        GameInventory__AddLine(lines, colors, &count, 0xFF, 0xFF, 0xFF, inventory->tip_extra);
+    } else if (Items_IsPotion(base)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to drink");
     }
 
@@ -1034,7 +1205,18 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
     } else if (open) {
         int cell_x;
         int cell_y;
-        if (inventory->stash_open && GameInventory__StashCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+        if (inventory->shop != NULL && GameInventory__ShopCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+            const int under = Shop_ItemAt(inventory->shop, inventory->shop_tab, cell_x, cell_y);
+            if (under >= 0) {
+                const InventoryItem *it   = &inventory->shop->items[under];
+                const SDL_Rect       rect = GameInventory__ShopRect(it, Items_Find(it->item.code));
+                item                      = &it->item;
+                anchor_x                  = rect.x + (rect.w / 2);
+                anchor_y                  = rect.y;
+                snprintf(inventory->tip_extra, sizeof(inventory->tip_extra), "Cost: %d",
+                         Shop_Price(inventory->shop, item));
+            }
+        } else if (inventory->stash_open && GameInventory__StashCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
             const int under = Stash_ItemAt(character, cell_x, cell_y);
             if (under >= 0) {
                 const SDL_Rect rect =
@@ -1062,7 +1244,12 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
         }
     }
     if (item != NULL) {
+        if (inventory->shop != NULL && inventory->tip_extra[0] == '\0' && belt < 0) {
+            snprintf(inventory->tip_extra, sizeof(inventory->tip_extra), "Sell value: %d",
+                     Shop_SellPrice(inventory->shop, item, inventory->difficulty));
+        }
         GameInventory__DrawSockets(inventory, item, anchor_x, anchor_y);
         GameInventory__Tooltip(inventory, character, item, anchor_x, anchor_y);
     }
+    inventory->tip_extra[0] = '\0';
 }

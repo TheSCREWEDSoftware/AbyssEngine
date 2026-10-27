@@ -260,7 +260,28 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
     their skill says so.
   Not yet: the Druid's and Assassin's shapes and traps, Whirlwind and leaps, some rarer skills (they say so).
 
+## Town folk
+
+Click one of the town folk and you walk up to them; a box lists what they do:
+
+- **Healers** (Akara, Fara, Ormus, Jamella, Malah) heal your life, mana and stamina (and cure poison) as you come to
+  them, the game's way.
+- **Trade** opens their store on the left, with the inventory on the right: tabs for armor, weapons and the rest, what
+  they sell from the game's tables (each merchant's own columns in `weapons.txt`, `armor.txt` and `misc.txt`: a
+  little of everything they carry, some of it magic, nothing far above your level; potions, scrolls and keys never
+  run out). Point at an item to see its cost; click it to buy it (**Shift**: potions straight into the belt). Sell by
+  putting an item from the mouse on the store, or right clicking it in the inventory: what they pay and charge is
+  `npc.txt`'s (with its most they'll pay at each difficulty), and what you sell joins their wares. Their stock is
+  kept while the game lasts. Walking away, closing the inventory or the store's close button ends it.
+- **Travel**: Warriv takes you between the Rogue Encampment and Lut Gholein, Meshif between Lut Gholein and the Kurast
+  Docks, Tyrael from the Pandemonium Fortress to Harrogath. The town's waypoint is yours from then on.
+- **Hire** (Kashya, Greiz, Asheara, Qual-Kehk): five of the act's hirelings from `hireling.txt` (their kind, a level
+  about yours, the price). Your hireling follows you everywhere, fights what's near (Rogue Scouts shoot fire or cold
+  arrows from afar), shows top left with their life, gets a level as you get yours (staying a level or so behind),
+  and is saved with you. Hiring another sends the first away. When they die, **Resurrect** brings them back for
+  gold.
+
 ## Not yet
 
-Some skills (see above), quests, NPC dialogue and trading, hirelings, difficulty levels. Each game has its own random world seed: the
+Some skills (see above), quests, NPC dialogue, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.
