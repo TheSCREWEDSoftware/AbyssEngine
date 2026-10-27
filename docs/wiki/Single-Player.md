@@ -149,8 +149,8 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   Some curse you (the Succubus witches: Amplify Damage or Weaken; the Summoner: Weaken; Doom Knights: Decrepify or
   another): Amplify Damage lets more of their blows through, Weaken takes from your damage, Decrepify does a bit of
   both and slows you; it shows over your head while it lasts. Zakarum priests and imps teleport next to you, Sand
-  Leapers leap at you, frog demons and tentacles go under the ground (out of reach) and come up beside you. A monster's cold slows you for a moment. In multiplayer games curses and auras reach the
-  host's own player only, for now.
+  Leapers leap at you, frog demons and tentacles go under the ground (out of reach) and come up beside you. A monster's cold slows you for a moment. In multiplayer games curses, auras and cold reach
+  every player.
 - **Waypoints**: you start knowing the Rogue Encampment's. Click a waypoint to light it up ("Waypoint found."); it
   then shows in the waypoint list (V in town or next to a waypoint), and travelling to it puts you next to it. Found
   waypoints are kept with the character.

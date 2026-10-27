@@ -100,14 +100,15 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
 
 // The rarer monsters' ways: a curse on you (Succubus witches, the Summoner, Doom Knights: Amplify Damage, Weaken,
 // Decrepify, or one of them), teleporting next to you (Zakarum priests, imps), leaping at you (Sand Leapers).
-// mine: the target is our own player (curses only land on the player whose game runs the monster)
+// target_id: 0 our own player, else another player's id (their game is told: MSG_AFFLICT)
 static bool Roam__MonsterSpecial(SceneRoam *roam, Unit *unit, const float tx, const float ty, const float distance,
-                                 const bool mine, const uint64_t now) {
+                                 const int target_id, const uint64_t now) {
     if (now < unit->next_special) {
         return false;
     }
-    if (unit->hex != NULL && mine && distance <= AI_CAST_RANGE && Roam__IsAlive(&roam->player) &&
-        (roam->player.curse == NULL || now >= roam->player.curse_until) &&
+    const bool mine = target_id == 0;
+    if (unit->hex != NULL && distance <= AI_CAST_RANGE &&
+        (!mine || (Roam__IsAlive(&roam->player) && (roam->player.curse == NULL || now >= roam->player.curse_until))) &&
         Map_HasClearLine(roam->map, unit->x, unit->y, tx, ty)) {
         unit->next_special    = now + 5000 + (uint64_t)Roam__Roll(0, 4000);
         const SkillRow *curse = unit->hex2 != NULL && Roam__Roll(0, 1) == 1 ? unit->hex2 : unit->hex;
@@ -116,9 +117,14 @@ static bool Roam__MonsterSpecial(SceneRoam *roam, Unit *unit, const float tx, co
             const SkillRow          *picked    = SkillData_Get(curses[Roam__Roll(0, 2)]);
             curse                              = picked != NULL ? picked : curse;
         }
-        roam->player.curse       = curse;
-        roam->player.curse_level = unit->hex_level;
-        roam->player.curse_until = now + 6000 + ((uint64_t)unit->hex_level * 1000);
+        const int ms = 6000 + (unit->hex_level * 1000);
+        if (mine) {
+            roam->player.curse       = curse;
+            roam->player.curse_level = unit->hex_level;
+            roam->player.curse_until = now + (uint64_t)ms;
+        } else {
+            Roam__SendAfflict(target_id, curse, unit->hex_level, ms);
+        }
         Roam__TurnTowards(&unit->turn, unit->x, unit->y, tx, ty);
         Roam__ClearPath(unit);
         Roam__SetState(unit, UNIT_ATTACK, now);
@@ -172,13 +178,28 @@ static void Roam__MonsterAura(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (unit->aura == NULL || !roam->game || now < unit->aura_pulse) {
         return;
     }
-    unit->aura_pulse = now + 1000;
-    Unit *player     = &roam->player;
+    unit->aura_pulse   = now + 1000;
+    Unit       *player = &roam->player;
+    const char *id     = unit->aura->id;
+    const int   level  = unit->aura_level;
+    // The other players near it: their games are told
+    for (int o = 0; o < roam->other_count && roam->online; o++) {
+        const Unit *other = &roam->others[o];
+        if (!Roam__OtherAlive(other) || Roam__Distance(unit->x, unit->y, other->x, other->y) > 6.0f) {
+            continue;
+        }
+        if (strcmp(id, "Holy Freeze") == 0) {
+            Roam__SendAfflict(roam->other_ids[o], NULL, level, 1100);
+        } else if (strcmp(id, "Holy Fire") == 0 || strcmp(id, "Holy Shock") == 0) {
+            int damage[ELEMENT_COUNT] = {0};
+            damage[strcmp(id, "Holy Fire") == 0 ? ELEMENT_FIRE : ELEMENT_LIGHTNING] =
+                Roam__Roll(level * 2, (level * 5) + 2);
+            Roam__SendHitPlayer(roam->other_ids[o], false, 100000, unit->level, damage); // (an aura doesn't miss)
+        }
+    }
     if (!Roam__IsAlive(player) || Roam__Distance(unit->x, unit->y, player->x, player->y) > 6.0f) {
         return;
     }
-    const char *id    = unit->aura->id;
-    const int   level = unit->aura_level;
     if (strcmp(id, "Holy Freeze") == 0) {
         player->chill_until = now + 1100;
     } else if (strcmp(id, "Holy Fire") == 0 || strcmp(id, "Holy Shock") == 0) {

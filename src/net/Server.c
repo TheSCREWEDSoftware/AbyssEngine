@@ -1121,6 +1121,15 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
             }
         }
         break;
+    case MSG_AFFLICT:
+        if (peer->stage == STAGE_IN_GAME) {
+            NetReader peek   = *reader;
+            const int target = NetReader_U8(&peek);
+            if (target > 0) {
+                Server__PassOn(server, peer, MSG_AFFLICTED, reader, 0, target);
+            }
+        }
+        break;
     case MSG_HIT_PLAYER:
         if (peer->stage == STAGE_IN_GAME) {
             NetReader  peek   = *reader;

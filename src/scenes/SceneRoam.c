@@ -1472,6 +1472,21 @@ static void Roam__SendHitPlayer(const int target, const bool pvp, const int atta
     free(writer);
 }
 
+// A monster's curse (skill), or its cold (NULL: chilled), on another player: the map's owner tells them
+static void Roam__SendAfflict(const int target, const SkillRow *curse, const int level, const int ms) {
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (writer == NULL) {
+        return;
+    }
+    NetWriter_Begin(writer);
+    NetWriter_U8(writer, (uint8_t)target);
+    NetWriter_U16(writer, curse != NULL ? (uint16_t)curse->row : 0xFFFF);
+    NetWriter_U8(writer, (uint8_t)level);
+    NetWriter_U16(writer, (uint16_t)(ms > 65535 ? 65535 : ms));
+    NetClient_Send(MSG_AFFLICT, writer);
+    free(writer);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Objects
 
@@ -3889,7 +3904,13 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         Roam__Roll(1, 100) <= unit->element_chance) {
                         damage[unit->element] = Roam__Roll(unit->element_min, unit->element_max);
                     }
+                    if (unit->aura != NULL && strcmp(unit->aura->id, "Might") == 0) {
+                        damage[ELEMENT_PHYSICAL] += damage[ELEMENT_PHYSICAL] / 2; // its Might
+                    }
                     Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level, damage);
+                    if (unit->element == ELEMENT_COLD) {
+                        Roam__SendAfflict(unit->net_target, NULL, 1, 2000); // its cold slows them
+                    }
                 }
             }
             if (unit->state == UNIT_OPERATE) {
@@ -3949,7 +3970,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             Roam__CallPack(roam, unit);
             if (unit->fight_ally == 0 &&
                 (Roam__MonsterFlees(roam, unit, target_x, target_y, now, seconds) ||
-                 Roam__MonsterSpecial(roam, unit, target_x, target_y, distance, target_id == 0, now) ||
+                 Roam__MonsterSpecial(roam, unit, target_x, target_y, distance, target_id, now) ||
                  Roam__MonsterCasts(roam, unit, target_x, target_y, distance, now) ||
                  Roam__MonsterShoots(roam, unit, target_x, target_y, distance, now, seconds))) {
                 unit->net_target = target_id;
@@ -5098,7 +5119,8 @@ static void Roam__SendMonsters(SceneRoam *roam) {
         NetWriter_I32(writer, unit->max_hp);
         NetWriter_U8(writer, (uint8_t)unit->state);
         NetWriter_U8(writer, (uint8_t)unit->turn);
-        NetWriter_U8(writer, unit->vanished ? 1 : 0);
+        NetWriter_U8(writer, (uint8_t)((unit->vanished ? 1 : 0) | (unit->burrowed ? 2 : 0)));
+        NetWriter_U16(writer, unit->aura != NULL ? (uint16_t)unit->aura->row : 0xFFFF); // (a unique's, to be seen)
         count++;
     }
     writer->data[count_at]     = (uint8_t)(count & 0xFF);
@@ -5232,7 +5254,9 @@ static void Roam__ApplyMonsters(SceneRoam *roam, NetReader *reader, const uint64
         const int       max_hp   = NetReader_I32(reader);
         const UnitState state    = (UnitState)NetReader_U8(reader);
         const int       turn     = NetReader_U8(reader);
-        const bool      vanished = NetReader_U8(reader) != 0;
+        const int       flags    = NetReader_U8(reader);
+        const int       aura     = NetReader_U16(reader);
+        const bool      vanished = (flags & 1) != 0;
         if (reader->failed || index >= roam->unit_count || roam->units[index].is_object || state > UNIT_OPERATE) {
             continue;
         }
@@ -5260,6 +5284,8 @@ static void Roam__ApplyMonsters(SceneRoam *roam, NetReader *reader, const uint64
             }
         }
         unit->vanished = vanished;
+        unit->burrowed = (flags & 2) != 0;
+        unit->aura     = aura != 0xFFFF ? SkillData_ByRow(aura) : NULL;
     }
 }
 
@@ -5403,6 +5429,25 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
             roam->use_is_ours = from == NetClient_MyId(); // ours: its treasure is ours to drop
             Roam__Operate(roam, unit, now);
             roam->use_is_ours = false;
+        }
+        break;
+    }
+    case MSG_AFFLICTED: {
+        NetReader_U8(reader); // (from)
+        const int target = NetReader_U8(reader);
+        const int row    = NetReader_U16(reader);
+        const int level  = NetReader_U8(reader);
+        const int ms     = NetReader_U16(reader);
+        Unit     *player = &roam->player;
+        if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until) {
+            break;
+        }
+        if (row == 0xFFFF) {
+            player->chill_until = SDL_GetTicks64() + (uint64_t)ms;
+        } else if (SkillData_ByRow(row) != NULL) {
+            player->curse       = SkillData_ByRow(row);
+            player->curse_level = level > 0 ? level : 1;
+            player->curse_until = SDL_GetTicks64() + (uint64_t)ms;
         }
         break;
     }

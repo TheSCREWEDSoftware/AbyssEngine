@@ -10,10 +10,11 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 14 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+#define NET_PROTOCOL_VERSION 15 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
 // 5: elemental damage in blows; 6: skills cast; 7: what players wear (looks), sockets; 8: trading;
 // 9: durability, unidentified items, +skills (a mod's skill); 10: charges (a mod's extra); 11: summons and hirelings
-// seen by the others; 12: stash pages; 13: the mods in the hello; 14: Town Portals seen and used by the others
+// seen by the others; 12: stash pages; 13: the mods in the hello; 14: Town Portals seen and used by the others;
+// 15: monsters' curses and auras on every player, burrowed monsters and auras seen
 
 // Trading between players (MSG_TRADE / MSG_TRADE_FROM): the server only passes them on; both games check and make
 // the swap when each has accepted the other's offer as it stands (their versions)
@@ -65,12 +66,13 @@ typedef enum NetMessageType {
     MSG_PARTY_INVITE, // player id
     MSG_PARTY_ACCEPT, // the inviter's player id
     MSG_PARTY_LEAVE,
-    MSG_CAST,   // map, skill (skills.txt row, 0xFFFF: the bow's attack), level, from x, y, at x, y: the others see it
-                // (the caster does the damage)
-    MSG_LOOKS,  // what I wear and hold (Character_LooksToText), when it changes
-    MSG_TRADE,  // to (player id), what (TradeOp), then: an offer's version, gold and items; a confirm's two versions
-    MSG_ALLIES, // map, count, then slot, monstats id, x, y, state, turn each: my summons and hireling, to be seen
-    MSG_PORTAL, // my Town Portal: open, act, level, world seed, x, y (where it was opened)
+    MSG_CAST,    // map, skill (skills.txt row, 0xFFFF: the bow's attack), level, from x, y, at x, y: the others see it
+                 // (the caster does the damage)
+    MSG_LOOKS,   // what I wear and hold (Character_LooksToText), when it changes
+    MSG_TRADE,   // to (player id), what (TradeOp), then: an offer's version, gold and items; a confirm's two versions
+    MSG_ALLIES,  // map, count, then slot, monstats id, x, y, state, turn each: my summons and hireling, to be seen
+    MSG_PORTAL,  // my Town Portal: open, act, level, world seed, x, y (where it was opened)
+    MSG_AFFLICT, // the map's owner: player id, skill row (0xFFFF: chilled), level, milliseconds (a monster's curse)
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id
     MSG_REJECT,       // why not (and the connection closes)
@@ -95,6 +97,7 @@ typedef enum NetMessageType {
     MSG_TRADE_FROM,          // a trade message from someone: their id, then what MSG_TRADE carried
     MSG_ALLIES_FROM,         // someone's summons and hireling
     MSG_PORTAL_FROM,         // someone's Town Portal (their id, then what MSG_PORTAL carried); to newcomers too
+    MSG_AFFLICTED,           // only to the one cursed or chilled: who did it, then what MSG_AFFLICT carried
 } NetMessageType;
 
 typedef enum NetDifficulty { DIFFICULTY_NORMAL, DIFFICULTY_NIGHTMARE, DIFFICULTY_HELL, DIFFICULTY_COUNT } NetDifficulty;
