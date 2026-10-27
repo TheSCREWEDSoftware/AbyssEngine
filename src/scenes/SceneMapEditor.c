@@ -29,6 +29,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool standalone = false; // --editor: no main menu to go back to
+static char start_map[4200];    // --editor's map, opened when the editor is first made
+
 // Layout (800x600): map view on the left, tool panel on the right, file buttons under the map.
 #define VIEW_W        580
 #define VIEW_H        556
@@ -474,6 +477,37 @@ void *MapEditor_Create(void) {
         map = TestingGrounds_CreateDefaultMap();
     }
     Editor__SetMap(editor, map, NULL);
+    if (!returning && start_map[0] != '\0') {
+        // --editor's map: a file of yours, one of your maps by name, or one of the game's DS1s
+        char         path[4300];
+        Map         *opened = NULL;
+        const size_t len    = strlen(start_map);
+        const bool   ds1    = len > 4 && SDL_strcasecmp(start_map + len - 4, ".ds1") == 0;
+        LoadingScreen_Begin("Loading map...");
+        if (ds1) {
+            // (a path in the MPQs, whole or from data/global/tiles on: "act1/town/townN1.ds1")
+            snprintf(path, sizeof(path), "%s", start_map);
+            if (!FileManager_FileExists(path)) {
+                snprintf(path, sizeof(path), "/data/global/tiles/%s", start_map);
+            }
+            opened  = FileManager_FileExists(path) ? Map_LoadDS1(path) : NULL;
+            path[0] = '\0';
+        } else {
+            snprintf(path, sizeof(path), "%s", start_map);
+            opened = Map_LoadFile(path);
+            if (opened == NULL) {
+                snprintf(path, sizeof(path), "%s/%s.abm", Map_GetSaveFolder(), start_map);
+                opened = Map_LoadFile(path);
+            }
+        }
+        LoadingScreen_End();
+        if (opened != NULL) {
+            Editor__SetMap(editor, opened, path);
+        } else {
+            Editor__Message(editor, "Could not open that map");
+        }
+        start_map[0] = '\0';
+    }
     if (returning && parked.history != NULL) {
         MapHistory_Destroy(&editor->history);
         editor->history = parked.history;
@@ -1054,8 +1088,17 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
 // ---------------------------------------------------------------------------------------------------------------------
 // Update / render
 
+void MapEditor_SetStandalone(const char *map) {
+    standalone = true;
+    snprintf(start_map, sizeof(start_map), "%s", map != NULL ? map : "");
+}
+
 static void Editor__Leave(void) {
-    Editor__ForgetRecovery();       // leaving on purpose: nothing to offer back
+    Editor__ForgetRecovery(); // leaving on purpose: nothing to offer back
+    if (standalone) {
+        running = false; // (the editor on its own: leaving it is quitting)
+        return;
+    }
     Scene_Set(SCENE_REF(MainMenu)); // the main menu releases the session (bestiary) once we're gone
 }
 

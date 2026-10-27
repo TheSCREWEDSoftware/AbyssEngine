@@ -25,6 +25,7 @@
 #include "scenes/Scene.h"
 #include "scenes/SceneGame.h"
 #include "scenes/SceneIntroVideos.h"
+#include "scenes/SceneMapEditor.h"
 #include "scenes/SceneOptions.h"
 #include "types/Palette.h"
 #include "util/Crypto.h"
@@ -53,6 +54,8 @@ static void Main__Usage(void) {
            "                                       character, or a new one of class N: 0 Amazon .. 6 Assassin;\n"
            "                                       no NAME: the last one played). Keys: wasd move, f fight, u use,\n"
            "                                       g pick up, 1-4 potions, t town, Q quit\n"
+           "  AbyssEngine --editor [MAP]           the Map Editor on its own (MAP: one of yours, by name or .abm\n"
+           "                                       file, or one of the game's, \"act1/town/townN1.ds1\")\n"
            "  AbyssEngine --extract DIR            copy the game's data out of the MPQs into DIR: the tables\n"
            "                                       (.txt), the strings (.tbl), the maps (.ds1) and the tiles (.dt1);\n"
            "                                       --small keeps only the tiles' walk flags (enough for --text)\n"
@@ -333,6 +336,8 @@ static int Main__ExportControls(const char *folder, const bool defaults) {
 
 int main(int argc, char **argv) {
     bool        settings_only  = false;
+    bool        editor_only    = false;
+    const char *editor_map     = NULL;
     const char *export_folder  = NULL;
     bool        export_default = false;
     bool        dedicated      = false;
@@ -345,6 +350,11 @@ int main(int argc, char **argv) {
     for (int a = 1; a < argc; a++) {
         if (strcmp(argv[a], "--settings") == 0) {
             settings_only = true;
+        } else if (strcmp(argv[a], "--editor") == 0) {
+            editor_only = true;
+            if (a + 1 < argc && argv[a + 1][0] != '-') {
+                editor_map = argv[++a];
+            }
         } else if (strcmp(argv[a], "--export-controls") == 0 && a + 1 < argc) {
             export_folder = argv[++a];
         } else if (strcmp(argv[a], "--server") == 0) {
@@ -520,6 +530,9 @@ int main(int argc, char **argv) {
         if (!Main__TextCharacter(text_name, text_class)) {
             return 1;
         }
+    } else if (editor_only) {
+        MapEditor_SetStandalone(editor_map); // AbyssEngine --editor [map]
+        Scene_Set(SCENE_REF(MapEditor));
     } else if (settings_only) {
         options_standalone = true;
         Scene_Set(SCENE_REF(Options)); // AbyssEngine --settings

@@ -1,6 +1,13 @@
 # Map Editor
 
-**Main menu › Map Editor › Map Editor** (needs the `DEBUG_SHOW_MAP_EDITOR` [option](CMake-Options.md), on by default).
+**Main menu › Map Editor › Map Editor** (needs the `DEBUG_SHOW_MAP_EDITOR` [option](CMake-Options.md), on by default),
+or on its own, without the game's menus:
+
+```
+AbyssEngine --editor                         the editor straight away (Back quits)
+AbyssEngine --editor mymap                   opening one of your maps (maps/mymap.abm), or any .abm file by its path
+AbyssEngine --editor act1/town/townN1.ds1    opening one of the game's areas (its path in the MPQs)
+```
 
 Open the game's own areas or build your own maps from the game's tile sets, place monsters, NPCs and objects, and
 try them straight away in the [Testing Grounds](Testing-Grounds-and-Free-Roam.md).
