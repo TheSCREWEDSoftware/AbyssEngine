@@ -1592,6 +1592,7 @@ static void     Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void     Roam__RefreshList(SceneRoam *roam);
 static void     Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+static void     Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
 
 // A trapped chest goes off at whoever opens it: a bolt of lightning, stronger in later areas
 static void Roam__SpringTrap(SceneRoam *roam, Unit *object, const uint64_t now) {
@@ -1632,6 +1633,30 @@ static void Roam__UseWell(SceneRoam *roam);
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (unit->object.operate_fn == 15) {
         Roam__TakePortal(roam, unit); // a Town Portal
+        return;
+    }
+    if (unit->object.operate_fn == 27) {
+        // A teleportation pad (the Arcane Sanctuary): to the nearest pad on another platform
+        int   best     = -1;
+        float distance = 1e9f;
+        for (int i = 0; i < roam->unit_count; i++) {
+            const Unit *pad = &roam->units[i];
+            const float d   = Roam__Distance(pad->x, pad->y, unit->x, unit->y);
+            if (pad != unit && pad->is_object && pad->object.operate_fn == 27 && d > 20.0f && d < distance) {
+                distance = d;
+                best     = i;
+            }
+        }
+        if (best >= 0) {
+            Roam__SpawnEffect(roam, "teleport", roam->player.x, roam->player.y, 1.0f, 1.0f);
+            Roam__ArrivalSpot(roam->map, roam->units[best].x + 2.0f, roam->units[best].y + 2.0f, &roam->player.x,
+                              &roam->player.y);
+            roam->player.target_x = roam->player.x;
+            roam->player.target_y = roam->player.y;
+            roam->moving          = false;
+            Roam__ClearPath(&roam->player);
+            Sounds_Play("object_teleportpad", SOUND_KIND_SFX);
+        }
         return;
     }
     if (unit->object.operate_fn == 32) {
@@ -2188,7 +2213,7 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
         }
     }
     if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32 &&
-        object->object.operate_fn != 15) { // (a Town Portal is your own)
+        object->object.operate_fn != 15 && object->object.operate_fn != 27) { // (a portal, a pad: your own)
         // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
         object->used      = true;
         NetWriter *writer = malloc(sizeof(NetWriter));
