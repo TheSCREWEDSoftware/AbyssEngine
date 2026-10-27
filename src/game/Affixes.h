@@ -31,6 +31,10 @@ int Affixes_ItemTotal(const Item *item, ItemModType type); // on one item
 void Affixes_AddProperty(Item *item, const char *code, int min, int max);
 void Affixes_AddMod(Item *item, int type, int value); // (adds up with the same kind already on it)
 
+// Sets: how many pieces of a set are worn, and the set an item belongs to (NULL: not a set item)
+int         Affixes_SetPiecesWorn(const Character *character, const char *set);
+const char *Affixes_SetName(const Item *item);
+
 void Affixes_Format(const Item *item, char *text, size_t size);
 void Affixes_Parse(Item *item, const char *text);
 

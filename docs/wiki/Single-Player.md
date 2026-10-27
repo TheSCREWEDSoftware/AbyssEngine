@@ -211,6 +211,7 @@ Drops are rolled the way the game words them, from its own tables:
 | Magic | Blue | 1 in 4 weapons and armor; rings, amulets and jewels always (at least) | A prefix and/or a suffix from `MagicPrefix.txt` / `MagicSuffix.txt` ("Jagged Hand Axe of the Fox") |
 | Rare | Yellow | 1 in 20 | A made-up name (`RarePrefix.txt` + `RareSuffix.txt`: "Grim Bite") and 3 to 6 affixes (only the ones the game allows on rares, never two of the same kind) |
 | Unique | Gold | 1 in 100, when the item has a unique of the monster's level or below | One of `UniqueItems.txt`'s named items ("The Gnasher"), with its own picture and properties |
+| Set | Green | 1 in 50, when the item is a piece of a set of the monster's level or below | A piece of one of the game's sets (`SetItems.txt`: "Civerb's Ward"), with its own properties; wearing more pieces of the set adds the piece's bonuses and the set's (`Sets.txt`: two worn, three, ..., the whole set). The tooltip says how many you wear |
 
 Affixes are picked as the game picks them: the item's type must suit them (`itype` / `etype`), their level can't be
 above the item's (the monster's level), and the more common ones (`frequency`) come up more. Only affixes whose every
@@ -261,5 +262,5 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
 
 ## Not yet
 
-Some skills (see above), set items, quests, NPC dialogue and trading, hirelings, difficulty levels. Each game has its own random world seed: the
+Some skills (see above), quests, NPC dialogue and trading, hirelings, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.

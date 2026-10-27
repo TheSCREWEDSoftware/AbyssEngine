@@ -942,6 +942,12 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         Affixes_ModText(&item->mods[m], text, sizeof(text));
         GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);
     }
+    const char *set = Affixes_SetName(item);
+    if (set != NULL) {
+        snprintf(text, sizeof(text), "%s (%d worn)", set, Affixes_SetPiecesWorn(character, set));
+        GameInventory__AddLine(lines, colors, &count, 0xC7, 0xB3, 0x77, text);
+        GameInventory__AddLine(lines, colors, &count, 0x00, 0xFF, 0x00, "More magic for each piece of it worn");
+    }
     if (item->sockets > 0) {
         snprintf(text, sizeof(text), "Socketed (%d)", item->sockets);
         GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);

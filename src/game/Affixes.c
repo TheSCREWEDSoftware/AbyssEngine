@@ -184,6 +184,29 @@ typedef struct Unique {
     int  prop_count;
 } Unique;
 
+// A set's piece (SetItems.txt): its own magic, and more for each other piece worn (aprop1: two worn, aprop2: three,
+// ...)
+typedef struct SetItem {
+    char name[64];
+    char set[64];
+    char code[ITEM_CODE_MAX];
+    int  level;
+    int  rarity;
+    char inv_file[32];
+    Prop props[PROPS_MAX];
+    int  prop_count;
+    Prop worn[5][2]; // [pieces worn - 2]
+} SetItem;
+
+// A set (Sets.txt): what wearing two, three, ... of it gives, and the whole set
+typedef struct ItemSet {
+    char name[64];
+    Prop partial[4][2]; // [pieces worn - 2]
+    Prop full[8];
+    int  full_count;
+    int  pieces; // how many items it has (SetItems.txt)
+} ItemSet;
+
 typedef struct AffixTable {
     Affix *rows;
     int    count;
@@ -197,6 +220,10 @@ static RareName  *rare_suffixes;
 static int        rare_suffix_count;
 static Unique    *uniques;
 static int        unique_count;
+static SetItem   *set_items;
+static int        set_item_count;
+static ItemSet   *item_sets;
+static int        item_set_count;
 static bool       loaded = false;
 
 // A name from the string tables (the files hold their keys), cleaned of the game's colour codes
@@ -335,6 +362,93 @@ static void Affixes__LoadUniques(void) {
     DataTable_Destroy(&t);
 }
 
+static void Affixes__ReadProp(const DataTable *t, const int row, Prop *prop, const char *code, const char *min,
+                              const char *max) {
+    snprintf(prop->code, sizeof(prop->code), "%s", DataTable_GetString(t, row, DataTable_GetColumnIndex(t, code)));
+    prop->min = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, min));
+    prop->max = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, max));
+}
+
+static void Affixes__LoadSets(void) {
+    DataTable *t = DataTable_Load("/data/global/excel/SetItems.txt");
+    if (t == NULL) {
+        return;
+    }
+    const int rows = DataTable_GetRowCount(t);
+    set_items      = calloc((size_t)(rows > 0 ? rows : 1), sizeof(SetItem));
+    FAIL_IF_NULL(set_items);
+    set_item_count = rows;
+    char a[24];
+    char b[24];
+    char c[24];
+    for (int row = 0; row < rows; row++) {
+        SetItem *item = &set_items[row];
+        Affixes__Text(item->name, sizeof(item->name),
+                      DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "index")));
+        snprintf(item->set, sizeof(item->set), "%s", DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "set")));
+        snprintf(item->code, sizeof(item->code), "%s",
+                 DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "item")));
+        item->level  = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "lvl"));
+        item->rarity = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "rarity"));
+        item->rarity = item->rarity > 0 ? item->rarity : 1;
+        snprintf(item->inv_file, sizeof(item->inv_file), "%s",
+                 DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "invfile")));
+        for (int p = 1; p <= PROPS_MAX; p++) {
+            snprintf(a, sizeof(a), "prop%d", p);
+            snprintf(b, sizeof(b), "min%d", p);
+            snprintf(c, sizeof(c), "max%d", p);
+            Prop prop;
+            Affixes__ReadProp(t, row, &prop, a, b, c);
+            if (prop.code[0] != '\0') {
+                item->props[item->prop_count++] = prop;
+            }
+        }
+        for (int n = 1; n <= 5; n++) {
+            for (int s = 0; s < 2; s++) {
+                snprintf(a, sizeof(a), "aprop%d%c", n, 'a' + s);
+                snprintf(b, sizeof(b), "amin%d%c", n, 'a' + s);
+                snprintf(c, sizeof(c), "amax%d%c", n, 'a' + s);
+                Affixes__ReadProp(t, row, &item->worn[n - 1][s], a, b, c);
+            }
+        }
+    }
+    DataTable_Destroy(&t);
+    t = DataTable_Load("/data/global/excel/Sets.txt");
+    if (t == NULL) {
+        return;
+    }
+    const int set_rows = DataTable_GetRowCount(t);
+    item_sets          = calloc((size_t)(set_rows > 0 ? set_rows : 1), sizeof(ItemSet));
+    FAIL_IF_NULL(item_sets);
+    item_set_count = set_rows;
+    for (int row = 0; row < set_rows; row++) {
+        ItemSet *set = &item_sets[row];
+        snprintf(set->name, sizeof(set->name), "%s", DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "index")));
+        for (int n = 2; n <= 5; n++) {
+            for (int s = 0; s < 2; s++) {
+                snprintf(a, sizeof(a), "PCode%d%c", n, 'a' + s);
+                snprintf(b, sizeof(b), "PMin%d%c", n, 'a' + s);
+                snprintf(c, sizeof(c), "PMax%d%c", n, 'a' + s);
+                Affixes__ReadProp(t, row, &set->partial[n - 2][s], a, b, c);
+            }
+        }
+        for (int f = 1; f <= 8; f++) {
+            snprintf(a, sizeof(a), "FCode%d", f);
+            snprintf(b, sizeof(b), "FMin%d", f);
+            snprintf(c, sizeof(c), "FMax%d", f);
+            Prop prop;
+            Affixes__ReadProp(t, row, &prop, a, b, c);
+            if (prop.code[0] != '\0') {
+                set->full[set->full_count++] = prop;
+            }
+        }
+        for (int i = 0; i < set_item_count; i++) {
+            set->pieces += strcmp(set_items[i].set, set->name) == 0 ? 1 : 0;
+        }
+    }
+    DataTable_Destroy(&t);
+}
+
 static void Affixes__Load(void) {
     if (loaded) {
         return;
@@ -345,6 +459,7 @@ static void Affixes__Load(void) {
     rare_prefixes = Affixes__LoadRareNames(EXCEL_RARE_PREFIX, &rare_prefix_count);
     rare_suffixes = Affixes__LoadRareNames(EXCEL_RARE_SUFFIX, &rare_suffix_count);
     Affixes__LoadUniques();
+    Affixes__LoadSets();
     LOG_INFO("Affixes: %d prefixes, %d suffixes, %d uniques", prefixes.count, suffixes.count, unique_count);
 }
 
@@ -484,6 +599,30 @@ static bool Affixes__MakeUnique(Item *item, const ItemBase *base, const int leve
     return false;
 }
 
+static bool Affixes__MakeSet(Item *item, const ItemBase *base, const int level) {
+    int total = 0;
+    for (int s = 0; s < set_item_count; s++) {
+        total += strcmp(set_items[s].code, base->code) == 0 && set_items[s].level <= level ? set_items[s].rarity : 0;
+    }
+    if (total == 0) {
+        return false;
+    }
+    int roll = rand() % total;
+    for (int s = 0; s < set_item_count; s++) {
+        if (strcmp(set_items[s].code, base->code) != 0 || set_items[s].level > level) {
+            continue;
+        }
+        if (roll < set_items[s].rarity) {
+            item->quality = ITEM_SET;
+            item->name1   = (int16_t)(s + 1);
+            Affixes__Apply(item, set_items[s].props, set_items[s].prop_count);
+            return true;
+        }
+        roll -= set_items[s].rarity;
+    }
+    return false;
+}
+
 static bool Affixes__MakeRare(Item *item, const ItemBase *base, const int level) {
     const int first  = Affixes__PickRareName(rare_prefixes, rare_prefix_count, base);
     const int second = Affixes__PickRareName(rare_suffixes, rare_suffix_count, base);
@@ -553,6 +692,9 @@ void Affixes_Roll(Item *item, const int item_level) {
     if (roll < 10 && Affixes__MakeUnique(item, base, level)) { // 1 in 100
         return;
     }
+    if (roll < 30 && Affixes__MakeSet(item, base, level)) { // 1 in 50
+        return;
+    }
     if (roll < 60 && Affixes__MakeRare(item, base, level)) { // 1 in 20
         return;
     }
@@ -590,6 +732,11 @@ void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2
                  item->name1 > 0 && item->name1 <= unique_count ? uniques[item->name1 - 1].name : base_name);
         snprintf(line2, size2, "%s", base_name);
         return;
+    case ITEM_SET:
+        snprintf(line1, size1, "%s",
+                 item->name1 > 0 && item->name1 <= set_item_count ? set_items[item->name1 - 1].name : base_name);
+        snprintf(line2, size2, "%s", base_name);
+        return;
     case ITEM_RUNEWORD: {
         const char *word = Sockets_RunewordName(item->name1 - 1);
         snprintf(line1, size1, "%s", word != NULL ? word : base_name);
@@ -609,6 +756,7 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b) 
         {0xFF, 0xFF, 0x64}, // rare: yellow
         {0xC7, 0xB3, 0x77}, // unique: gold
         {0xC7, 0xB3, 0x77}, // runeword: gold too
+        {0x00, 0xFF, 0x00}, // set: green
     };
     const int q = item->quality < ITEM_QUALITY_COUNT ? item->quality : 0;
     *r          = colors[q][0];
@@ -630,6 +778,10 @@ const char *Affixes_InvFile(const Item *item) {
     if (base == NULL) {
         return "";
     }
+    if (item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count &&
+        set_items[item->name1 - 1].inv_file[0] != '\0') {
+        return set_items[item->name1 - 1].inv_file;
+    }
     if (item->quality == ITEM_UNIQUE) {
         if (item->name1 > 0 && item->name1 <= unique_count && uniques[item->name1 - 1].inv_file[0] != '\0') {
             return uniques[item->name1 - 1].inv_file;
@@ -649,6 +801,86 @@ int Affixes_ItemTotal(const Item *item, const ItemModType type) {
     return total;
 }
 
+// How much of one kind a property gives (fixed values: the smaller end of a range)
+static int Affixes__PropValue(const Prop *prop, const ItemModType type) {
+    int       pair  = -1;
+    const int found = prop->code[0] != '\0' ? Affixes__Code(prop->code, &pair) : -1;
+    if (found == (int)type) {
+        return prop->min;
+    }
+    return pair == (int)type ? prop->max : 0;
+}
+
+// Set bonuses: for each set item worn, its own bonus for the other pieces worn, then the set's
+static int Affixes__SetTotal(const Character *character, const ItemModType type) {
+    if (set_item_count == 0) {
+        return 0;
+    }
+    int total = 0;
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item *item = &character->equipped[s];
+        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count) {
+            continue;
+        }
+        const SetItem *piece = &set_items[item->name1 - 1];
+        const int      worn  = Affixes_SetPiecesWorn(character, piece->set);
+        for (int n = 0; n + 2 <= worn && n < 5; n++) {
+            total += Affixes__PropValue(&piece->worn[n][0], type) + Affixes__PropValue(&piece->worn[n][1], type);
+        }
+    }
+    // The sets' own (once per set: counted at its first piece)
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item *item = &character->equipped[s];
+        if (item->quality != ITEM_SET || item->name1 <= 0 || item->name1 > set_item_count) {
+            continue;
+        }
+        const char *name  = set_items[item->name1 - 1].set;
+        bool        first = true;
+        for (int e = 0; e < s && first; e++) {
+            const Item *other = &character->equipped[e];
+            first             = !(other->quality == ITEM_SET && other->name1 > 0 && other->name1 <= set_item_count &&
+                      strcmp(set_items[other->name1 - 1].set, name) == 0);
+        }
+        if (!first) {
+            continue;
+        }
+        const int worn = Affixes_SetPiecesWorn(character, name);
+        for (int i = 0; i < item_set_count; i++) {
+            const ItemSet *set = &item_sets[i];
+            if (strcmp(set->name, name) != 0) {
+                continue;
+            }
+            for (int n = 0; n + 2 <= worn && n < 4; n++) {
+                total += Affixes__PropValue(&set->partial[n][0], type) + Affixes__PropValue(&set->partial[n][1], type);
+            }
+            for (int f = 0; f < set->full_count && worn >= set->pieces && set->pieces > 0; f++) {
+                total += Affixes__PropValue(&set->full[f], type);
+            }
+        }
+    }
+    return total;
+}
+
+int Affixes_SetPiecesWorn(const Character *character, const char *set) {
+    Affixes__Load();
+    int worn = 0;
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item *item  = &character->equipped[s];
+        worn             += item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count &&
+                        strcmp(set_items[item->name1 - 1].set, set) == 0
+                                ? 1
+                                : 0;
+    }
+    return worn;
+}
+
+const char *Affixes_SetName(const Item *item) {
+    Affixes__Load();
+    return item->quality == ITEM_SET && item->name1 > 0 && item->name1 <= set_item_count
+               ? set_items[item->name1 - 1].set
+               : NULL;
+}
+
 int Affixes_Total(const Character *character, const ItemModType type) {
     int total = 0;
     for (int s = 0; s < EQUIP_COUNT; s++) {
@@ -656,7 +888,7 @@ int Affixes_Total(const Character *character, const ItemModType type) {
             total += Affixes_ItemTotal(&character->equipped[s], type);
         }
     }
-    return total;
+    return total + Affixes__SetTotal(character, type);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -738,6 +970,11 @@ void Affixes_Release(void) {
     free(rare_prefixes);
     free(rare_suffixes);
     free(uniques);
+    free(set_items);
+    free(item_sets);
+    set_items      = NULL;
+    item_sets      = NULL;
+    set_item_count = item_set_count = 0;
     memset(&prefixes, 0, sizeof(prefixes));
     memset(&suffixes, 0, sizeof(suffixes));
     rare_prefixes = rare_suffixes = NULL;
