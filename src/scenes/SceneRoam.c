@@ -354,7 +354,8 @@ typedef struct SceneRoam {
     unsigned        draw_flags;
     int             place;      // Free Roam: current Places index (the area you're in)
     int             area_level; // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
-    WorldAtmosphere atmosphere; // that area's: indoors, rain or snow, music
+    WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
+    uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
 
     // Player
     Unit     player;
@@ -2495,6 +2496,24 @@ static void Roam__UpdateAtmosphere(SceneRoam *roam) {
     if (roam->atmosphere.music[0] != '\0') {
         AudioManager_PlayMusic(roam->atmosphere.music, true); // the same track carries on
     }
+    Sounds_PlayAmbience(roam->atmosphere.ambience); // the wind, a cave's hum (the same one carries on)
+    roam->ambient_event_at = 0;
+}
+
+// The area's odd sounds now and then (birds, drips, distant howls): SoundEnviron.txt's event, about every Event Delay
+static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
+    if (roam->atmosphere.event[0] == '\0' || roam->atmosphere.event_delay <= 0) {
+        return;
+    }
+    const uint64_t delay = (uint64_t)roam->atmosphere.event_delay * 40;
+    if (roam->ambient_event_at == 0) {
+        roam->ambient_event_at = now + (delay / 2) + (uint64_t)Roam__Roll(0, (int)delay);
+        return;
+    }
+    if (now >= roam->ambient_event_at) {
+        Sounds_Play(roam->atmosphere.event, SOUND_KIND_SFX); // (a group: one of them at random)
+        roam->ambient_event_at = now + (delay / 2) + (uint64_t)Roam__Roll(0, (int)delay);
+    }
 }
 
 static void Roam__EnteredArea(SceneRoam *roam, const int level_id, const bool caption_wanted) {
@@ -2849,6 +2868,7 @@ static void Roam__Free(void **scene_ref) {
         free(roam->shops[s]);
     }
     free(roam->gamble);
+    Sounds_PlayAmbience(NULL); // (the area's background stops with the game)
     free(roam->trade);
     roam->shop_count = 0;
     Label_Destroy(&roam->panel_label);
@@ -5144,6 +5164,7 @@ static bool Roam__UpdateMenu(SceneRoam *roam) {
 
 static void Roam__Update(SceneRoam *roam) {
     const uint64_t now = Roam__Clock(roam);
+    Roam__AmbientEvents(roam, now);
     if (roam->game && roam->character != NULL) {
         Character_Looks(roam->character, &roam->player.looks); // drawn in what's worn
         roam->player.has_looks = true;

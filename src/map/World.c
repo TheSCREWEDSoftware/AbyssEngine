@@ -355,15 +355,31 @@ bool World_GetAtmosphere(const int level_id, WorldAtmosphere *atmosphere) {
     if (environments == NULL || sounds == NULL || environment <= 0) {
         return true;
     }
-    int song = 0;
+    int song     = 0;
+    int ambience = 0;
+    int event    = 0;
     for (int r = 0; r < DataTable_GetRowCount(environments); r++) {
         if (DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Index")) == environment) {
-            song = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Song"));
+            song     = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Song"));
+            ambience = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Day Ambience"));
+            event    = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Day Event"));
+            atmosphere->event_delay =
+                DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Event Delay"));
             break;
         }
     }
     const int c_index = DataTable_GetColumnIndex(sounds, "Index");
     const int c_file  = DataTable_GetColumnIndex(sounds, "FileName");
+    const int c_name  = DataTable_GetColumnIndex(sounds, "Sound");
+    for (int r = 0; r < DataTable_GetRowCount(sounds) && (ambience > 0 || event > 0); r++) {
+        const int index = DataTable_GetInt(sounds, r, c_index);
+        if (ambience > 0 && index == ambience) {
+            snprintf(atmosphere->ambience, sizeof(atmosphere->ambience), "%s", DataTable_GetString(sounds, r, c_name));
+        }
+        if (event > 0 && index == event) {
+            snprintf(atmosphere->event, sizeof(atmosphere->event), "%s", DataTable_GetString(sounds, r, c_name));
+        }
+    }
     for (int r = 0; r < DataTable_GetRowCount(sounds) && song > 0; r++) {
         if (DataTable_GetInt(sounds, r, c_index) == song) {
             // "act1\town1.wav" -> "/data/global/music/act1/town1.wav"

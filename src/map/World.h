@@ -34,6 +34,11 @@ typedef struct WorldAtmosphere {
     bool rain;
     bool snow;
     char music[128]; // "" = none
+    // Its sounds (SoundEnviron.txt, by Sounds.txt name): the background loop (the wind, a cave's hum), and the odd
+    // sound now and then (birds, drips) every so many frames (25 a second)
+    char ambience[48];
+    char event[48];
+    int  event_delay;
 } WorldAtmosphere;
 bool World_GetAtmosphere(int level_id, WorldAtmosphere *atmosphere);
 

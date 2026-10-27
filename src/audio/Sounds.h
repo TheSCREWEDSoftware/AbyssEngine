@@ -16,6 +16,8 @@ bool Sounds_Exists(const char *name);
 // milliseconds (0: it's in the table but can't be played, no speech MPQ or no sound device; -1: no such sound)
 int  Sounds_PlaySpeech(const char *name);
 void Sounds_StopSpeech(void);
+// The area's background loop (sounds.txt name; NULL or "": none)
+void Sounds_PlayAmbience(const char *name);
 // The name of a monster's sound (monstats.txt "MonSound" -> MonSounds.txt), NULL if it has none
 const char *Sounds_MonsterSound(const char *monstats_id, MonsterSound which);
 void        Sounds_Release(void);

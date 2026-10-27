@@ -26,7 +26,9 @@ void AudioManager_PlaySound(const SoundEffect *sound, float volume, bool ui);
 void AudioManager_StopSounds(void);
 // Speech (NPCs talking): one at a time, a new line cuts off the last; at the Speech volume
 void                AudioManager_PlaySpeech(const SoundEffect *sound, float volume);
-void                AudioManager_StopSpeech(void);
+void AudioManager_StopSpeech(void);
+// The area's background loop (NULL: none); the same one again keeps playing where it is
+void AudioManager_PlayAmbience(const SoundEffect *sound, float volume);
 int                 AudioManager_GetOutputRate(void); // 0 when there's no audio device
 SDL_AudioSpec       AudioManager_GetAudioSpec(void);
 AVChannelLayout     AudioManager_GetChannelLayout(void);

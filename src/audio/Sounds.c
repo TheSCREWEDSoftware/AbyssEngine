@@ -145,6 +145,19 @@ int Sounds_PlaySpeech(const char *name) {
 
 void Sounds_StopSpeech(void) { AudioManager_StopSpeech(); }
 
+void Sounds_PlayAmbience(const char *name) {
+    const int row  = name != NULL && name[0] != '\0' ? Sounds__FindRow(name) : -1;
+    const int rate = AudioManager_GetOutputRate();
+    if (row < 0 || rate <= 0) {
+        AudioManager_PlayAmbience(NULL, 0.0f);
+        return;
+    }
+    load_rate                 = load_rate == 0 ? rate : load_rate;
+    const SoundEffect *effect = Sounds__Effect(row, rate);
+    const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
+    AudioManager_PlayAmbience(effect, (float)volume / 255.0f * 0.6f);
+}
+
 bool Sounds_Play(const char *name, const SoundKind kind) {
     int row = Sounds__FindRow(name);
     if (row < 0) {

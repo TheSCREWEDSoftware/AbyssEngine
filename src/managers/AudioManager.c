@@ -26,7 +26,8 @@ typedef struct AudioManager {
     float               volume[AUDIO_SET_VOLUME_TYPE_MAX];
     float               volume_actual[AUDIO_SET_VOLUME_TYPE_MAX];
     AudioVoice          voices[AUDIO_MAX_VOICES];
-    AudioVoice          speech; // one line of speech at a time (NPCs), at the speech volume
+    AudioVoice          speech;   // one line of speech at a time (NPCs), at the speech volume
+    AudioVoice          ambience; // the area's background loop, at the sound effects' volume
 } AudioManager;
 
 AudioManager *audio_manager;
@@ -59,6 +60,15 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
         } else {
             if (manager->background_music != NULL) {
                 sample += (int32_t)((double)AudioStream_GetSample(manager->background_music) * volume_bgm);
+            }
+        }
+
+        // The area's background, round and round
+        if (manager->ambience.sound != NULL) {
+            sample += (int32_t)((float)manager->ambience.sound->samples[manager->ambience.position] *
+                                manager->ambience.volume * volume_sfx);
+            if (++manager->ambience.position >= manager->ambience.sound->frame_count * 2) {
+                manager->ambience.position = 0;
             }
         }
 
@@ -269,6 +279,19 @@ void AudioManager_PlaySpeech(const SoundEffect *sound, const float volume) {
 
 void AudioManager_StopSpeech(void) { AudioManager_PlaySpeech(NULL, 0.0f); }
 
+void AudioManager_PlayAmbience(const SoundEffect *sound, const float volume) {
+    if (audio_manager == NULL || !audio_manager->audio_available) {
+        return;
+    }
+    SDL_LockAudioDevice(audio_manager->audio_device_id);
+    if (audio_manager->ambience.sound != sound) {
+        audio_manager->ambience.sound    = sound != NULL && sound->frame_count > 0 ? sound : NULL;
+        audio_manager->ambience.position = 0;
+    }
+    audio_manager->ambience.volume = volume;
+    SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+}
+
 void AudioManager_StopSounds(void) {
     if (audio_manager == NULL) {
         return;
@@ -279,7 +302,8 @@ void AudioManager_StopSounds(void) {
     for (int v = 0; v < AUDIO_MAX_VOICES; v++) {
         audio_manager->voices[v].sound = NULL;
     }
-    audio_manager->speech.sound = NULL;
+    audio_manager->speech.sound   = NULL;
+    audio_manager->ambience.sound = NULL;
     if (audio_manager->audio_available) {
         SDL_UnlockAudioDevice(audio_manager->audio_device_id);
     }

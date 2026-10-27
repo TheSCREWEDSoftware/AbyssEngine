@@ -21,7 +21,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Fonts and text | ✅ | Latin fonts. |
 | Intro videos (`.bik`) | ✅ | Through FFmpeg. |
 | Music | ✅ | Title music; in Free Roam and Single Player each area plays its own (`Levels.txt` SoundEnv → `SoundEnviron.txt` → `Sounds.txt`). Not yet the ambient sounds (wind, birds, dripping). |
-| Sound effects | 🧪 | Button clicks everywhere; in Free Roam / Testing Grounds: footsteps by floor (dirt, stone, wood, sand, snow; walk and run), swings, getting hit and dying for the player and monsters (`sounds.txt`, `MonSounds.txt`). Needs `d2sfx.mpq` (and `d2exp.mpq` for the expansion's). Not yet: positional volume/panning, ambient sounds, spell sounds. Items make the game's sounds when put down, dropped (the flip and the landing) and picked up. |
+| Sound effects | 🧪 | Button clicks everywhere; in Free Roam / Testing Grounds: footsteps by floor (dirt, stone, wood, sand, snow; walk and run), swings, getting hit and dying for the player and monsters (`sounds.txt`, `MonSounds.txt`); each area's background loop and its odd sounds now and then (`SoundEnviron.txt`: wind and birds outdoors, drips in caves). Needs `d2sfx.mpq` (and `d2exp.mpq` for the expansion's). Not yet: positional volume/panning, night versions of the ambience. Items make the game's sounds when put down, dropped (the flip and the landing) and picked up. |
 | Speech (NPC dialogue) | 🧪 | Town folk greet you and talk (introductions, this act's quests, gossip) with the game's texts and speech (`d2speech.mpq`, `d2xtalk.mpq`), at the Speech volume. Not yet: the quest cut-scenes' narration. |
 
 ## Game
