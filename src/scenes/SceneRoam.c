@@ -370,6 +370,7 @@ typedef enum RoamPanel { PANEL_NONE, PANEL_MONSTERS, PANEL_PLACES } RoamPanel;
 static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue Encampment ... Harrogath
 
 #define CHAT_LINES        6     // multiplayer: chat shown at the top left
+#define LOG_LINES         80    // the message log (M): the last this many
 #define CHAT_MS           12000 // for this long
 #define MAX_AUTOMAP_MARKS 256   // objects marked on the automap (waypoints, shrines, wells, stairs)
 #define WAYPOINT_RANGE    8.0f  // Single Player: how close to a waypoint the Waypoint button works
@@ -513,6 +514,13 @@ typedef struct SceneRoam {
     uint64_t clock_real;   // the real time it was last moved on at
     TextBox *chat_box;
     Label   *chat_label;
+    Label   *log_label; // the message log and the help screen
+    char     log_lines[LOG_LINES][NET_CHAT_MAX + 24];
+    bool     log_chat[LOG_LINES]; // said by someone (white), or a message (gold)
+    int      log_count;
+    bool     log_open;
+    bool     help_open;
+    bool     hide_portraits; // Show portraits (Z) off
     char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
     uint64_t chat_times[CHAT_LINES];
     Button  *seed_use_button;
@@ -1815,11 +1823,28 @@ static void Roam__StoreCharacter(SceneRoam *roam) {
     Character_Save(roam->character);
 }
 
+static void Roam__LogAdd(SceneRoam *roam, const char *text, bool chat);
+
 static void Roam__ShowMessage(SceneRoam *roam, const char *text) {
+    if (strcmp(text, roam->message) != 0 || SDL_GetTicks64() >= roam->message_until) {
+        Roam__LogAdd(roam, text, false); // (the same message again while it shows isn't logged twice)
+    }
     snprintf(roam->message, sizeof(roam->message), "%s", text);
     Label_SetText(roam->message_label, text);
     roam->message_until = SDL_GetTicks64() + MESSAGE_MS;
 }
+
+// The party screen (P, or the mini panel's Party): multiplayer only
+static void Roam__ToggleParty(SceneRoam *roam) {
+    if (roam->online) {
+        roam->party_panel = !roam->party_panel;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    } else {
+        Roam__ShowMessage(roam, "Parties are for multiplayer games.");
+    }
+}
+
+static void Roam__ToggleHireling(SceneRoam *roam);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Items on the ground
@@ -3164,6 +3189,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     Label_SetAlignment(roam->caption_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
     roam->message_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);
     Label_SetAlignment(roam->message_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+    roam->log_label = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+    Label_SetAlignment(roam->log_label, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
     Label_SetColor(roam->message_label, 0xFF, 0xE8, 0x60, 0xFF);
 
     roam->preview        = true;
@@ -3229,6 +3256,7 @@ static void Roam__Free(void **scene_ref) {
     SceneRoam *roam = *(SceneRoam **)scene_ref;
     TextBox_Destroy(&roam->chat_box);
     Label_Destroy(&roam->chat_label);
+    Label_Destroy(&roam->log_label);
     if (!roam->borrowed) {
         Map_Destroy(&roam->map);
     } else if (roam->map != NULL) {
@@ -3487,6 +3515,7 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
 
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
 static bool     Roam__InMyParty(const NetPlayer *player);
+#include "SceneRoamLog.inc"
 #include "SceneRoamPortals.inc"
 #include "SceneRoamShrines.inc"
 #include "SceneRoamSkills.inc"
@@ -4382,6 +4411,13 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
     case 4: // automap
         roam->show_automap = !roam->show_automap;
         break;
+    case 3: // party
+        Roam__ToggleParty(roam);
+        break;
+    case 5: // message log
+        roam->log_open  = !roam->log_open;
+        roam->help_open = false;
+        break;
     case 6: // quest log
         roam->quest_panel = !roam->quest_panel;
         roam->quest_act   = roam->character != NULL ? roam->character->act : 0;
@@ -5047,12 +5083,10 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
     }
 
     if (Controls_Pressed(ACTION_PARTY)) {
-        if (roam->online) {
-            roam->party_panel = !roam->party_panel;
-            Sounds_Play("cursor_button_click", SOUND_KIND_UI);
-        } else {
-            Roam__ShowMessage(roam, "Parties are for multiplayer games.");
-        }
+        Roam__ToggleParty(roam);
+    }
+    if (Controls_Pressed(ACTION_HIRELING)) {
+        Roam__ToggleHireling(roam);
     }
     if (Controls_Pressed(ACTION_CHARACTER) || Button_Update(roam->character_button)) {
         roam->char_panel = !roam->char_panel;
@@ -5135,6 +5169,7 @@ static void Roam__AddChat(SceneRoam *roam, const char *text) {
     memmove(&roam->chat_times[0], &roam->chat_times[1], sizeof(roam->chat_times[0]) * (CHAT_LINES - 1));
     snprintf(roam->chat_lines[CHAT_LINES - 1], sizeof(roam->chat_lines[CHAT_LINES - 1]), "%s", text);
     roam->chat_times[CHAT_LINES - 1] = SDL_GetTicks64();
+    Roam__LogAdd(roam, text, true);
 }
 
 // The others in the game, where they are in this area: shown moving smoothly from one position to the next
@@ -5924,6 +5959,7 @@ static void Roam__Update(SceneRoam *roam) {
     if (Controls_Pressed(ACTION_SCREENSHOT)) {
         roam->screenshot = true;
     }
+    Roam__ScreenKeys(roam); // the message log, help, clearing messages, portraits
     if (Controls_Pressed(ACTION_CLEAR_SCREEN)) {
         roam->panel           = PANEL_NONE;
         roam->char_panel      = false;
@@ -6972,6 +7008,8 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->online) {
         Roam__DrawChat(roam);
     }
+    Roam__DrawLog(roam);
+    Roam__DrawHelp(roam);
     if (roam->game && roam->char_panel) {
         Roam__DrawCharacterPanel(roam);
     }

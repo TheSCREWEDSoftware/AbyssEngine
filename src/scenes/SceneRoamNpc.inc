@@ -821,8 +821,20 @@ static bool Roam__UpdateHirelingPortrait(SceneRoam *roam, const int mouse_x, con
     const int       index = roam->game ? Roam__FindHireling(roam) : -1;
     const SDL_Rect  box   = {8, 26, 120, 30};
     const SDL_Point mouse = {mouse_x, mouse_y};
-    if (!click || index < 0 || !Roam__IsAlive(&roam->units[index]) || !SDL_PointInRect(&mouse, &box)) {
+    if (!click || roam->hide_portraits || index < 0 || !Roam__IsAlive(&roam->units[index]) ||
+        !SDL_PointInRect(&mouse, &box)) {
         return false;
+    }
+    Roam__ToggleHireling(roam);
+    return true;
+}
+
+// The hireling's screen, open or shut (their portrait, or the Hireling screen key)
+static void Roam__ToggleHireling(SceneRoam *roam) {
+    const int index = roam->game ? Roam__FindHireling(roam) : -1;
+    if (index < 0 || !Roam__IsAlive(&roam->units[index])) {
+        Roam__ShowMessage(roam, "You have no hireling.");
+        return;
     }
     roam->hire_open = !roam->hire_open;
     if (roam->hire_open) {
@@ -835,7 +847,6 @@ static bool Roam__UpdateHirelingPortrait(SceneRoam *roam, const int mouse_x, con
     }
     Roam__KeepHirelingScreen(roam);
     Sounds_Play("cursor_button_click", SOUND_KIND_UI);
-    return true;
 }
 
 // While it's open: their numbers, as they are now; it closes with the inventory, or when they're gone
@@ -871,7 +882,7 @@ static void Roam__KeepHirelingScreen(SceneRoam *roam) {
 // Their portrait's place: top left, name and life
 static void Roam__DrawHireling(SceneRoam *roam) {
     const int index = roam->game ? Roam__FindHireling(roam) : -1;
-    if (index < 0 || !Roam__IsAlive(&roam->units[index])) {
+    if (index < 0 || !Roam__IsAlive(&roam->units[index]) || roam->hide_portraits) {
         return;
     }
     const Unit    *unit = &roam->units[index];
