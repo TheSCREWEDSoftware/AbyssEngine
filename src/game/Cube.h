@@ -23,6 +23,9 @@ bool Cube_Carried(const Character *character); // a cube in the inventory
 // Transmute: the recipe whose inputs are exactly what's inside, made. False (with why) when nothing matches.
 bool Cube_Transmute(Character *character, char *message, size_t size);
 
+// The recipe that opens the cow level was just made: the game takes you there (once per call)
+bool Cube_TakePortal(void);
+
 void Cube_Release(void);
 
 #endif // ABYSS_CUBE_H

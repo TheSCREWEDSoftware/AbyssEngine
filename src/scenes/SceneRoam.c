@@ -352,8 +352,8 @@ typedef struct SceneRoam {
     MapCamera       camera;
     uint64_t        last_tick;
     unsigned        draw_flags;
-    int             place;      // Free Roam: current Places index (the area you're in)
-    int             area_level; // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
+    int             place;            // Free Roam: current Places index (the area you're in)
+    int             area_level;       // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
 
@@ -4366,6 +4366,7 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     Roam__KeepShop(roam);
     Roam__KeepHireling(roam);
     Roam__KeepHirelingScreen(roam);
+    Roam__CowLevel(roam);
     if (roam->online) {
         Roam__KeepTrade(roam);
     }

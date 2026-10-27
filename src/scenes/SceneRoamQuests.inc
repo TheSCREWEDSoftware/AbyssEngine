@@ -510,7 +510,10 @@ static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
     }
     const int fn = unit->object.operate_fn;
     switch (fn) {
-    case 39: // the Horadric Cube's chest (Halls of the Dead)
+    case 33: // Wirt's body (Tristram): his leg
+        Roam__DropQuestItem(roam, "leg", unit->x, unit->y);
+        return false; // (and what else he had)
+    case 39:          // the Horadric Cube's chest (Halls of the Dead)
         Roam__DropQuestItem(roam, CUBE_ITEM, unit->x, unit->y);
         return true;
     case 41: // the Staff of Kings' chest (Maggot Lair)
@@ -642,6 +645,32 @@ static void Roam__QuestKill(SceneRoam *roam, const Unit *victim) {
         Roam__QuestOpen(roam, 2, 4) && Roam__FindItem(roam, "g34") == NULL) {
         Roam__DropQuestItem(roam, "j34", victim->x, victim->y); // the Jade Figurine
     }
+}
+
+// The cube made the cow level's portal: in the Rogue Encampment, once Baal is beaten (on that difficulty), you go
+static void Roam__CowLevel(SceneRoam *roam) {
+    if (!Cube_TakePortal()) {
+        return;
+    }
+    const int baal = Roam__QuestIndex(4, 6);
+    if (roam->area_level != 1) {
+        Roam__ShowMessage(roam, "The portal can only be opened in the Rogue Encampment.");
+    } else if (baal >= 0 && *Roam__QuestState(roam, baal) == QUEST_OPEN) {
+        Roam__ShowMessage(roam, "Nothing happens: the cows wait until Baal is beaten.");
+    } else {
+        const int place = Roam__FindPlace(39);
+        if (place >= 0) {
+            Roam__ShowMessage(roam, "Moo.");
+            roam->inventory_panel = false;
+            Roam__Teleport(roam, place);
+            return;
+        }
+    }
+    // (not opened: the leg and the tome come back)
+    Item leg  = Inventory_NewItem("leg");
+    Item tome = Inventory_NewItem("tbk");
+    Cube_Add(roam->character, &leg);
+    Cube_Add(roam->character, &tome);
 }
 
 // Meshif and the Jade Figurine: he gives you the Golden Bird for it (the quest then waits at Alkor)

@@ -399,8 +399,10 @@ the stash) and **Transmute**, which makes whatever recipe of the game's (`cubema
 quest items, three gems or runes into the next grade (with a gem for the higher runes), potions, three rings into an
 amulet (and back), rerolling a magic item with three perfect gems, magic weapons with a socket from three gems, the
 prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing. Recipes that need what
-this engine doesn't have (crafted items, exceptional and elite upgrades, low and superior quality, the cow level and
-Pandemonium portals) aren't there. What's inside is kept with the character; any cube you carry opens it.
+this engine doesn't have (crafted items, exceptional and elite upgrades, low and superior quality, the Pandemonium
+portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
+in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
+the Cow King). What's inside is kept with the character; any cube you carry opens it.
 In multiplayer games bosses that aren't in the presets aren't put there yet.
 
 ## Text mode

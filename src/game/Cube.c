@@ -112,7 +112,9 @@ typedef struct RecipeInput {
     int  needs;
 } RecipeInput;
 
-typedef enum OutputKind { OUT_NEW, OUT_USETYPE, OUT_USEITEM } OutputKind;
+typedef enum OutputKind { OUT_NEW, OUT_USETYPE, OUT_USEITEM, OUT_COW_PORTAL } OutputKind;
+
+static bool cube_portal = false; // Cube_TakePortal
 
 typedef struct RecipeMod {
     char code[16];
@@ -205,6 +207,8 @@ static bool Cube__ParseOutput(const char *text, Recipe *recipe) {
                 recipe->kind = OUT_USETYPE;
             } else if (strcmp(token, "useitem") == 0) {
                 recipe->kind = OUT_USEITEM;
+            } else if (strcmp(token, "Cow Portal") == 0) {
+                recipe->kind = OUT_COW_PORTAL; // Wirt's leg and a Tome of Town Portal: the Moo Moo Farm
             } else if (strchr(token, ' ') == NULL && strlen(token) < sizeof(recipe->code) && token[0] != '\0') {
                 recipe->kind = OUT_NEW;
                 snprintf(recipe->code, sizeof(recipe->code), "%.7s", token);
@@ -298,6 +302,12 @@ static void Cube__Load(void) {
     DataTable_Destroy(&t);
 }
 
+bool Cube_TakePortal(void) {
+    const bool portal = cube_portal;
+    cube_portal       = false;
+    return portal;
+}
+
 void Cube_Release(void) {
     free(recipes);
     recipes      = NULL;
@@ -380,6 +390,12 @@ bool Cube_Transmute(Character *character, char *message, const size_t size) {
         int first = -1;
         if (!Cube__Assign(character, recipe, 0, 0, used, &first) || first < 0) {
             continue;
+        }
+        if (recipe->kind == OUT_COW_PORTAL) {
+            character->cube_count = 0;
+            cube_portal           = true;
+            snprintf(message, size, "A red portal opens...");
+            return true;
         }
         // What it makes, at about your level
         const Item input = character->cube[first].item;
