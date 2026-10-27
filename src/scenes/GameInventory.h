@@ -107,6 +107,7 @@ typedef struct TradeView {
     int           mine_count;
     int           my_gold;
     bool          my_accept;
+    uint64_t      wait_until; // their offer just changed: Accept waits until then (the game's check), greyed
 } TradeView;
 void GameInventory_SetTrade(GameInventory *inventory, TradeView *trade); // NULL: not trading
 bool GameInventory_TradeOpen(const GameInventory *inventory);

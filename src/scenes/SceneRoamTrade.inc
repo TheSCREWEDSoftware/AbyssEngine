@@ -97,6 +97,8 @@ static bool Roam__TradeFits(SceneRoam *roam) {
     return fits;
 }
 
+#define TRADE_CHECK_MS 3000 // the game's check: Accept waits this long after the other's offer changes
+
 // Both have accepted the offers as they stand: the swap
 static void Roam__TradeFinish(SceneRoam *roam) {
     Character *c = roam->character;
@@ -136,6 +138,10 @@ static void Roam__TradeChanged(SceneRoam *roam) {
 
 static void Roam__TradeAccept(SceneRoam *roam) {
     if (roam->trade_state != TRADE_STATE_OPEN || roam->trade->my_accept) {
+        return;
+    }
+    if (SDL_GetTicks64() < roam->trade_wait_until) {
+        Roam__ShowMessage(roam, "Their offer just changed: have a look first.");
         return;
     }
     if (!Roam__TradeFits(roam)) {
@@ -223,8 +229,10 @@ static void Roam__TradeMessage(SceneRoam *roam, NetReader *reader) {
             NetItem_Read(reader, &item);
             GameInventory_TradePlace(t->theirs, &t->their_count, &item, x, y);
         }
-        t->my_accept    = false; // what you accepted isn't what's there now
-        t->their_accept = false;
+        t->my_accept           = false; // what you accepted isn't what's there now
+        t->their_accept        = false;
+        roam->trade_wait_until = SDL_GetTicks64() + TRADE_CHECK_MS; // (look at what changed before accepting)
+        t->wait_until          = roam->trade_wait_until;
         break;
     }
     case TRADE_ACCEPT: {

@@ -74,7 +74,8 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Trading**: **Trade** next to someone on the party screen asks them ("So-and-so wants to trade with you"); their
   **Accept Trade** opens the game's trade screen on both sides: their offer above, yours below, with the gold each
   puts in (click your gold box). Put items from your inventory in your offer, or take them back out; any change takes
-  back both acceptances. When you've both pressed the accept button on the offers as they are, the items and gold
+  back both acceptances, and when theirs changes your accept button is greyed for three seconds so you can see what
+  changed (the game's check). When you've both pressed the accept button on the offers as they are, the items and gold
   change hands (it won't let you accept what you have no room for). The close button, closing the inventory or
   either of you leaving ends it and gives your offer back.
 - **Items on the ground** are the server's: everyone sees what's dropped, and the first to reach an item gets it. On

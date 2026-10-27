@@ -1751,6 +1751,12 @@ static void GameInventory__DrawTrade(GameInventory *inventory, const Character *
                 (uint8_t)(10 + (GameInventory__InBox(mouse_x, mouse_y, TRADE_CLOSE_X, TRADE_BUTTONS_Y) && left_down)),
                 TRADE_CLOSE_X, TRADE_BUTTONS_Y + SHOP_BUTTON_SZ);
     GameInventory__DrawCheck(TRADE_THEIR_OK_X, TRADE_THEIR_OK_Y, trade->their_accept);
+    if (SDL_GetTicks64() < trade->wait_until && !trade->my_accept) { // (their offer just changed: look it over first)
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 150);
+        const SDL_Rect box = {TRADE_ACCEPT_X, TRADE_BUTTONS_Y, SHOP_BUTTON_SZ, SHOP_BUTTON_SZ};
+        SDL_RenderFillRect(sdl_renderer, &box);
+    }
     if (trade->my_accept) {
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 30, 120, 30, 120);

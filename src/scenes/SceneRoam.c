@@ -609,6 +609,7 @@ typedef struct SceneRoam {
     int        trade_with;     // their player id
     int        trade_asked_by; // who asked us (0: nobody)
     uint32_t   trade_my_version;
+    uint64_t   trade_wait_until; // their offer changed: Accept waits until then
     uint32_t   trade_their_version;
     TradeView *trade;
     HireOffer  hire_offers[HIRE_OFFERS];
