@@ -247,7 +247,7 @@ int Shop_SellPrice(const ShopStock *stock, const Item *item, const int difficult
 // Repairs
 
 static const char *const smiths[]   = {"charsi", "fara", "hratli", "halbu", "larzuk"};
-static const char *const gamblers[] = {"gheed", "elzix", "alkor", "jamella", "nihlathak"};
+static const char *const gamblers[] = {"gheed", "elzix", "alkor", "jamella", "nihlathak", "drehya"};
 
 static bool Shop__In(const char *const *list, const size_t count, const char *npc_id) {
     for (size_t i = 0; i < count; i++) {

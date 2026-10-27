@@ -691,8 +691,54 @@ static void Roam__PlacePrisons(SceneRoam *roam) {
 
 // The quests' objects that this engine's version of an area doesn't place (the Claw Viper Temple's altar, the Staff of
 // Kings' chest, the Compelling Orb): put far from where you come in, once a map
+// Town folk the game puts in by its code rather than the town's map: Hratli on the Kurast Docks, Larzuk in Harrogath,
+// and Anya there once she's been rescued (Prison of Ice): next to someone who's always there
+static void Roam__PlaceTownFolk(SceneRoam *roam) {
+    static const struct {
+        int         level;
+        const char *id;
+        const char *beside; // who they stand near
+        float       dx;
+        float       dy;
+        int         after_act; // shown once this quest is done (act, number), 0: always
+        int         after_number;
+    } folk[] = {
+        {75,  "hratli", "asheara", 10.0f,  4.0f, 0, 0},
+        {109, "larzuk", "malah",   -10.0f, 8.0f, 0, 0},
+        {109, "drehya", "malah",   6.0f,   6.0f, 4, 3},
+    };
+    for (size_t f = 0; f < sizeof(folk) / sizeof(folk[0]); f++) {
+        if (Roam__MapAreaFor(roam, folk[f].level) == NULL) {
+            continue;
+        }
+        if (folk[f].after_act > 0) {
+            const int q = Roam__QuestIndex(folk[f].after_act, folk[f].after_number);
+            if (!roam->game || q < 0 || *Roam__QuestState(roam, q) == QUEST_OPEN) {
+                continue;
+            }
+        }
+        const Unit *near  = NULL;
+        bool        there = false;
+        for (int i = 0; i < roam->unit_count; i++) {
+            there = there || strcasecmp(roam->units[i].id, folk[f].id) == 0;
+            near  = strcasecmp(roam->units[i].id, folk[f].beside) == 0 ? &roam->units[i] : near;
+        }
+        if (there || near == NULL) {
+            continue;
+        }
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, near->x + folk[f].dx, near->y + folk[f].dy, &x, &y);
+        Unit *unit = Roam__AddUnit(roam, "monsters", folk[f].id, x, y);
+        if (unit != NULL) {
+            unit->npc = true;
+        }
+    }
+}
+
 static void Roam__PlaceQuestObjects(SceneRoam *roam) {
     Roam__PlacePrisons(roam);
+    Roam__PlaceTownFolk(roam);
     static const struct {
         int         level;
         int         fn;

@@ -332,7 +332,7 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   putting an item from the mouse on the store, or right clicking it in the inventory: what they pay and charge is
   `npc.txt`'s (with its most they'll pay at each difficulty), and what you sell joins their wares. Their stock is
   kept while the game lasts. Walking away, closing the inventory or the store's close button ends it.
-- **Gamble** (Gheed, Elzix, Alkor, Jamella, Nihlathak): the store's screen with plain-looking items from `gamble.txt`
+- **Gamble** (Gheed, Elzix, Alkor, Jamella, Nihlathak, and Anya once she's back): the store's screen with plain-looking items from `gamble.txt`
   (the ones up to about your level; rings and amulets always), at their gamble price (`misc.txt`, `armor.txt` and
   `weapons.txt` "gamble cost", times `npc.txt`'s sell mult). What you buy turns out magic, or rare (1 in 10), set (1
   in 500) or unique (1 in 1,000), its item level within five of yours; the message says what you got. New items each
@@ -341,6 +341,8 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   identifying](#durability-and-identifying).
 - **Travel**: Warriv takes you between the Rogue Encampment and Lut Gholein, Meshif between Lut Gholein and the Kurast
   Docks, Tyrael from the Pandemonium Fortress to Harrogath. The town's waypoint is yours from then on.
+- Hratli (the Kurast Docks) and Larzuk (Harrogath), whom the game places by its own code rather than the town's map,
+  stand near Asheara and Malah; Anya joins Harrogath's folk once you've rescued her (Prison of Ice).
 - **Hire** (Kashya, Greiz, Asheara, Qual-Kehk): five of the act's hirelings from `hireling.txt` (their kind, a level
   about yours, the price). Your hireling follows you everywhere, fights what's near (Rogue Scouts shoot fire or cold
   arrows from afar), shows top left with their life, gets a level as you get yours (staying a level or so behind),
