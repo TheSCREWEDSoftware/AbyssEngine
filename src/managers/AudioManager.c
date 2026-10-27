@@ -161,6 +161,9 @@ void AudioManager_Update(void) {}
 static char current_music_path[4096];
 
 void AudioManager_PlayMusic(const char *path, const bool loop) {
+    if (audio_manager == NULL) {
+        return; // no sound (a dedicated server, tests)
+    }
     // Keep the current track playing when a scene asks for the music that is already on (e.g. returning to a menu).
     if (audio_manager->background_music != NULL && strcmp(current_music_path, path) == 0) {
         AudioStream_SetLoop(audio_manager->background_music, loop);

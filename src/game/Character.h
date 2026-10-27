@@ -94,6 +94,7 @@ typedef struct Character {
     Item          equipped[EQUIP_COUNT];
     Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
     int           gold;
+    uint64_t      waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
     char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
 

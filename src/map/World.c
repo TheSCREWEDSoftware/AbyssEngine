@@ -21,12 +21,26 @@ static const int walk_links[][2] = {
     {5,   6  },
     {6,   7  },
     {3,   17 },
+    // ... and on from the Tamoe Highland to the Monastery Gate and the Outer Cloister behind it
+    {7,   26 },
+    {26,  27 },
     // Act 2: Lut Gholein - Rocky Waste - Dry Hills - Far Oasis - Lost City - Valley of Snakes
     {40,  41 },
     {41,  42 },
     {42,  43 },
     {43,  44 },
     {44,  45 },
+    // Act 3: Kurast Docktown - Spider Forest - Great Marsh - Flayer Jungle - Lower Kurast - Kurast Bazaar - Upper
+    // Kurast
+    // - Kurast Causeway - Travincal
+    {75,  76 },
+    {76,  77 },
+    {77,  78 },
+    {78,  79 },
+    {79,  80 },
+    {80,  81 },
+    {81,  82 },
+    {82,  83 },
     // Act 4: The Pandemonium Fortress - Outer Steppes - Plains of Despair - City of the Damned
     {103, 104},
     {104, 105},
@@ -100,6 +114,8 @@ static WorldSide World__TownSide(const int level_id) {
         static const WorldSide sides[2] = {WORLD_SIDE_W, WORLD_SIDE_N}; // LutW, LutN
         return sides[World_PickVariant(level_id, 2)];
     }
+    case 75:
+        return WORLD_SIDE_N; // Kurast Docktown: the way into the jungle is past the north end of the docks
     case 103:
         return WORLD_SIDE_E; // the Pandemonium Fortress
     case 109:
@@ -119,6 +135,20 @@ typedef struct WorldLayout {
 } WorldLayout;
 
 static WorldLayout layout = {0};
+
+// Links whose side is fixed by the pieces (the Causeway's bridge runs north to south, so Upper Kurast is at one end
+// and Travincal at the other; the Monastery's gate stands north of the Tamoe Highland with the Outer Cloister behind
+// it)
+static const struct {
+    int       from;
+    int       to;
+    WorldSide side; // of "from"
+} fixed_sides[] = {
+    {7,  26, WORLD_SIDE_N},
+    {26, 27, WORLD_SIDE_N},
+    {81, 82, WORLD_SIDE_N},
+    {82, 83, WORLD_SIDE_N},
+};
 
 static bool (*area_size)(int level_id, int *width, int *height) = NULL;
 
@@ -180,6 +210,13 @@ static void World__Layout(void) {
     memset(placed, 0, sizeof(placed));
     bool used_sides[256][4];
     memset(used_sides, 0, sizeof(used_sides));
+    // The fixed sides are kept free for their own links
+    bool reserved[256][4];
+    memset(reserved, 0, sizeof(reserved));
+    for (int f = 0; f < (int)(sizeof(fixed_sides) / sizeof(fixed_sides[0])); f++) {
+        reserved[fixed_sides[f].from][fixed_sides[f].side]                = true;
+        reserved[fixed_sides[f].to][World__Opposite(fixed_sides[f].side)] = true;
+    }
 
     for (int l = 0; l < WALK_LINK_COUNT; l++) {
         const int a  = walk_links[l][0];
@@ -198,6 +235,9 @@ static void World__Layout(void) {
         }
 
         WorldSide side = World__TownSide(a);
+        for (int f = 0; f < (int)(sizeof(fixed_sides) / sizeof(fixed_sides[0])); f++) {
+            side = fixed_sides[f].from == a && fixed_sides[f].to == b ? fixed_sides[f].side : side;
+        }
         if (a == BLOODY_FOOTHILLS) {
             side = WORLD_SIDE_W; // the strips run west from Harrogath, which is on their east
         }
@@ -207,7 +247,7 @@ static void World__Layout(void) {
             int       least = 0;
             for (int k = 0; k < 4; k++) {
                 const WorldSide candidate = (WorldSide)((first + k) % 4);
-                if (used_sides[a][candidate]) {
+                if (used_sides[a][candidate] || reserved[a][candidate] || reserved[b][World__Opposite(candidate)]) {
                     continue;
                 }
                 const WorldRect next    = World__Beside(&rects[a], candidate, bw, bh);
@@ -284,6 +324,78 @@ int World_GetVis(const int level_id, const int slot) {
     return 0;
 }
 
+bool World_GetAtmosphere(const int level_id, WorldAtmosphere *atmosphere) {
+    memset(atmosphere, 0, sizeof(WorldAtmosphere));
+    if (levels == NULL) {
+        levels = DataTable_Load(EXCEL_LEVELS);
+    }
+    if (levels == NULL) {
+        return false;
+    }
+    const int c_id = DataTable_GetColumnIndex(levels, "Id");
+    int       row  = -1;
+    for (int r = 0; r < DataTable_GetRowCount(levels) && row < 0; r++) {
+        row = DataTable_HasValue(levels, r, c_id) && DataTable_GetInt(levels, r, c_id) == level_id ? r : -1;
+    }
+    if (row < 0) {
+        return false;
+    }
+    atmosphere->inside = DataTable_GetInt(levels, row, DataTable_GetColumnIndex(levels, "IsInside")) != 0;
+    atmosphere->rain   = DataTable_GetInt(levels, row, DataTable_GetColumnIndex(levels, "Rain")) != 0;
+    atmosphere->snow   = atmosphere->rain && World__ActOf(level_id) == 4; // Act V's falls as snow
+
+    // The music: Levels.txt's SoundEnv is a row of SoundEnviron.txt, whose Song is a row of Sounds.txt
+    static DataTable *environments = NULL;
+    static DataTable *sounds       = NULL;
+    if (environments == NULL) {
+        environments = DataTable_Load("/data/global/excel/SoundEnviron.txt");
+        sounds       = DataTable_Load("/data/global/excel/Sounds.txt");
+    }
+    const int environment = DataTable_GetInt(levels, row, DataTable_GetColumnIndex(levels, "SoundEnv"));
+    if (environments == NULL || sounds == NULL || environment <= 0) {
+        return true;
+    }
+    int song = 0;
+    for (int r = 0; r < DataTable_GetRowCount(environments); r++) {
+        if (DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Index")) == environment) {
+            song = DataTable_GetInt(environments, r, DataTable_GetColumnIndex(environments, "Song"));
+            break;
+        }
+    }
+    const int c_index = DataTable_GetColumnIndex(sounds, "Index");
+    const int c_file  = DataTable_GetColumnIndex(sounds, "FileName");
+    for (int r = 0; r < DataTable_GetRowCount(sounds) && song > 0; r++) {
+        if (DataTable_GetInt(sounds, r, c_index) == song) {
+            // "act1\town1.wav" -> "/data/global/music/act1/town1.wav"
+            snprintf(atmosphere->music, sizeof(atmosphere->music), "/data/global/music/%s",
+                     DataTable_GetString(sounds, r, c_file));
+            for (char *c = atmosphere->music; *c != '\0'; c++) {
+                *c = *c == '\\' ? '/' : *c;
+            }
+            break;
+        }
+    }
+    return true;
+}
+
+int World_WaypointIndex(const int level_id) {
+    if (levels == NULL) {
+        levels = DataTable_Load(EXCEL_LEVELS);
+    }
+    if (levels == NULL) {
+        return -1;
+    }
+    const int c_id = DataTable_GetColumnIndex(levels, "Id");
+    const int c_wp = DataTable_GetColumnIndex(levels, "Waypoint");
+    for (int row = 0; row < DataTable_GetRowCount(levels); row++) {
+        if (DataTable_HasValue(levels, row, c_id) && DataTable_GetInt(levels, row, c_id) == level_id) {
+            const int wp = DataTable_GetInt(levels, row, c_wp);
+            return wp >= 0 && wp < 64 ? wp : -1;
+        }
+    }
+    return -1;
+}
+
 int World_GetWarpLinks(const int level_id, int *targets, const int max) {
     if (levels == NULL) {
         levels = DataTable_Load(EXCEL_LEVELS);
@@ -319,6 +431,271 @@ int World_GetWarpLinks(const int level_id, int *targets, const int max) {
         break;
     }
     return count;
+}
+
+// Areas joined by a red portal instead of a path or stairs: Tristram through the Cairn Stones, the Arcane Sanctuary
+// (in from the Palace Cellar, out to the Canyon of the Magi), Nihlathak's three portals to the hells. Duriel's Lair is
+// entered from whichever of the seven tombs is the true one (World_TrueTomb).
+static const int portal_links[][3] = {
+    {4,   38,  0},
+    {54,  74,  0},
+    {74,  46,  0},
+    {111, 125, 0},
+    {112, 126, 0},
+    {117, 127, 0},
+    // One way, on to the next act: Mephisto's to the Pandemonium Fortress, Diablo's to Harrogath (the game opens them
+    // once the boss is dead; here they are always open)
+    {102, 103, 1},
+    {108, 109, 1},
+};
+#define PORTAL_LINK_COUNT (int)(sizeof(portal_links) / sizeof(portal_links[0]))
+#define TAL_RASHA_FIRST   66
+#define DURIELS_LAIR      73
+
+int World_TrueTomb(void) { return TAL_RASHA_FIRST + World_PickVariant(DURIELS_LAIR, 7); }
+
+int World_GetPortalLinks(const int level_id, int *targets, const int max) {
+    int count = 0;
+    for (int l = 0; l < PORTAL_LINK_COUNT && count < max; l++) {
+        if (portal_links[l][0] == level_id) {
+            targets[count++] = portal_links[l][1];
+        } else if (portal_links[l][1] == level_id && portal_links[l][2] == 0) {
+            targets[count++] = portal_links[l][0];
+        }
+    }
+    if (count < max && level_id == World_TrueTomb()) {
+        targets[count++] = DURIELS_LAIR;
+    } else if (count < max && level_id == DURIELS_LAIR) {
+        targets[count++] = World_TrueTomb();
+    }
+    return count;
+}
+
+int World_GetForwardPortals(const int level_id, int *targets, const int max) {
+    int count = 0;
+    for (int l = 0; l < PORTAL_LINK_COUNT && count < max; l++) {
+        if (portal_links[l][0] == level_id) {
+            targets[count++] = portal_links[l][1];
+        }
+    }
+    if (count < max && level_id == World_TrueTomb()) {
+        targets[count++] = DURIELS_LAIR;
+    }
+    return count;
+}
+
+// Is that area the way back from this one (where you came in from)?
+static bool World__IsWayBack(const int level_id, const int target) {
+    if (World_GetVis(level_id, 0) == target) {
+        return true;
+    }
+    for (int l = 0; l < PORTAL_LINK_COUNT; l++) {
+        if (portal_links[l][1] == level_id && portal_links[l][0] == target && portal_links[l][2] == 0) {
+            return true;
+        }
+    }
+    return level_id == DURIELS_LAIR;
+}
+
+void World_AddPortal(Map *map, const int target, float x, float y) {
+    // On open ground: the nearest spot with room around it
+    bool found = false;
+    for (int r = 0; r <= 30 && !found; r++) {
+        for (int dy = -r; dy <= r && !found; dy++) {
+            for (int dx = -r; dx <= r && !found; dx++) {
+                if (abs(dx) != r && abs(dy) != r) {
+                    continue;
+                }
+                const int sx = (int)x + dx;
+                const int sy = (int)y + dy;
+                bool      ok = true;
+                for (int k = 0; k < 9 && ok; k++) {
+                    ok = Map_IsWalkable(map, sx + ((k % 3) - 1) * 2, sy + ((k / 3) - 1) * 2);
+                }
+                if (ok) {
+                    x     = (float)sx + 0.5f;
+                    y     = (float)sy + 0.5f;
+                    found = true;
+                }
+            }
+        }
+    }
+    Map_AddEntity(map, "objects", "PP", "Portal", x, y);
+    const int sx     = (int)x;
+    const int sy     = (int)y;
+    const int before = map->exit_count;
+    Map_AddExit(map, target, sx - 2, sy - 2, sx + 2, sy + 2, x + 4.0f, y + 4.0f);
+    if (map->exit_count > before) {
+        map->exits[before].entrance = true;
+    }
+}
+
+bool World_NearestReachable(const Map *map, const float x, const float y, float *out_x, float *out_y) {
+    const int sub_w = map->width * MAP_SUBTILES;
+    const int sub_h = map->height * MAP_SUBTILES;
+    const int sx    = map->has_start ? (int)map->start_x : sub_w / 2;
+    const int sy    = map->has_start ? (int)map->start_y : sub_h / 2;
+    if (!Map_IsWalkable(map, sx, sy)) {
+        return false;
+    }
+    uint8_t *seen  = calloc((size_t)sub_w * (size_t)sub_h, 1);
+    int     *queue = malloc(sizeof(int) * (size_t)sub_w * (size_t)sub_h);
+    FAIL_IF_NULL(seen);
+    FAIL_IF_NULL(queue);
+    int head                = 0;
+    int tail                = 0;
+    queue[tail++]           = (sy * sub_w) + sx;
+    seen[(sy * sub_w) + sx] = 1;
+    int   best              = -1;
+    float best_distance     = 0.0f;
+    while (head < tail) {
+        const int   c  = queue[head++];
+        const int   cx = c % sub_w;
+        const int   cy = c / sub_w;
+        const float dx = (float)cx - x;
+        const float dy = (float)cy - y;
+        if (best < 0 || (dx * dx) + (dy * dy) < best_distance) {
+            best          = c;
+            best_distance = (dx * dx) + (dy * dy);
+        }
+        for (int d = 0; d < 8; d++) {
+            static const int step_x[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+            static const int step_y[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+            const int        nx        = cx + step_x[d];
+            const int        ny        = cy + step_y[d];
+            if (nx < 0 || ny < 0 || nx >= sub_w || ny >= sub_h || seen[(ny * sub_w) + nx] ||
+                !Map_IsWalkable(map, nx, ny)) {
+                continue;
+            }
+            seen[(ny * sub_w) + nx] = 1;
+            queue[tail++]           = (ny * sub_w) + nx;
+        }
+    }
+    *out_x = (float)(best % sub_w) + 0.5f;
+    *out_y = (float)(best / sub_w) + 0.5f;
+    free(seen);
+    free(queue);
+    return true;
+}
+
+void World_EnsureExits(Map *map, const int level_id) {
+    // Every area this one leads to by stairs or portal (walking off the edge is the layout's job)
+    int targets[16];
+    int count = 0;
+    for (int slot = 0; slot < 8; slot++) {
+        targets[count]  = World_GetVis(level_id, slot);
+        count          += targets[count] > 0 ? 1 : 0;
+    }
+    count += World_GetPortalLinks(level_id, targets + count, 16 - count);
+    int       walk_targets[4];
+    WorldSide sides[4];
+    const int walks   = World_GetWalkLinks(level_id, walk_targets, sides, 4);
+    int       missing = 0;
+    for (int i = 0; i < count; i++) {
+        bool skip = Map_ExitTo(map, targets[i]) != NULL;
+        for (int w = 0; w < walks && !skip; w++) {
+            skip = walk_targets[w] == targets[i];
+        }
+        for (int k = 0; k < missing && !skip; k++) {
+            skip = targets[k] == targets[i];
+        }
+        if (!skip) {
+            targets[missing++] = targets[i];
+        }
+    }
+    if (missing == 0) {
+        return;
+    }
+
+    // How far each walkable sub-tile is from the start (walking): ways back go near it, ways on as far as can be
+    const int sub_w    = map->width * MAP_SUBTILES;
+    const int sub_h    = map->height * MAP_SUBTILES;
+    int      *distance = malloc(sizeof(int) * (size_t)sub_w * (size_t)sub_h);
+    int      *queue    = malloc(sizeof(int) * (size_t)sub_w * (size_t)sub_h);
+    FAIL_IF_NULL(distance);
+    FAIL_IF_NULL(queue);
+    for (int i = 0; i < sub_w * sub_h; i++) {
+        distance[i] = -1;
+    }
+    float start_x = map->has_start ? map->start_x : (float)sub_w / 2.0f;
+    float start_y = map->has_start ? map->start_y : (float)sub_h / 2.0f;
+    if (!Map_IsWalkable(map, (int)start_x, (int)start_y)) {
+        // The nearest open spot (a fixed map's middle can be a wall)
+        float best = -1.0f;
+        for (int y = 2; y < sub_h; y += MAP_SUBTILES) {
+            for (int x = 2; x < sub_w; x += MAP_SUBTILES) {
+                const float d =
+                    ((float)x - start_x) * ((float)x - start_x) + ((float)y - start_y) * ((float)y - start_y);
+                if (Map_IsWalkable(map, x, y) && (best < 0.0f || d < best)) {
+                    best    = d;
+                    start_x = (float)x;
+                    start_y = (float)y;
+                }
+            }
+        }
+        if (best < 0.0f) {
+            free(distance);
+            free(queue);
+            return;
+        }
+    }
+    int       head  = 0;
+    int       tail  = 0;
+    const int first = ((int)start_y * sub_w) + (int)start_x;
+    queue[tail++]   = first;
+    distance[first] = 0;
+    while (head < tail) {
+        const int        c         = queue[head++];
+        const int        x         = c % sub_w;
+        const int        y         = c / sub_w;
+        static const int step_x[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+        static const int step_y[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+        for (int d = 0; d < 8; d++) {
+            const int nx = x + step_x[d];
+            const int ny = y + step_y[d];
+            if (nx < 0 || ny < 0 || nx >= sub_w || ny >= sub_h || distance[(ny * sub_w) + nx] >= 0 ||
+                !Map_IsWalkable(map, nx, ny)) {
+                continue;
+            }
+            distance[(ny * sub_w) + nx] = distance[c] + 1;
+            queue[tail++]               = (ny * sub_w) + nx;
+        }
+    }
+
+    for (int m = 0; m < missing; m++) {
+        const bool back = World__IsWayBack(level_id, targets[m]);
+        int        best = -1;
+        for (int i = 0; i < tail; i++) {
+            const int c  = queue[i];
+            const int cx = c % sub_w;
+            const int cy = c / sub_w;
+            // Clear of the other exits, with room around it to stand
+            bool clear = true;
+            for (int e = 0; e < map->exit_count && clear; e++) {
+                const MapExit *exit = &map->exits[e];
+                clear = cx < exit->x0 - 20 || cx > exit->x1 + 20 || cy < exit->y0 - 20 || cy > exit->y1 + 20;
+            }
+            for (int d = 0; d < 9 && clear; d++) {
+                const int nx = cx + (((d % 3) - 1) * 2);
+                const int ny = cy + (((d / 3) - 1) * 2);
+                clear        = nx >= 0 && ny >= 0 && nx < sub_w && ny < sub_h && distance[(ny * sub_w) + nx] >= 0;
+            }
+            if (!clear) {
+                continue;
+            }
+            if (back ? (distance[c] >= 15 && (best < 0 || distance[c] < distance[best]))
+                     : (best < 0 || distance[c] > distance[best])) {
+                best = c;
+            }
+        }
+        if (best < 0) {
+            best = first;
+        }
+        World_AddPortal(map, targets[m], (float)(best % sub_w) + 0.5f, (float)(best / sub_w) + 0.5f);
+        LOG_INFO("%s: portal to area %d", map->name, targets[m]);
+    }
+    free(distance);
+    free(queue);
 }
 
 // Entrances in a fixed map (stairs, doors to dungeons): special tiles with a low main index, in map order, lead to the
@@ -383,6 +760,39 @@ static void World__AddFixedEntrances(Map *map, const int level_id) {
     }
 }
 
+// The sub-tiles you can walk to from the map's start (NULL if it has none, or it's blocked): free it
+static uint8_t *World__Reachable(const Map *map) {
+    const int sub_w = map->width * MAP_SUBTILES;
+    const int sub_h = map->height * MAP_SUBTILES;
+    if (!map->has_start || !Map_IsWalkable(map, (int)map->start_x, (int)map->start_y)) {
+        return NULL;
+    }
+    uint8_t *seen  = calloc((size_t)sub_w * (size_t)sub_h, 1);
+    int     *queue = malloc(sizeof(int) * (size_t)sub_w * (size_t)sub_h);
+    FAIL_IF_NULL(seen);
+    FAIL_IF_NULL(queue);
+    int head       = 0;
+    int tail       = 0;
+    queue[tail++]  = ((int)map->start_y * sub_w) + (int)map->start_x;
+    seen[queue[0]] = 1;
+    while (head < tail) {
+        const int        c         = queue[head++];
+        static const int step_x[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+        static const int step_y[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+        for (int d = 0; d < 8; d++) {
+            const int nx = (c % sub_w) + step_x[d];
+            const int ny = (c / sub_w) + step_y[d];
+            if (nx >= 0 && ny >= 0 && nx < sub_w && ny < sub_h && !seen[(ny * sub_w) + nx] &&
+                Map_IsWalkable(map, nx, ny)) {
+                seen[(ny * sub_w) + nx] = 1;
+                queue[tail++]           = (ny * sub_w) + nx;
+            }
+        }
+    }
+    free(queue);
+    return seen;
+}
+
 static void World__Note(const bool walkable, const WorldSide side, const int position, int *open, int *low, int *high) {
     if (!walkable) {
         return;
@@ -432,6 +842,34 @@ void World_AddFixedExits(Map *map, const int level_id) {
             World__Note(Map_IsWalkable(map, sub_w - 1 - d, y), WORLD_SIDE_E, y, open, low, high);
         }
     }
+    // The way through is the widest stretch of open edge you can walk to from the start (not everything from the
+    // first open spot to the last: a town's edge can have a bit of open ground well away from the road, which would
+    // pull the middle off it)
+    uint8_t *reach = World__Reachable(map);
+    for (int s = 0; s < 4; s++) {
+        const int length = (s == WORLD_SIDE_N || s == WORLD_SIDE_S) ? sub_w : sub_h;
+        int       run    = 0;
+        int       best   = 0;
+        for (int p = 0; p <= length; p++) {
+            bool walkable = false;
+            for (int d = 0; d < depth && p < length && !walkable; d++) {
+                const int x = s == WORLD_SIDE_N || s == WORLD_SIDE_S ? p : (s == WORLD_SIDE_W ? d : sub_w - 1 - d);
+                const int y = s == WORLD_SIDE_W || s == WORLD_SIDE_E ? p : (s == WORLD_SIDE_N ? d : sub_h - 1 - d);
+                walkable    = Map_IsWalkable(map, x, y) && (reach == NULL || reach[(y * sub_w) + x] != 0);
+            }
+            if (walkable) {
+                run++;
+            } else {
+                if (run > best) {
+                    best    = run;
+                    low[s]  = p - run;
+                    high[s] = p - 1;
+                }
+                run = 0;
+            }
+        }
+    }
+    free(reach);
 
     // Each link on the side the layout gave it (the town's way out); the biggest opening left if that side is closed
     bool taken[4] = {false, false, false, false};

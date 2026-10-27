@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 #ifdef _WIN32
@@ -44,19 +45,20 @@ static const char *stat_names[STAT_COUNT] = {"Strength", "Dexterity", "Vitality"
 
 // What charstats.txt (and the class's starting weapon in weapons.txt) says about a class
 typedef struct ClassInfo {
-    int stats[STAT_COUNT];
-    int stamina;
-    int hp_add;
-    int to_hit_factor;
-    int life_per_level; // in fourths
-    int stamina_per_level;
-    int mana_per_level;
-    int life_per_vitality;
-    int stamina_per_vitality;
-    int mana_per_energy;
-    int stat_per_level;
-    int mana_regen; // seconds
-    int run_drain;
+    int  stats[STAT_COUNT];
+    int  stamina;
+    int  hp_add;
+    int  to_hit_factor;
+    int  life_per_level; // in fourths
+    int  stamina_per_level;
+    int  mana_per_level;
+    int  life_per_vitality;
+    int  stamina_per_vitality;
+    int  mana_per_energy;
+    int  stat_per_level;
+    int  mana_regen; // seconds
+    int  run_drain;
+    char start_skill[32]; // a skill the class starts with a point in (the Sorceress's Fire Bolt), "" = none
 } ClassInfo;
 
 static ClassInfo class_info[CHARACTER_CLASS_COUNT];
@@ -117,8 +119,10 @@ static void Character__LoadTables(void) {
             info->stat_per_level        = DataTable_GetInt(stats, row, COL("StatPerLevel"));
             info->mana_regen            = DataTable_GetInt(stats, row, COL("ManaRegen"));
             info->run_drain             = DataTable_GetInt(stats, row, COL("RunDrain"));
-            info->stat_per_level        = info->stat_per_level > 0 ? info->stat_per_level : 5;
-            info->mana_regen            = info->mana_regen > 0 ? info->mana_regen : 120;
+            snprintf(info->start_skill, sizeof(info->start_skill), "%s",
+                     DataTable_GetString(stats, row, COL("StartSkill")));
+            info->stat_per_level = info->stat_per_level > 0 ? info->stat_per_level : 5;
+            info->mana_regen     = info->mana_regen > 0 ? info->mana_regen : 120;
         }
 #undef COL
     }
@@ -186,6 +190,16 @@ void Character_Create(Character *character, const char *name, const CharacterCla
     character->stamina     = Character_MaxStamina(character);
     character->left_skill  = SKILL_ATTACK;
     character->right_skill = SKILL_ATTACK;
+    character->waypoints   = 1; // the Rogue Encampment's
+    // The class's starting skill (charstats StartSkill: the Sorceress's Fire Bolt, the Necromancer's Raise Skeleton),
+    // ready on the right mouse button
+    const SkillClass *skills = Skills_ForClass(character->class_id);
+    for (int k = 0; k < skills->count && k < CHARACTER_SKILLS && info->start_skill[0] != '\0'; k++) {
+        if (strcasecmp(skills->skills[k].id, info->start_skill) == 0) {
+            character->skill_levels[k] = 1;
+            character->right_skill     = k;
+        }
+    }
     Inventory_GiveStartingItems(character);
 }
 
@@ -507,6 +521,7 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
             Character__Print(file, "item belt %d %s %d %d%s\n", b, it->code, it->defense, it->quantity, magic);
         }
     }
+    Character__Print(file, "waypoints %llx\n", (unsigned long long)character->waypoints);
     if (character->realm[0] != '\0') {
         Character__Print(file, "realm %s\n", character->realm);
     }
@@ -563,6 +578,7 @@ bool Character_ReadText(const char *text, Character *character) {
     character->level       = 1;
     character->left_skill  = SKILL_ATTACK;
     character->right_skill = SKILL_ATTACK;
+    character->waypoints   = 1; // saves from before waypoints were kept
     bool has_items         = false;
     while (Character__Line(&at, line, sizeof(line))) {
         line[strcspn(line, "\r")] = '\0';
@@ -619,6 +635,8 @@ bool Character_ReadText(const char *text, Character *character) {
             const int k = Skills_Find(Skills_ForClass(character->class_id), value);
             *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
                 k >= 0 ? k : SKILL_ATTACK;
+        } else if (strcmp(key, "waypoints") == 0) {
+            character->waypoints = strtoull(value, NULL, 16) | 1ull; // the Rogue Encampment's is always known
         } else if (strcmp(key, "realm") == 0) {
             snprintf(character->realm, sizeof(character->realm), "%.39s", value);
         } else if (strcmp(key, "gold") == 0) {

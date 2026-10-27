@@ -148,15 +148,19 @@ A debugging switch for fighting between you and the monsters:
 
 Areas come with their objects: chests, doors, shrines, waypoints, torches, campfires, corpses, ... Torches and fires
 burn. Hovering a chest, door, shrine or waypoint shows its name; click it and you walk over and open it (chests open,
-doors open and let you through, shrines and waypoints light up), with the game's sound. Objects block walking where
-the game says they do (a closed door, a chest, a shrine's base). What they do beyond that (loot, shrine effects,
-travelling by waypoint) isn't in yet. In the Testing Grounds objects can be dropped from the Monsters list's
-**Others** tab.
+doors open and let you through, shrines and waypoints light up), with the game's sound. Clicking a waypoint opens the
+Places list. Objects block walking where the game says they do (a closed door, a chest, a shrine's base). Shrine
+effects and traps aren't in yet. In the Testing Grounds objects can be dropped from the Monsters list's **Others** tab.
+
+Red portals stand where the game joins two areas by portal: Tristram at the Cairn Stones, the Arcane Sanctuary (in
+from the third Palace Cellar, out to the Canyon of the Magi from the Summoner's room), Duriel's Lair from the true one
+of Tal Rasha's seven tombs (the world seed picks which), Abaddon, the Pit of Acheron and the Infernal Pit, and the ways
+on from Mephisto's and Diablo's lairs. Click one to go through.
 
 ## Known limits
 
 - Units don't avoid bumping into each other (they can stand in the same spot).
 - NPCs don't talk or trade yet.
 - Combat is melee only, no skills, levels or experience.
-- Waypoints don't take you anywhere in Free Roam (use the Places list); some links aren't there yet (Act 3, the
-  Monastery, Tristram's portal, the Arcane Sanctuary).
+- Part of the Arcane Sanctuary's walkways don't join up, so not all of it can be walked to.
+- The Bloody Foothills' strips leave black gaps at their top and bottom edges.

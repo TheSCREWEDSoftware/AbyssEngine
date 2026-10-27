@@ -27,7 +27,9 @@ start in the Rogue Encampment. **Exit** goes back to the list.
 
 Starting stats come from the game's tables (`charstats.txt`): an Amazon has 20 Strength, 25 Dexterity, 20 Vitality,
 15 Energy, 50 life and 15 mana; a Barbarian 30/20/25/10, 55 life and 10 mana. So do the starting items: the class's
-weapon (and a buckler for most), four healing potions in the belt, and a Town Portal and an Identify scroll.
+weapon (and a buckler for most), four healing potions in the belt, and a Town Portal and an Identify scroll. The
+Sorceress starts with a point in Fire Bolt and the Necromancer in Raise Skeleton (`charstats.txt` StartSkill), ready
+on the right mouse button.
 
 ## Playing
 
@@ -56,7 +58,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 | Click the left or right skill on the control panel | Choose what that mouse button uses |
 | **R** / the run button on the control panel | Run or walk (running uses stamina); hold **Left Ctrl** to switch for a moment |
 | **Shift** + click | Stand still: attack where you stand instead of walking |
-| **V** | Travel (in town, or near a waypoint; clicking a waypoint does the same). With **Options › Debug › Free Roam in Single Player and Multiplayer**: from anywhere, and **CapsLock** sprints ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)) |
+| **V** | Travel by waypoint (in town, or near a waypoint; clicking a waypoint does the same): the list has the waypoints you've found (click one to light it up and add it), and you come out next to the one you picked. With **Options › Debug › Free Roam in Single Player and Multiplayer**: from anywhere, and **CapsLock** sprints ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-multiplayer)) |
 | **Home** | Back to the act's town |
 | **Space** | Close the open screens |
 | **Print Screen** | Screenshot (saved in `screenshots` next to `abyss.ini`) |
@@ -118,6 +120,13 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   Lesser Healing Potion gives 30 life over 8 seconds), or go to town, which fills life and mana up.
 - **Dying**: you wake up in the act's town after 3 seconds with full life. **Hardcore** characters die for good: they
   stay in the list as "Dead" and can't be played.
+- **Waypoints**: you start knowing the Rogue Encampment's. Click a waypoint to light it up ("Waypoint found."); it
+  then shows in the waypoint list (V in town or next to a waypoint), and travelling to it puts you next to it. Found
+  waypoints are kept with the character.
+- **The world**: every area joins up the way the game's do (walking between the outdoor areas, stairs, cave mouths and
+  doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
+  the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
+  own music.
 - The game is **saved** when you travel, level up, die and exit. Saves are text files in the `save` folder next to
   `abyss.ini` (`<name>.abc`); they're not compatible with the original game's `.d2s` files.
 

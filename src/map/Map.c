@@ -729,6 +729,10 @@ bool Map_IsWalkable(const Map *map, const int subtile_x, const int subtile_y) {
                 (tiles[i]->subtile_flags[flag] & DT1_SUBTILE_BLOCK_WALK)) {
                 return false;
             }
+            // A lower wall with nothing on it is ground too (the walkways joining the Arcane Sanctuary's platforms
+            // have no floor tile where two meet, just the edge of the walkway)
+            has_floor = has_floor || (tiles[i] != NULL && tiles[i]->orientation >= DT1_ORIENTATION_LOWER_WALL &&
+                                      tiles[i]->orientation <= DT1_ORIENTATION_LOWER_WALL + 3);
         }
     }
     return has_floor;

@@ -21,6 +21,7 @@
 #include "../game/Settings.h"
 #include "../game/Skills.h"
 #include "../game/Treasure.h"
+#include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
@@ -123,6 +124,7 @@ static const struct {
     uint8_t     darkness;
     float       radius; // sub-tiles
 } light_levels[] = {
+    {"auto",  0,   0    }, // by the area: dark with a pool of light indoors, day outside
     {"day",   0,   0    },
     {"dusk",  120, 16.0f},
     {"night", 215, 11.0f},
@@ -249,17 +251,18 @@ typedef struct ItemSprite {
 } ItemSprite;
 
 typedef struct SceneRoam {
-    bool         free_roam; // Free Roam, or the game (both travel between the game's areas)
-    bool         game;      // Single Player: the character from Character_Current(), real combat and levels
-    Map         *map;
-    bool         borrowed; // the editor's map (play-test): not ours to free
-    MapRenderer *renderer;
-    MapUnits    *units_cache; // figures
-    MapCamera    camera;
-    uint64_t     last_tick;
-    unsigned     draw_flags;
-    int          place;      // Free Roam: current Places index (the area you're in)
-    int          area_level; // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
+    bool            free_roam; // Free Roam, or the game (both travel between the game's areas)
+    bool            game;      // Single Player: the character from Character_Current(), real combat and levels
+    Map            *map;
+    bool            borrowed; // the editor's map (play-test): not ours to free
+    MapRenderer    *renderer;
+    MapUnits       *units_cache; // figures
+    MapCamera       camera;
+    uint64_t        last_tick;
+    unsigned        draw_flags;
+    int             place;      // Free Roam: current Places index (the area you're in)
+    int             area_level; // the area you're in (joined-up maps: changes as you walk), Levels.txt Id
+    WorldAtmosphere atmosphere; // that area's: indoors, rain or snow, music
 
     // Player
     Unit     player;
@@ -297,16 +300,17 @@ typedef struct SceneRoam {
     RoamPanel panel;
     ListBox  *list;
     char    **list_names;
-    int       list_count;
-    int       selected;
-    Label    *title_label;
-    Label    *status_label;
-    Label    *help_label;
-    char      help_text[400]; // what it says now
-    Label    *life_label;
-    Label    *target_label;
-    bool      prev_left;
-    bool      prev_right;
+    int   *list_places; // the places list: the place each row is (Single Player's waypoints list just the found ones)
+    int    list_count;
+    int    selected;
+    Label *title_label;
+    Label *status_label;
+    Label *help_label;
+    char   help_text[400]; // what it says now
+    Label *life_label;
+    Label *target_label;
+    bool   prev_left;
+    bool   prev_right;
 
     TextBox *seed_box; // Free Roam: world seed (in the Places panel)
 
@@ -1110,9 +1114,22 @@ static void Roam__ApplyUsedObjects(SceneRoam *roam) {
     }
 }
 
+static void Roam__ShowMessage(SceneRoam *roam, const char *text);
+static void Roam__RefreshList(SceneRoam *roam);
+
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
-    if (roam->game && unit->object.operate_fn == 23) {
-        // A waypoint: lights up the first time, and opens the list of places every time
+    if (unit->object.operate_fn == 23) {
+        // A waypoint: lights up the first time (a game keeps it among the ones found), and opens the list of places
+        // every time
+        const MapArea *area = Map_AreaAt(roam->map, unit->x, unit->y);
+        const int      wp   = World_WaypointIndex(area != NULL ? area->level_id : roam->area_level);
+        if (roam->game && roam->character != NULL && wp >= 0 && (roam->character->waypoints & (1ull << wp)) == 0) {
+            roam->character->waypoints |= 1ull << wp;
+            Roam__ShowMessage(roam, "Waypoint found.");
+            if (roam->panel == PANEL_PLACES) {
+                Roam__RefreshList(roam);
+            }
+        }
         if (strcmp(unit->object_mode, "on") != 0 && unit->state != UNIT_OPERATE) {
             Roam__ObjectSound(unit);
             if (unit->object.has_mode[1] && MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op") != NULL) {
@@ -1748,8 +1765,10 @@ static void Roam__FreeList(SceneRoam *roam) {
         free(roam->list_names[i]);
     }
     free(roam->list_names);
-    roam->list_names = NULL;
-    roam->list_count = 0;
+    free(roam->list_places);
+    roam->list_names  = NULL;
+    roam->list_places = NULL;
+    roam->list_count  = 0;
 }
 
 static void Roam__RefreshList(SceneRoam *roam) {
@@ -1757,14 +1776,24 @@ static void Roam__RefreshList(SceneRoam *roam) {
     int list_y = CATEGORIES_Y;
     if (roam->panel == PANEL_PLACES) {
         Label_SetText(roam->title_label, roam->game && !Roam__DebugTools(roam) ? "Waypoint" : "Places");
-        roam->list_count = Places_GetCount();
-        roam->list_names = calloc(roam->list_count > 0 ? (size_t)roam->list_count : 1, sizeof(char *));
+        // Free Roam (and the debug tools) can go anywhere; a game only to the waypoints found
+        const bool waypoints   = roam->game && !Roam__DebugTools(roam) && roam->character != NULL;
+        const int  place_count = Places_GetCount();
+        roam->list_names       = calloc(place_count > 0 ? (size_t)place_count : 1, sizeof(char *));
+        roam->list_places      = calloc(place_count > 0 ? (size_t)place_count : 1, sizeof(int));
         FAIL_IF_NULL(roam->list_names);
-        for (int i = 0; i < roam->list_count; i++) {
+        FAIL_IF_NULL(roam->list_places);
+        roam->list_count = 0;
+        for (int i = 0; i < place_count; i++) {
+            const int wp = World_WaypointIndex(Places_Get(i)->level_id);
+            if (waypoints && (wp < 0 || (roam->character->waypoints & (1ull << wp)) == 0)) {
+                continue;
+            }
             char name[80];
             snprintf(name, sizeof(name), "Act %d - %s", Places_Get(i)->act + 1, Places_Get(i)->name);
-            roam->list_names[i] = strdup(name);
-            FAIL_IF_NULL(roam->list_names[i]);
+            roam->list_names[roam->list_count] = strdup(name);
+            FAIL_IF_NULL(roam->list_names[roam->list_count]);
+            roam->list_places[roam->list_count++] = i;
         }
     } else {
         Label_SetText(roam->title_label, "Monsters");
@@ -1781,7 +1810,11 @@ static void Roam__RefreshList(SceneRoam *roam) {
     ListBox_SetItems(roam->list, (const char *const *)roam->list_names, roam->list_count);
     ListBox_SetPosition(roam->list, PANEL_INNER_X, list_y);
     if (roam->panel == PANEL_PLACES) {
-        ListBox_SetSelectedIndex(roam->list, roam->place);
+        int row = -1;
+        for (int i = 0; i < roam->list_count; i++) {
+            row = roam->list_places[i] == roam->place ? i : row;
+        }
+        ListBox_SetSelectedIndex(roam->list, row);
     }
     roam->selected = ListBox_GetSelectedIndex(roam->list);
 }
@@ -1796,8 +1829,64 @@ static void Roam__TogglePanel(SceneRoam *roam, const RoamPanel panel) {
 
 // Free Roam: go to another place
 static void Roam__EnteredArea(SceneRoam *roam, int level_id, bool caption);
+static void Roam__UpdateAtmosphere(SceneRoam *roam);
 static int  Roam__FindPlace(int level_id);
+static void Roam__ToWaypoint(SceneRoam *roam);
 static void Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
+
+// Rain (snow in Act V) in the areas Levels.txt says it falls in: showers that come and go, a few minutes each
+static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
+    if ((!roam->atmosphere.rain && !roam->atmosphere.snow) || roam->atmosphere.inside) {
+        return;
+    }
+    const uint64_t now   = SDL_GetTicks64();
+    const float    cycle = (float)((now / 1000) % 360) / 360.0f; // a six-minute cycle: two of rain, four dry
+    const float    level = cycle < 0.33f ? sinf(cycle / 0.33f * 3.14159f) : 0.0f;
+    const int      drops = (int)(level * (roam->atmosphere.snow ? 220.0f : 320.0f));
+    if (drops <= 0) {
+        return;
+    }
+    SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+    for (int i = 0; i < drops; i++) {
+        // Each drop is its own falling line, placed by a hash of its number so they don't all move together
+        uint32_t h  = (uint32_t)i * 2654435761u;
+        h          ^= h >> 15;
+        const float speed = roam->atmosphere.snow ? 0.05f + (float)(h % 40) / 1000.0f : 0.9f + (float)(h % 50) / 100.0f;
+        const float fall  = (float)(now % 100000) * speed;
+        const float span_y = (float)view->h + 40.0f;
+        const float y      = fmodf((float)((h >> 8) % 1000) / 1000.0f * span_y + fall, span_y) - 20.0f;
+        float       x      = (float)((h >> 4) % (uint32_t)(view->w + 80)) - 40.0f;
+        if (roam->atmosphere.snow) {
+            x += sinf((float)now / 700.0f + (float)i) * 6.0f; // drifting
+            SDL_SetRenderDrawColor(sdl_renderer, 235, 240, 255, 200);
+            const SDL_Rect flake = {view->x + (int)x, view->y + (int)y, 2, 2};
+            SDL_RenderFillRect(sdl_renderer, &flake);
+        } else {
+            x -= y * 0.25f; // slanting in the wind
+            SDL_SetRenderDrawColor(sdl_renderer, 150, 160, 190, 110);
+            SDL_RenderDrawLine(sdl_renderer, view->x + (int)x, view->y + (int)y, view->x + (int)(x - 3.0f),
+                               view->y + (int)(y + 12.0f));
+        }
+    }
+}
+
+// Next to the waypoint of the area you're in (after travelling by waypoint)
+static void Roam__ToWaypoint(SceneRoam *roam) {
+    for (int u = 0; u < roam->unit_count; u++) {
+        const Unit    *unit = &roam->units[u];
+        const MapArea *area =
+            unit->is_object && unit->object.operate_fn == 23 ? Map_AreaAt(roam->map, unit->x, unit->y) : NULL;
+        if (!unit->is_object || unit->object.operate_fn != 23 || (area != NULL && area->level_id != roam->area_level)) {
+            continue;
+        }
+        Roam__ArrivalSpot(roam->map, unit->x + 3.0f, unit->y + 3.0f, &roam->spawn_x, &roam->spawn_y);
+        roam->player.x = roam->player.target_x = roam->spawn_x;
+        roam->player.y = roam->player.target_y = roam->spawn_y;
+        roam->moving                           = false;
+        Roam__ClearPath(&roam->player);
+        return;
+    }
+}
 
 static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     const Place *place = Places_Get(place_index);
@@ -1843,6 +1932,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
     roam->place       = place_index;
     roam->area_level  = place->level_id;
     roam->exits_armed = false;
+    Roam__UpdateAtmosphere(roam);
     MapRenderer_ClearCache(roam->renderer);
     roam->in_town = false;
     for (int t = 0; t < TOWN_COUNT; t++) {
@@ -1928,6 +2018,14 @@ static void Roam__ArrivalSpot(const Map *map, const float x, const float y, floa
 }
 
 // Walked into another area of a joined-up map (or arrived in one): the game's caption, and town or not
+// The area's music, and whether it's dark or raining there
+static void Roam__UpdateAtmosphere(SceneRoam *roam) {
+    World_GetAtmosphere(roam->area_level, &roam->atmosphere);
+    if (roam->atmosphere.music[0] != '\0') {
+        AudioManager_PlayMusic(roam->atmosphere.music, true); // the same track carries on
+    }
+}
+
 static void Roam__EnteredArea(SceneRoam *roam, const int level_id, const bool caption_wanted) {
     if (level_id == roam->area_level) {
         return;
@@ -1952,6 +2050,7 @@ static void Roam__EnteredArea(SceneRoam *roam, const int level_id, const bool ca
         roam->mana      = (float)Character_MaxMana(roam->character);
         Roam__StoreCharacter(roam);
     }
+    Roam__UpdateAtmosphere(roam);
     Roam__UpdateButtons(roam);
 }
 
@@ -4460,9 +4559,15 @@ static void Roam__Update(SceneRoam *roam) {
         }
     }
     if (roam->panel != PANEL_NONE && ListBox_Update(roam->list)) {
-        roam->selected = ListBox_GetSelectedIndex(roam->list);
-        if (roam->panel == PANEL_PLACES && roam->selected != roam->place) {
-            Roam__Teleport(roam, roam->selected);
+        roam->selected  = ListBox_GetSelectedIndex(roam->list);
+        const int place = roam->panel == PANEL_PLACES && roam->selected >= 0 && roam->selected < roam->list_count
+                              ? roam->list_places[roam->selected]
+                              : -1;
+        if (place >= 0 && place != roam->place) {
+            Roam__Teleport(roam, place);
+            if (roam->game && !Roam__DebugTools(roam)) {
+                Roam__ToWaypoint(roam); // by waypoint: you come out at the one there
+            }
         }
     }
 
@@ -4964,13 +5069,18 @@ static void Roam__Render(SceneRoam *roam) {
             Automap_Draw(roam->automap, &view, roam->player.x, roam->player.y, marks, mark_count);
         }
     }
-    if (light_levels[light_level].darkness > 0) {
+    // Indoors it's dark but for the light around you (the game's light radius); "auto" picks it by the area
+    const bool  dark_inside = light_level == 0 && roam->atmosphere.inside;
+    const int   darkness    = dark_inside ? 150 : light_levels[light_level].darkness;
+    const float radius      = dark_inside ? 15.0f : light_levels[light_level].radius;
+    if (darkness > 0) {
         float light_x;
         float light_y;
         MapView_SubtileToWorld(roam->player.x, roam->player.y, &light_x, &light_y);
-        MapRenderer_DrawLight(roam->renderer, &roam->camera, &view, light_x, light_y - 30.0f,
-                              light_levels[light_level].radius, light_levels[light_level].darkness);
+        MapRenderer_DrawLight(roam->renderer, &roam->camera, &view, light_x, light_y - 30.0f, radius,
+                              (uint8_t)darkness);
     }
+    Roam__DrawWeather(roam, &view);
 
     Roam__DrawItemLabels(roam);
 

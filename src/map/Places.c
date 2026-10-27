@@ -2,6 +2,7 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
+#include "../data/StringTable.h"
 #include "../types/DS1.h"
 #include "LevelBuilder.h"
 #include "Map.h"
@@ -33,6 +34,16 @@ static bool Places__Excluded(const int level_id) {
 
 static int Places__CompareLevel(const void *a, const void *b) {
     return ((const Place *)a)->level_id - ((const Place *)b)->level_id;
+}
+
+// An area's name in the game's language ("Hell1" is Abaddon), without the odd trailing space Levels.txt has
+static const char *Places__Name(DataTable *levels, const int row, const int column) {
+    static char name[64];
+    snprintf(name, sizeof(name), "%s", StringTable_Get(DataTable_GetString(levels, row, column)));
+    for (size_t n = strlen(name); n > 0 && name[n - 1] == ' '; n--) {
+        name[n - 1] = '\0';
+    }
+    return name;
 }
 
 static void Places__Load(void) {
@@ -93,7 +104,7 @@ static void Places__Load(void) {
         snprintf(place->name, sizeof(place->name), "Level %d", level_id);
         for (int l = 0; l < DataTable_GetRowCount(levels); l++) {
             if (DataTable_GetInt(levels, l, c_id) == level_id) {
-                snprintf(place->name, sizeof(place->name), "%s", DataTable_GetString(levels, l, c_name));
+                snprintf(place->name, sizeof(place->name), "%s", Places__Name(levels, l, c_name));
                 place->act = DataTable_GetInt(levels, l, c_act);
                 break;
             }
@@ -116,7 +127,7 @@ static void Places__Load(void) {
         place->level_id  = level_id;
         place->generated = true;
         place->act       = DataTable_GetInt(levels, l, c_act);
-        snprintf(place->name, sizeof(place->name), "%s", DataTable_GetString(levels, l, c_name));
+        snprintf(place->name, sizeof(place->name), "%s", Places__Name(levels, l, c_name));
     }
     qsort(places, (size_t)place_count, sizeof(Place), Places__CompareLevel);
 
@@ -213,6 +224,7 @@ static Map *Places__LoadArea(const Place *place) {
     if (map != NULL) {
         snprintf(map->name, sizeof(map->name), "%s", place->name);
         map->seed = World_GetSeed();
+        World_EnsureExits(map, place->level_id);
     }
     return map;
 }
@@ -238,6 +250,48 @@ static void Places__ExitMiddle(const Map *map, const int target, const WorldSide
     const float h = (float)(map->height * MAP_SUBTILES);
     *x            = side == WORLD_SIDE_W ? 0.0f : side == WORLD_SIDE_E ? w : w / 2.0f;
     *y            = side == WORLD_SIDE_N ? 0.0f : side == WORLD_SIDE_S ? h : h / 2.0f;
+}
+
+// How well two maps join along one side: sub-tiles where a path on one side carries on into the other. offset is
+// where the second map is along the join, from the first map's corner (tiles).
+static int Places__JoinScore(const Map *a, const Map *b, const WorldSide side, const int offset) {
+    const bool along_x = side == WORLD_SIDE_N || side == WORLD_SIDE_S;
+    const int  length  = (along_x ? a->width : a->height) * MAP_SUBTILES;
+    int        score   = 0;
+    for (int p = 0; p < length; p++) {
+        const int q = p - (offset * MAP_SUBTILES); // along the second map
+        if (q < 0 || q >= (along_x ? b->width : b->height) * MAP_SUBTILES) {
+            continue;
+        }
+        // A path that runs on into both: open a tile and three tiles inside each map's edge (the shared edge row
+        // itself is the second map's; a border's outer strip is open ground too, but not three tiles in)
+        bool walk_a = true;
+        bool walk_b = true;
+        for (int depth = 1; depth <= 3; depth += 2) {
+            const int in_a = (depth * MAP_SUBTILES) + 2;
+            const int in_b = (depth * MAP_SUBTILES) + 2;
+            switch (side) {
+            case WORLD_SIDE_S:
+                walk_a = walk_a && Map_IsWalkable(a, p, (a->height * MAP_SUBTILES) - 1 - in_a);
+                walk_b = walk_b && Map_IsWalkable(b, q, in_b);
+                break;
+            case WORLD_SIDE_N:
+                walk_a = walk_a && Map_IsWalkable(a, p, in_a);
+                walk_b = walk_b && Map_IsWalkable(b, q, (b->height * MAP_SUBTILES) - 1 - in_b);
+                break;
+            case WORLD_SIDE_E:
+                walk_a = walk_a && Map_IsWalkable(a, (a->width * MAP_SUBTILES) - 1 - in_a, p);
+                walk_b = walk_b && Map_IsWalkable(b, in_b, q);
+                break;
+            default:
+                walk_a = walk_a && Map_IsWalkable(a, in_a, p);
+                walk_b = walk_b && Map_IsWalkable(b, (b->width * MAP_SUBTILES) - 1 - in_b, q);
+                break;
+            }
+        }
+        score += walk_a && walk_b ? 1 : 0;
+    }
+    return score;
 }
 
 // An act's outdoors as one map, like the game: the town and every area you can walk to from it, side by side where
@@ -321,6 +375,20 @@ static Map *Places__LoadOutdoors(const Place *requested) {
             pos_x[i] = pos_x[p] + (int)lroundf((ax - bx) / MAP_SUBTILES);
             break;
         }
+        // Then slid along the join to where the most of the two paths meet (the middles of the ways through aren't
+        // always where the paths are: a town's edge can be open well away from its road)
+        const bool along_x = side == WORLD_SIDE_N || side == WORLD_SIDE_S;
+        int        best    = 0;
+        int score = Places__JoinScore(maps[p], maps[i], side, along_x ? pos_x[i] - pos_x[p] : pos_y[i] - pos_y[p]);
+        for (int shift = -16; shift <= 16; shift++) {
+            const int offset = (along_x ? pos_x[i] - pos_x[p] : pos_y[i] - pos_y[p]) + shift;
+            const int s      = Places__JoinScore(maps[p], maps[i], side, offset) - abs(shift); // nearer is better
+            if (s > score) {
+                score = s;
+                best  = shift;
+            }
+        }
+        *(along_x ? &pos_x[i] : &pos_y[i]) += best;
     }
 
     int min_x = 0;
