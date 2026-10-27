@@ -2,6 +2,7 @@
 #include "../common/FileManager.h"
 #include "../common/Logging.h"
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -60,6 +61,8 @@ static char *DS1__TilePath(const char *name) {
     return path;
 }
 
+static DS1 *DS1__Parse(uint8_t *data, uint32_t size, const char *path);
+
 DS1 *DS1_Load(const char *path) {
     if (!FileManager_FileExists(path)) {
         return NULL;
@@ -71,7 +74,30 @@ DS1 *DS1_Load(const char *path) {
     FAIL_IF_NULL(data);
     MpqStream_Read(stream, data, 0, size);
     MpqStream_Destroy(&stream);
+    return DS1__Parse(data, size, path);
+}
 
+DS1 *DS1_LoadDiskFile(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+    fseek(file, 0, SEEK_END);
+    const long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    if (size <= 0 || size > 64L * 1024 * 1024) {
+        fclose(file);
+        return NULL;
+    }
+    uint8_t *data = malloc((size_t)size);
+    FAIL_IF_NULL(data);
+    const size_t got = fread(data, 1, (size_t)size, file);
+    fclose(file);
+    return DS1__Parse(data, (uint32_t)got, path);
+}
+
+// (takes data and frees it)
+static DS1 *DS1__Parse(uint8_t *data, const uint32_t size, const char *path) {
     DS1Reader reader = {data, size, 0, false};
     DS1      *ds1    = calloc(1, sizeof(DS1));
     FAIL_IF_NULL(ds1);
@@ -218,4 +244,76 @@ void DS1_Destroy(DS1 **ds1) {
     free((*ds1)->objects);
     free(*ds1);
     *ds1 = NULL;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Writing (version 18, the expansion's): what the game's own tools and the loader above read back
+
+static void DS1__Write(FILE *file, const int32_t value) {
+    const uint8_t bytes[4] = {(uint8_t)value, (uint8_t)(value >> 8), (uint8_t)(value >> 16), (uint8_t)(value >> 24)};
+    fwrite(bytes, 1, 4, file);
+}
+
+static uint32_t DS1__CellValue(const DS1Cell *cell) {
+    return (uint32_t)cell->prop1 | ((uint32_t)(cell->sequence & 0x3F) << 8) | ((uint32_t)(cell->style & 0x3F) << 20) |
+           (cell->hidden ? 0x80000000u : 0u);
+}
+
+bool DS1_Save(const DS1 *ds1, const char *path) {
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        LOG_WARN("Could not write '%s'", path);
+        return false;
+    }
+    DS1__Write(file, 18);
+    DS1__Write(file, ds1->width - 1);
+    DS1__Write(file, ds1->height - 1);
+    DS1__Write(file, ds1->act);
+    DS1__Write(file, 0); // no substitution tags
+    DS1__Write(file, ds1->file_count);
+    for (int f = 0; f < ds1->file_count; f++) {
+        // The game's own spelling: "\d2\data\global\tiles\act1\town\floor.tg1"
+        char name[512];
+        snprintf(name, sizeof(name), "\\d2\\%s",
+                 ds1->files[f][0] == '\\' || ds1->files[f][0] == '/' ? ds1->files[f] + 1 : ds1->files[f]);
+        for (char *c = name; *c != '\0'; c++) {
+            *c = *c == '/' ? '\\' : *c;
+        }
+        char *dot = strrchr(name, '.');
+        if (dot != NULL && strlen(dot) == 4) {
+            strcpy(dot, ".tg1");
+        }
+        fwrite(name, 1, strlen(name) + 1, file);
+    }
+    DS1__Write(file, ds1->wall_layer_count);
+    DS1__Write(file, ds1->floor_layer_count);
+    const int cells = ds1->width * ds1->height;
+    for (int w = 0; w < ds1->wall_layer_count; w++) {
+        for (int c = 0; c < cells; c++) {
+            DS1__Write(file, (int32_t)DS1__CellValue(&ds1->walls[w][c]));
+        }
+        for (int c = 0; c < cells; c++) {
+            DS1__Write(file, ds1->walls[w][c].orientation);
+        }
+    }
+    for (int f = 0; f < ds1->floor_layer_count; f++) {
+        for (int c = 0; c < cells; c++) {
+            DS1__Write(file, (int32_t)DS1__CellValue(&ds1->floors[f][c]));
+        }
+    }
+    for (int c = 0; c < cells; c++) {
+        DS1__Write(file, ds1->shadows != NULL ? (int32_t)DS1__CellValue(&ds1->shadows[c]) : 0);
+    }
+    DS1__Write(file, ds1->object_count);
+    for (int o = 0; o < ds1->object_count; o++) {
+        DS1__Write(file, ds1->objects[o].type);
+        DS1__Write(file, ds1->objects[o].id);
+        DS1__Write(file, ds1->objects[o].x);
+        DS1__Write(file, ds1->objects[o].y);
+        DS1__Write(file, ds1->objects[o].flags);
+    }
+    DS1__Write(file, 0); // no NPC paths
+    const bool ok = ferror(file) == 0;
+    fclose(file);
+    return ok;
 }

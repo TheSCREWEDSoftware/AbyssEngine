@@ -48,7 +48,10 @@ The monsters, NPCs and players for **Units** are loaded when the editor opens (u
     the program, so it can't be lost; if that map is open, the editor opens the original.
 - **Save**: give the map a name; it's saved as `maps/<name>.abm` next to `abyss.ini`. **As Testing** saves it as
   `testing_grounds.abm`, the map the Testing Grounds play (it's in **My Maps** from the start, made from the built-in
-  arena).
+  arena). **As DS1** saves it in the game's own format as `maps/<name>.ds1` (version 18, what the expansion's
+  presets use): its layers, tile sets and the monsters and objects that have a preset number in the act's tables
+  (`MonPreset.txt`, the objects' presets); others are left out. The game's DS1 tools open it, and so does the engine
+  (a saved game area comes back exactly as it was).
 - **Play**: try the map in the Testing Grounds right away. **Back** there returns to the editor with your map as you
   left it (its file and its undo history too).
 - **Back** (or **Esc**) asks first: with unsaved changes it offers **Save** (into the map's file, or asks for a name),
@@ -111,5 +114,4 @@ hidden (31).
 ## Not done yet
 
 - Rotating placed units
-- Saving back into the game's DS1 format
 - The game's objects (chests, waypoints...) in opened areas

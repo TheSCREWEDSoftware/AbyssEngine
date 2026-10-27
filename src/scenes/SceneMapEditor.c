@@ -132,6 +132,7 @@ typedef struct SceneMapEditor {
     Label       *dialog_labels[3];
     Button      *dialog_ok;
     Button      *dialog_extra;
+    Button      *dialog_ds1; // Save: as the game's DS1 too
     Button      *dialog_cancel;
     TabBar      *open_tabs;
     TextBox     *search_box;
@@ -429,6 +430,8 @@ void *MapEditor_Create(void) {
     editor->dialog_ok     = Button_Create(BUTTON_TYPE_MEDIUM, "OK");
     editor->dialog_extra  = Button_Create(BUTTON_TYPE_MEDIUM, "Extra");
     editor->dialog_cancel = Button_Create(BUTTON_TYPE_MEDIUM, "Cancel");
+    editor->dialog_ds1    = Button_Create(BUTTON_TYPE_MEDIUM, "As DS1");
+    Button_SetPosition(editor->dialog_ds1, DIALOG_X + 196, DIALOG_Y + DIALOG_H - 100);
     Button_SetPosition(editor->dialog_ok, DIALOG_X + 20, DIALOG_Y + DIALOG_H - 50);
     Button_SetPosition(editor->dialog_extra, DIALOG_X + 196, DIALOG_Y + DIALOG_H - 50);
     Button_SetPosition(editor->dialog_cancel, DIALOG_X + DIALOG_W - 148, DIALOG_Y + DIALOG_H - 50);
@@ -546,6 +549,7 @@ void MapEditor_Free(void **scene_ref) {
     }
     Button_Destroy(&editor->dialog_ok);
     Button_Destroy(&editor->dialog_extra);
+    Button_Destroy(&editor->dialog_ds1);
     Button_Destroy(&editor->dialog_cancel);
     TabBar_Destroy(&editor->open_tabs);
     TextBox_Destroy(&editor->search_box);
@@ -650,7 +654,8 @@ static void Editor__OpenDialog(SceneMapEditor *editor, const EditorDialog dialog
         char folder[160];
         snprintf(folder, sizeof(folder), "Saved in %.140s", Map_GetSaveFolder());
         Label_SetText(editor->dialog_labels[1], folder);
-        Label_SetText(editor->dialog_labels[2], "\"As Testing\" makes this map the Testing Grounds.");
+        Label_SetText(editor->dialog_labels[2],
+                      "\"As Testing\": the Testing Grounds map. \"As DS1\": the game's format.");
         TextBox_Clear(editor->name_box);
         TextBox_Focus(editor->name_box);
         InputManager_SetTextInput(editor->map->name); // start from the current name
@@ -773,7 +778,21 @@ static void Editor__UpdateDialog(SceneMapEditor *editor) {
     case DIALOG_SAVE: {
         TextBox_Update(editor->name_box);
         const bool as_testing = Button_Update(editor->dialog_extra);
-        ok                    = ok || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
+        if (Button_Update(editor->dialog_ds1)) {
+            // The game's DS1, next to the .abm (the units without a preset number are left out)
+            const char *name = TextBox_GetText(editor->name_box);
+            char        safe[64];
+            Editor__SafeFileName(name[0] != '\0' ? name : editor->map->name, safe, sizeof(safe));
+            char path[4200];
+            snprintf(path, sizeof(path), "%s/%s.ds1", Map_GetSaveFolder(), safe);
+            char message[128];
+            snprintf(message, sizeof(message),
+                     Map_SaveDS1(editor->map, path) ? "Saved %s.ds1" : "Could not save %s.ds1", safe);
+            Editor__Message(editor, message);
+            Editor__CloseDialog(editor);
+            return;
+        }
+        ok = ok || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN);
         if (ok || as_testing) {
             const char *name = TextBox_GetText(editor->name_box);
             if (!as_testing && name[0] != '\0') {
@@ -833,6 +852,7 @@ static void Editor__DrawDialog(const SceneMapEditor *editor) {
         Label_Draw(editor->dialog_labels[2], DIALOG_X + 40, DIALOG_Y + 170);
         Button_Draw(editor->dialog_ok);
         Button_Draw(editor->dialog_extra);
+        Button_Draw(editor->dialog_ds1);
         break;
     case DIALOG_NONE:
         break;

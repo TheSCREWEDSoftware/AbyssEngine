@@ -363,6 +363,9 @@ static void Map__AddPresetEntities(Map *map, const DS1 *ds1, const int tx, const
 Map *Map_LoadDS1(const char *ds1_path) {
     DS1 *ds1 = DS1_Load(ds1_path);
     if (ds1 == NULL) {
+        ds1 = DS1_LoadDiskFile(ds1_path); // one saved from the Map Editor
+    }
+    if (ds1 == NULL) {
         return NULL;
     }
 
@@ -1065,4 +1068,72 @@ void Map_FreeNames(char **names, const int count) {
         free(names[i]);
     }
     free(names);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Saving as the game's DS1: the layers as they are, the tile sets, and the monsters and objects that have a preset
+// number in the act's tables (MonPreset.txt, objects.txt's presets); the rest (Free Roam drops, the engine's own) are
+// left out
+
+static int Map__MonsterPreset(const int act, const char *id) {
+    for (int index = 0; index < 1024; index++) {
+        const char *monster = MonsterStats_PresetMonster(act, index);
+        if (monster != NULL && strcmp(monster, id) == 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+static int Map__ObjectPreset(const int act, const int row) {
+    for (int id = 0; id < 1024 && row >= 0; id++) {
+        if (Objects_PresetRow(act, id) == row) {
+            return id;
+        }
+    }
+    return -1;
+}
+
+bool Map_SaveDS1(const Map *map, const char *file_path) {
+    DS1 ds1;
+    memset(&ds1, 0, sizeof(ds1));
+    ds1.version           = 18;
+    ds1.width             = map->width;
+    ds1.height            = map->height;
+    ds1.act               = map->act;
+    ds1.file_count        = map->dt1_count;
+    ds1.files             = (char **)map->dt1_paths;
+    ds1.wall_layer_count  = map->wall_layer_count;
+    ds1.floor_layer_count = map->floor_layer_count;
+    for (int w = 0; w < map->wall_layer_count; w++) {
+        ds1.walls[w] = map->walls[w];
+    }
+    for (int f = 0; f < map->floor_layer_count; f++) {
+        ds1.floors[f] = map->floors[f];
+    }
+    ds1.shadows = map->shadows;
+    ds1.objects = calloc(map->entity_count > 0 ? (size_t)map->entity_count : 1, sizeof(DS1Object));
+    FAIL_IF_NULL(ds1.objects);
+    int skipped = 0;
+    for (int e = 0; e < map->entity_count; e++) {
+        const MapEntity *entity = &map->entities[e];
+        const bool       object = strcmp(entity->base, "objects") == 0;
+        const int        id     = object ? Map__ObjectPreset(map->act, entity->object_row)
+                                         : (strcmp(entity->base, "monsters") == 0 ? Map__MonsterPreset(map->act, entity->id) : -1);
+        if (id < 0) {
+            skipped++;
+            continue;
+        }
+        DS1Object *out = &ds1.objects[ds1.object_count++];
+        out->type      = object ? 2 : 1;
+        out->id        = id;
+        out->x         = (int32_t)entity->x;
+        out->y         = (int32_t)entity->y;
+    }
+    const bool ok = DS1_Save(&ds1, file_path);
+    free(ds1.objects);
+    if (skipped > 0) {
+        LOG_INFO("Map: %d units with no preset number left out of '%s'", skipped, file_path);
+    }
+    return ok;
 }

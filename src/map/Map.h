@@ -124,6 +124,7 @@ Map *Map_LoadDS1(const char *ds1_path);
 Map *Map_CreateBlank(int width, int height, int act, const char *const *dt1_paths, int dt1_count);
 Map *Map_LoadFile(const char *file_path); // .abm
 bool Map_SaveFile(const Map *map, const char *file_path);
+bool Map_SaveDS1(const Map *map, const char *file_path); // the game's format (the units with a preset number)
 
 // Building a map out of presets (the game's randomly built areas): create it empty, stamp DS1 presets onto it,
 // then finish it once to look up all the tiles.

@@ -62,7 +62,7 @@ Legend: ✅ works · 🧪 debug tools only / partial · ❌ not done yet
 | Catalog: classes and skill trees | ✅ | |
 | Catalog: sprites | ✅ | Every DC6, by category, palettes, animation. |
 | Catalog: bestiary | ✅ | Players, NPCs, monsters, bosses, objects, every animation and direction. |
-| [Map Editor](Map-Editor.md) | ✅ | Open game areas, paint tiles, place units, save/load `.abm`. Undo / redo (Ctrl+Z / Ctrl+Y, "Changes: 4 / 11"), a recovery file after every change, auto-save, Back asks about unsaved changes. Can't save back to DS1. |
+| [Map Editor](Map-Editor.md) | ✅ | Open game areas, paint tiles, place units, save/load `.abm`. Undo / redo (Ctrl+Z / Ctrl+Y, "Changes: 4 / 11"), a recovery file after every change, auto-save, Back asks about unsaved changes. Saves the game's DS1 too (version 18). |
 | [Testing Grounds](Testing-Grounds-and-Free-Roam.md) | ✅ | Default arena or your own map; drop monsters; combat toggle; placement preview. |
 | [Free Roam](Testing-Grounds-and-Free-Roam.md) | ✅ | Towns, fixed areas and randomly built wilderness and dungeons; teleport list; combat toggle. |
 | Loading screen | ✅ | Progress bar; the picture plays with the progress. |

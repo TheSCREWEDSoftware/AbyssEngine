@@ -43,7 +43,9 @@ typedef struct DS1 {
     DS1Object *objects;
 } DS1;
 
-DS1 *DS1_Load(const char *path); // NULL if missing or broken
+DS1 *DS1_Load(const char *path);         // from the game's files; NULL if missing or broken
+DS1 *DS1_LoadDiskFile(const char *path); // a .ds1 file on disk
 void DS1_Destroy(DS1 **ds1);
+bool DS1_Save(const DS1 *ds1, const char *path); // a file on disk (version 18)
 
 #endif // ABYSS_DS1_H
