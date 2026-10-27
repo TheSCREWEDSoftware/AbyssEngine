@@ -367,11 +367,15 @@ waiting, gold when done. Each difficulty has its own. What's in:
 | Khalim's Will | his Eye (Spider Cavern), Brain (Flayer Dungeon) and Heart (the Sewers) from their chests and his Flail from the High Council, put together in the cube; it smashes the Compelling Orb in Travincal | |
 | The Golden Bird | a unique monster in Act 3 drops the Jade Figurine; Meshif turns it into the Golden Bird | Alkor: +20 life for good |
 | The Blackened Temple | the three of the High Council (super uniques) dead in one game | |
+| The Blade of the Old Religion | you use the Gidbinn's altar in the Flayer Jungle (it gives the Gidbinn) | Ormus, for the Gidbinn: a magic ring |
+| Rescue on Mount Arreat | the five prison doors in the Frigid Highlands broken (fifteen soldiers freed) | Qual-Kehk: the runes Ral, Ort and Tal, and a hireling free |
+| Rite of Passage | the Ancients (called at the Altar of the Heavens on Arreat Summit) beaten | experience: the rest of the way to your next level and half as much again |
 
 Go back to whoever rewards a quest and their menu has the reward ("Quest: Den of Evil"). Objects the engine's
-version of an area leaves out (the temple's altar, the Staff of Kings' chest, the Compelling Orb) are put somewhere far
-from where you come in. The Blade of the Old Religion, Rescue on Mount Arreat and Rite of Passage say "Not in this
-engine yet": they need scripted events (the Gidbinn's altar, the barbarians' prisons, the Ancients).
+version of an area leaves out (the temple's altar, the Staff of Kings' chest, the Compelling Orb, the prisons) are put
+somewhere far from where you come in. Every one of the game's quests is in, though the scripted parts are simpler than
+the game's (no cut-scenes, the Ancients are called once a game, the prison doors don't need the soldiers to follow
+you).
 
 ### The Horadric Cube
 

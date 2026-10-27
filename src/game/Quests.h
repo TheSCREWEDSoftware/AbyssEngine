@@ -21,13 +21,14 @@ typedef enum QuestReward {
     REWARD_NONE,
     REWARD_SKILL_POINTS,
     REWARD_STAT_POINTS,
-    REWARD_RESIST,    // to all resistances, for good
-    REWARD_LIFE,      // to life, for good
-    REWARD_IMBUE,     // a plain weapon or armor made rare (Charsi)
-    REWARD_SOCKET,    // sockets in a plain weapon or armor (Larzuk's way; here Qual-Kehk)
-    REWARD_RING,      // a magic ring (Akara, for Cain)
-    REWARD_FREE_HIRE, // a hireling for nothing (Kashya)
-    REWARD_TREASURE,  // a treasure class dropped where the boss died (the Countess's runes, Hephasto's gems)
+    REWARD_RESIST,     // to all resistances, for good
+    REWARD_LIFE,       // to life, for good
+    REWARD_IMBUE,      // a plain weapon or armor made rare (Charsi)
+    REWARD_SOCKET,     // sockets in a plain weapon or armor (Larzuk's way; here Qual-Kehk)
+    REWARD_RING,       // a magic ring (Akara, for Cain)
+    REWARD_FREE_HIRE,  // a hireling for nothing (Kashya)
+    REWARD_TREASURE,   // a treasure class dropped where the boss died (the Countess's runes, Hephasto's gems)
+    REWARD_EXPERIENCE, // experience (the Ancients: the rest of the way to your next level, and as much again)
 } QuestReward;
 
 typedef enum QuestState {

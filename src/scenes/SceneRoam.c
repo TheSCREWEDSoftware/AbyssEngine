@@ -471,6 +471,8 @@ typedef struct SceneRoam {
     int      npc_heard_count;
     int      council_killed;    // the Blackened Temple: High Council super uniques killed this game
     int      quest_objects_key; // the map the quests' missing objects were put in (key + 1)
+    bool     ancients_called;   // Rite of Passage: the Ancients are up (this game)
+    int      prisons_broken;    // Rescue on Mount Arreat: prison doors broken (this game)
     int      shop_npc;          // trading with (unit index), -1 = none
     // Trading with another player (SceneRoamTrade.inc)
     int        trade_state;
@@ -892,6 +894,9 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     if (strcmp(base, "objects") == 0 && Objects_Get(Objects_FindToken(id), &unit->object)) {
         unit->is_object = true;
         unit->turn      = 0;
+        if (unit->object.row == 251) {
+            unit->object.selectable = true; // the Gidbinn's altar (its quest uses it)
+        }
         snprintf(unit->object_mode, sizeof(unit->object_mode), "%s", unit->object.idle_mode);
     }
     return true;
@@ -2058,7 +2063,8 @@ static void Roam__Populate(SceneRoam *roam) {
     }
     roam->speech_npc        = -1;
     roam->speech_text[0]    = '\0';
-    roam->quest_objects_key = 0;  // (the quests' missing objects go in again)
+    roam->quest_objects_key = 0; // (the quests' missing objects go in again)
+    roam->ancients_called   = false;
     roam->shop_npc          = -1; // (the store too)
     if (roam->online) {
         // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,

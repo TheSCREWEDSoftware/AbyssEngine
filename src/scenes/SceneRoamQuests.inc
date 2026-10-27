@@ -220,7 +220,18 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
         Roam__ApplyCharacter(roam);
         break;
     }
+    case REWARD_EXPERIENCE: {
+        const uint32_t next = Character_ExperienceFor(c->level + 1);
+        const uint32_t gap  = next > c->experience ? next - c->experience : 0;
+        Roam__GainExperienceAmount(roam, (int)(gap + (gap / 2) + 1));
+        snprintf(text, sizeof(text), "The Ancients' blessing: you gain experience.");
+        break;
+    }
     case REWARD_RING: {
+        if (quest->act == 2 && quest->number == 3 && !Roam__TakeItem(roam, "g33")) {
+            Roam__ShowMessage(roam, "Bring Ormus the Gidbinn.");
+            return false;
+        }
         Item ring = Inventory_NewItem("rin");
         for (int tries = 0; tries < 50 && ring.quality == ITEM_NORMAL; tries++) {
             Affixes_Roll(&ring, c->level + 5);
@@ -233,6 +244,16 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
         break;
     }
     case REWARD_FREE_HIRE: {
+        if (quest->act == 4) {
+            // Rescue on Mount Arreat: the runes Ral, Ort and Tal (Qual-Kehk's thanks), and a free hireling
+            static const char *const runes[3] = {"r08", "r09", "r07"};
+            for (int r = 0; r < 3; r++) {
+                Item rune = Inventory_NewItem(runes[r]);
+                if (!Inventory_Add(c, &rune)) {
+                    Stash_Add(c, &rune);
+                }
+            }
+        }
         HireOffer offer;
         if (Hirelings_Offers(roam->units[roam->npc_menu >= 0 ? roam->npc_menu : 0].id, Roam__Difficulty(roam), c->level,
                              &offer, 1) == 1) {
@@ -544,8 +565,42 @@ static bool Roam__QuestObject(SceneRoam *roam, Unit *unit) {
         return true;
     }
     default:
-        return false;
+        break;
     }
+    if (unit->object.row == 251) { // the Gidbinn's altar (Flayer Jungle): the Gidbinn, for Ormus
+        Roam__DropQuestItem(roam, "g33", unit->x, unit->y);
+        if (Roam__QuestOpen(roam, 2, 3)) {
+            Roam__QuestDone(roam, Roam__QuestIndex(2, 3));
+        }
+        return true;
+    }
+    if (fn == 65) { // the Ancients' altar (Arreat Summit): Talic, Madawc and Korlic come to test you
+        if (!Roam__QuestOpen(roam, 4, 5) || roam->ancients_called) {
+            return true;
+        }
+        roam->ancients_called                   = true;
+        static const char *const ancients[3][2] = {
+            {"ancientbarb1", "Talic the Defender"  },
+            {"ancientbarb2", "Madawc the Guardian" },
+            {"ancientbarb3", "Korlic the Protector"},
+        };
+        for (int a = 0; a < 3; a++) {
+            float x;
+            float y;
+            Roam__ArrivalSpot(roam->map, unit->x + (float)((a - 1) * 4), unit->y + 5.0f, &x, &y);
+            Unit *ancient = Roam__AddUnit(roam, "monsters", ancients[a][0], x, y);
+            if (ancient != NULL) {
+                snprintf(ancient->name, sizeof(ancient->name), "%s", ancients[a][1]);
+                ancient->max_hp     *= 4;
+                ancient->hp          = ancient->max_hp;
+                ancient->experience *= 3;
+                ancient->rank        = RANK_SUPER_UNIQUE;
+            }
+        }
+        Roam__ShowMessage(roam, "The Ancients rise to test your worth.");
+        return true;
+    }
+    return false;
 }
 
 // A monster died: what the quests take from it
@@ -560,6 +615,27 @@ static void Roam__QuestKill(SceneRoam *roam, const Unit *victim) {
     if (council && victim->rank == RANK_SUPER_UNIQUE && Roam__QuestOpen(roam, 2, 5)) {
         if (++roam->council_killed >= 3) {
             Roam__QuestDone(roam, Roam__QuestIndex(2, 5)); // the Blackened Temple: the three of the High Council
+        }
+    }
+    if (strcmp(victim->id, "prisondoor") == 0 && Roam__QuestOpen(roam, 4, 2)) {
+        roam->prisons_broken++;
+        char text[96];
+        snprintf(text, sizeof(text), "You free three of Qual-Kehk's men (%d of 15).", roam->prisons_broken * 3);
+        Roam__ShowMessage(roam, text);
+        if (roam->prisons_broken >= 5) {
+            Roam__QuestDone(roam, Roam__QuestIndex(4, 2));
+        }
+    }
+    if (strncmp(victim->id, "ancientbarb", 11) == 0 && roam->ancients_called && Roam__QuestOpen(roam, 4, 5)) {
+        int left = 0;
+        for (int i = 0; i < roam->unit_count; i++) {
+            left += strncmp(roam->units[i].id, "ancientbarb", 11) == 0 && roam->units[i].hp > 0 &&
+                            Roam__IsAlive(&roam->units[i])
+                        ? 1
+                        : 0;
+        }
+        if (left == 0) {
+            Roam__QuestDone(roam, Roam__QuestIndex(4, 5)); // Rite of Passage: the way into the Worldstone Keep
         }
     }
     if (Roam__Act(roam) == 2 && (victim->rank == RANK_UNIQUE || victim->rank == RANK_SUPER_UNIQUE) &&
@@ -586,9 +662,37 @@ static bool Roam__QuestTalk(SceneRoam *roam, const Unit *unit) {
     return true;
 }
 
+// Rescue on Mount Arreat: the five prisons in the Frigid Highlands (their doors are monsters to break)
+static void Roam__PlacePrisons(SceneRoam *roam) {
+    const MapArea *area = Roam__MapAreaFor(roam, 111);
+    if (area == NULL || !Roam__QuestOpen(roam, 4, 2)) {
+        return;
+    }
+    const float left = (float)area->x0 * MAP_SUBTILES;
+    const float top  = (float)area->y0 * MAP_SUBTILES;
+    const float w    = (float)(area->x1 - area->x0 + 1) * MAP_SUBTILES;
+    const float h    = (float)(area->y1 - area->y0 + 1) * MAP_SUBTILES;
+    for (int p = roam->prisons_broken; p < 5; p++) {
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, left + (w * (0.15f + (0.17f * (float)p))), top + (h * (p % 2 == 0 ? 0.3f : 0.7f)),
+                          &x, &y);
+        Unit *door = Roam__AddUnit(roam, "monsters", "prisondoor", x, y);
+        if (door != NULL) {
+            snprintf(door->name, sizeof(door->name), "Prison Door");
+            door->damage_min  = 0;
+            door->damage_max  = 0;
+            door->speed       = 0.0f;
+            door->experience  = 0;
+            door->treasure[0] = '\0';
+        }
+    }
+}
+
 // The quests' objects that this engine's version of an area doesn't place (the Claw Viper Temple's altar, the Staff of
 // Kings' chest, the Compelling Orb): put far from where you come in, once a map
 static void Roam__PlaceQuestObjects(SceneRoam *roam) {
+    Roam__PlacePrisons(roam);
     static const struct {
         int         level;
         int         fn;
