@@ -3,6 +3,7 @@
 #include "../common/AbyssConfiguration.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
+#include "../common/Mods.h"
 #include "../common/ResourcePaths.h"
 #include "../drawing/Button.h"
 #include "../drawing/Checkbox.h"
@@ -62,11 +63,12 @@ typedef enum OptionsTab {
     TAB_GAMEPLAY,
     TAB_CONTROLS,
     TAB_MULTIPLAYER,
+    TAB_MODS,
     TAB_DEBUG,
     TAB_COUNT
 } OptionsTab;
 
-static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls", "Multiplayer", "Debug"};
+static const char *tab_names[TAB_COUNT] = {"Video", "Audio", "Gameplay", "Controls", "Multiplayer", "Mods", "Debug"};
 
 static const struct {
     const char *name;
@@ -214,6 +216,12 @@ typedef struct SceneOptions {
     uint64_t  last_click_time;
     bool      prev_left;
     Button   *export_button;
+    // Mods tab: the mods in mods/, on or off, in order
+    ListBox  *mods_list;
+    Button   *mod_toggle;
+    Button   *mod_up;
+    Button   *mod_down;
+    char      mod_rows[MODS_MAX][96];
     Button   *presets_button;
     Button   *mouse_button;
     Dropdown *copy_to; // "Copy to": the class to give this profile's controls to
@@ -457,6 +465,18 @@ static void Options__BuildRows(SceneOptions *options) {
 
 static bool Options__IsHeading(const SceneOptions *options, const int row) { return options->rows[row] < 0; }
 
+// The Mods tab's list: each mod's name, version and whether it's on
+static void Options__ListMods(SceneOptions *options) {
+    const char *rows[MODS_MAX];
+    for (int m = 0; m < Mods_Count(); m++) {
+        const Mod *mod = Mods_Get(m);
+        snprintf(options->mod_rows[m], sizeof(options->mod_rows[m]), "%s  %s%s%s", mod->enabled ? "[on] " : "[off]",
+                 mod->name, mod->version[0] != '\0' ? " " : "", mod->version);
+        rows[m] = options->mod_rows[m];
+    }
+    ListBox_SetItems(options->mods_list, rows, Mods_Count());
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Create / free
 
@@ -596,6 +616,14 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->copy_button    = Button_Create(BUTTON_TYPE_CANCEL, "Copy");
     Button_SetPosition(options->export_button, CONTENT_X, CONTROLS_BTN_Y);
     Button_SetPosition(options->presets_button, CONTENT_X + 136, CONTROLS_BTN_Y);
+    options->mods_list  = ListBox_Create(FONTS_FONT16, CONTENT_X, CONTENT_Y + 30, 400, 14, 22);
+    options->mod_toggle = Button_Create(BUTTON_TYPE_MEDIUM, "On / Off");
+    options->mod_up     = Button_Create(BUTTON_TYPE_MEDIUM, "Up");
+    options->mod_down   = Button_Create(BUTTON_TYPE_MEDIUM, "Down");
+    Button_SetPosition(options->mod_toggle, CONTENT_X + 420, CONTENT_Y + 30);
+    Button_SetPosition(options->mod_up, CONTENT_X + 420, CONTENT_Y + 80);
+    Button_SetPosition(options->mod_down, CONTENT_X + 420, CONTENT_Y + 130);
+    Options__ListMods(options);
     Button_SetPosition(options->mouse_button, CONTENT_X + 272, CONTROLS_BTN_Y + 1);
     const char *copy_targets[CONTROL_PROFILES];
     for (int p = 0; p < CONTROL_PROFILES; p++) {
@@ -666,6 +694,10 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
         return;
     }
     SceneOptions *options = *panel;
+    ListBox_Destroy(&options->mods_list);
+    Button_Destroy(&options->mod_toggle);
+    Button_Destroy(&options->mod_up);
+    Button_Destroy(&options->mod_down);
     TabBar_Destroy(&options->tabs);
     Label_Destroy(&options->title_label);
     Label_Destroy(&options->text_label);
@@ -762,6 +794,7 @@ static void Options__Save(SceneOptions *options) {
     AbyssConfiguration_Save();
     // Gameplay and controls
     Settings_Save();
+    Mods_Save();
 }
 
 static void Options__Cancel(SceneOptions *options) {
@@ -772,6 +805,7 @@ static void Options__Cancel(SceneOptions *options) {
         AudioManager_SetVolume(types[v], options->volumes_before[v]);
     }
     Settings_Load(); // gameplay and controls as they were saved
+    Mods_Load();     // the mods as they were (on, off, their order)
     AbyssConfiguration_SetFrameRate(options->frame_before);
     AbyssConfiguration_SetModernPanel(options->panel_before);
     AbyssConfiguration_SetPicture(options->picture_before[0], options->picture_before[1], options->picture_before[2]);
@@ -1507,6 +1541,27 @@ static void OptionsPanel__Update(SceneOptions *options) {
             }
         }
         break;
+    case TAB_MODS: {
+        ListBox_Update(options->mods_list);
+        const int  at  = ListBox_GetSelectedIndex(options->mods_list);
+        const Mod *mod = Mods_Get(at);
+        if (Button_Update(options->mod_toggle) && mod != NULL) {
+            Mods_SetEnabled(at, !mod->enabled);
+            Options__ListMods(options);
+            ListBox_SetSelectedIndex(options->mods_list, at);
+        }
+        if (Button_Update(options->mod_up) && at > 0) {
+            Mods_Move(at, -1);
+            Options__ListMods(options);
+            ListBox_SetSelectedIndex(options->mods_list, at - 1);
+        }
+        if (Button_Update(options->mod_down) && at >= 0 && at + 1 < Mods_Count()) {
+            Mods_Move(at, 1);
+            Options__ListMods(options);
+            ListBox_SetSelectedIndex(options->mods_list, at + 1);
+        }
+        break;
+    }
     case TAB_GAMEPLAY:
     case TAB_CONTROLS:
         if (Dropdown_Update(options->profile_dropdown)) {
@@ -1770,6 +1825,26 @@ void OptionsPanel_Draw(OptionsPanel *options) {
                           CONTENT_Y + (4 * ROW_H) - 6);
         Dropdown_Draw(options->player_color); // last: its list opens over the rest
         break;
+    case TAB_MODS: {
+        Options__Name(options, Mods_Count() > 0 ? "Mods (first first)" : "No mods yet", CONTENT_Y - 10);
+        ListBox_Draw(options->mods_list);
+        Button_Draw(options->mod_toggle);
+        Button_Draw(options->mod_up);
+        Button_Draw(options->mod_down);
+        const Mod *mod = Mods_Get(ListBox_GetSelectedIndex(options->mods_list));
+        char       text[512];
+        if (mod != NULL) {
+            snprintf(text, sizeof(text), "%s%s%s%s%s. %s", mod->name, mod->version[0] != '\0' ? " " : "", mod->version,
+                     mod->author[0] != '\0' ? ", by " : "", mod->author, mod->description);
+            Options__Wrapped(options, text, CONTENT_X + 420, CONTENT_Y + 190, PANEL_X + PANEL_W - 20);
+        }
+        snprintf(text, sizeof(text),
+                 "A mod is a folder in %s with the game's files it changes (in the MPQs' paths, like "
+                 "data/global/excel/weapons.txt) and a mod.ini. A file comes from the first mod on that has it. %s",
+                 Mods_Folder(), Mods_Changed() ? "Restart the game for the changes to take effect." : "");
+        Options__Wrapped(options, text, CONTENT_X, CONTENT_Y + 350, PANEL_X + PANEL_W - 20);
+        break;
+    }
     case TAB_DEBUG: {
         // The developer tools, the same for every class
         Options__Name(options, "Map Editor auto-save", DEBUG_Y);

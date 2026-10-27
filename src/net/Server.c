@@ -1,6 +1,7 @@
 #include "Server.h"
 #include "../common/AbyssConfiguration.h"
 #include "../common/Logging.h"
+#include "../common/Mods.h"
 #include <SDL2/SDL.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -650,8 +651,20 @@ static void Server__Hello(NetServer *server, Peer *peer, NetReader *reader) {
     NetReader_String(reader, peer->client_id, sizeof(peer->client_id));
     NetReader_String(reader, password, sizeof(password));
     peer->color = NetReader_U8(reader) % NET_COLOR_COUNT;
+    char mods[512];
+    NetReader_String(reader, mods, sizeof(mods));
     if (version != NET_PROTOCOL_VERSION) {
         Server__Reject(peer, "The host runs a different version of Abyss Engine.");
+        return;
+    }
+    char ours[512];
+    Mods_Signature(ours, sizeof(ours));
+    if (strcmp(mods, ours) != 0) {
+        // Everyone's game has to read the same tables and maps (or the monsters and items wouldn't match)
+        char why[600];
+        snprintf(why, sizeof(why), ours[0] != '\0' ? "The game is played with these mods: %.250s" : "%s",
+                 ours[0] != '\0' ? ours : "The game is played without mods: turn yours off (Options > Mods).");
+        Server__Reject(peer, why);
         return;
     }
     if (peer->client_id[0] == '\0') {
