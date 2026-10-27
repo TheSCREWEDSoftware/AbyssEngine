@@ -839,6 +839,23 @@ bool Affixes_MakeRare(Item *item, const int item_level) {
 
 static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, int level, int wanted, ItemQuality quality);
 
+// The affix level (the game's rule): which affixes an item of this level can have, from its own level ("qlvl") and
+// its magic level
+static int Affixes__AffixLevel(const ItemBase *base, int ilvl) {
+    const int qlvl = base->level;
+    ilvl           = ilvl > 99 ? 99 : ilvl;
+    ilvl           = qlvl > ilvl ? qlvl : ilvl;
+    int alvl       = 0;
+    if (base->magic_level > 0) {
+        alvl = ilvl + base->magic_level;
+    } else if (ilvl < 99 - (qlvl / 2)) {
+        alvl = ilvl - (qlvl / 2);
+    } else {
+        alvl = (2 * ilvl) - 99;
+    }
+    return alvl > 99 ? 99 : (alvl < 1 ? 1 : alvl);
+}
+
 static bool Affixes__MakeRare(Item *item, const ItemBase *base, const int level) {
     return Affixes__MakeRareCount(item, base, level, Affixes__Roll(3, 6), ITEM_RARE);
 }
@@ -849,8 +866,9 @@ static bool Affixes__MakeCrafted(Item *item, const ItemBase *base, const int lev
     return Affixes__MakeRareCount(item, base, level, Affixes__Roll(1, most), ITEM_CRAFTED);
 }
 
-static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, const int level, const int wanted,
+static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, const int item_level, const int wanted,
                                    const ItemQuality quality) {
+    const int level  = Affixes__AffixLevel(base, item_level);
     const int first  = Affixes__PickRareName(rare_prefixes, rare_prefix_count, base);
     const int second = Affixes__PickRareName(rare_suffixes, rare_suffix_count, base);
     if (first < 0 || second < 0) {
@@ -881,7 +899,8 @@ static bool Affixes__MakeRareCount(Item *item, const ItemBase *base, const int l
     return true;
 }
 
-static bool Affixes__MakeMagic(Item *item, const ItemBase *base, const int level) {
+static bool Affixes__MakeMagic(Item *item, const ItemBase *base, const int item_level) {
+    const int level = Affixes__AffixLevel(base, item_level);
     // A prefix, a suffix, or both (about half each have one, a quarter both, like the game)
     const int  kind   = rand() % 4; // 0 prefix only, 1 suffix only, 2-3 both
     const int  prefix = kind != 1 ? Affixes__Pick(&prefixes, base, level, false, NULL, 0) : -1;

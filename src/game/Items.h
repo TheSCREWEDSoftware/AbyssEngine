@@ -156,6 +156,7 @@ typedef struct ItemBase {
     int  drop_sound_frame;  // ... played at this frame of the flip
     int  level;             // its item level: which drops it can be in (weap3 has the weapons up to level 3)
     bool spawnable;         // can drop
+    int  magic_level;       // "magic lvl": added to the affix level (wands, staves, orbs, circlets)
     char kinds[12][8];      // its type(s) and what they count as (itemtypes.txt Equiv1/2): "axe", "mele", "weap"
     int  kind_count;
     bool slots[EQUIP_COUNT];

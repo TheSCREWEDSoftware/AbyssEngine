@@ -323,14 +323,15 @@ Drops are rolled the way the game words them, from its own tables:
 
 | Quality | Colour | How often | What it has |
 |---|---|---|---|
-| Magic | Blue | 1 in 4 weapons and armor; rings, amulets and jewels always (at least) | A prefix and/or a suffix from `MagicPrefix.txt` / `MagicSuffix.txt` ("Jagged Hand Axe of the Fox") |
-| Rare | Yellow | 1 in 20 | A made-up name (`RarePrefix.txt` + `RareSuffix.txt`: "Grim Bite") and 3 to 6 affixes (only the ones the game allows on rares, never two of the same kind) |
-| Unique | Gold | 1 in 100, when the item has a unique of the monster's level or below | One of `UniqueItems.txt`'s named items ("The Gnasher"), with its own picture and properties |
-| Set | Green | 1 in 50, when the item is a piece of a set of the monster's level or below | A piece of one of the game's sets (`SetItems.txt`: "Civerb's Ward"), with its own properties; wearing more pieces of the set adds the piece's bonuses and the set's (`Sets.txt`: two worn, three, ..., the whole set). The tooltip says how many you wear |
+| Magic | Blue | `itemratio.txt`'s Magic (about 1 in 30 from a plain monster; bosses' treasure classes far more); rings, amulets and jewels always (at least) | A prefix and/or a suffix from `MagicPrefix.txt` / `MagicSuffix.txt` ("Jagged Hand Axe of the Fox") |
+| Rare | Yellow | `itemratio.txt`'s Rare | A made-up name (`RarePrefix.txt` + `RareSuffix.txt`: "Grim Bite") and 3 to 6 affixes (only the ones the game allows on rares, never two of the same kind) |
+| Unique | Gold | `itemratio.txt`'s Unique (a few in a thousand), when the item has a unique of the monster's level or below | One of `UniqueItems.txt`'s named items ("The Gnasher"), with its own picture and properties |
+| Set | Green | `itemratio.txt`'s Set, when the item is a piece of a set of the monster's level or below | A piece of one of the game's sets (`SetItems.txt`: "Civerb's Ward"), with its own properties; wearing more pieces of the set adds the piece's bonuses and the set's (`Sets.txt`: two worn, three, ..., the whole set). The tooltip says how many you wear |
 | Crafted | Orange | Made in the cube (`cubemain.txt`'s crafting recipes: a magic item, a jewel, a rune and a perfect gem) | Named like a rare, the recipe's own magic and 1 to 4 random affixes (more at higher levels) |
 
 Affixes are picked as the game picks them: the item's type must suit them (`itype` / `etype`), their level can't be
-above the item's (the monster's level), and the more common ones (`frequency`) come up more. Only affixes whose every
+above the item's affix level (the game's rule from the monster's level and the item's own, plus its "magic lvl" for
+wands, staves, orbs and circlets), and the more common ones (`frequency`) come up more. Only affixes whose every
 property the engine knows are used, so what an item says is what it does; uniques keep the properties the engine
 knows and leave out the rest.
 
