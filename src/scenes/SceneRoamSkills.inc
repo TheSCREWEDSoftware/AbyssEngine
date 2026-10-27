@@ -595,7 +595,12 @@ static void Roam__UpdateMissiles(SceneRoam *roam, const float seconds, const uin
             continue;
         }
         missile->age += seconds;
-        // An area skill waits, then goes off where it is (repeating for a while: Blizzard's shards)
+        // An area skill waits, then goes off where it is (repeating for a while: Blizzard's shards); a lobbed one
+        // flies to its spot meanwhile
+        if (missile->lobbed && missile->age < missile->delay) {
+            missile->x += missile->dx * missile->info->speed * seconds;
+            missile->y += missile->dy * missile->info->speed * seconds;
+        }
         if (missile->delay > 0.0f) {
             if (missile->age >= missile->delay) {
                 if (missile->ticks > 0.0f) {
@@ -804,11 +809,24 @@ static void Roam__FireMissilesFrom(SceneRoam *roam, const char *name, const Skil
             angle = base + (((float)Roam__Roll(-60, 60)) * 3.14159265f / 180.0f);
         }
         Missile *missile = Roam__SpawnMissile(roam, name, px, py, cosf(angle), sinf(angle), true);
+        if (missile != NULL && missile->info->explosion && missile->info->speed > 0.0f &&
+            missile->info->hit_missile[0] != '\0') {
+            // Lobbed (missiles.txt: it explodes, and what it leaves on the ground is its HitSubMissile1): it flies
+            // to the spot clicked and goes off there
+            const float distance = fmaxf(1.0f, Roam__Distance(px, py, tx, ty));
+            missile->lobbed      = true;
+            missile->delay       = distance / missile->info->speed;
+            missile->ticks       = 0.0f;
+            missile->life        = missile->delay + 0.1f;
+        }
         if (missile != NULL && harmless) {
             missile->harmless = true; // someone else's: they do its damage
             missile->remote   = !missile->info->pierce;
         } else if (missile != NULL) {
             Roam__ArmMissile(roam, missile, s, level);
+            if (missile->lobbed && missile->radius <= 0.0f) {
+                missile->radius = 2.5f; // (its blast where it lands)
+            }
             if (s != NULL && s->do_func == 26) {
                 missile->chain = SkillData_Eval(roam->character, s, level, s->calc[0]); // Chain Lightning's jumps
             }
@@ -922,6 +940,12 @@ static void Roam__AreaSkill(SceneRoam *roam, const SkillRow *s, const int level,
     } else if (strcmp(s->id, "Fist of the Heavens") == 0) {
         spot->delay  = 0.2f;
         spot->radius = 2.5f;
+    } else if (s->do_func == 123) {
+        // Volcano: spews fire round it, a burst a second for a few seconds
+        spot->delay  = 0.4f;
+        spot->ticks  = 0.8f;
+        spot->life   = 5.0f;
+        spot->radius = 3.0f;
     } else {
         spot->delay = fminf(spot->life, 1.0f); // Meteor takes a moment to fall
         spot->life  = spot->delay + 0.1f;
@@ -1355,6 +1379,40 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
         roam->melee_skill = NULL;
         return true;
     }
+    case 77: { // Leap: to the spot (as far as the skill's range), monsters round where you land knocked back
+        const float range = fmaxf(4.0f, (float)SkillData_Eval(roam->character, s, level, s->calc[0]) * 0.75f);
+        float       dx    = tx - player->x;
+        float       dy    = ty - player->y;
+        const float len   = sqrtf((dx * dx) + (dy * dy));
+        if (len > range) {
+            dx = dx / len * range;
+            dy = dy / len * range;
+        }
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, player->x + dx, player->y + dy, &x, &y);
+        if (Roam__Distance(x, y, player->x, player->y) <= range + 3.0f) {
+            player->x = player->target_x = x;
+            player->y = player->target_y = y;
+            roam->moving                 = false;
+            Roam__ClearPath(player);
+        }
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit       *unit = &roam->units[i];
+            const float d    = Roam__Distance(unit->x, unit->y, player->x, player->y);
+            if (!Roam__IsAlive(unit) || unit->is_object || unit->npc || unit->ally || d > 4.0f || d < 0.01f) {
+                continue;
+            }
+            float kx;
+            float ky;
+            Roam__ArrivalSpot(roam->map, unit->x + ((unit->x - player->x) / d * 3.0f),
+                              unit->y + ((unit->y - player->y) / d * 3.0f), &kx, &ky);
+            unit->x = unit->target_x = kx;
+            unit->y = unit->target_y = ky;
+            Roam__ClearPath(unit);
+        }
+        return true;
+    }
     case 76: { // Whirlwind: spinning through to the spot, each monster on the way struck
         const float dx   = tx - player->x;
         const float dy   = ty - player->y;
@@ -1606,7 +1664,8 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         return false; // always on / on while it's chosen: the click walks
     } else if (s->kind == SKILL_KIND_OTHER && s->do_func != 20 && s->do_func != 21 && s->do_func != 33 &&
                s->do_func != 51 && s->do_func != 52 && s->do_func != 67 && s->do_func != 76 && s->do_func != 78 &&
-               s->do_func != 58 && s->do_func != 59 && s->do_func != 62 && s->do_func != 71 && s->do_func != 74) {
+               s->do_func != 58 && s->do_func != 59 && s->do_func != 62 && s->do_func != 71 && s->do_func != 74 &&
+               s->do_func != 77) {
         char text[96];
         snprintf(text, sizeof(text), "%s isn't in the engine yet.", s->id);
         Roam__ShowMessage(roam, text);
@@ -1723,6 +1782,21 @@ static void Roam__SkillPulse(SceneRoam *roam, const uint64_t now) {
                 if (high > 0) {
                     Roam__SkillHit(roam, unit, damage, cold, poison, true, now);
                 }
+            }
+        }
+    }
+    // Blade Shield: the blades cut everything next to you, with your weapon's damage
+    for (int b = 0; b < roam->buff_count; b++) {
+        if (roam->buffs[b].skill->do_func != 54) {
+            continue;
+        }
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *unit = &roam->units[i];
+            if (Roam__IsAlive(unit) && !unit->is_object && !unit->npc && !unit->ally && Roam__IsCombatant(unit) &&
+                Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) < 3.0f) {
+                int damage[ELEMENT_COUNT];
+                Roam__RollPlayerDamage(roam, damage);
+                Roam__SkillHit(roam, unit, damage, 0, 0, true, now);
             }
         }
     }

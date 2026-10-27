@@ -30,11 +30,15 @@ static SkillKind SkillData__Kind(const SkillRow *s) {
     case 28:                    // Meteor, Blizzard, Eruption
     case 80:                    // Fist of the Heavens
     case 55:                    // Corpse Explosion
+    case 123:                   // Volcano: comes up where you point and spews fire for a while
         return SKILL_KIND_AREA;
     case 18: // the armors, Quickness, Fade, Venom
     case 23: // Blaze, Energy Shield
     case 25: // Enchant
     case 29: // Thunder Storm
+    case 77: // Leap: through the air to the spot, knocking back what's round where you land
+        return SKILL_KIND_OTHER;
+    case 54: // Blade Shield: blades round you cut what comes close
     case 124:
     case 116: // the Druid's shapes: Werewolf, Werebear (a buff that changes how you look)
         return SKILL_KIND_BUFF;
@@ -298,9 +302,11 @@ void SkillData_ElementalDamage(const Character *character, const SkillRow *skill
     }
     const int synergy =
         skill->element_synergy[0] != '\0' ? SkillData_Eval(character, skill, level, skill->element_synergy) : 0;
-    // Shifted in 256ths, so poison's tiny per-frame amounts add up over its length
-    long long low    = ((long long)SkillData__ElementRaw(skill, level, false) << skill->hit_shift) * (100 + synergy);
-    long long high   = ((long long)SkillData__ElementRaw(skill, level, true) << skill->hit_shift) * (100 + synergy);
+    // Shifted in 256ths, so poison's tiny per-frame amounts add up over its length. Firestorm's numbers are each
+    // flame's whole damage (the game shows 9-18 at the first level), whatever its HitShift says
+    const int shift  = skill->do_func == 117 ? 8 : skill->hit_shift;
+    long long low    = ((long long)SkillData__ElementRaw(skill, level, false) << shift) * (100 + synergy);
+    long long high   = ((long long)SkillData__ElementRaw(skill, level, true) << shift) * (100 + synergy);
     int       length = skill->element_length;
     for (int b = 0; b < 3; b++) {
         static const int first[3] = {2, 9, 17};

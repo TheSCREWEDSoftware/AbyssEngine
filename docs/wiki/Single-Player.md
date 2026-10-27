@@ -161,7 +161,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 - **Town Portal**: right click a scroll or tome of Town Portal (in the inventory or the belt; text mode: **u** on it)
   outside town and a blue portal opens beside you. Through it you're in the act's town, by its other end; back
   through that one you're where you opened it, and it closes. A new portal closes the old one. In multiplayer games
-  it's yours alone for now (the others don't see it).
+  everyone sees it (named "<you>'s Town Portal") and your party can go through it both ways.
 - **Locked chests** ("Locked Chest") take a key from your inventory (one off the stack; the Assassin opens them
   without). Some chests and other containers are **trapped** (objects.txt's TrapProb), with no sign: opening one
   strikes you with lightning, harder in later areas.
@@ -483,4 +483,4 @@ ten times a second. It still reads the game's MPQs, pictures included, because t
 
 ## Not yet
 
-Some skills (see above); other players seeing your Town Portal. Each game has its own random world seed: the areas keep their layout while you play.
+Some skills (see above). Each game has its own random world seed: the areas keep their layout while you play.

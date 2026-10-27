@@ -355,6 +355,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
     case MSG_CAST_FROM:
     case MSG_TRADE_FROM:
     case MSG_ALLIES_FROM:
+    case MSG_PORTAL_FROM:
         NetClient__QueueGame(type, reader);
         break;
     case MSG_PARTY_INVITED: {

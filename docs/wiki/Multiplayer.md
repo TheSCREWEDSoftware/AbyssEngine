@@ -93,8 +93,12 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
 - **Joining while the others are busy**: a game that's loading an area (which can take seconds) skips monster updates
   until it's caught up, rather than have them pile up until the connection gives up on it.
 
-Each of these changed what games send each other (now protocol version 13: the stash's pages, buffs and curses, mods):
+Each of these changed what games send each other (now protocol version 14: the stash's pages, buffs and curses, mods, Town Portals):
 everyone needs the same build, or the game says the host runs a different version.
+
+**Town Portals**: everyone sees everyone's (named after whose it is), in the field and in town; your party can go
+through yours both ways, and it closes when you come back through it. Someone joining later sees the ones already
+open.
 
 **Mods**: everyone in a game plays with the same [mods](Modding.md), in the same order (Options › Mods). A host turns
 away a player whose mods differ and says which mods the game uses, or that it's played without mods. A dedicated

@@ -261,8 +261,9 @@ typedef struct Unit {
     uint64_t        next_special; // when it can curse or teleport / leap again
     const SkillRow *aura;         // a unique's aura (aura enchanted: Might, Holy Fire, Holy Freeze, Holy Shock)
     int             aura_level;
-    uint64_t        aura_pulse; // its next pulse
-    bool            burrowed;   // under the ground (Submerge / Emerge: frog demons, tentacles)
+    uint64_t        aura_pulse;   // its next pulse
+    bool            burrowed;     // under the ground (Submerge / Emerge: frog demons, tentacles)
+    uint8_t         portal_owner; // a Town Portal's: 0 ours, else the player id whose it is
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -326,6 +327,7 @@ typedef struct Missile {
     float              life;
     bool               ours;     // ours (or an ally's): hurts monsters; otherwise a monster's: hurts us
     bool               harmless; // just to be seen (nova rings, explosions, other players' missiles)
+    bool               lobbed;   // thrown in an arc to its spot (Fire Blast, Shock Web): flies there, then goes off
     bool               remote;   // another player's: stops (bursting) at the first monster it reaches
     int                damage[ELEMENT_COUNT];
     int                cold_frames;   // how long its cold slows
@@ -342,6 +344,18 @@ typedef struct Missile {
     bool               uses_ar;  // can miss (arrows and javelins)
     const SkillRow    *skill;
 } Missile;
+
+// A Town Portal open (SceneRoamPortals.inc)
+typedef struct RoamPortal {
+    bool     open;
+    int      act;   // its town's
+    int      place; // where it was opened (Places; ours), its area and the world it's in
+    int      level_id;
+    uint32_t seed;
+    float    x, y;     // its end there
+    bool     town_set; // its end in town (placed on arriving there)
+    float    town_x, town_y;
+} RoamPortal;
 
 typedef struct RoamBuff {
     const SkillRow *skill;
@@ -416,20 +430,11 @@ typedef struct SceneRoam {
     WorldAtmosphere atmosphere;       // that area's: indoors, rain or snow, music, sounds
     uint64_t        ambient_event_at; // the next of its odd sounds (0: not set yet)
     bool            night_sounds;     // the area's night sounds are on (outdoors at night)
-    struct {
-        bool     open;
-        int      act;   // its town's
-        int      place; // where it was opened (Places), its area and the world it's in
-        int      level_id;
-        uint32_t seed;
-        float    x, y;     // its end there
-        bool     town_set; // its end in town (placed on arriving there)
-        float    town_x, town_y;
-    } portal;             // the Town Portal open
-    int      shrine_code; // the shrine booster on (shrines.txt Code; 0 none) and until when
-    int      shrine_arg0;
-    int      shrine_arg1;
-    uint64_t shrine_until;
+    RoamPortal      portals[NET_MAX_PLAYERS + 1]; // the Town Portals open: ours [0], the other players' by their id
+    int             shrine_code;                  // the shrine booster on (shrines.txt Code; 0 none) and until when
+    int             shrine_arg0;
+    int             shrine_arg1;
+    uint64_t        shrine_until;
 
     // Player
     Unit     player;
@@ -1605,13 +1610,13 @@ static bool Roam__Unlock(SceneRoam *roam) {
     }
     return false;
 }
-static void Roam__TakePortal(SceneRoam *roam);
+static void Roam__TakePortal(SceneRoam *roam, const Unit *unit);
 static void Roam__PlacePortals(SceneRoam *roam);
 static void Roam__UseWell(SceneRoam *roam);
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (unit->object.operate_fn == 15) {
-        Roam__TakePortal(roam); // a Town Portal
+        Roam__TakePortal(roam, unit); // a Town Portal
         return;
     }
     if (unit->object.operate_fn == 32) {
@@ -3400,8 +3405,8 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
 }
 
 static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+static bool     Roam__InMyParty(const NetPlayer *player);
 #include "SceneRoamPortals.inc"
-static void Roam__OpenTownPortal(SceneRoam *roam);
 #include "SceneRoamShrines.inc"
 #include "SceneRoamSkills.inc"
 
@@ -5309,6 +5314,9 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
     case MSG_TRADE_FROM:
         Roam__TradeMessage(roam, reader);
         break;
+    case MSG_PORTAL_FROM:
+        Roam__ReceivePortal(roam, reader);
+        break;
     case MSG_ALLIES_FROM: {
         const int from = NetReader_U8(reader);
         const int map  = NetReader_I32(reader);
@@ -5463,6 +5471,7 @@ static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     const uint64_t real = SDL_GetTicks64();
     if (real - roam->last_sent >= 1000 / NET_STATE_HZ) {
         roam->last_sent = real;
+        Roam__ForgetGonePortals(roam); // (theirs who've left)
         NetClient_SendState(Roam__MapKey(roam), roam->player.x, roam->player.y, roam->player.turn,
                             Roam__Mode(roam, &roam->player));
     }

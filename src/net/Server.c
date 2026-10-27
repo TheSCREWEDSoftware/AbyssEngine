@@ -44,6 +44,8 @@ typedef struct Peer {
     int            party;                       // the party's id (its first member's player id), 0 = none
     char           looks[CHARACTER_LOOKS_TEXT]; // what they wear (Character_LooksToText), sent with MSG_PLAYER
     int            invite_from;                 // the last player who invited them
+    uint8_t        portal[32];                  // their Town Portal (MSG_PORTAL as they sent it), for newcomers
+    int            portal_size;                 // 0: none open
 } Peer;
 
 // An item lying on the ground somewhere in the game
@@ -557,6 +559,15 @@ static void Server__Enter(NetServer *server, Peer *peer) {
         NetWriter_U16(&writer, (uint16_t)server->used_objects[i]);
         Server__Send(peer, MSG_OBJECT_USED, &writer);
     }
+    for (int p = 0; p < MAX_CONNECTIONS; p++) { // the Town Portals open
+        const Peer *other = &server->peers[p];
+        if (other->connection != NULL && other->stage == STAGE_IN_GAME && other != peer && other->portal_size > 0) {
+            NetWriter_Begin(&writer);
+            NetWriter_U8(&writer, (uint8_t)other->id);
+            NetWriter_Bytes(&writer, other->portal, other->portal_size);
+            Server__Send(peer, MSG_PORTAL_FROM, &writer);
+        }
+    }
     for (int i = 0; i < server->item_count; i++) { // what's lying around already
         NetWriter_Begin(&writer);
         Server__WriteItem(&writer, &server->items[i], 0);
@@ -1043,6 +1054,22 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
         if (peer->stage == STAGE_IN_GAME) {
             NetReader peek = *reader;
             Server__PassOn(server, peer, MSG_CAST_FROM, reader, NetReader_I32(&peek), 0);
+        }
+        break;
+    case MSG_PORTAL:
+        if (peer->stage == STAGE_IN_GAME && reader->size <= (int)sizeof(peer->portal)) {
+            // Kept for whoever joins later (closed: forgotten), and passed on to everyone
+            const bool open   = reader->size > 0 && reader->data[0] != 0;
+            peer->portal_size = open ? reader->size : 0;
+            memcpy(peer->portal, reader->data, (size_t)reader->size);
+            NetWriter *writer = malloc(sizeof(NetWriter));
+            if (writer != NULL) {
+                NetWriter_Begin(writer);
+                NetWriter_U8(writer, (uint8_t)peer->id);
+                NetWriter_Bytes(writer, reader->data, reader->size);
+                Server__Broadcast(server, MSG_PORTAL_FROM, writer, peer);
+                free(writer);
+            }
         }
         break;
     case MSG_ALLIES:
