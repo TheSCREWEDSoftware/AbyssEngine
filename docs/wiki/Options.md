@@ -127,7 +127,7 @@ they can be set up already; they're marked "not in the engine yet".
 | Run (hold) | Left Ctrl | ✅ |
 | Stand still | Left Shift, Right Shift | ✅ |
 | Attack | E, Pad Button 1 (Left) | ✅ Modern and Combined |
-| Right skill / drop monster | Mouse Right | ✅ Free Roam (drop); Single Player: no casting yet |
+| Right skill / drop monster | Mouse Right | ✅ Single Player (casts the right skill); Free Roam (drop) |
 | Swap weapons | W | |
 | Skill 1-8 | F1-F8 | |
 | Previous / next skill | (the game: mouse wheel; here the wheel zooms) | |
@@ -137,9 +137,9 @@ they can be set up already; they're marked "not in the engine yet".
 | Show belt | ` | |
 | Character screen | A, C | ✅ Single Player |
 | Inventory | B or I | ✅ Single Player |
-| Party, hireling, quests, message log, help | P, O, Q, M, H | |
+| Party, hireling, quests, message log, help | P, O, Q, M, H | ✅ Party (multiplayer) and quests; not yet the hireling key (click the portrait), message log, help |
 | Clear screen | Space | ✅ closes panels |
-| Show items, show portraits | Left Alt, Z | |
+| Show items, show portraits | Left Alt, Z | ✅ Show items; not yet show portraits |
 | Waypoint / places | V | ✅ |
 | Back to town | Home | ✅ Single Player |
 | Automap | Tab | ✅ |
@@ -147,7 +147,7 @@ they can be set up already; they're marked "not in the engine yet".
 | Zoom in / out | Wheel Up / Down | ✅ |
 | Day / dusk / night | L | ✅ |
 | Screenshot | Print Screen | ✅ saved in `screenshots` next to `abyss.ini` |
-| Chat, clear messages | Enter, N | |
+| Chat, clear messages | Enter, N | ✅ Chat (multiplayer); not yet clear messages |
 | Free Roam: combat, collision view, placement preview, new world | C, B, P, N | ✅ |
 
 **Esc** isn't bindable: it closes what's open, or opens the game menu.
