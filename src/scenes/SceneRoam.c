@@ -271,6 +271,7 @@ typedef struct Unit {
     bool            mana_burn;    // a unique's Mana Burn: its blows take mana as well as life
     char            power[48];    // a unique's powers, shown under its name ("Extra Strong, Cursed")
     uint64_t        next_neutral; // its idle sound's next time (0: not set yet)
+    uint64_t        next_raise;   // a Fallen Shaman's / Greater Mummy's next raising, a Zakarum priest's healing
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -4328,6 +4329,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             Roam__CallPack(roam, unit);
             if (unit->fight_ally == 0 &&
                 (Roam__MonsterFlees(roam, unit, target_x, target_y, now, seconds) ||
+                 Roam__MonsterRaises(roam, unit, now) ||
                  Roam__MonsterSpecial(roam, unit, target_x, target_y, distance, target_id, now) ||
                  Roam__MonsterCasts(roam, unit, target_x, target_y, distance, now) ||
                  Roam__MonsterShoots(roam, unit, target_x, target_y, distance, now, seconds))) {

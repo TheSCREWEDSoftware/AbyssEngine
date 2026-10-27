@@ -98,6 +98,69 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
     return true;
 }
 
+// Raising the dead and healing (MonStats AI): Fallen Shamans bring back the Fallen, Fetish Shamans the fetishes,
+// Greater Mummies the undead near them; Zakarum priests (Cantors) heal the hurt around them. True when it did
+static bool Roam__MonsterRaises(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    const bool shaman = strncmp(unit->id, "fallenshaman", 12) == 0;
+    const bool fetish = strncmp(unit->id, "fetishshaman", 12) == 0;
+    const bool mummy  = strncmp(unit->id, "unraveler", 9) == 0 || strcmp(unit->id, "radament") == 0;
+    const bool priest = strncmp(unit->id, "cantor", 6) == 0;
+    if ((!shaman && !fetish && !mummy && !priest) || now < unit->next_raise || !Roam__RunsMonsters(roam)) {
+        return false;
+    }
+    unit->next_raise = now + 1000; // (looks again in a second)
+    int best         = -1;
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *other = &roam->units[i];
+        if (other == unit || other->is_object || other->npc || other->ally || other->turned || other->boss ||
+            (other->rank != RANK_NORMAL && other->rank != RANK_MINION) ||
+            Roam__Distance(other->x, other->y, unit->x, unit->y) > 9.0f) {
+            continue;
+        }
+        if (priest) { // a hurt one, under half its life
+            if (Roam__IsAlive(other) && other->hp * 2 < other->max_hp && strcmp(other->base, "monsters") == 0) {
+                best = i;
+                break;
+            }
+            continue;
+        }
+        const bool dead = other->state == UNIT_DEAD && !other->vanished && other->max_hp > 0;
+        const bool kinds =
+            shaman   ? (strncmp(other->id, "fallen", 6) == 0 && strncmp(other->id, "fallenshaman", 12) != 0)
+            : fetish ? (strncmp(other->id, "fetish", 6) == 0 && strncmp(other->id, "fetishshaman", 12) != 0)
+                     : other->undead;
+        if (dead && kinds) {
+            best = i;
+            break;
+        }
+    }
+    if (best < 0) {
+        return false;
+    }
+    Unit *other         = &roam->units[best];
+    other->hp           = other->max_hp;
+    other->poison_left  = 0.0f;
+    other->bleed_left   = 0.0f;
+    other->frozen_until = 0;
+    if (!priest) {
+        Roam__SetState(other, UNIT_IDLE, now); // back on its feet
+        other->provoked = true;
+    }
+    char sound[40];
+    snprintf(sound, sizeof(sound), "%s",
+             shaman || fetish ? "fallenshaman_resurrect"
+             : mummy          ? "greatermummy_resurrect_1"
+                              : "overseer_healcast_1");
+    Sounds_PlayAt(sound, SOUND_KIND_SFX, unit->x - roam->player.x, unit->y - roam->player.y);
+    Roam__TurnTowards(&unit->turn, unit->x, unit->y, other->x, other->y);
+    Roam__ClearPath(unit);
+    Roam__SetState(unit, UNIT_ATTACK, now); // (its spell's swing)
+    unit->ranged_swing = true;
+    unit->next_attack  = now + ATTACK_COOLDOWN;
+    unit->next_raise   = now + (priest ? 4000 : 6000) + (uint64_t)Roam__Roll(0, 3000);
+    return true;
+}
+
 // The rarer monsters' ways: a curse on you (Succubus witches, the Summoner, Doom Knights: Amplify Damage, Weaken,
 // Decrepify, or one of them), teleporting next to you (Zakarum priests, imps), leaping at you (Sand Leapers).
 // target_id: 0 our own player, else another player's id (their game is told: MSG_AFFLICT)
