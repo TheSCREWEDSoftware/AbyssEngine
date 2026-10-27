@@ -253,6 +253,9 @@ typedef struct Unit {
     char            shot[32];
     const SkillRow *spell;
     int             spell_level;
+    const SkillRow *spells[4]; // all the missile and nova spells it has (a boss's several), picked between
+    int             spell_levels[4];
+    int             spell_count;
     uint64_t        next_spell;
     const SkillRow *hex;  // a curse it casts on you (Amplify Damage, Weaken, Decrepify); NULL none
     const SkillRow *hex2; // a second one it picks between (the Succubus witches: Amplify Damage, Weaken)
@@ -1085,13 +1088,23 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         if (stats.missile[0] != '\0' && MissileData_Get(stats.missile) != NULL) {
             snprintf(unit->shot, sizeof(unit->shot), "%s", stats.missile);
         }
-        for (int s = 0; s < 2 && unit->spell == NULL; s++) {
+        // Its spells: every missile and nova among its skills (bosses have several: Mephisto's lightning, bolts,
+        // poison nova and frost nova), one picked each time; an aura among them is always on (Duriel's Holy Freeze)
+        for (int s = 0; s < MONSTER_SKILLS; s++) {
             const SkillRow *spell = stats.skill[s][0] != '\0' ? SkillData_Get(stats.skill[s]) : NULL;
             const char     *name = spell != NULL ? (spell->missile[0] != '\0' ? spell->missile : spell->missile_a) : "";
+            const int       level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
             if (spell != NULL && (spell->kind == SKILL_KIND_MISSILE || spell->kind == SKILL_KIND_NOVA) &&
-                MissileData_Get(name) != NULL) {
-                unit->spell       = spell;
-                unit->spell_level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
+                MissileData_Get(name) != NULL && unit->spell_count < 4) {
+                unit->spells[unit->spell_count]         = spell;
+                unit->spell_levels[unit->spell_count++] = level;
+                if (unit->spell == NULL) {
+                    unit->spell       = spell;
+                    unit->spell_level = level;
+                }
+            } else if (spell != NULL && spell->kind == SKILL_KIND_AURA && unit->aura == NULL && stats.boss) {
+                unit->aura       = spell;
+                unit->aura_level = level;
             }
         }
         // Curses it lays on you, and how it gets to you (monstats Skill1..8)
@@ -1110,7 +1123,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
             } else if (strcmp(name, "MonTeleport") == 0 || strcmp(name, "Imp Teleport") == 0 ||
                        strcmp(name, "Teleport 2") == 0) {
                 unit->move_skill = MOVE_SKILL_TELEPORT;
-            } else if (strcmp(name, "Leap") == 0) {
+            } else if (strcmp(name, "Leap") == 0 || strcmp(name, "Charge") == 0) { // (Duriel charges like a leap)
                 unit->move_skill = MOVE_SKILL_LEAP;
             } else if (strcmp(name, "Submerge") == 0) {
                 unit->move_skill = MOVE_SKILL_BURROW;

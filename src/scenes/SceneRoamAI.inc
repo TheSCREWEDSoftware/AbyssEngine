@@ -71,6 +71,12 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
     if (Roam__Roll(1, 100) > 45) {
         return false; // not this time: it fights the usual way
     }
+    if (unit->spell_count > 1) { // (one of its spells this time)
+        const int pick    = Roam__Roll(0, unit->spell_count - 1);
+        unit->spell       = unit->spells[pick];
+        unit->spell_level = unit->spell_levels[pick];
+        spell             = unit->spell;
+    }
     // The spell's own damage at its level (skills.txt EMin/EMax and their per-level growth), else the monster's blow
     int damage[ELEMENT_COUNT] = {0};
     if (spell->element > 0 && spell->element < ELEMENT_COUNT && spell->element_max > 0) {
