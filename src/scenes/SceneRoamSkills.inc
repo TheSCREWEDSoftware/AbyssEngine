@@ -1024,6 +1024,29 @@ static void Roam__Summon(SceneRoam *roam, const SkillRow *s, const int level, co
     unit->attack_rating += SkillData_Eval(roam->character, s, level, s->aura_calc[1]) > 0
                                ? SkillData_Eval(roam->character, s, level, s->aura_calc[1])
                                : roam->character->level * 5;
+    // The Assassin's traps: what each fires (its monster's own skill's missile)
+    static const struct {
+        const char *summon;
+        const char *missile;
+        int         count;
+        bool        scatter;
+    } traps[] = {
+        {"chargeboltsentry",  "sentrychargedbolt",         5, true },
+        {"lightningsentry",   "sentrylightningbolt",       1, false},
+        {"infernosentry",     "inferno sentry 1",          1, false},
+        {"wakeofdestruction", "wake of destruction maker", 1, false},
+        {"deathsentry",       "sentrylightningbolt2",      1, false},
+    };
+    for (size_t t = 0; t < sizeof(traps) / sizeof(traps[0]); t++) {
+        if (strcmp(id, traps[t].summon) == 0) {
+            unit->trap       = s;
+            unit->trap_level = level;
+            unit->trap_shots = s->params[0] > 0 ? s->params[0] : 5;
+            unit->next_shot  = now + 300;
+            unit->ally_until = now + 30000;
+            return;
+        }
+    }
     // Hydras, sentries and the like don't stay
     if (strcmp(s->range, "rng") == 0 || strstr(s->summon, "hydra") != NULL || strstr(s->summon, "sentry") != NULL) {
         unit->ally_until = now + 12000;
@@ -1737,6 +1760,58 @@ static int Roam__AllyTarget(const SceneRoam *roam, const Unit *ally) {
     return best;
 }
 
+// A trap's turn: at the nearest monster in reach, a shot a second, until it's out of them (then it goes)
+static void Roam__UpdateTrap(SceneRoam *roam, Unit *trap, const uint64_t now) {
+    if (Roam__Animate(roam, trap, now)) {
+        Roam__SetState(trap, UNIT_IDLE, now);
+    }
+    if (now < trap->next_shot) {
+        return;
+    }
+    if (trap->trap_shots <= 0) {
+        trap->ally_until = now; // spent
+        return;
+    }
+    int   best = -1;
+    float near = 20.0f;
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *unit = &roam->units[i];
+        const float d    = Roam__Distance(unit->x, unit->y, trap->x, trap->y);
+        if (Roam__IsAlive(unit) && Roam__IsCombatant(unit) && !unit->ally && !unit->npc && d < near) {
+            near = d;
+            best = i;
+        }
+    }
+    if (best < 0) {
+        trap->next_shot = now + 250;
+        return;
+    }
+    static const struct {
+        const char *summon;
+        const char *missile;
+        int         count;
+        bool        scatter;
+    } shots[] = {
+        {"chargeboltsentry",  "sentrychargedbolt",         5, true },
+        {"lightningsentry",   "sentrylightningbolt",       1, false},
+        {"infernosentry",     "inferno sentry 1",          1, false},
+        {"wakeofdestruction", "wake of destruction maker", 1, false},
+        {"deathsentry",       "sentrylightningbolt2",      1, false},
+    };
+    for (size_t t = 0; t < sizeof(shots) / sizeof(shots[0]); t++) {
+        if (strcmp(trap->id, shots[t].summon) == 0) {
+            Roam__FireMissilesFrom(roam, shots[t].missile, trap->trap, trap->trap_level, shots[t].count, 0.0f,
+                                   shots[t].scatter, trap->x, trap->y, roam->units[best].x, roam->units[best].y, false);
+        }
+    }
+    Roam__TurnTowards(&trap->turn, trap->x, trap->y, roam->units[best].x, roam->units[best].y);
+    if (Roam__HasMode(roam, trap, "a1")) {
+        Roam__SetState(trap, UNIT_ATTACK, now);
+    }
+    trap->trap_shots--;
+    trap->next_shot = now + 1000;
+}
+
 // A summoned monster's turn: fight what's near, otherwise keep close to the player
 static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, const uint64_t now) {
     if (ally->turned && now >= ally->ally_until) {
@@ -1745,6 +1820,12 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
         ally->ally_until = 0;
         ally->provoked   = true;
         return;
+    }
+    if (ally->trap != NULL && Roam__IsAlive(ally) && (ally->trap_shots > 0 || now < ally->next_shot)) {
+        Roam__UpdateTrap(roam, ally, now);
+        if (ally->ally_until == 0 || now < ally->ally_until) {
+            return;
+        }
     }
     if (ally->ally_until != 0 && now >= ally->ally_until && Roam__IsAlive(ally)) {
         ally->hp       = 0;
@@ -1845,8 +1926,8 @@ static int Roam__AllyNear(const SceneRoam *roam, const Unit *unit, const float t
     float distance = than;
     for (int i = 0; i < roam->unit_count; i++) {
         const Unit *ally = &roam->units[i];
-        if (!ally->ally || !Roam__IsAlive(ally)) {
-            continue;
+        if (!ally->ally || !Roam__IsAlive(ally) || ally->trap != NULL) {
+            continue; // (traps aren't fought)
         }
         const float d = Roam__Distance(unit->x, unit->y, ally->x, ally->y);
         if (d < distance) {

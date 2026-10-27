@@ -313,8 +313,10 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
     Psychic Hammer, Mind Blast, Revive (a corpse fights for you for three minutes), Attract (the monster turns on its
     own kind until the skill's time is up, then it's a monster again), Bone Prison (eight bone walls round the
     monster), Taunt (it comes for you, its damage down), Double Throw (both throwing weapons at once).
-  Not yet: the Assassin's traps act like summons that fight. Skills that
-  aren't in say so and cost no mana.
+  - The Assassin's traps (Charged Bolt, Lightning, Wake of Fire, Inferno and Death Sentry): stay where they're put,
+    aren't attacked, and fire their missile at the nearest monster once a second until their shots (the skill's) run
+    out.
+  Skills that aren't in say so and cost no mana.
 
 ## Town folk
 

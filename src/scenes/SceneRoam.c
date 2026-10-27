@@ -236,8 +236,13 @@ typedef struct Unit {
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
     bool            turned;      // a monster on our side for a while (Attract): back to a monster then, not gone
-    int             fight_ally;  // a monster: the ally it's after (index + 1), 0 = a player
-    const SkillRow *curse;       // the curse on it (one at a time, like the game)
+    // An Assassin's trap: it doesn't move or get attacked, it fires its missile at monsters so many times, then goes
+    const SkillRow *trap;
+    int             trap_level;
+    int             trap_shots;
+    uint64_t        next_shot;
+    int             fight_ally; // a monster: the ally it's after (index + 1), 0 = a player
+    const SkillRow *curse;      // the curse on it (one at a time, like the game)
     int             curse_level;
     uint64_t        curse_until;
     uint64_t        chill_until; // cold: slowed down until then
