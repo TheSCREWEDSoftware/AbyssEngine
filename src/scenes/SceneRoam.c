@@ -6597,6 +6597,28 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
         SDL_SetRenderDrawColor(sdl_renderer, 200, 20, 20, 255);
         SDL_RenderFillRect(sdl_renderer, &fill);
     }
+    // What it's immune to (resistance 100 or more), and a unique's aura, under its life, like the game
+    if (show_bar && roam->game && !unit->npc && !unit->is_object && roam->log_label != NULL) {
+        static const char *const elements[ELEMENT_COUNT] = {"Physical", "Fire", "Cold", "Lightning", "Poison"};
+        char                     text[128] = "";
+        for (int e = 0; e < ELEMENT_COUNT; e++) {
+            if (unit->resist[e] >= 100) {
+                const size_t used = strlen(text);
+                snprintf(text + used, sizeof(text) - used, "%s%s", used == 0 ? "Immune to " : ", ", elements[e]);
+            }
+        }
+        if (unit->aura != NULL) {
+            const size_t used = strlen(text);
+            snprintf(text + used, sizeof(text) - used, "%s%s Aura", used == 0 ? "" : " - ", unit->aura->id);
+        }
+        if (text[0] != '\0') {
+            Label_SetAlignment(roam->log_label, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+            Label_SetText(roam->log_label, text);
+            Label_SetColor(roam->log_label, 0xFF, 0x80, 0x60, 0xFF);
+            Label_Draw(roam->log_label, sx, top + 6);
+            Label_SetAlignment(roam->log_label, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+        }
+    }
 }
 
 static void Roam__DrawPreview(SceneRoam *roam, const SDL_Rect *view) {
