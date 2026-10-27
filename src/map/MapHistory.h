@@ -23,6 +23,7 @@ void MapHistory_SetCell(MapHistory *history, Map *map, MapLayerKind kind, int la
 void MapHistory_AddEntity(MapHistory *history, Map *map, const char *base, const char *id, const char *name, float x,
                           float y);
 void MapHistory_RemoveEntity(MapHistory *history, Map *map, int index);
+void MapHistory_TurnEntity(MapHistory *history, Map *map, int index, int direction); // 0..15
 
 bool MapHistory_Undo(MapHistory *history, Map *map); // false: nothing to undo
 bool MapHistory_Redo(MapHistory *history, Map *map); // false: nothing to redo

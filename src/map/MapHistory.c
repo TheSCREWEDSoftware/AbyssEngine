@@ -5,7 +5,7 @@
 
 #define MAX_CHANGES 1000 // the oldest are forgotten after this many
 
-typedef enum EditKind { EDIT_CELL, EDIT_ENTITY_ADDED, EDIT_ENTITY_REMOVED } EditKind;
+typedef enum EditKind { EDIT_CELL, EDIT_ENTITY_ADDED, EDIT_ENTITY_REMOVED, EDIT_ENTITY_TURNED } EditKind;
 
 typedef struct MapEdit {
     EditKind kind;
@@ -19,6 +19,9 @@ typedef struct MapEdit {
     // EDIT_ENTITY_*: where it is (was) in the list, and what it is
     int       index;
     MapEntity entity;
+    // EDIT_ENTITY_TURNED: which way it faced, and faces
+    int turn_before;
+    int turn_after;
 } MapEdit;
 
 struct MapHistory {
@@ -176,6 +179,25 @@ void MapHistory_RemoveEntity(MapHistory *history, Map *map, const int index) {
     }
 }
 
+void MapHistory_TurnEntity(MapHistory *history, Map *map, const int index, const int direction) {
+    if (index < 0 || index >= map->entity_count) {
+        return;
+    }
+    const bool alone = !history->open;
+    if (alone) {
+        MapHistory_Begin(history);
+    }
+    MapEdit *edit                  = MapHistory__Push(history);
+    edit->kind                     = EDIT_ENTITY_TURNED;
+    edit->index                    = index;
+    edit->turn_before              = map->entities[index].direction;
+    edit->turn_after               = ((direction % 16) + 16) % 16;
+    map->entities[index].direction = edit->turn_after;
+    if (alone) {
+        MapHistory_End(history);
+    }
+}
+
 // Puts an entity back at its place in the list
 static void MapHistory__InsertEntity(Map *map, const int index, const MapEntity *entity) {
     Map_AddEntity(map, entity->base, entity->id, entity->name, entity->x, entity->y); // grows the list
@@ -202,6 +224,11 @@ bool MapHistory_Undo(MapHistory *history, Map *map) {
         case EDIT_ENTITY_REMOVED:
             MapHistory__InsertEntity(map, edit->index, &edit->entity);
             break;
+        case EDIT_ENTITY_TURNED:
+            if (edit->index < map->entity_count) {
+                map->entities[edit->index].direction = edit->turn_before;
+            }
+            break;
         }
     }
     return true;
@@ -224,6 +251,11 @@ bool MapHistory_Redo(MapHistory *history, Map *map) {
             break;
         case EDIT_ENTITY_REMOVED:
             Map_RemoveEntity(map, edit->index);
+            break;
+        case EDIT_ENTITY_TURNED:
+            if (edit->index < map->entity_count) {
+                map->entities[edit->index].direction = edit->turn_after;
+            }
             break;
         }
     }

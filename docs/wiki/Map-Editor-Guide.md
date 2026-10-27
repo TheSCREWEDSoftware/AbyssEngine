@@ -62,7 +62,8 @@ neighbours. The editor's lists name them:
    - **G** turns the grid off to see how it really looks.
 4. **Shadow tab** (optional): shadows under the walls.
 5. **Units tab**: pick a category (Players, NPCs, Enemies, Bosses, Others: the objects, like chests and torches),
-   then a unit (*zombie1*), and click where it should stand. The right button removes the nearest unit.
+   then a unit (*zombie1*), and click where it should stand. The right button removes the nearest unit; **Q** and
+   **E** turn the one under the mouse to face another way (undo takes it back).
 6. **B**: check that the room can be walked through: red sub-tiles are blocked.
 7. **Play**: walk the room in the Testing Grounds. **Back** comes back to the editor with everything as you left it,
    undo history included.

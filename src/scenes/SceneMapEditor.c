@@ -936,20 +936,26 @@ static void Editor__Paint(SceneMapEditor *editor) {
     editor->dirty = true;
 }
 
+// The placed unit nearest the mouse, within two sub-tiles (-1 none)
+static int Editor__UnitAtMouse(const SceneMapEditor *editor) {
+    const Map *map      = editor->map;
+    int        nearest  = -1;
+    float      distance = 4.0f;
+    for (int e = 0; e < map->entity_count; e++) {
+        const float dx = map->entities[e].x - editor->hover_sx;
+        const float dy = map->entities[e].y - editor->hover_sy;
+        if ((dx * dx) + (dy * dy) < distance) {
+            distance = (dx * dx) + (dy * dy);
+            nearest  = e;
+        }
+    }
+    return nearest;
+}
+
 static void Editor__Erase(SceneMapEditor *editor) {
     Map *map = editor->map;
     if (editor->tool == TOOL_UNITS) {
-        // The nearest unit within two sub-tiles
-        int   nearest  = -1;
-        float distance = 4.0f;
-        for (int e = 0; e < map->entity_count; e++) {
-            const float dx = map->entities[e].x - editor->hover_sx;
-            const float dy = map->entities[e].y - editor->hover_sy;
-            if ((dx * dx) + (dy * dy) < distance) {
-                distance = (dx * dx) + (dy * dy);
-                nearest  = e;
-            }
-        }
+        const int nearest = Editor__UnitAtMouse(editor);
         if (nearest >= 0) {
             MapHistory_RemoveEntity(editor->history, map, nearest);
             editor->dirty = true;
@@ -1049,6 +1055,17 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
     }
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_R)) {
         editor->draw_flags ^= MAP_DRAW_ROOFS;
+    }
+    // Units: Q / E turn the one under the mouse (an eighth of a turn each, the way figures face)
+    const bool turn_left  = InputManager_ConsumeKeyPress(SDL_SCANCODE_Q);
+    const bool turn_right = InputManager_ConsumeKeyPress(SDL_SCANCODE_E);
+    if ((turn_left || turn_right) && editor->tool == TOOL_UNITS) {
+        const int nearest = Editor__UnitAtMouse(editor);
+        if (nearest >= 0) {
+            MapHistory_TurnEntity(editor->history, editor->map, nearest,
+                                  editor->map->entities[nearest].direction + (turn_right ? 2 : -2));
+            editor->dirty = true;
+        }
     }
 
     // What's under the mouse
