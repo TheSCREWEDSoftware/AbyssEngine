@@ -428,7 +428,11 @@ players and items. Under it are your life, mana, gold and where you are, and the
 | `g` | pick up the nearest item |
 | `1`-`4` | drink from the belt; in someone's menu, the choice with that number |
 | `t` | go back to town |
+| `i` | your items: a letter picks one, then `w` wears it, `u` uses it (potions), `x` drops it, `s` sells it (while a store is open); `i` or Esc goes back to the map |
 | `Q` | save and quit |
+
+**Trade** or **Gamble** in someone's menu shows their store as a list: a letter buys that item (a gamble turns out
+what it is), `i` shows your items to sell from, Esc leaves.
 
 It's the same game underneath (saves, levels, items and quests are shared with the normal game); the screen is drawn
 ten times a second. It still reads the game's MPQs, pictures included, because the engine loads them as it goes.

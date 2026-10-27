@@ -104,7 +104,8 @@ static void Roam__OpenShop(SceneRoam *roam, const int npc, const bool gamble) {
     } else {
         stock = Roam__ShopFor(roam, &roam->units[npc]);
     }
-    roam->shop_npc = npc;
+    roam->shop_npc   = npc;
+    roam->open_stock = stock;
     GameInventory_SetStash(roam->inventory_ui, false);
     GameInventory_SetShop(roam->inventory_ui, stock, Roam__Difficulty(roam));
     roam->inventory_panel = true;

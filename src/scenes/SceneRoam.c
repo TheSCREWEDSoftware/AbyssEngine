@@ -468,6 +468,9 @@ typedef struct SceneRoam {
     int          speech_ms;
     int          speech_npc; // unit index, -1 = nobody's talking
     bool         text_mode;  // shown as text (AbyssEngine --text): speech goes to the message line
+    int          text_view;  // text mode: 0 the map, 1 your items, 2 a store
+    int          text_pick;  // your items: the one picked (-1 none)
+    ShopStock   *open_stock; // the store open now (text mode reads it)
     char         npc_heard[32][40];
     int          npc_heard_count;
     int          council_killed;    // the Blackened Temple: High Council super uniques killed this game

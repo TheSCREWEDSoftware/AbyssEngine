@@ -89,6 +89,185 @@ static TextCell Roam__TextUnit(const SceneRoam *roam, const Unit *unit) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Text mode's lists: your items (i), and a store (Trade or Gamble at the town folk)
+
+enum { TEXT_VIEW_MAP, TEXT_VIEW_ITEMS, TEXT_VIEW_STORE };
+
+static void Roam__TextItemName(const Item *item, char *text, const size_t size) {
+    char name1[96];
+    char name2[96];
+    Affixes_Name(item, name1, sizeof(name1), name2, sizeof(name2));
+    static const char *const qualities[ITEM_QUALITY_COUNT] = {"", "magic", "rare", "unique", "runeword", "set"};
+    const char              *quality = item->quality < ITEM_QUALITY_COUNT ? qualities[item->quality] : "";
+    snprintf(text, size, "%s%s%s%s%s%s%s", name1, name2[0] != '\0' ? " - " : "", name2, quality[0] != '\0' ? " (" : "",
+             quality, quality[0] != '\0' ? ")" : "", item->unidentified ? " [unidentified]" : "");
+    if (item->quantity > 1) {
+        const size_t len = strlen(text);
+        snprintf(text + len, size - len, " x%d", item->quantity);
+    }
+}
+
+// The list in the map's place; returns where the output got to
+static int Roam__TextList(SceneRoam *roam, char *out, int at, const int size, const int rows) {
+    const Character *c    = roam->character;
+    int              line = 0;
+    char             name[200];
+#define TEXT_LINE(...)                                                                                                 \
+    do {                                                                                                               \
+        if (line < rows && at < size - 300) {                                                                          \
+            at += snprintf(out + at, (size_t)(size - at), __VA_ARGS__);                                                \
+            at += snprintf(out + at, (size_t)(size - at), "\x1b[0m\x1b[K\n");                                          \
+            line++;                                                                                                    \
+        }                                                                                                              \
+    } while (0)
+    if (roam->text_view == TEXT_VIEW_STORE && roam->open_stock != NULL) {
+        const ShopStock *stock = roam->open_stock;
+        TEXT_LINE("\x1b[93m%s's %s\x1b[0m   (your gold: %d)", stock->vendor, stock->gamble ? "gamble" : "wares",
+                  c->gold);
+        for (int i = 0; i < stock->count && i < 26; i++) {
+            Roam__TextItemName(&stock->items[i].item, name, sizeof(name));
+            TEXT_LINE("  %c) %-60s %d gold", 'a' + i, name, Shop_Price(stock, &stock->items[i].item));
+        }
+    } else {
+        TEXT_LINE("\x1b[93mCarried\x1b[0m");
+        for (int i = 0; i < c->inventory_count && i < 26; i++) {
+            Roam__TextItemName(&c->inventory[i].item, name, sizeof(name));
+            TEXT_LINE("  %s%c) %s", i == roam->text_pick ? "\x1b[7m" : "", 'a' + i, name);
+        }
+        TEXT_LINE("\x1b[93mWorn\x1b[0m");
+        for (int s = 0; s < EQUIP_COUNT; s++) {
+            if (c->equipped[s].code[0] != '\0') {
+                Roam__TextItemName(&c->equipped[s], name, sizeof(name));
+                TEXT_LINE("  %-10s %s", Items_SlotName((EquipSlot)s), name);
+            }
+        }
+    }
+    while (line < rows && at < size - 20) {
+        at += snprintf(out + at, (size_t)(size - at), "\x1b[K\n");
+        line++;
+    }
+#undef TEXT_LINE
+    return at;
+}
+
+// Wear the picked item: the first slot it suits (what was there goes into the carried items)
+static void Roam__TextWear(SceneRoam *roam, const int index) {
+    Character *c = roam->character;
+    if (index < 0 || index >= c->inventory_count) {
+        return;
+    }
+    const Item  item = c->inventory[index].item;
+    const char *why  = "That can't be worn.";
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item before = c->equipped[s];
+        memset(&c->equipped[s], 0, sizeof(Item));
+        if (!Inventory_CanEquip(c, &item, (EquipSlot)s, &why)) {
+            c->equipped[s] = before;
+            continue;
+        }
+        Inventory_Remove(c, index);
+        c->equipped[s] = item;
+        if (before.code[0] != '\0' && !Inventory_Add(c, &before)) {
+            // no room for what came off: it stays on
+            Inventory_Add(c, &item);
+            c->equipped[s] = before;
+            Roam__ShowMessage(roam, "No room for what you have on there.");
+            return;
+        }
+        Roam__ApplyCharacter(roam);
+        Roam__ShowMessage(roam, "Worn.");
+        return;
+    }
+    Roam__ShowMessage(roam, why);
+}
+
+static void Roam__TextItemsKey(SceneRoam *roam, const int key) {
+    Character *c = roam->character;
+    if (key >= 'a' && key <= 'z' && roam->text_pick < 0) {
+        roam->text_pick = key - 'a' < c->inventory_count ? key - 'a' : -1;
+        return;
+    }
+    const int pick = roam->text_pick;
+    if (pick < 0 || pick >= c->inventory_count) {
+        roam->text_pick = -1;
+        return;
+    }
+    const Item item = c->inventory[pick].item;
+    switch (key) {
+    case 'w':
+        Roam__TextWear(roam, pick);
+        break;
+    case 'u': {
+        const ItemBase *base = Items_Find(item.code);
+        if (Items_IsPotion(base)) {
+            Inventory_Remove(c, pick);
+            Roam__Drink(roam, &item);
+        } else {
+            Roam__ShowMessage(roam, "That can't be used here.");
+        }
+        break;
+    }
+    case 'x': {
+        float x;
+        float y;
+        Inventory_Remove(c, pick);
+        Roam__FreeSpot(roam, &x, &y);
+        if (!roam->online) {
+            Roam__AddGroundItem(roam, &item, Roam__MapKey(roam), x, y, true, 0);
+        } else {
+            Roam__PutOnGround(roam, &item, x, y);
+        }
+        break;
+    }
+    case 's':
+        if (roam->open_stock != NULL && GameInventory_ShopOpen(roam->inventory_ui)) {
+            const int price = Shop_SellPrice(roam->open_stock, &item, Roam__Difficulty(roam));
+            Inventory_Remove(c, pick);
+            Shop_Take(roam->open_stock, &item);
+            c->gold += price;
+            char text[64];
+            snprintf(text, sizeof(text), "Sold for %d gold.", price);
+            Roam__ShowMessage(roam, text);
+        } else {
+            Roam__ShowMessage(roam, "Nobody's buying: trade with someone first.");
+        }
+        break;
+    default:
+        break;
+    }
+    roam->text_pick = -1;
+}
+
+static void Roam__TextStoreKey(SceneRoam *roam, const int key) {
+    ShopStock *stock = roam->open_stock;
+    Character *c     = roam->character;
+    if (stock == NULL || key < 'a' || key > 'z' || key - 'a' >= stock->count) {
+        return;
+    }
+    const int index = key - 'a';
+    Item      item  = stock->items[index].item;
+    const int price = Shop_Price(stock, &item);
+    if (price > c->gold) {
+        Roam__ShowMessage(roam, "You don't have enough gold for that.");
+        return;
+    }
+    if (stock->gamble) {
+        Shop_Gamble(&item, c->level);
+    }
+    if (!Inventory_Add(c, &item)) {
+        Roam__ShowMessage(roam, "You don't have room for that.");
+        return;
+    }
+    c->gold -= price;
+    Shop_Remove(stock, index);
+    char name[200];
+    Roam__TextItemName(&item, name, sizeof(name));
+    char text[240];
+    snprintf(text, sizeof(text), "Bought %s.", name);
+    Roam__ShowMessage(roam, text);
+}
+
 int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int rows) {
     SceneRoam *roam    = scene_ref;
     roam->text_mode    = true;
@@ -150,10 +329,16 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
     TEXT_PUT(roam->player.x, roam->player.y, ((TextCell){'@', 97}));
 #undef TEXT_PUT
 
-    // The grid, with a colour code only where it changes
+    // The grid, with a colour code only where it changes (or the list that's open in its place)
     int at    = snprintf(out, (size_t)size, "\x1b[H");
     int color = -1;
-    for (int r = 0; r < map_rows && at < size - (cols * TEXT_CELL_MAX); r++) {
+    if (roam->text_view == TEXT_VIEW_STORE && !GameInventory_ShopOpen(roam->inventory_ui)) {
+        roam->text_view = TEXT_VIEW_MAP; // (walked away from the store)
+    }
+    if (roam->text_view != TEXT_VIEW_MAP) {
+        at = Roam__TextList(roam, out, at, size, map_rows);
+    }
+    for (int r = 0; r < map_rows && at < size - (cols * TEXT_CELL_MAX) && roam->text_view == TEXT_VIEW_MAP; r++) {
         for (int c = 0; c < cols; c++) {
             const TextCell *cell = &grid[(r * cols) + c];
             if (cell->color != color) {
@@ -198,9 +383,13 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
             at += snprintf(out + at, (size_t)(size - at), "\x1b[K\n");
         }
     }
-    at += snprintf(out + at, (size_t)(size - at),
-                   "\x1b[90mwasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  t town  Q quit"
-                   "\x1b[0m\x1b[K\n\x1b[J");
+    const char *keys =
+        roam->text_view == TEXT_VIEW_STORE ? "a-z buy   i your items (s sells the one picked)   Esc leave the store"
+        : roam->text_view == TEXT_VIEW_ITEMS
+            ? (roam->text_pick >= 0 ? "w wear   u use   x drop   s sell   any other key: none"
+                                    : "a-z pick an item   i / Esc back to the map")
+            : "wasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  i items  t town  Q quit";
+    at += snprintf(out + at, (size_t)(size - at), "\x1b[90m%s\x1b[0m\x1b[K\n\x1b[J", keys);
     return at;
 }
 
@@ -208,14 +397,38 @@ void Game_TextKey(void *scene_ref, const int key) {
     SceneRoam     *roam   = scene_ref;
     Unit          *player = &roam->player;
     const uint64_t now    = SDL_GetTicks64();
+    if (key == 'Q' && roam->game) {
+        Roam__ExitGame(roam);
+        return;
+    }
+    if (roam->text_view != TEXT_VIEW_MAP) {
+        if (key == 0x1B || (key == 'i' && roam->text_view == TEXT_VIEW_ITEMS && roam->text_pick < 0)) {
+            if (roam->text_view == TEXT_VIEW_STORE) {
+                Roam__CloseShop(roam);
+            }
+            roam->text_view = TEXT_VIEW_MAP;
+            roam->text_pick = -1;
+        } else if (key == 'i' && roam->text_view == TEXT_VIEW_STORE) {
+            roam->text_view = TEXT_VIEW_ITEMS; // (the store stays open: s sells)
+        } else if (roam->text_view == TEXT_VIEW_ITEMS) {
+            Roam__TextItemsKey(roam, key);
+        } else {
+            Roam__TextStoreKey(roam, key);
+        }
+        return;
+    }
+    if (key == 'i' && roam->game) {
+        roam->text_view = TEXT_VIEW_ITEMS;
+        roam->text_pick = -1;
+        return;
+    }
     if (roam->npc_menu >= 0 && key >= '1' && key <= '9') {
         const int option = key - '1';
         if (option < roam->npc_option_count) {
-            if (roam->npc_options[option] == NPC_TRADE || roam->npc_options[option] == NPC_GAMBLE) {
-                roam->npc_menu = -1;
-                Roam__ShowMessage(roam, "Trading needs the game's screen (not in text mode yet).");
-            } else {
-                Roam__NpcChoose(roam, roam->npc_options[option]);
+            const int choice = roam->npc_options[option];
+            Roam__NpcChoose(roam, choice);
+            if (choice == NPC_TRADE || choice == NPC_GAMBLE) {
+                roam->text_view = TEXT_VIEW_STORE; // the store as a list
             }
         }
         return;
