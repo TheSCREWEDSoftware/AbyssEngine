@@ -1096,6 +1096,7 @@ static bool Roam__RunsMonsters(const SceneRoam *roam);
 static void Roam__ApplyCharacter(SceneRoam *roam);
 static void Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void Roam__QuestKill(SceneRoam *roam, const Unit *victim);
+static void Roam__ItemCasts(SceneRoam *roam, int type, const Unit *target, uint64_t now);
 static bool Roam__QuestObject(SceneRoam *roam, Unit *unit);
 
 // Durability: the weapon wears with blows that land (1 in 25), what's worn with blows taken (1 in 10, a random piece)
@@ -1141,6 +1142,7 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
     }
     if (roam->game && unit == &roam->player) {
         Roam__Wear(roam, false);
+        Roam__ItemCasts(roam, MOD_SKILL_ON_STRUCK, NULL, now);                // ("chance to cast ... when struck")
         int percent = Affixes_Total(roam->character, MOD_DAMAGE_REDUCED_PCT); // "Damage Reduced by N%" (at most 50)
         percent     = percent > 50 ? 50 : percent;
         amount      = amount - (amount * percent / 100);
@@ -2958,6 +2960,7 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
         return; // missed
     }
     Roam__Wear(roam, true);
+    Roam__ItemCasts(roam, MOD_SKILL_ON_HIT, target, now); // ("chance to cast ... on striking")
     // Each kind of damage against the monster's resistance to it (an immune monster takes none of that kind)
     int rolled[ELEMENT_COUNT];
     Roam__RollPlayerDamage(roam, rolled);

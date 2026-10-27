@@ -183,6 +183,16 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
     if (aura != NULL) {
         Roam__AddSkillStats(character, aura, aura_level, true, true);
     }
+    // Auras what you wear gives ("Level 4 Concentration Aura When Equipped")
+    for (int e = 0; e < EQUIP_COUNT; e++) {
+        const Item *item = &character->equipped[e];
+        for (int m = 0; Item_Works(item) && !item->unidentified && m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+            const SkillRow *row = item->mods[m].type == MOD_AURA ? SkillData_ByRow(item->mods[m].param) : NULL;
+            if (row != NULL && row->kind == SKILL_KIND_AURA) {
+                Roam__AddSkillStats(character, row, item->mods[m].value, true, true);
+            }
+        }
+    }
     // Your hireling's aura (the act 2 mercenaries: Prayer, Defiance, Blessed Aim, Might, ...), while they're alive and
     // near you
     const int hireling = character->hireling > 0 && !character->hireling_dead ? Roam__FindHireling(roam) : -1;
@@ -1152,6 +1162,68 @@ static void Roam__ShowCast(SceneRoam *roam, const int row, const int level, cons
             spot->speed = 0.0f;
             spot->delay = fminf(spot->life, 1.0f);
             spot->life  = spot->delay + 0.1f;
+        }
+    }
+}
+
+// Skills what you wear casts by itself (free, at the item's level): "chance to cast ... on striking" (type
+// MOD_SKILL_ON_HIT, at the monster struck) and "... when struck" (MOD_SKILL_ON_STRUCK, at the nearest monster)
+static void Roam__ItemCasts(SceneRoam *roam, const int type, const Unit *target, const uint64_t now) {
+    if (!roam->game || roam->character == NULL) {
+        return;
+    }
+    if (target == NULL) {
+        float best = 12.0f;
+        for (int i = 0; i < roam->unit_count; i++) {
+            const Unit *unit = &roam->units[i];
+            const float d    = Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y);
+            if (Roam__IsAlive(unit) && !unit->is_object && !unit->npc && !unit->ally && Roam__IsCombatant(unit) &&
+                d < best) {
+                best   = d;
+                target = unit;
+            }
+        }
+    }
+    if (target == NULL) {
+        return;
+    }
+    for (int e = 0; e < EQUIP_COUNT; e++) {
+        const Item *item = &roam->character->equipped[e];
+        if (!Item_Works(item) || item->unidentified) {
+            continue;
+        }
+        for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+            const ItemMod *mod = &item->mods[m];
+            if (mod->type != type || Roam__Roll(1, 100) > mod->value / 100) {
+                continue;
+            }
+            const SkillRow *s     = SkillData_ByRow(mod->param);
+            const int       level = mod->value % 100 > 0 ? mod->value % 100 : 1;
+            if (s == NULL) {
+                continue;
+            }
+            switch (s->kind) {
+            case SKILL_KIND_MISSILE: {
+                int         count   = 1;
+                float       spread  = 0.0f;
+                bool        scatter = false;
+                const char *name    = Roam__MissileVolley(roam, s, level, &count, &spread, &scatter);
+                Roam__FireMissilesFrom(roam, name, s, level, count, spread, scatter, roam->player.x, roam->player.y,
+                                       target->x, target->y, false);
+                break;
+            }
+            case SKILL_KIND_NOVA:
+                Roam__Nova(roam, s, level, now);
+                break;
+            case SKILL_KIND_AREA:
+                Roam__AreaSkill(roam, s, level, target->x, target->y, now);
+                break;
+            case SKILL_KIND_CURSE:
+                Roam__Curse(roam, s, level, target->x, target->y, now);
+                break;
+            default:
+                break; // (the rest aren't cast this way yet)
+            }
         }
     }
 }

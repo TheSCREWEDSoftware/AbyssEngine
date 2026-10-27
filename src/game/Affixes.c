@@ -90,6 +90,9 @@ static const ModInfo mod_info[MOD_TYPE_COUNT] = {
     [MOD_DAMAGE_TO_MANA]       = {"dmg-to-mana",  "%d%% Damage Taken Goes To Mana"                  },
     [MOD_DAMAGE_REDUCED_PCT]   = {"red-dmg%",     "Damage Reduced by %d%%"                          },
     [MOD_LIGHTNING_THORNS]     = {"light-thorns", "Attacker Takes Lightning Damage of %d"           },
+    [MOD_SKILL_ON_HIT]         = {"hit-skill",    "Chance to cast a skill on striking"              },
+    [MOD_SKILL_ON_STRUCK]      = {"gethit-skill", "Chance to cast a skill when struck"              },
+    [MOD_AURA]                 = {"aura",         "An aura when equipped"                           },
 };
 
 // Properties.txt codes we know: one property, or a pair (minimum to the first, maximum to the second). IGNORE: fine
@@ -182,6 +185,9 @@ static const struct {
     {"dmg-to-mana",  MOD_DAMAGE_TO_MANA,       -1               },
     {"red-dmg%",     MOD_DAMAGE_REDUCED_PCT,   -1               },
     {"light-thorns", MOD_LIGHTNING_THORNS,     -1               },
+    {"hit-skill",    MOD_SKILL_ON_HIT,         -1               },
+    {"gethit-skill", MOD_SKILL_ON_STRUCK,      -1               },
+    {"aura",         MOD_AURA,                 -1               },
 };
 
 static const char *const class_codes[CHARACTER_CLASS_COUNT] = {"ama", "sor", "nec", "pal", "bar", "dru", "ass"};
@@ -200,7 +206,10 @@ static int Affixes__Param(const char *code, const int type, const char *param) {
     case MOD_TAB_SKILLS:
         return atoi(param);
     case MOD_SKILL:
-    case MOD_OSKILL: {
+    case MOD_OSKILL:
+    case MOD_SKILL_ON_HIT:
+    case MOD_SKILL_ON_STRUCK:
+    case MOD_AURA: {
         if (param[0] >= '0' && param[0] <= '9') {
             return atoi(param);
         }
@@ -615,13 +624,21 @@ static void Affixes__ApplyOne(Item *item, const char *code, const char *param, c
         return;
     }
     int value = Affixes__Roll(min, max);
-    if (type == MOD_DEFENSE_PER_LEVEL || type == MOD_MAX_DAMAGE_PER_LEVEL) {
+    if (type == MOD_SKILL_ON_HIT || type == MOD_SKILL_ON_STRUCK) {
+        const int chance = min < 0 ? 0 : (min > 100 ? 100 : min);
+        const int level  = max < 1 ? 1 : (max > 99 ? 99 : max);
+        value            = (chance * 100) + level; // (both kept in the one number)
+    } else if (type == MOD_AURA) {
+        value = Affixes__Roll(min, max) > 0 ? Affixes__Roll(min, max) : 1; // its level
+    } else if (type == MOD_DEFENSE_PER_LEVEL || type == MOD_MAX_DAMAGE_PER_LEVEL) {
         value = atoi(param); // eighths a level
     } else if (type == MOD_IGNORE_DEFENSE || type == MOD_INDESTRUCTIBLE) {
         value = 1;
     }
     const int which = Affixes__Param(code, type, param);
-    if ((type == MOD_SKILL || type == MOD_OSKILL) && which < 0) {
+    if ((type == MOD_SKILL || type == MOD_OSKILL || type == MOD_SKILL_ON_HIT || type == MOD_SKILL_ON_STRUCK ||
+         type == MOD_AURA) &&
+        which < 0) {
         return; // a skill we don't know
     }
     if (type == MOD_DURABILITY && item->max_durability > 0) {
@@ -1020,6 +1037,20 @@ void Affixes_ModText(const ItemMod *mod, char *text, const size_t size) {
         } else {
             snprintf(text, size, "+%d to %s", mod->value, name);
         }
+        return;
+    }
+    case MOD_SKILL_ON_HIT:
+    case MOD_SKILL_ON_STRUCK: {
+        char name[64];
+        Affixes__SkillName(mod->param, name, sizeof(name));
+        snprintf(text, size, "%d%% Chance to cast level %d %s %s", mod->value / 100, mod->value % 100, name,
+                 mod->type == MOD_SKILL_ON_HIT ? "on striking" : "when struck");
+        return;
+    }
+    case MOD_AURA: {
+        char name[64];
+        Affixes__SkillName(mod->param, name, sizeof(name));
+        snprintf(text, size, "Level %d %s Aura When Equipped", mod->value, name);
         return;
     }
     case MOD_DEFENSE_PER_LEVEL:

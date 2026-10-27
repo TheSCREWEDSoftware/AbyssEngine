@@ -91,6 +91,9 @@ typedef enum ItemModType {
     MOD_DAMAGE_TO_MANA,     // percent of damage taken coming back as mana
     MOD_DAMAGE_REDUCED_PCT, // each blow taken does this much less (percent, at most 50)
     MOD_LIGHTNING_THORNS,   // attacker takes this much lightning damage (melee)
+    MOD_SKILL_ON_HIT,       // param: the skill; value: chance x 100 + its level (cast free on a blow that lands)
+    MOD_SKILL_ON_STRUCK,    // ... when you're struck
+    MOD_AURA,               // param: the aura; value: its level (on while it's worn)
     MOD_TYPE_COUNT
 } ItemModType;
 
