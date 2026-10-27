@@ -20,7 +20,8 @@
 #define INVENTORY_PAGE      (INVENTORY_W * INVENTORY_H)
 #define INVENTORY_MAX       1024 // items on all the pages together (a page holds 40 at most)
 #define INVENTORY_PAGES_MAX 255
-#define STASH_W             6 // the stash in town (the expansion's big one), in cells
+#define CHARACTER_QUESTS    32 // (Quests.h QUEST_COUNT fits)
+#define STASH_W             6  // the stash in town (the expansion's big one), in cells
 #define STASH_H             8
 #define STASH_MAX           (STASH_W * STASH_H)
 #define BELT_MAX            16 // four rows of four, with the biggest belt
@@ -148,15 +149,19 @@ typedef struct Character {
     int           stash_gold;
     // A hireling (hireling.txt): row + 1 (0 = none), their level, name (string table number), life; dead: to be
     // brought back by whoever sells them, for gold
-    int  hireling;
-    int  hireling_level;
-    int  hireling_name;
-    int  hireling_life;
-    bool hireling_dead;
+    int      hireling;
+    int      hireling_level;
+    int      hireling_name;
+    int      hireling_life;
+    bool     hireling_dead;
     uint32_t hireling_experience;
-    uint64_t      waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
-    int           bonus[BONUS_COUNT]; // from skills right now (not saved)
-    char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
+    // Quests: each one's QuestState (Quests.h) for Normal, Nightmare and Hell, and what rewards added for good
+    uint8_t  quests[3][CHARACTER_QUESTS];
+    int      quest_resist;
+    int      quest_life;
+    uint64_t waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
+    int      bonus[BONUS_COUNT]; // from skills right now (not saved)
+    char     realm[40];          // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
 
 // How a character looks (what they wear and hold): the weapon class their animations use and each layer's picture

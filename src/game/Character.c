@@ -225,7 +225,7 @@ int Character_MaxLife(const Character *character) {
     const int        life = Character__Grow(info->stats[STAT_VITALITY] + info->hp_add,
                                             Character_Stat(character, STAT_VITALITY) - info->stats[STAT_VITALITY],
                                             info->life_per_vitality, character->level - 1, info->life_per_level) +
-                     Affixes_Total(character, MOD_LIFE);
+                     Affixes_Total(character, MOD_LIFE) + character->quest_life;
     return life + (life * character->bonus[BONUS_LIFE_PCT] / 100); // Battle Orders
 }
 
@@ -335,7 +335,7 @@ int Character_Resist(const Character *character, const Element element, const in
         return 0;
     }
     const int resist = Affixes_Total(character, mods[element]) + Affixes_Total(character, MOD_RES_ALL) - penalty +
-                       character->bonus[BONUS_RESIST_FIRE + element - 1];
+                       character->bonus[BONUS_RESIST_FIRE + element - 1] + character->quest_resist;
     const int most = RESIST_MAX + character->bonus[BONUS_MAX_RESIST_FIRE + element - 1];
     return resist < most ? resist : most;
 }
@@ -527,6 +527,22 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
     }
     // The stash: "item stash x y <code> <defense> <quantity>"
     Character__Print(file, "stashgold %d\n", character->stash_gold);
+    // Quests: "quests <difficulty> <a digit each>", and what their rewards added
+    for (int d = 0; d < 3; d++) {
+        char states[CHARACTER_QUESTS + 1];
+        bool any = false;
+        for (int q = 0; q < CHARACTER_QUESTS; q++) {
+            states[q] = (char)('0' + (character->quests[d][q] % 10));
+            any       = any || character->quests[d][q] != 0;
+        }
+        states[CHARACTER_QUESTS] = '\0';
+        if (any) {
+            Character__Print(file, "quests %d %s\n", d, states);
+        }
+    }
+    if (character->quest_resist != 0 || character->quest_life != 0) {
+        Character__Print(file, "questbonus %d %d\n", character->quest_resist, character->quest_life);
+    }
     if (character->hireling > 0) {
         Character__Print(file, "hireling %d %d %d %d %d %u\n", character->hireling - 1, character->hireling_level,
                          character->hireling_name, character->hireling_life, character->hireling_dead ? 1 : 0,
@@ -677,6 +693,16 @@ bool Character_ReadText(const char *text, Character *character) {
             character->gold = number > 0 ? number : 0;
         } else if (strcmp(key, "stashgold") == 0) {
             character->stash_gold = number > 0 ? number : 0;
+        } else if (strcmp(key, "quests") == 0) {
+            int  d = -1;
+            char states[CHARACTER_QUESTS + 1];
+            if (sscanf(value, "%d %32s", &d, states) == 2 && d >= 0 && d < 3) {
+                for (int q = 0; q < CHARACTER_QUESTS && states[q] >= '0' && states[q] <= '9'; q++) {
+                    character->quests[d][q] = (uint8_t)(states[q] - '0');
+                }
+            }
+        } else if (strcmp(key, "questbonus") == 0) {
+            sscanf(value, "%d %d", &character->quest_resist, &character->quest_life);
         } else if (strcmp(key, "hireling") == 0) {
             int      row = -1, level = 1, name = 0, life = 0, dead = 0;
             unsigned exp = 0;

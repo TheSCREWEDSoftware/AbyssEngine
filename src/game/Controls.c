@@ -112,7 +112,11 @@ static const ActionInfo actions[ACTION_COUNT] = {
                             {"P"},
                             "Multiplayer: who's in the game; invite them to your party, accept, or leave"                                                              },
     [ACTION_HIRELING]       = {"hireling",       "Hireling screen",    GROUP_SCREENS,  G, false, {"O"},          NULL                                                     },
-    [ACTION_QUESTS]         = {"quests",         "Quest log",          GROUP_SCREENS,  G, false, {"Q"},          NULL                                                     },
+    [ACTION_QUESTS]         = {"quests",
+                            "Quest log",                            GROUP_SCREENS,
+                            G,                                                         true,
+                            {"Q"},
+                            "Single Player: the quests, act by act, and where each one stands"                                                                         },
     [ACTION_MESSAGE_LOG]    = {"message_log",    "Message log",        GROUP_SCREENS,  G, false, {"M"},          NULL                                                     },
     [ACTION_HELP]           = {"help",           "Help",               GROUP_SCREENS,  G, false, {"H"},          NULL                                                     },
     [ACTION_CLEAR_SCREEN] =

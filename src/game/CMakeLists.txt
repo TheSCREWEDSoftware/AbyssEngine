@@ -4,6 +4,7 @@ target_sources(${PROJECT_NAME}
         Inventory.c Inventory.h
         Items.c Items.h
         Hirelings.c Hirelings.h
+        Quests.c Quests.h
         Shop.c Shop.h
         Sockets.c Sockets.h
         Treasure.c Treasure.h

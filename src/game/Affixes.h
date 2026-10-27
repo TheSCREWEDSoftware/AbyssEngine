@@ -29,7 +29,10 @@ int Affixes_ItemTotal(const Item *item, ItemModType type); // on one item
 // Adds a Properties.txt property (one we know) to the item's magic: rolled between min and max, or a pair (fire
 // damage: min to the minimum, max to the maximum). Gems in sockets and runewords use it.
 void Affixes_AddProperty(Item *item, const char *code, int min, int max);
-void Affixes_AddMod(Item *item, int type, int value); // (adds up with the same kind already on it)
+void Affixes_AddMod(Item *item, int type, int value);
+bool Affixes_MakeRare(
+    Item *item,
+    int   item_level); // a plain item made rare (Charsi's imbue) // (adds up with the same kind already on it)
 
 // Sets: how many pieces of a set are worn, and the set an item belongs to (NULL: not a set item)
 int         Affixes_SetPiecesWorn(const Character *character, const char *set);

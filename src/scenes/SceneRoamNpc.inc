@@ -7,7 +7,10 @@
 #define NPC_MENU_Y   140
 #define NPC_RANGE    4.0f // how close you stay to them while trading
 
-enum { NPC_TRADE, NPC_TRAVEL, NPC_HIRE, NPC_REVIVE, NPC_CANCEL, NPC_OFFER = 10 }; // NPC_OFFER + n: hire offer n
+// NPC_OFFER + n: hire offer n; NPC_QUEST + n: quest n's reward
+enum { NPC_TRADE, NPC_TRAVEL, NPC_HIRE, NPC_REVIVE, NPC_CANCEL, NPC_OFFER = 10, NPC_QUEST = 40 };
+static int  Roam__QuestsFor(SceneRoam *roam, const Unit *unit, int *out, int most);
+static void Roam__ClaimQuest(SceneRoam *roam, int index);
 
 static const struct {
     const char *npc;
@@ -96,6 +99,11 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
         roam->player.poison_left = 0.0f;
     }
     roam->npc_option_count = 0;
+    int       waiting[3];
+    const int rewards = Roam__QuestsFor(roam, unit, waiting, 3);
+    for (int r = 0; r < rewards; r++) {
+        roam->npc_options[roam->npc_option_count++] = NPC_QUEST + waiting[r];
+    }
     if (Shop_Vendor(unit->id) != NULL) {
         roam->npc_options[roam->npc_option_count++] = NPC_TRADE;
     }
@@ -114,9 +122,13 @@ static void Roam__TalkTo(SceneRoam *roam, const int npc) {
 }
 
 static bool Roam__CanTalk(const Unit *unit) {
+    bool gives = false;
+    for (int q = 0; q < QUEST_COUNT && !gives; q++) {
+        gives = Quests_Get(q)->giver != NULL && strcasecmp(Quests_Get(q)->giver, unit->id) == 0;
+    }
     return unit->npc && !unit->is_object &&
            (Shop_Vendor(unit->id) != NULL || Roam__NpcTravel(unit) >= 0 || Roam__NpcHeals(unit) ||
-            Hirelings_Sells(unit->id));
+            Hirelings_Sells(unit->id) || gives);
 }
 
 static SDL_Rect Roam__NpcMenuRow(const int row) {
@@ -127,6 +139,10 @@ static SDL_Rect Roam__NpcMenuRow(const int row) {
 
 static const char *Roam__NpcOptionText(SceneRoam *roam, const int option) {
     static char text[160];
+    if (option >= NPC_QUEST) {
+        snprintf(text, sizeof(text), "Quest: %s (your reward)", Quests_Name(option - NPC_QUEST));
+        return text;
+    }
     if (option >= NPC_OFFER && option - NPC_OFFER < roam->hire_offer_count) {
         const HireOffer *offer = &roam->hire_offers[option - NPC_OFFER];
         char             name[48];
@@ -153,7 +169,12 @@ static const char *Roam__NpcOptionText(SceneRoam *roam, const int option) {
 }
 
 static void Roam__NpcChoose(SceneRoam *roam, const int option) {
-    const int npc  = roam->npc_menu;
+    const int npc = roam->npc_menu;
+    if (option >= NPC_QUEST) {
+        Roam__ClaimQuest(roam, option - NPC_QUEST); // (the free hireling looks at who's being talked to)
+        roam->npc_menu = -1;
+        return;
+    }
     roam->npc_menu = -1;
     if (option >= NPC_OFFER && option - NPC_OFFER < roam->hire_offer_count) {
         Roam__Hire(roam, &roam->hire_offers[option - NPC_OFFER]);

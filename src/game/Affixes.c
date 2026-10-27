@@ -623,6 +623,18 @@ static bool Affixes__MakeSet(Item *item, const ItemBase *base, const int level) 
     return false;
 }
 
+static bool Affixes__MakeRare(Item *item, const ItemBase *base, int level);
+
+bool Affixes_MakeRare(Item *item, const int item_level) {
+    Affixes__Load();
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL) {
+        return false;
+    }
+    item->mod_count = 0;
+    return Affixes__MakeRare(item, base, item_level > 0 ? item_level : 1);
+}
+
 static bool Affixes__MakeRare(Item *item, const ItemBase *base, const int level) {
     const int first  = Affixes__PickRareName(rare_prefixes, rare_prefix_count, base);
     const int second = Affixes__PickRareName(rare_suffixes, rare_suffix_count, base);

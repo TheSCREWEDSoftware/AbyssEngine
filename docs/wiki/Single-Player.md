@@ -281,7 +281,33 @@ Click one of the town folk and you walk up to them; a box lists what they do:
   and is saved with you. Hiring another sends the first away. When they die, **Resurrect** brings them back for
   gold.
 
+## Quests
+
+**Q** (or the mini panel's Quest Log) shows the quests on the left, act by act, with the game's names and steps from
+its string tables ("Den of Evil: Kill all the monsters in the Den"): white while open, green when there's a reward
+waiting, gold when done. Each difficulty has its own. What's in:
+
+| Quest | Done when | Reward |
+|---|---|---|
+| Den of Evil | every monster in the Den is dead (it counts down the last five) | Akara: a skill point |
+| Sisters' Burial Grounds | Blood Raven is dead (she's put in the Burial Grounds) | Kashya: a hireling, free |
+| Tools of the Trade | the Smith in the Barracks is dead | Charsi: imbues the plain weapon in your hand (or your body armor) with rare magic |
+| The Search for Cain | you reach Tristram | Akara: a magic ring |
+| The Forgotten Tower | the Countess is dead (put in the Tower Cellar's last level) | her own treasure class (runes) |
+| Sisters to the Slaughter, Radament's Lair (Atma: a skill point), Arcane Sanctuary, The Summoner, The Seven Tombs | the boss is dead, or you're there | |
+| Lam Esen's Tome | you reach the Ruined Temple | Alkor: 5 stat points |
+| The Guardian, Terror's End, Hell's Forge | Mephisto, Diablo, Hephasto dead (Diablo and Hephasto are put in their areas) | |
+| The Fallen Angel | Izual is dead (put in the Plains of Despair) | Tyrael: 2 skill points |
+| Siege on Harrogath | Shenk the Overseer is dead (put in the Bloody Foothills) | Qual-Kehk: sockets in the plain weapon in your hand (or your body armor) |
+| Prison of Ice | you reach the Frozen River | Malah: +10 to all resistances for good |
+| Betrayal of Harrogath, Eve of Destruction | Nihlathak, Baal dead | |
+
+Go back to whoever rewards a quest and their menu has the reward ("Quest: Den of Evil"). The rest (the Horadric Staff,
+Tainted Sun, Khalim's Will, the Blade of the Old Religion, the Golden Bird, the Blackened Temple, Rescue on Mount
+Arreat, Rite of Passage) say "Not in this engine yet": they need quest items, the Horadric Cube and scripted events.
+In multiplayer games bosses that aren't in the presets aren't put there yet.
+
 ## Not yet
 
-Some skills (see above), quests, NPC dialogue, difficulty levels. Each game has its own random world seed: the
+Some skills (see above), the quests above that need quest items, NPC dialogue, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.

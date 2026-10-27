@@ -22,6 +22,7 @@
 #include "../game/Hirelings.h"
 #include "../game/Inventory.h"
 #include "../game/MissileData.h"
+#include "../game/Quests.h"
 #include "../game/Settings.h"
 #include "../game/Shop.h"
 #include "../game/SkillData.h"
@@ -444,6 +445,10 @@ typedef struct SceneRoam {
     int        shop_count;
     int        shop_npc; // trading with (unit index), -1 = none
     HireOffer  hire_offers[HIRE_OFFERS];
+    uint64_t   quest_check_at; // quests (SceneRoamQuests.inc): when to look again
+    int        quest_left;     // monsters left in the area being cleared
+    bool       quest_panel;    // the quest log (Q)
+    int        quest_act;      // its tab
     int        hire_offer_count;
     char       hire_seller[40];
     int        question;        // what it asks: ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER
@@ -3488,6 +3493,11 @@ static void Roam__CtrlPress(SceneRoam *roam, const int button) {
     case 4: // automap
         roam->show_automap = !roam->show_automap;
         break;
+    case 6: // quest log
+        roam->quest_panel = !roam->quest_panel;
+        roam->quest_act   = roam->character != NULL ? roam->character->act : 0;
+        roam->char_panel  = false;
+        break;
     case 7: // game menu
         roam->menu_open = true;
         break;
@@ -3870,6 +3880,7 @@ static void Roam__DrawPartyPanel(SceneRoam *roam, const int mouse_x, const int m
 }
 
 #include "SceneRoamNpc.inc"
+#include "SceneRoamQuests.inc"
 
 static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int mouse_y) {
     Character *character = roam->character;
@@ -3891,6 +3902,24 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     Roam__KeepShop(roam);
     Roam__KeepHireling(roam);
+    Roam__CheckQuests(roam, SDL_GetTicks64());
+    if (Controls_Pressed(ACTION_QUESTS)) {
+        roam->quest_panel = !roam->quest_panel;
+        if (roam->quest_panel) {
+            roam->quest_act  = roam->character->act;
+            roam->char_panel = false;
+            Roam__CloseShop(roam);
+            GameInventory_SetStash(roam->inventory_ui, false);
+        }
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+    }
+    if (roam->char_panel) {
+        roam->quest_panel = false;
+    }
+    if (Roam__UpdateQuestPanel(roam, mouse_x, mouse_y, left_click)) {
+        roam->ui_owns_press = left_down || right_down;
+        return true;
+    }
     if (Controls_Pressed(ACTION_INVENTORY)) {
         roam->inventory_panel = !roam->inventory_panel;
         roam->skill_panel     = false;
@@ -4076,7 +4105,8 @@ static bool Roam__UpdateGame(SceneRoam *roam, const uint64_t now, const int mous
 
     if (InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
         if (roam->panel != PANEL_NONE || roam->char_panel || roam->inventory_panel || roam->skill_panel ||
-            roam->party_panel || GameSkills_PickerOpen(roam->skills_ui)) {
+            roam->party_panel || roam->quest_panel || GameSkills_PickerOpen(roam->skills_ui)) {
+            roam->quest_panel     = false;
             roam->panel           = PANEL_NONE;
             roam->party_panel     = false;
             roam->char_panel      = false;
@@ -5652,6 +5682,7 @@ static void Roam__Render(SceneRoam *roam) {
     if (roam->party_panel) {
         Roam__DrawPartyPanel(roam, ui_mouse_x, ui_mouse_y);
     }
+    Roam__DrawQuestPanel(roam);
     Roam__DrawNpcMenu(roam, ui_mouse_x, ui_mouse_y);
     Roam__DrawHireling(roam);
     if (now < roam->caption_until) {
