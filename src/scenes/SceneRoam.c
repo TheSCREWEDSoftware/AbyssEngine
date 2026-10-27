@@ -4163,6 +4163,40 @@ static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const
 
 #include "SceneRoamAI.inc"
 
+// Monsters walking don't stand inside each other: two closer than a body's width step a little apart (onto ground they
+// can stand on), so a pack goes round each other to get at you instead of piling into one spot
+static void Roam__SpreadOut(SceneRoam *roam) {
+    const float room = 0.9f; // sub-tiles between two
+    for (int i = 0; i < roam->unit_count; i++) {
+        Unit *a = &roam->units[i];
+        if (a->is_object || a->npc || !Roam__IsAlive(a) || a->state != UNIT_WALK || a->vanished || a->burrowed ||
+            a->trap != NULL || Roam__NearestPlayer(roam, a->x, a->y) > ACTIVE_DISTANCE) {
+            continue;
+        }
+        for (int j = 0; j < roam->unit_count; j++) {
+            const Unit *b = &roam->units[j];
+            if (j == i || b->is_object || !Roam__IsAlive(b) || b->vanished || b->burrowed || b->trap != NULL) {
+                continue;
+            }
+            const float dx = a->x - b->x;
+            const float dy = a->y - b->y;
+            const float d2 = (dx * dx) + (dy * dy);
+            if (d2 >= room * room) {
+                continue;
+            }
+            const float d  = sqrtf(d2);
+            const float ux = d > 0.001f ? dx / d : (float)((i % 3) - 1) * 0.7f; // (on the same spot: any way)
+            const float uy = d > 0.001f ? dy / d : (float)(((i / 3) % 3) - 1) * 0.7f;
+            const float nx = a->x + (ux * (room - d) * 0.5f);
+            const float ny = a->y + (uy * (room - d) * 0.5f);
+            if (Map_IsWalkable(roam->map, (int)nx, (int)ny)) {
+                a->x = nx;
+                a->y = ny;
+            }
+        }
+    }
+}
+
 static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit          *player       = &roam->player;
     const bool     player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
@@ -4394,6 +4428,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             }
             Roam__SetState(unit, moved ? UNIT_WALK : UNIT_IDLE, now);
         }
+    }
+    if (runs) {
+        Roam__SpreadOut(roam);
     }
 }
 
