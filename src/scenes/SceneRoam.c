@@ -4791,7 +4791,9 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         const float y     = NetReader_F32(reader);
         const float tx    = NetReader_F32(reader);
         const float ty    = NetReader_F32(reader);
-        if (map == key && !reader->failed) {
+        if (map == key && !reader->failed && row == 0xFFFE) {
+            Roam__ShowShot(roam, reader, x, y, tx, ty); // a monster's or a hireling's missile
+        } else if (map == key && !reader->failed) {
             Roam__ShowCast(roam, row, level, x, y, tx, ty);
         }
         break;

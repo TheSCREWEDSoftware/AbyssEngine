@@ -76,7 +76,8 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   around stays for the others until the game ends.
 - **Skills**: the others see your missiles, novas and the spots your area skills land on, coming from where you
   stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
-  Buffs, auras, curses and summons aren't shown to the others yet.
+  Monsters' arrows and spells are seen by everyone on the map and hurt whoever they reach; hirelings' arrows are seen
+  too. Buffs, auras, curses and summons (and the Druid's shapes) aren't shown to the others yet.
 - **What you wear** shows on your figure for the others, and changes as you change it.
 - **The same map for everyone**: an act's joined-up outdoors is always built from its town outwards, whichever area
   you come into it by, so everyone in it sees everyone else where they are (it used to depend on where you came in,

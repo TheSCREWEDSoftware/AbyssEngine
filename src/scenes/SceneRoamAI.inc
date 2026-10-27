@@ -8,12 +8,15 @@
 #define AI_PACK_RANGE  8.0f
 
 // A monster's missile at a spot: it hurts us (not the monsters)
+static void Roam__SendShot(SceneRoam *roam, const char *name, float x, float y, float tx, float ty, const int *damage);
+
 static void Roam__MonsterMissile(SceneRoam *roam, const Unit *unit, const char *name, const float tx, const float ty,
                                  const int *damage) {
     Missile *missile = Roam__SpawnMissile(roam, name, unit->x, unit->y, tx - unit->x, ty - unit->y, false);
     if (missile != NULL) {
         memcpy(missile->damage, damage, sizeof(missile->damage));
     }
+    Roam__SendShot(roam, name, unit->x, unit->y, tx, ty, damage); // (the others see it, and it can hit them)
 }
 
 // Its blow's damage (and element), for a missile

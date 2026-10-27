@@ -1052,6 +1052,57 @@ static void Roam__SendCast(SceneRoam *roam, const SkillRow *s, const float tx, c
     free(writer);
 }
 
+// Multiplayer: a missile fired in our game by a monster we run (damage: it hurts whoever it reaches in their game too)
+// or by our hireling (damage NULL: only to see, the hit is done already). MSG_CAST with the skill 0xFFFE.
+static void Roam__SendShot(SceneRoam *roam, const char *name, const float x, const float y, const float tx,
+                           const float ty, const int *damage) {
+    if (!roam->online || name == NULL) {
+        return;
+    }
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (writer == NULL) {
+        return;
+    }
+    NetWriter_Begin(writer);
+    NetWriter_I32(writer, Roam__MapKey(roam));
+    NetWriter_U16(writer, 0xFFFE);
+    NetWriter_U8(writer, 0);
+    NetWriter_F32(writer, x);
+    NetWriter_F32(writer, y);
+    NetWriter_F32(writer, tx);
+    NetWriter_F32(writer, ty);
+    NetWriter_String(writer, name);
+    NetWriter_U8(writer, damage != NULL ? 1 : 0);
+    for (int e = 0; e < ELEMENT_COUNT && damage != NULL; e++) {
+        NetWriter_I32(writer, damage[e]);
+    }
+    NetClient_Send(MSG_CAST, writer);
+    free(writer);
+}
+
+// ... and seen: a monster's missile hurts us here when it reaches us; a hireling's is only to see
+static void Roam__ShowShot(SceneRoam *roam, NetReader *reader, const float x, const float y, const float tx,
+                           const float ty) {
+    char name[40];
+    NetReader_String(reader, name, sizeof(name));
+    const bool hurts                 = NetReader_U8(reader) != 0;
+    int        damage[ELEMENT_COUNT] = {0};
+    for (int e = 0; e < ELEMENT_COUNT && hurts; e++) {
+        damage[e] = NetReader_I32(reader);
+    }
+    if (reader->failed || MissileData_Get(name) == NULL) {
+        return;
+    }
+    if (!hurts) {
+        Roam__FireMissilesFrom(roam, name, NULL, 0, 1, 0.0f, false, x, y, tx, ty, true);
+        return;
+    }
+    Missile *missile = Roam__SpawnMissile(roam, name, x, y, tx - x, ty - y, false);
+    if (missile != NULL) {
+        memcpy(missile->damage, damage, sizeof(missile->damage));
+    }
+}
+
 // Another player's skill, to be seen: its missiles, ring or landing spot, doing nothing
 static void Roam__ShowCast(SceneRoam *roam, const int row, const int level, const float x, const float y,
                            const float tx, const float ty) {
@@ -1526,6 +1577,7 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
                                                                        : "arrow";
                     Roam__FireMissilesFrom(roam, shot, NULL, 0, 1, 0.0f, false, ally->x, ally->y, victim->x, victim->y,
                                            true);
+                    Roam__SendShot(roam, shot, ally->x, ally->y, victim->x, victim->y, NULL);
                 }
                 if (Roam__Roll(1, 100) <=
                     Character_HitChance(ally->attack_rating, ally->level, victim->defense, victim->level)) {
