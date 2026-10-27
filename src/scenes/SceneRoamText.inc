@@ -98,7 +98,8 @@ static void Roam__TextItemName(const Item *item, char *text, const size_t size) 
     char name1[96];
     char name2[96];
     Affixes_Name(item, name1, sizeof(name1), name2, sizeof(name2));
-    static const char *const qualities[ITEM_QUALITY_COUNT] = {"", "magic", "rare", "unique", "runeword", "set", "crafted"};
+    static const char *const qualities[ITEM_QUALITY_COUNT] = {"",         "magic", "rare",   "unique",
+                                                              "runeword", "set",   "crafted"};
     const char              *quality = item->quality < ITEM_QUALITY_COUNT ? qualities[item->quality] : "";
     snprintf(text, size, "%s%s%s%s%s%s%s", name1, name2[0] != '\0' ? " - " : "", name2, quality[0] != '\0' ? " (" : "",
              quality, quality[0] != '\0' ? ")" : "", item->unidentified ? " [unidentified]" : "");
@@ -140,6 +141,20 @@ static int Roam__TextList(SceneRoam *roam, char *out, int at, const int size, co
             if (c->equipped[s].code[0] != '\0') {
                 Roam__TextItemName(&c->equipped[s], name, sizeof(name));
                 TEXT_LINE("  %-10s %s", Items_SlotName((EquipSlot)s), name);
+            }
+        }
+        if (roam->in_town) {
+            TEXT_LINE("\x1b[93mStash\x1b[0m   (gold: %d)", c->stash_gold);
+            for (int i = 0; i < c->stash_count && i < 26; i++) {
+                Roam__TextItemName(&c->stash[i].item, name, sizeof(name));
+                TEXT_LINE("  %c) %s", 'A' + i, name);
+            }
+        }
+        if (Cube_Carried(c)) {
+            TEXT_LINE("\x1b[93mHoradric Cube\x1b[0m");
+            for (int i = 0; i < c->cube_count && i < 9; i++) {
+                Roam__TextItemName(&c->cube[i].item, name, sizeof(name));
+                TEXT_LINE("  %c) %s", '1' + i, name);
             }
         }
     }
@@ -188,6 +203,30 @@ static void Roam__TextItemsKey(SceneRoam *roam, const int key) {
         roam->text_pick = key - 'a' < c->inventory_count ? key - 'a' : -1;
         return;
     }
+    if (roam->text_pick < 0 && key >= 'A' && key <= 'Z' && roam->in_town && key - 'A' < c->stash_count) {
+        const Item item = c->stash[key - 'A'].item; // out of the stash
+        if (Inventory_Add(c, &item)) {
+            Stash_Remove(c, key - 'A');
+        } else {
+            Roam__ShowMessage(roam, "No room in your inventory.");
+        }
+        return;
+    }
+    if (roam->text_pick < 0 && key >= '1' && key <= '9' && Cube_Carried(c) && key - '1' < c->cube_count) {
+        const Item item = c->cube[key - '1'].item; // out of the cube
+        if (Inventory_Add(c, &item)) {
+            Cube_Remove(c, key - '1');
+        } else {
+            Roam__ShowMessage(roam, "No room in your inventory.");
+        }
+        return;
+    }
+    if (roam->text_pick < 0 && key == '0' && Cube_Carried(c)) {
+        char message[128];
+        Cube_Transmute(c, message, sizeof(message));
+        Roam__ShowMessage(roam, message);
+        return;
+    }
     const int pick = roam->text_pick;
     if (pick < 0 || pick >= c->inventory_count) {
         roam->text_pick = -1;
@@ -220,6 +259,24 @@ static void Roam__TextItemsKey(SceneRoam *roam, const int key) {
         }
         break;
     }
+    case 'p':
+        if (!roam->in_town) {
+            Roam__ShowMessage(roam, "The stash is in town.");
+        } else if (Stash_Add(c, &item)) {
+            Inventory_Remove(c, pick);
+        } else {
+            Roam__ShowMessage(roam, "No room in the stash.");
+        }
+        break;
+    case 'b':
+        if (!Cube_Carried(c) || strcmp(item.code, CUBE_ITEM) == 0) {
+            Roam__ShowMessage(roam, "You need the Horadric Cube for that.");
+        } else if (Cube_Add(c, &item)) {
+            Inventory_Remove(c, pick);
+        } else {
+            Roam__ShowMessage(roam, "No room in the cube.");
+        }
+        break;
     case 's':
         if (roam->open_stock != NULL && GameInventory_ShopOpen(roam->inventory_ui)) {
             const int price = Shop_SellPrice(roam->open_stock, &item, Roam__Difficulty(roam));
@@ -386,8 +443,9 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
     const char *keys =
         roam->text_view == TEXT_VIEW_STORE ? "a-z buy   i your items (s sells the one picked)   Esc leave the store"
         : roam->text_view == TEXT_VIEW_ITEMS
-            ? (roam->text_pick >= 0 ? "w wear   u use   x drop   s sell   any other key: none"
-                                    : "a-z pick an item   i / Esc back to the map")
+            ? (roam->text_pick >= 0
+                   ? "w wear   u use   x drop   s sell   p to the stash   b to the cube   other: none"
+                   : "a-z pick   A-Z take from the stash   1-9 from the cube   0 transmute   i/Esc back")
             : "wasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  i items  t town  Q quit";
     at += snprintf(out + at, (size_t)(size - at), "\x1b[90m%s\x1b[0m\x1b[K\n\x1b[J", keys);
     return at;
