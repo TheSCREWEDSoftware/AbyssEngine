@@ -133,6 +133,13 @@ Figure *Figure_Create(const FigureSpec *spec, const char *mode, const char *pale
             memcpy(&path[len - 3], "dc6", 3);
             dcc = DCC_LoadFromDC6(path);
         }
+        if (dcc == NULL && strcmp(spec->armor[layer->component], "lit") != 0 && layer->component != COF_COMPONENT_RH &&
+            layer->component != COF_COMPONENT_LH && layer->component != COF_COMPONENT_SH) {
+            // Armor the class has no picture of for this animation: the light one rather than nothing
+            snprintf(path, sizeof(path), "/data/global/%s/%s/%s/%s%slit%s%s.dcc", spec->base, spec->token, component,
+                     spec->token, component, mode, layer->weapon_class);
+            dcc = DCC_Load(path);
+        }
         if (dcc == NULL) {
             continue;
         }

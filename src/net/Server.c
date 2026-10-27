@@ -39,8 +39,9 @@ typedef struct Peer {
     float          y;
     int            turn;
     char           mode[4];
-    int            party;       // the party's id (its first member's player id), 0 = none
-    int            invite_from; // the last player who invited them
+    int            party;                       // the party's id (its first member's player id), 0 = none
+    char           looks[CHARACTER_LOOKS_TEXT]; // what they wear (Character_LooksToText), sent with MSG_PLAYER
+    int            invite_from;                 // the last player who invited them
 } Peer;
 
 // An item lying on the ground somewhere in the game
@@ -430,6 +431,7 @@ static void Server__WritePlayer(NetWriter *writer, const Peer *peer) {
     NetWriter_U8(writer, peer->character.hardcore ? 1 : 0);
     NetWriter_U8(writer, (uint8_t)peer->color);
     NetWriter_U8(writer, (uint8_t)peer->party);
+    NetWriter_String(writer, peer->looks);
 }
 
 static int Server__InGame(const NetServer *server) {
@@ -507,6 +509,9 @@ static void Server__Result(Peer *peer, const char *error, const Character *chara
 static void Server__Enter(NetServer *server, Peer *peer) {
     peer->stage     = STAGE_IN_GAME;
     peer->has_state = false;
+    CharacterLooks looks;
+    Character_Looks(&peer->character, &looks);
+    Character_LooksToText(&looks, peer->looks, sizeof(peer->looks));
     // The next id nobody in the game has (ids are 1..255; a game holds at most 255)
     for (int tries = 0; tries < 255; tries++) {
         const int id           = server->next_player_id;
@@ -1040,6 +1045,17 @@ static void Server__Handle(NetServer *server, Peer *peer, const uint8_t type, Ne
     case MSG_PARTY_LEAVE:
         if (peer->stage == STAGE_IN_GAME) {
             Server__LeaveParty(server, peer);
+        }
+        break;
+    case MSG_LOOKS:
+        if (peer->stage == STAGE_IN_GAME) {
+            char           text[CHARACTER_LOOKS_TEXT];
+            CharacterLooks looks;
+            NetReader_String(reader, text, sizeof(text));
+            if (!reader->failed && Character_LooksFromText(text, &looks) && strcmp(text, peer->looks) != 0) {
+                snprintf(peer->looks, sizeof(peer->looks), "%s", text);
+                Server__TellPlayer(server, peer);
+            }
         }
         break;
     case MSG_HIT_PLAYER:

@@ -17,10 +17,12 @@
 typedef struct GameInventory GameInventory;
 
 typedef enum GameInventoryEvent {
-    INVENTORY_EVENT_NONE      = 0,
-    INVENTORY_EVENT_EQUIPMENT = 1, // what's worn changed: damage and defense need working out again
-    INVENTORY_EVENT_DRINK     = 2, // a potion was drunk: *drunk says which
-    INVENTORY_EVENT_MOVED     = 4, // something was picked up or put down (a sound)
+    INVENTORY_EVENT_NONE       = 0,
+    INVENTORY_EVENT_EQUIPMENT  = 1,  // what's worn changed: damage and defense need working out again
+    INVENTORY_EVENT_DRINK      = 2,  // a potion was drunk: *drunk says which
+    INVENTORY_EVENT_MOVED      = 4,  // something was picked up or put down (a sound)
+    INVENTORY_EVENT_GOLD       = 8,  // the gold button: drop some, or at the stash put some in (the scene asks)
+    INVENTORY_EVENT_STASH_GOLD = 16, // the stash's gold button: take some out
 } GameInventoryEvent;
 
 GameInventory *GameInventory_Create(void);
@@ -48,6 +50,10 @@ void GameInventory_Hold(GameInventory *inventory, const Item *item); // picked u
 // For saving: copy (of the character) as if the carried item were put back; the cursor keeps it
 void GameInventory_PutBackCopy(const GameInventory *inventory, Character *copy);
 bool GameInventory_IsOver(int mouse_x, int mouse_y); // over the panel
+// The stash panel on the left (in town, at the stash): its grid and gold, items carried between it and the inventory
+void GameInventory_SetStash(GameInventory *inventory, bool open);
+bool GameInventory_StashOpen(const GameInventory *inventory);
+bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y);
 bool GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse_y);
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);

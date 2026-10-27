@@ -274,3 +274,78 @@ void Inventory_GiveStartingItems(Character *character) {
     }
     DataTable_Destroy(&stats);
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The stash
+
+int Stash_ItemAt(const Character *character, const int cell_x, const int cell_y) {
+    for (int i = 0; i < character->stash_count; i++) {
+        const InventoryItem *it   = &character->stash[i];
+        const ItemBase      *base = Items_Find(it->item.code);
+        const int            w    = base != NULL ? base->width : 1;
+        const int            h    = base != NULL ? base->height : 1;
+        if (cell_x >= it->x && cell_x < it->x + w && cell_y >= it->y && cell_y < it->y + h) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int Stash_Covered(const Character *character, const ItemBase *base, const int x, const int y) {
+    if (base == NULL || x < 0 || y < 0 || x + base->width > STASH_W || y + base->height > STASH_H) {
+        return -2;
+    }
+    int found = -1;
+    for (int cy = y; cy < y + base->height; cy++) {
+        for (int cx = x; cx < x + base->width; cx++) {
+            const int at = Stash_ItemAt(character, cx, cy);
+            if (at >= 0 && found >= 0 && at != found) {
+                return -2;
+            }
+            found = at >= 0 ? at : found;
+        }
+    }
+    return found;
+}
+
+bool Stash_Place(Character *character, const Item *item, const int x, const int y) {
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL || character->stash_count >= STASH_MAX || Stash_Covered(character, base, x, y) != -1) {
+        return false;
+    }
+    InventoryItem *slot = &character->stash[character->stash_count++];
+    slot->item          = *item;
+    slot->x             = x;
+    slot->y             = y;
+    slot->page          = 0;
+    return true;
+}
+
+bool Stash_Add(Character *character, const Item *item) {
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL) {
+        return false;
+    }
+    for (int x = 0; x + base->width <= STASH_W; x++) {
+        for (int y = 0; y + base->height <= STASH_H; y++) {
+            if (Stash_Place(character, item, x, y)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void Stash_Remove(Character *character, const int index) {
+    if (index < 0 || index >= character->stash_count) {
+        return;
+    }
+    for (int i = index; i + 1 < character->stash_count; i++) {
+        character->stash[i] = character->stash[i + 1];
+    }
+    character->stash_count--;
+}
+
+int Stash_GoldLimit(const Character *character) { return ((character->level / 10) + 1) * 50000; }
+
+int Inventory_GoldLimit(const Character *character) { return character->level * 10000; }

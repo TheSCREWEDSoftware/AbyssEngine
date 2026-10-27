@@ -71,7 +71,9 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   stand. The damage is yours to do: their copies only show it (a bolt bursts on the first monster it reaches).
   Buffs, auras, curses and summons aren't shown to the others yet.
 
-Each of these changed what games send each other (now protocol version 6: skills cast are sent to the others in the area):
+- **What you wear** shows on your figure for the others, and changes as you change it.
+
+Each of these changed what games send each other (now protocol version 7: what players wear, and items' sockets):
 everyone needs the same build, or the game says the host runs a different version.
 
 ## Game settings

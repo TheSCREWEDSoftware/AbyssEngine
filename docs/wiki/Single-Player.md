@@ -150,8 +150,32 @@ page number under the grid, next to the gold). The square button in its bottom c
 - **The belt**: potions and scrolls, its bottom row on the control panel (keys **1**-**4**). Without a belt it holds
   one row of four; a sash two rows, a belt three, a girdle four. **Shift + click** a potion in the grid to put it in
   the belt; **right click** a potion (in the grid or the belt) to drink it.
-- Everything is saved with the character: the grid, what's worn, the belt and gold. Characters saved before items
-  existed get their class's starting items. An item on the mouse is saved where it came from.
+- **On the character**: what you wear shows on your figure, the game's way: the helm, light, medium or heavy body
+  armor (its arms, legs and shoulders from `armor.txt`), the weapon in hand (with that weapon's animations: a bow is
+  held in the left hand, a staff in both, a Barbarian's sword in both when there's no shield) and the shield. The
+  character list shows it too, and in multiplayer the others see it.
+- **Gold**: the coin button left of your gold drops some at your feet (it asks how much: type it, or the mouse wheel and
+  the arrow keys; Enter drops it).
+- Everything is saved with the character: the grid, what's worn, the belt, the stash and gold. Characters saved
+  before items existed get their class's starting items. An item on the mouse is saved where it came from.
+
+### The stash
+
+Each town's stash (the chest by the camp) opens your stash on the left, with the inventory on the right: a 6 x 8 grid
+(the expansion's big stash, `inventory.txt`'s "Big Bank Page 1"). Items move between the two with the mouse like in
+the inventory. Gold too: at the stash the inventory's coin button puts gold in (up to "Gold Max": 50,000 for each ten
+levels), and the stash's own coin button takes it out (no more than you can carry). Walking away, closing the
+inventory or opening the character screen closes it. The stash is kept with the character.
+
+### Sockets, gems and runes
+
+Weapons, shields, helms and body armor can drop with sockets (plain ones 1 in 8, magic ones 1 in 20; up to the
+item's `gemsockets`, fewer below item level 26 and 40). Put a gem, rune or jewel on such an item, in the grid or worn,
+and it goes into the next empty socket: a gem or rune adds its magic for that kind of item (`gems.txt`: a ruby is fire
+damage in a weapon, life in a helm or armor, fire resistance in a shield), a jewel its own. Point at the item to see
+its sockets and what's in them ("Socketed (3)"). Fill a plain item's sockets with the runes of a runeword in their order
+(`Runes.txt`, for the item types it allows) and it becomes that runeword: the gold name ("Ancients' Pledge") and its
+magic. What's in a socket stays there.
 
 ### On the ground
 
@@ -172,7 +196,7 @@ page number under the grid, next to the gold). The square button in its bottom c
   TreasureClass1, e.g. "Act 1 H2H A") and `TreasureClassEx.txt` says what it picks, maybe nothing: gold, potions,
   scrolls, keys, arrows, weapons and armor of about the monster's level (the game's own "weap3", "armo6" groups,
   from the items' levels). Up to six things a monster. Weapons, armor, rings, amulets and jewels can come out
-  [magic, rare or unique](#magic-rare-and-unique-items); gems drop but don't do anything yet.
+  [magic, rare or unique](#magic-rare-and-unique-items), some with [sockets](#sockets-gems-and-runes).
 - **Chests, caskets, urns, barrels, crates, corpses and racks** drop the act's chest treasure ("Act 1 Chest A") when
   opened.
 - **Gold** shows as "35 Gold" on the ground and goes straight to your gold when picked up; you can carry 10,000 a
@@ -237,6 +261,5 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
 
 ## Not yet
 
-Some skills (see above), magic items, the stash, quests, NPC dialogue and
-trading, hirelings, items shown on the character, difficulty levels. Each game has its own random world seed: the
+Some skills (see above), set items, quests, NPC dialogue and trading, hirelings, difficulty levels. Each game has its own random world seed: the
 areas keep their layout while you play.

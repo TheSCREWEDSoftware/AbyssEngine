@@ -34,7 +34,9 @@ typedef struct NetPlayer {
     float          from_y;
     uint64_t       moved_at;
     int            turn;
-    char           mode[4]; // "tn", "nu", "wl", "rn", ...
+    char           mode[4];   // "tn", "nu", "wl", "rn", ...
+    bool           has_looks; // what they wear (MSG_PLAYER)
+    CharacterLooks looks;
 } NetPlayer;
 
 bool           NetClient_Connect(const char *host, uint16_t port, const char *password);

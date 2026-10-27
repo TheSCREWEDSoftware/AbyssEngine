@@ -26,6 +26,11 @@ int Affixes_Total(const Character *character, ItemModType type);
 int Affixes_ItemTotal(const Item *item, ItemModType type); // on one item
 
 // In save files: " <quality> <name1> <name2> <mods>" ("str:5,ac%:20", or "-") after an item's other fields
+// Adds a Properties.txt property (one we know) to the item's magic: rolled between min and max, or a pair (fire
+// damage: min to the minimum, max to the maximum). Gems in sockets and runewords use it.
+void Affixes_AddProperty(Item *item, const char *code, int min, int max);
+void Affixes_AddMod(Item *item, int type, int value); // (adds up with the same kind already on it)
+
 void Affixes_Format(const Item *item, char *text, size_t size);
 void Affixes_Parse(Item *item, const char *text);
 

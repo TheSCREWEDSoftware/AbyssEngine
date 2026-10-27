@@ -32,6 +32,12 @@ void NetItem_Write(NetWriter *writer, const Item *item) {
         NetWriter_U8(writer, item->mods[m].type);
         NetWriter_U16(writer, (uint16_t)item->mods[m].value);
     }
+    NetWriter_U8(writer, item->sockets);
+    const int in = item->socketed_count < item->sockets ? item->socketed_count : item->sockets;
+    NetWriter_U8(writer, (uint8_t)in);
+    for (int s = 0; s < in; s++) {
+        NetWriter_String(writer, item->socketed[s]);
+    }
 }
 
 void NetItem_Read(NetReader *reader, Item *item) {
@@ -50,6 +56,16 @@ void NetItem_Read(NetReader *reader, Item *item) {
         if (type < MOD_TYPE_COUNT && item->mod_count < ITEM_MODS_MAX) {
             item->mods[item->mod_count].type    = (uint8_t)type;
             item->mods[item->mod_count++].value = (int16_t)value;
+        }
+    }
+    const int sockets = NetReader_U8(reader);
+    item->sockets     = (uint8_t)(sockets > ITEM_SOCKETS_MAX ? ITEM_SOCKETS_MAX : sockets);
+    const int in      = NetReader_U8(reader);
+    for (int s = 0; s < in && !reader->failed; s++) {
+        char code[ITEM_CODE_MAX];
+        NetReader_String(reader, code, sizeof(code));
+        if (item->socketed_count < item->sockets) {
+            snprintf(item->socketed[item->socketed_count++], ITEM_CODE_MAX, "%s", code);
         }
     }
 }

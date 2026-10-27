@@ -6,6 +6,8 @@
 #include "../drawing/Sprite.h"
 #include "../game/Affixes.h"
 #include "../game/Inventory.h"
+#include "../game/Sockets.h"
+#include "../managers/InputManager.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,15 +43,32 @@ static int belt_y = 568;
 #define BELT_Y    belt_y
 #define BELT_STEP 31
 
-typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND } Origin;
+typedef enum Origin { ORIGIN_GRID, ORIGIN_EQUIP, ORIGIN_BELT, ORIGIN_GROUND, ORIGIN_STASH } Origin;
+
+// The stash, on the left (TradeStash.dc6, inventory.txt's "Big Bank Page 1"), and its gold with the withdraw button
+#define STASH_PANEL         "/data/global/ui/PANEL/TradeStash.dc6"
+#define STASH_GRID_X        74
+#define STASH_GRID_Y        82
+#define STASH_GOLD_BUTTON_X 75
+#define STASH_GOLD_BUTTON_Y 23
 
 typedef struct IconCache {
     char    file[32];
     Sprite *sprite;
 } IconCache;
 
+// The gold button, left of the gold in its box (goldcoinbtn.dc6: up, pressed)
+#define GOLD_BUTTON_X (GAME_PANEL_X + 84)
+#define GOLD_BUTTON_Y 392
+#define GOLD_BUTTON_W 20
+#define GOLD_BUTTON_H 18
+
 struct GameInventory {
     Sprite   *panel;
+    Sprite   *gold_button;
+    Sprite   *stash_panel;
+    Sprite   *socket;     // gemsocket.dc6
+    bool      stash_open; // in town, at the stash
     IconCache icons[ICON_CACHE];
     int       icon_count;
     Label    *text;  // tooltip lines (font16)
@@ -75,9 +94,12 @@ static void GameInventory__PutDown(GameInventory *inventory, const Item *item) {
 GameInventory *GameInventory_Create(void) {
     GameInventory *inventory = calloc(1, sizeof(GameInventory));
     FAIL_IF_NULL(inventory);
-    inventory->panel = Sprite_Create(INVENTORY_PANEL, PALETTE_UNITS);
-    inventory->text  = Label_Create(FONTS_FONT16, PALETTE_STATIC);
-    inventory->small = Label_Create(FONTS_FONT8, PALETTE_STATIC);
+    inventory->panel       = Sprite_Create(INVENTORY_PANEL, PALETTE_UNITS);
+    inventory->gold_button = Sprite_Create("/data/global/ui/PANEL/goldcoinbtn.dc6", PALETTE_SKY);
+    inventory->stash_panel = Sprite_Create(STASH_PANEL, PALETTE_SKY);
+    inventory->socket      = Sprite_Create("/data/global/ui/PANEL/gemsocket.dc6", PALETTE_UNITS);
+    inventory->text        = Label_Create(FONTS_FONT16, PALETTE_STATIC);
+    inventory->small       = Label_Create(FONTS_FONT8, PALETTE_STATIC);
     return inventory;
 }
 
@@ -87,6 +109,9 @@ void GameInventory_Destroy(GameInventory **inventory_ref) {
         return;
     }
     Sprite_Destroy(&inventory->panel);
+    Sprite_Destroy(&inventory->gold_button);
+    Sprite_Destroy(&inventory->stash_panel);
+    Sprite_Destroy(&inventory->socket);
     for (int i = 0; i < inventory->icon_count; i++) {
         Sprite_Destroy(&inventory->icons[i].sprite);
     }
@@ -157,6 +182,35 @@ static bool GameInventory__In(const SDL_Rect *rect, const int x, const int y) {
 
 bool GameInventory_IsOver(const int mouse_x, const int mouse_y) {
     return mouse_x >= GAME_PANEL_X && mouse_y < GAME_PANEL_H;
+}
+
+void GameInventory_SetStash(GameInventory *inventory, const bool open) { inventory->stash_open = open; }
+
+bool GameInventory_StashOpen(const GameInventory *inventory) { return inventory->stash_open; }
+
+bool GameInventory_IsOverStash(const GameInventory *inventory, const int mouse_x, const int mouse_y) {
+    return inventory->stash_open && mouse_x < GAME_PANEL_W && mouse_y < GAME_PANEL_H;
+}
+
+static bool GameInventory__StashCellAt(const int mouse_x, const int mouse_y, int *cell_x, int *cell_y) {
+    if (mouse_x < STASH_GRID_X || mouse_y < STASH_GRID_Y || mouse_x >= STASH_GRID_X + (STASH_W * CELL) ||
+        mouse_y >= STASH_GRID_Y + (STASH_H * CELL)) {
+        return false;
+    }
+    *cell_x = (mouse_x - STASH_GRID_X) / CELL;
+    *cell_y = (mouse_y - STASH_GRID_Y) / CELL;
+    return true;
+}
+
+static SDL_Rect GameInventory__StashRect(const InventoryItem *it, const ItemBase *base) {
+    const SDL_Rect rect = {STASH_GRID_X + (it->x * CELL), STASH_GRID_Y + (it->y * CELL),
+                           (base != NULL ? base->width : 1) * CELL, (base != NULL ? base->height : 1) * CELL};
+    return rect;
+}
+
+static bool GameInventory__OverStashGold(const int mouse_x, const int mouse_y) {
+    return mouse_x >= STASH_GOLD_BUTTON_X && mouse_x < STASH_GOLD_BUTTON_X + GOLD_BUTTON_W &&
+           mouse_y >= STASH_GOLD_BUTTON_Y && mouse_y < STASH_GOLD_BUTTON_Y + GOLD_BUTTON_H;
 }
 
 static int GameInventory__BeltSlotAt(const int mouse_x, const int mouse_y) {
@@ -269,6 +323,10 @@ bool GameInventory_PutBack(GameInventory *inventory, Character *character) {
                                        (inventory->origin_index % INVENTORY_PAGE) / INVENTORY_W,
                                        inventory->origin_index / INVENTORY_PAGE);
         break;
+    case ORIGIN_STASH:
+        placed = Stash_Place(character, &inventory->held, inventory->origin_index % STASH_W,
+                             inventory->origin_index / STASH_W);
+        break;
     case ORIGIN_GROUND: // picked up off the ground: anywhere it fits
         break;
     }
@@ -379,6 +437,75 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         return events;
     }
 
+    // Gold: drop some (at the stash: put it in)
+    if (left_click && !inventory->holding && mouse_x >= GOLD_BUTTON_X && mouse_x < GOLD_BUTTON_X + GOLD_BUTTON_W &&
+        mouse_y >= GOLD_BUTTON_Y && mouse_y < GOLD_BUTTON_Y + GOLD_BUTTON_H) {
+        if (character->gold > 0) {
+            return events | INVENTORY_EVENT_GOLD;
+        }
+        *message = "You have no gold.";
+        return events;
+    }
+
+    // The stash
+    if (inventory->stash_open && left_click && !inventory->holding && GameInventory__OverStashGold(mouse_x, mouse_y)) {
+        if (character->stash_gold > 0) {
+            return events | INVENTORY_EVENT_STASH_GOLD;
+        }
+        *message = "There's no gold in your stash.";
+        return events;
+    }
+    int stash_x;
+    int stash_y;
+    if (inventory->stash_open && GameInventory__StashCellAt(mouse_x, mouse_y, &stash_x, &stash_y)) {
+        const int under = Stash_ItemAt(character, stash_x, stash_y);
+        if (right_click && under >= 0) {
+            *message = "Take it out of the stash first.";
+            return events;
+        }
+        if (!left_click) {
+            return events;
+        }
+        if (inventory->holding) {
+            const ItemBase *base    = Items_Find(inventory->held.code);
+            const int       left    = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
+            const int       top     = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
+            const int       x       = left >= STASH_GRID_X ? (left - STASH_GRID_X) / CELL : -1;
+            const int       y       = top >= STASH_GRID_Y ? (top - STASH_GRID_Y) / CELL : -1;
+            const int       covered = Stash_Covered(character, base, x, y);
+            if (covered == -2) {
+                return events;
+            }
+            if (inventory->still_worn) { // Modern: it comes off now, into the stash
+                memset(&character->equipped[inventory->origin_index], 0, sizeof(Item));
+                inventory->still_worn  = false;
+                events                |= INVENTORY_EVENT_EQUIPMENT;
+            }
+            Item lifted;
+            memset(&lifted, 0, sizeof(lifted));
+            int lifted_at = 0;
+            if (covered >= 0) {
+                lifted    = character->stash[covered].item;
+                lifted_at = character->stash[covered].x + (character->stash[covered].y * STASH_W);
+                Stash_Remove(character, covered);
+            }
+            Stash_Place(character, &inventory->held, x, y);
+            GameInventory__PutDown(inventory, &inventory->held);
+            inventory->holding = false;
+            if (lifted.code[0] != '\0') {
+                GameInventory__Take(inventory, &lifted, ORIGIN_STASH, lifted_at);
+            }
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        if (under >= 0) {
+            const InventoryItem it = character->stash[under];
+            Stash_Remove(character, under);
+            GameInventory__Take(inventory, &it.item, ORIGIN_STASH, it.x + (it.y * STASH_W));
+            return events | INVENTORY_EVENT_MOVED;
+        }
+        return events;
+    }
+
     // The pages (carried items can go along, onto another page)
     int step = 0;
     if (left_click && GameInventory__PageArrow(mouse_x, mouse_y, &step)) {
@@ -401,6 +528,18 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
             return events;
         }
         if (!left_click) {
+            return events;
+        }
+        // A gem, rune or jewel onto an item with an empty socket: in it goes
+        if (inventory->holding && under >= 0 && Sockets_CanGoIn(&inventory->held) &&
+            character->inventory[under].item.sockets > 0) {
+            const char *why = NULL;
+            if (Sockets_Insert(&character->inventory[under].item, &inventory->held, &why)) {
+                snprintf(inventory->sound, sizeof(inventory->sound), "item_gem");
+                inventory->holding = false;
+                return events | INVENTORY_EVENT_MOVED;
+            }
+            *message = why;
             return events;
         }
         if (inventory->holding) {
@@ -453,6 +592,16 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
     const int slot = GameInventory__SlotAt(mouse_x, mouse_y);
     if (slot >= 0 && left_click) {
         Item *worn = &character->equipped[slot];
+        if (inventory->holding && !inventory->still_worn && Sockets_CanGoIn(&inventory->held) && worn->sockets > 0) {
+            const char *why = NULL;
+            if (Sockets_Insert(worn, &inventory->held, &why)) {
+                snprintf(inventory->sound, sizeof(inventory->sound), "item_gem");
+                inventory->holding = false;
+                return events | INVENTORY_EVENT_MOVED | INVENTORY_EVENT_EQUIPMENT;
+            }
+            *message = why;
+            return events;
+        }
         if (inventory->holding && inventory->still_worn && slot == inventory->origin_index) {
             inventory->holding    = false; // Modern: back where it never left
             inventory->still_worn = false;
@@ -531,7 +680,55 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
 // ---------------------------------------------------------------------------------------------------------------------
 // Drawing
 
+// The stash on the left: its items, its gold and the button to take some out
+static void GameInventory__DrawStash(GameInventory *inventory, const Character *character, const int mouse_x,
+                                     const int mouse_y) {
+    Sprite_DrawMulti(inventory->stash_panel, 0, 0, 0, 2, 2);
+    if (inventory->holding) {
+        const ItemBase *base = Items_Find(inventory->held.code);
+        const int       left = mouse_x - ((base->width * CELL) / 2) + (CELL / 2);
+        const int       top  = mouse_y - ((base->height * CELL) / 2) + (CELL / 2);
+        const int       x    = left >= STASH_GRID_X ? (left - STASH_GRID_X) / CELL : -1;
+        const int       y    = top >= STASH_GRID_Y ? (top - STASH_GRID_Y) / CELL : -1;
+        if (Stash_Covered(character, base, x, y) != -2 &&
+            GameInventory__StashCellAt(mouse_x, mouse_y, &(int){0}, &(int){0})) {
+            const SDL_Rect area = {STASH_GRID_X + (x * CELL), STASH_GRID_Y + (y * CELL), base->width * CELL,
+                                   base->height * CELL};
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, 30, 100, 30, 110);
+            SDL_RenderFillRect(sdl_renderer, &area);
+        }
+    }
+    for (int i = 0; i < character->stash_count; i++) {
+        const InventoryItem *it   = &character->stash[i];
+        const ItemBase      *base = Items_Find(it->item.code);
+        const SDL_Rect       rect = GameInventory__StashRect(it, base);
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90);
+        SDL_RenderFillRect(sdl_renderer, &rect);
+        GameInventory__DrawItem(inventory, &it->item, &rect,
+                                base == NULL || base->kind == ITEM_KIND_MISC ||
+                                    Inventory_MeetsRequirements(character, base));
+    }
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    Sprite_Draw(inventory->gold_button, GameInventory__OverStashGold(mouse_x, mouse_y) && left_down ? 1 : 0,
+                STASH_GOLD_BUTTON_X, STASH_GOLD_BUTTON_Y + GOLD_BUTTON_H);
+    char text[64];
+    Label_SetAlignment(inventory->text, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
+    Label_SetColor(inventory->text, 0xFF, 0xFF, 0xFF, 0xFF);
+    snprintf(text, sizeof(text), "Gold in Stash: %d", character->stash_gold);
+    Label_SetText(inventory->text, text);
+    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, STASH_GOLD_BUTTON_Y + 10);
+    snprintf(text, sizeof(text), "Gold Max: %d", Stash_GoldLimit(character));
+    Label_SetText(inventory->text, text);
+    Label_Draw(inventory->text, STASH_GOLD_BUTTON_X + GOLD_BUTTON_W + 8, STASH_GOLD_BUTTON_Y + 34);
+}
+
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
+    if (inventory->stash_open) {
+        GameInventory__DrawStash(inventory, character, mouse_x, mouse_y);
+    }
     Sprite_DrawMulti(inventory->panel, 4, GAME_PANEL_X, 0, 2, 2);
 
     // Worn items; a soft highlight where the carried item would go
@@ -588,7 +785,13 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
                                     Inventory_MeetsRequirements(character, base));
     }
 
-    // Gold
+    // Gold, and its button
+    const bool over_gold = mouse_x >= GOLD_BUTTON_X && mouse_x < GOLD_BUTTON_X + GOLD_BUTTON_W &&
+                           mouse_y >= GOLD_BUTTON_Y && mouse_y < GOLD_BUTTON_Y + GOLD_BUTTON_H;
+    bool left_down = false;
+    InputManager_GetMouseButtons(&left_down, NULL, NULL);
+    const bool pressed = over_gold && left_down;
+    Sprite_Draw(inventory->gold_button, pressed ? 1 : 0, GOLD_BUTTON_X, GOLD_BUTTON_Y + GOLD_BUTTON_H); // (bottom)
     char text[32];
     snprintf(text, sizeof(text), "%d", character->gold);
     Label_SetText(inventory->text, text);
@@ -739,6 +942,13 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
         Affixes_ModText(&item->mods[m], text, sizeof(text));
         GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);
     }
+    if (item->sockets > 0) {
+        snprintf(text, sizeof(text), "Socketed (%d)", item->sockets);
+        GameInventory__AddLine(lines, colors, &count, 0x69, 0x69, 0xFF, text);
+    }
+    if (Sockets_CanGoIn(item)) {
+        GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Put it on an item with sockets");
+    }
     if (Items_IsPotion(base)) {
         GameInventory__AddLine(lines, colors, &count, 0xA0, 0xA0, 0xA0, "Right click to drink");
     }
@@ -768,6 +978,35 @@ static void GameInventory__Tooltip(GameInventory *inventory, const Character *ch
     }
 }
 
+// The sockets over an item's picture when the mouse is on it (anchor: the middle of its top), with what's in them
+static void GameInventory__DrawSockets(GameInventory *inventory, const Item *item, const int anchor_x,
+                                       const int anchor_y) {
+    const ItemBase *base = Items_Find(item->code);
+    if (base == NULL || item->sockets == 0 || inventory->socket == NULL) {
+        return;
+    }
+    const int count = item->sockets;
+    const int cols  = base->width >= 2 && count >= 4 ? 2 : 1;
+    const int rows  = count == 5 ? 3 : (count + cols - 1) / cols;
+    const int top   = anchor_y + ((base->height * CELL) - (rows * CELL)) / 2;
+    int       n     = 0;
+    for (int r = 0; r < rows && n < count; r++) {
+        const int in_row = count == 5 && r == 1 ? 1 : cols;
+        for (int c = 0; c < in_row && n < count; c++, n++) {
+            const int x = anchor_x - ((in_row * CELL) / 2) + (c * CELL);
+            const int y = top + (r * CELL);
+            Sprite_Draw(inventory->socket, 0, x, y + CELL - 1); // (drawn from its bottom)
+            if (n < item->socketed_count) {
+                Item inside;
+                memset(&inside, 0, sizeof(inside));
+                snprintf(inside.code, sizeof(inside.code), "%s", item->socketed[n]);
+                const SDL_Rect box = {x, y, CELL, CELL};
+                GameInventory__DrawItem(inventory, &inside, &box, true);
+            }
+        }
+    }
+}
+
 void GameInventory_DrawOverlay(GameInventory *inventory, const Character *character, const bool open, const int mouse_x,
                                const int mouse_y) {
     if (inventory->holding) {
@@ -789,7 +1028,16 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
     } else if (open) {
         int cell_x;
         int cell_y;
-        if (GameInventory__CellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+        if (inventory->stash_open && GameInventory__StashCellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
+            const int under = Stash_ItemAt(character, cell_x, cell_y);
+            if (under >= 0) {
+                const SDL_Rect rect =
+                    GameInventory__StashRect(&character->stash[under], Items_Find(character->stash[under].item.code));
+                item     = &character->stash[under].item;
+                anchor_x = rect.x + (rect.w / 2);
+                anchor_y = rect.y;
+            }
+        } else if (GameInventory__CellAt(mouse_x, mouse_y, &cell_x, &cell_y)) {
             const int under = Inventory_ItemAt(character, cell_x, cell_y);
             if (under >= 0) {
                 const SDL_Rect rect = GameInventory__GridRect(&character->inventory[under],
@@ -808,6 +1056,7 @@ void GameInventory_DrawOverlay(GameInventory *inventory, const Character *charac
         }
     }
     if (item != NULL) {
+        GameInventory__DrawSockets(inventory, item, anchor_x, anchor_y);
         GameInventory__Tooltip(inventory, character, item, anchor_x, anchor_y);
     }
 }

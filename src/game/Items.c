@@ -106,7 +106,10 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
               c_lvl = COL("levelreq"), c_belt = COL("belt"), c_stack = COL("stackable"), c_maxstack = COL("maxstack"),
               c_stat1 = COL("stat1"), c_sound = COL("usesound"), c_calc1 = COL("calc1"), c_stat2 = COL("stat2"),
               c_len = COL("len"), c_flippy = COL("flippyfile"), c_drop = COL("dropsound"),
-              c_drop_frame = COL("dropsfxframe"), c_level = COL("level"), c_spawnable = COL("spawnable");
+              c_drop_frame = COL("dropsfxframe"), c_level = COL("level"), c_spawnable = COL("spawnable"),
+              c_gfx = COL("alternategfx"), c_wclass = COL("wclass"), c_wclass2 = COL("2handedwclass"),
+              c_1or2 = COL("1or2handed"), c_rarm = COL("rArm"), c_larm = COL("lArm"), c_torso = COL("Torso"),
+              c_legs = COL("Legs"), c_rpad = COL("rSPad"), c_lpad = COL("lSPad"), c_sockets = COL("gemsockets");
 #undef COL
     const int rows  = DataTable_GetRowCount(t);
     ItemBase *grown = realloc(bases, sizeof(ItemBase) * (size_t)(base_count + rows));
@@ -150,6 +153,24 @@ static void Items__LoadTable(const char *path, const ItemKind kind, const DataTa
         base->required_level     = DataTable_GetInt(t, row, c_lvl);
         base->stackable          = DataTable_GetInt(t, row, c_stack) == 1;
         base->max_stack          = DataTable_GetInt(t, row, c_maxstack);
+        snprintf(base->gfx, sizeof(base->gfx), "%s", c_gfx >= 0 ? DataTable_GetString(t, row, c_gfx) : code);
+        if (base->gfx[0] == '\0') {
+            snprintf(base->gfx, sizeof(base->gfx), "%s", code);
+        }
+        snprintf(base->wclass, sizeof(base->wclass), "%s", c_wclass >= 0 ? DataTable_GetString(t, row, c_wclass) : "");
+        snprintf(base->wclass_2h, sizeof(base->wclass_2h), "%s",
+                 c_wclass2 >= 0 ? DataTable_GetString(t, row, c_wclass2) : "");
+        base->one_or_two = c_1or2 >= 0 && DataTable_GetInt(t, row, c_1or2) == 1;
+        // Armor's body parts: blank for helms, shields and the like (they don't change the body)
+#define LOOK(c) ((c) >= 0 && DataTable_GetString(t, row, c)[0] != '\0' ? DataTable_GetInt(t, row, c) : -1)
+        base->look_right_arm = LOOK(c_rarm);
+        base->look_left_arm  = LOOK(c_larm);
+        base->look_torso     = LOOK(c_torso);
+        base->look_legs      = LOOK(c_legs);
+        base->look_right_pad = LOOK(c_rpad);
+        base->look_left_pad  = LOOK(c_lpad);
+#undef LOOK
+        base->max_sockets = c_sockets >= 0 ? DataTable_GetInt(t, row, c_sockets) : 0;
         Items__TypeInfo(types, base->type, base, 0);
         if (base->slots[EQUIP_BELT] && belts != NULL && c_belt >= 0) {
             // armor.txt's "belt" is a row of belts.txt, which says how many potions it holds

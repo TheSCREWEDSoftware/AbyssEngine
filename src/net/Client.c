@@ -262,6 +262,7 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
             NetReader_U8(reader); // hardcore
             NetReader_U8(reader); // colour
             client.my_party = NetReader_U8(reader);
+            NetReader_String(reader, name, sizeof(name)); // looks: ours
             client.players_version++;
             break;
         }
@@ -278,6 +279,9 @@ static void NetClient__Handle(const uint8_t type, NetReader *reader) {
             player->hardcore   = NetReader_U8(reader) != 0;
             player->color      = NetReader_U8(reader) % NET_COLOR_COUNT;
             player->party      = NetReader_U8(reader);
+            char looks[CHARACTER_LOOKS_TEXT];
+            NetReader_String(reader, looks, sizeof(looks));
+            player->has_looks = Character_LooksFromText(looks, &player->looks);
         }
         client.players_version++;
         break;

@@ -65,6 +65,7 @@ sources = [
     'game/ControlsExport.c',
     'game/Inventory.c',
     'game/Items.c',
+    'game/Sockets.c',
     'game/Treasure.c',
     'game/Affixes.c',
     'game/Settings.c',
@@ -74,6 +75,7 @@ sources = [
 
     'drawing/Button.c',
     'drawing/Checkbox.c',
+    'drawing/AmountDialog.c',
     'drawing/ConfirmDialog.c',
     'drawing/Cursor.c',
     'drawing/Dropdown.c',

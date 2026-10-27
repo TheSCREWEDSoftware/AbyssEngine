@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "../drawing/AmountDialog.h"
 #include "../drawing/Button.h"
 #include "../drawing/ConfirmDialog.h"
 #include "../drawing/Cursor.h"
@@ -153,56 +154,58 @@ typedef struct DrawContext {
 } DrawContext;
 
 typedef struct Unit {
-    char        base[12];
-    char        id[40];
-    char        name[48];
-    const char *idle_mode;
-    float       x; // sub-tiles
-    float       y;
-    bool        even_speed; // the player with "the same speed on screen": steps scaled by Roam__ScreenSpeedFactor
-    float       target_x;   // walking towards
-    float       target_y;
-    int         turn;
-    UnitState   state;
-    const char *mode; // animation currently shown
-    int         frame;
-    uint64_t    frame_time;
-    int         hp;
-    int         max_hp;
-    int         damage_min;
-    int         damage_max;
-    int         level;                 // monsters: from monstats; the player: the character's
-    int         defense;               // armor class
-    int         attack_rating;         // to-hit
-    int         experience;            // given for killing it
-    char        treasure[48];          // what it drops (TreasureClassEx.txt)
-    int         resist[ELEMENT_COUNT]; // monsters: percent (100 or more: immune)
-    int         element;               // monsters: their attack's elemental damage (0 none), chance, range
-    int         element_chance;
-    int         element_min;
-    int         element_max;
-    float       speed;
-    bool        npc;
-    bool        dropped;  // added in the Testing Grounds (Clear removes these)
-    bool        provoked; // hit by the player: fights back even far away
-    uint64_t    next_attack;
-    MapPath     path;        // the way around walls to where it's going
-    float       path_goal_x; // where the path was planned to
-    float       path_goal_y;
-    uint64_t    next_repath;
-    float       home_x; // where the map placed it: wandering stays around here
-    float       home_y;
-    bool        wandering;   // on a stroll (not fighting)
-    uint64_t    next_wander; // when to set off again
-    int         can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
-    int         can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
-    bool        vanished;    // died without death or corpse graphics: no longer drawn
-    bool        is_object;   // a chest, door, shrine, torch, ...
-    ObjectInfo  object;
-    char        object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
-    bool        used;           // opened / activated: can't be clicked again
-    int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
-    char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
+    char           base[12];
+    char           id[40];
+    char           name[48];
+    const char    *idle_mode;
+    float          x; // sub-tiles
+    float          y;
+    bool           even_speed; // the player with "the same speed on screen": steps scaled by Roam__ScreenSpeedFactor
+    float          target_x;   // walking towards
+    float          target_y;
+    int            turn;
+    UnitState      state;
+    const char    *mode; // animation currently shown
+    int            frame;
+    uint64_t       frame_time;
+    int            hp;
+    int            max_hp;
+    int            damage_min;
+    int            damage_max;
+    int            level;                 // monsters: from monstats; the player: the character's
+    int            defense;               // armor class
+    int            attack_rating;         // to-hit
+    int            experience;            // given for killing it
+    char           treasure[48];          // what it drops (TreasureClassEx.txt)
+    int            resist[ELEMENT_COUNT]; // monsters: percent (100 or more: immune)
+    int            element;               // monsters: their attack's elemental damage (0 none), chance, range
+    int            element_chance;
+    int            element_min;
+    int            element_max;
+    float          speed;
+    bool           npc;
+    bool           dropped;  // added in the Testing Grounds (Clear removes these)
+    bool           provoked; // hit by the player: fights back even far away
+    uint64_t       next_attack;
+    MapPath        path;        // the way around walls to where it's going
+    float          path_goal_x; // where the path was planned to
+    float          path_goal_y;
+    uint64_t       next_repath;
+    float          home_x; // where the map placed it: wandering stays around here
+    float          home_y;
+    bool           wandering;   // on a stroll (not fighting)
+    uint64_t       next_wander; // when to set off again
+    int            can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
+    int            can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
+    bool           vanished;    // died without death or corpse graphics: no longer drawn
+    bool           is_object;   // a chest, door, shrine, torch, ...
+    ObjectInfo     object;
+    char           object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
+    bool           used;           // opened / activated: can't be clicked again
+    int            rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
+    char           net_mode[4];    // another player (multiplayer): the animation their game says they're in
+    bool           has_looks;      // a player: drawn in what they wear (looks), not the class's plain figure
+    CharacterLooks looks;
     // Multiplayer monsters
     int      net_target; // the map's owner: the player it's after (0: the owner's own)
     float    net_from_x; // the others: shown moving smoothly to where the owner last said it is
@@ -288,8 +291,11 @@ static const int town_level_ids[TOWN_COUNT] = {1, 40, 75, 103, 109}; // Rogue En
 #define MAX_GROUND_ITEMS NET_GROUND_ITEMS_MAX
 #define ITEM_FLIP_MS     40   // the flip through the air, a frame each (the game's 25 a second)
 #define PICKUP_RANGE     2.0f // how close the player must be to pick one up
-#define ITEM_SPRITES     48   // flippy pictures kept loaded
-#define PLACEHOLDER_ID   0xFFFFFFFFu
+
+// What the "how much gold" dialog is for
+enum { AMOUNT_FOR_DROP = 1, AMOUNT_FOR_STASH_PUT, AMOUNT_FOR_STASH_TAKE };
+#define ITEM_SPRITES   48 // flippy pictures kept loaded
+#define PLACEHOLDER_ID 0xFFFFFFFFu
 
 typedef struct GroundItem {
     Item     item;
@@ -387,10 +393,11 @@ typedef struct SceneRoam {
     int      other_colors[NET_MAX_PLAYERS];
     int      other_count;
     uint64_t last_sent;
-    uint64_t last_monsters; // the map's owner: monsters last sent at
-    int      attack_other;  // PvP: the player being attacked (their id), 0 = none
-    bool     party_panel;   // P: the party screen
-    bool     use_is_ours;   // the server said we're the one opening this object (its treasure is ours to drop)
+    uint64_t last_monsters;                    // the map's owner: monsters last sent at
+    int      attack_other;                     // PvP: the player being attacked (their id), 0 = none
+    char     sent_looks[CHARACTER_LOOKS_TEXT]; // what we last told the others we wear
+    bool     party_panel;                      // P: the party screen
+    bool     use_is_ours; // the server said we're the one opening this object (its treasure is ours to drop)
     int      used_maps[NET_USED_OBJECTS_MAX]; // multiplayer: chests, doors and shrines opened (map, object index)
     int      used_objects[NET_USED_OBJECTS_MAX];
     int      used_count;
@@ -421,6 +428,8 @@ typedef struct SceneRoam {
     Button        *menu_return_button;
     OptionsPanel  *options_panel;   // Options opened from that menu
     ConfirmDialog *confirm;         // "Return to the main menu?" (Back and Leave in Free Roam / Testing Grounds)
+    AmountDialog  *amount;          // "How much gold?" (AMOUNT_FOR_*)
+    int            stash_object;    // the stash being used (a unit index), -1 = none
     int            question;        // what it asks: ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER
     int            question_level;  // ROAM_ASK_ENTER: where the entrance leads
     int            hover_exit;      // the entrance under the mouse (its name is shown), -1 = none
@@ -645,8 +654,39 @@ static const char *Roam__Mode(const SceneRoam *roam, const Unit *unit) {
     return unit->idle_mode;
 }
 
+// A player in what they wear, for one animation: NULL if the class has no such animation with that weapon
+static Figure *Roam__LooksFigure(SceneRoam *roam, const Unit *unit, const char *mode, const bool bare) {
+    FigureSpec spec;
+    memset(&spec, 0, sizeof(spec));
+    spec.base = "chars";
+    snprintf(spec.token, sizeof(spec.token), "%.7s", unit->id);
+    snprintf(spec.weapon_class, sizeof(spec.weapon_class), "%s", bare ? "hth" : unit->looks.weapon_class);
+    for (int c = 0; c < COF_COMPONENT_COUNT && c < CHARACTER_LOOK_LAYERS; c++) {
+        if (!bare || (c != COF_COMPONENT_RH && c != COF_COMPONENT_LH)) {
+            snprintf(spec.armor[c], sizeof(spec.armor[c]), "%s", unit->looks.layer[c]);
+        }
+    }
+    return MapUnits_GetSpecFigure(roam->units_cache, &spec, mode);
+}
+
 // The figure for the unit's current animation, falling back to standing still when it has no such animation
 static Figure *Roam__Figure(SceneRoam *roam, const Unit *unit) {
+    if (unit->has_looks) {
+        const char *mode   = Roam__Mode(roam, unit);
+        Figure     *figure = Roam__LooksFigure(roam, unit, mode, false);
+        if (figure == NULL && unit->state == UNIT_DEAD) {
+            figure = Roam__LooksFigure(roam, unit, "dt", false);
+        }
+        if (figure == NULL) {
+            figure = Roam__LooksFigure(roam, unit, Roam__IsPlayer(roam, unit) ? "tn" : "nu", false);
+        }
+        if (figure == NULL) {
+            figure = Roam__LooksFigure(roam, unit, mode, true); // the weapon has no such animation: bare handed
+        }
+        if (figure != NULL) {
+            return figure;
+        }
+    }
     Figure *figure = MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, Roam__Mode(roam, unit));
     if (figure == NULL && unit->state == UNIT_DEAD) {
         figure = MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "dt"); // last frame of dying
@@ -1205,6 +1245,19 @@ static void Roam__ShowMessage(SceneRoam *roam, const char *text);
 static void Roam__RefreshList(SceneRoam *roam);
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (unit->object.operate_fn == 32) {
+        // The stash: opens on the left, with the inventory on the right
+        if (roam->game && roam->character != NULL) {
+            roam->stash_object    = (int)(unit - roam->units);
+            roam->inventory_panel = true;
+            roam->skill_panel     = false;
+            roam->char_panel      = false;
+            roam->panel           = PANEL_NONE;
+            GameInventory_SetStash(roam->inventory_ui, true);
+            Sounds_Play("object_chest_large", SOUND_KIND_SFX);
+        }
+        return;
+    }
     if (unit->object.operate_fn == 23) {
         // A waypoint: lights up the first time (a game keeps it among the ones found), and opens the list of places
         // every time
@@ -1679,7 +1732,7 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
-    if (roam->online && object->object.operate_fn != 23) {
+    if (roam->online && object->object.operate_fn != 23 && object->object.operate_fn != 32) {
         // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
         object->used      = true;
         NetWriter *writer = malloc(sizeof(NetWriter));
@@ -1716,6 +1769,7 @@ static void Roam__FindSpawn(SceneRoam *roam) {
 
 // Units for the map's NPCs, monsters and objects; then the player at the spawn point
 static void Roam__Populate(SceneRoam *roam) {
+    roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     if (roam->online) {
         // Multiplayer: everyone's game makes the same monsters (the same life, facing the same way) for the same map,
         // so their numbers match between games
@@ -2344,6 +2398,8 @@ static void *Roam__Create(const bool free_roam, const bool game) {
     roam->menu_leave_button   = Button_Create(BUTTON_TYPE_WIDE, game ? "Save and Exit Game" : "Leave");
     roam->menu_return_button  = Button_Create(BUTTON_TYPE_WIDE, game ? "Return to Game" : "Back to Free Roam");
     roam->confirm             = ConfirmDialog_Create();
+    roam->amount              = AmountDialog_Create();
+    roam->stash_object        = -1;
     Button_SetPosition(roam->menu_options_button, 264, 210);
     Button_SetPosition(roam->menu_leave_button, 264, 260);
     Button_SetPosition(roam->menu_return_button, 264, 310);
@@ -2455,6 +2511,7 @@ static void Roam__Free(void **scene_ref) {
     Button_Destroy(&roam->menu_return_button);
     OptionsPanel_Destroy(&roam->options_panel);
     ConfirmDialog_Destroy(&roam->confirm);
+    AmountDialog_Destroy(&roam->amount);
     Label_Destroy(&roam->panel_label);
     Label_Destroy(&roam->panel_value_label);
     Label_Destroy(&roam->message_label);
@@ -3824,8 +3881,22 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     Inventory_SetPages(pages > used ? pages : used);
     GameInventory_SetModernPickup(roam->inventory_ui, gameplay->modern_pickup);
 
+    // The stash closes with the inventory, the character screen, or walking away from it
+    if (GameInventory_StashOpen(roam->inventory_ui)) {
+        const Unit *stash =
+            roam->stash_object >= 0 && roam->stash_object < roam->unit_count ? &roam->units[roam->stash_object] : NULL;
+        if (!roam->inventory_panel || roam->char_panel || stash == NULL ||
+            Roam__DistanceToObject(stash, roam->player.x, roam->player.y) > USE_RANGE + 4.0f) {
+            GameInventory_SetStash(roam->inventory_ui, false);
+            roam->stash_object = -1;
+            if (roam->online && NetClient_ServerKeepsCharacters()) {
+                Roam__StoreCharacter(roam); // the server's copy has what's in the stash now
+            }
+        }
+    }
     const bool picker_was_open = GameSkills_PickerOpen(roam->skills_ui);
     const bool over_panels = ((roam->inventory_panel || roam->skill_panel) && GameInventory_IsOver(mouse_x, mouse_y)) ||
+                             GameInventory_IsOverStash(roam->inventory_ui, mouse_x, mouse_y) ||
                              GameInventory_IsOverBelt(character, mouse_x, mouse_y) ||
                              GameSkills_IsOver(roam->skills_ui, roam->skill_panel, mouse_x, mouse_y);
     const char *message = NULL;
@@ -3850,6 +3921,29 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     if (item_events & INVENTORY_EVENT_DRINK) {
         Roam__Drink(roam, &drunk);
+    }
+    if ((item_events & INVENTORY_EVENT_GOLD) && GameInventory_StashOpen(roam->inventory_ui)) {
+        const int room = Stash_GoldLimit(character) - character->stash_gold;
+        const int most = character->gold < room ? character->gold : room;
+        if (most <= 0) {
+            Roam__ShowMessage(roam, "Your stash can't hold any more gold.");
+        } else {
+            AmountDialog_Open(roam->amount, "Deposit Gold", "How much gold do you want to put in your stash?", most,
+                              most, AMOUNT_FOR_STASH_PUT);
+        }
+    } else if (item_events & INVENTORY_EVENT_GOLD) {
+        AmountDialog_Open(roam->amount, "Drop Gold", "How much gold do you want to drop?", character->gold,
+                          character->gold, AMOUNT_FOR_DROP);
+    }
+    if (item_events & INVENTORY_EVENT_STASH_GOLD) {
+        const int room = Roam__GoldLimit(roam) - character->gold;
+        const int most = character->stash_gold < room ? character->stash_gold : room;
+        if (most <= 0) {
+            Roam__ShowMessage(roam, "You can't carry any more gold.");
+        } else {
+            AmountDialog_Open(roam->amount, "Withdraw Gold", "How much gold do you want to take out?", most, most,
+                              AMOUNT_FOR_STASH_TAKE);
+        }
     }
     if ((item_events & INVENTORY_EVENT_MOVED) && GameInventory_Sound(roam->inventory_ui)[0] != '\0') {
         Sounds_Play(GameInventory_Sound(roam->inventory_ui), SOUND_KIND_SFX);
@@ -3996,6 +4090,8 @@ static void Roam__UpdateOthers(SceneRoam *roam, const uint64_t now) {
         }
         snprintf(unit.id, sizeof(unit.id), "%s", Character_ClassToken(player->class_id));
         snprintf(unit.name, sizeof(unit.name), "%s", player->name);
+        unit.has_looks   = player->has_looks;
+        unit.looks       = player->looks;
         const float step = fminf((float)(real - player->moved_at) / (1000.0f / NET_STATE_HZ), 1.0f);
         unit.x           = player->from_x + ((player->x - player->from_x) * step);
         unit.y           = player->from_y + ((player->y - player->from_y) * step);
@@ -4254,6 +4350,24 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
 
 // Every frame in a multiplayer game: where we are (15 times a second), what's said, whether we're still connected.
 // Returns true when the game ended (the scene changed).
+// What we wear, to the others when it changes
+static void Roam__SendLooks(SceneRoam *roam) {
+    char text[CHARACTER_LOOKS_TEXT];
+    Character_LooksToText(&roam->player.looks, text, sizeof(text));
+    if (!roam->player.has_looks || strcmp(text, roam->sent_looks) == 0) {
+        return;
+    }
+    NetWriter *writer = malloc(sizeof(NetWriter));
+    if (writer == NULL) {
+        return;
+    }
+    snprintf(roam->sent_looks, sizeof(roam->sent_looks), "%s", text);
+    NetWriter_Begin(writer);
+    NetWriter_String(writer, text);
+    NetClient_Send(MSG_LOOKS, writer);
+    free(writer);
+}
+
 static bool Roam__UpdateOnline(SceneRoam *roam, const uint64_t now) {
     if (NetClient_Stage() != NETC_IN_GAME) {
         // Lost the game (or the host closed it): keep the character as it is, then the Multiplayer screen says why
@@ -4354,8 +4468,65 @@ static void Roam__AskLeave(SceneRoam *roam) {
     }
 }
 
+// Gold out of the inventory onto the ground at your feet
+static void Roam__DropGold(SceneRoam *roam, int amount) {
+    amount = amount > roam->character->gold ? roam->character->gold : amount;
+    if (amount <= 0) {
+        return;
+    }
+    if (roam->ground_count >= MAX_GROUND_ITEMS) {
+        Roam__ShowMessage(roam, "There are too many items on the ground already.");
+        return;
+    }
+    Item gold              = Inventory_NewItem("gld");
+    gold.quantity          = amount;
+    roam->character->gold -= amount;
+    float x;
+    float y;
+    Roam__FreeSpot(roam, &x, &y);
+    Roam__PutOnGround(roam, &gold, x, y);
+    if (roam->online && NetClient_ServerKeepsCharacters()) {
+        Roam__StoreCharacter(roam);
+    }
+}
+
+static void Roam__AmountChosen(SceneRoam *roam, const int amount) {
+    switch (AmountDialog_Tag(roam->amount)) {
+    case AMOUNT_FOR_DROP:
+        Roam__DropGold(roam, amount);
+        break;
+    case AMOUNT_FOR_STASH_PUT: {
+        Character *c     = roam->character;
+        const int  room  = Stash_GoldLimit(c) - c->stash_gold;
+        const int  move  = amount < c->gold ? (amount < room ? amount : room) : (c->gold < room ? c->gold : room);
+        c->gold         -= move > 0 ? move : 0;
+        c->stash_gold   += move > 0 ? move : 0;
+        Sounds_Play("item_gold", SOUND_KIND_SFX);
+        break;
+    }
+    case AMOUNT_FOR_STASH_TAKE: {
+        Character *c     = roam->character;
+        const int  room  = Roam__GoldLimit(roam) - c->gold;
+        int        move  = amount < c->stash_gold ? amount : c->stash_gold;
+        move             = move < room ? move : room;
+        c->gold         += move > 0 ? move : 0;
+        c->stash_gold   -= move > 0 ? move : 0;
+        Sounds_Play("item_gold", SOUND_KIND_SFX);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 // The game menu and Options over the world, which waits meanwhile. Returns true while either is open.
 static bool Roam__UpdateMenu(SceneRoam *roam) {
+    if (AmountDialog_IsOpen(roam->amount)) {
+        if (AmountDialog_Update(roam->amount) == AMOUNT_OK) {
+            Roam__AmountChosen(roam, AmountDialog_Value(roam->amount));
+        }
+        return true;
+    }
     if (ConfirmDialog_IsOpen(roam->confirm)) {
         if (ConfirmDialog_Update(roam->confirm) == CONFIRM_FIRST) {
             switch (roam->question) {
@@ -4400,11 +4571,16 @@ static bool Roam__UpdateMenu(SceneRoam *roam) {
 
 static void Roam__Update(SceneRoam *roam) {
     const uint64_t now = Roam__Clock(roam);
+    if (roam->game && roam->character != NULL) {
+        Character_Looks(roam->character, &roam->player.looks); // drawn in what's worn
+        roam->player.has_looks = true;
+    }
     if (roam->online) {
         // The other players go on whatever we're doing (menus included)
         if (Roam__UpdateOnline(roam, now)) {
             return;
         }
+        Roam__SendLooks(roam);
         if (!TextBox_IsFocused(roam->chat_box) && roam->options_panel == NULL && !roam->menu_open &&
             Controls_Pressed(ACTION_CHAT)) {
             TextBox_Focus(roam->chat_box);
@@ -5457,6 +5633,7 @@ static void Roam__Render(SceneRoam *roam) {
         Button_Draw(roam->menu_return_button);
     }
     ConfirmDialog_Draw(roam->confirm);
+    AmountDialog_Draw(roam->amount);
     if (roam->screenshot) {
         roam->screenshot = false;
         char path[4300];

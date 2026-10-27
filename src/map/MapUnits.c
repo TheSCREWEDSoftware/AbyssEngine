@@ -15,8 +15,8 @@ static const int turn_order_8[8]   = {4, 0, 5, 1, 6, 2, 7, 3};
 static const int turn_order_16[16] = {4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13, 7, 14, 3, 15};
 
 typedef struct UnitFigure {
-    char    key[64]; // base|id|mode
-    Figure *figure;  // NULL: tried, no graphics
+    char    key[160]; // base|id|mode, or a spec (MapUnits_GetSpecFigure)
+    Figure *figure;   // NULL: tried, no graphics
 } UnitFigure;
 
 typedef struct UnitIdle {
@@ -101,6 +101,33 @@ Figure *MapUnits_GetFigure(MapUnits *units, const char *base, const char *id, co
         figure = Figure_Create(info.spec, mode, PALETTE_ACT_1);
     }
 
+    if (units->figure_count == units->figure_capacity) {
+        units->figure_capacity = units->figure_capacity > 0 ? units->figure_capacity * 2 : 32;
+        UnitFigure *grown      = realloc(units->figures, sizeof(UnitFigure) * (size_t)units->figure_capacity);
+        FAIL_IF_NULL(grown);
+        units->figures = grown;
+    }
+    UnitFigure *entry = &units->figures[units->figure_count++];
+    snprintf(entry->key, sizeof(entry->key), "%s", key);
+    entry->figure = figure;
+    return figure;
+}
+
+Figure *MapUnits_GetSpecFigure(MapUnits *units, const FigureSpec *spec, const char *mode) {
+    if (mode == NULL) {
+        return NULL;
+    }
+    char key[160];
+    int  at = snprintf(key, sizeof(key), "@%s|%s|%s|%s", spec->base, spec->token, spec->weapon_class, mode);
+    for (int c = 0; c < COF_COMPONENT_COUNT && at > 0 && at < (int)sizeof(key); c++) {
+        at += snprintf(key + at, sizeof(key) - (size_t)at, "|%s", spec->armor[c]);
+    }
+    for (int i = 0; i < units->figure_count; i++) {
+        if (strcmp(units->figures[i].key, key) == 0) {
+            return units->figures[i].figure;
+        }
+    }
+    Figure *figure = Figure_Create(spec, mode, PALETTE_ACT_1);
     if (units->figure_count == units->figure_capacity) {
         units->figure_capacity = units->figure_capacity > 0 ? units->figure_capacity * 2 : 32;
         UnitFigure *grown      = realloc(units->figures, sizeof(UnitFigure) * (size_t)units->figure_capacity);

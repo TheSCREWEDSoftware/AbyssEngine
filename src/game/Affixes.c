@@ -1,4 +1,6 @@
 #include "Affixes.h"
+#include "Sockets.h"
+static void Affixes__AddMod(Item *item, int type, int value);
 #include "../common/Logging.h"
 #include "../data/DataTable.h"
 #include "../data/StringTable.h"
@@ -363,6 +365,8 @@ static bool Affixes__Fits(const ItemBase *base, char itypes[][8], const int ityp
     return any;
 }
 
+void Affixes_AddMod(Item *item, const int type, const int value) { Affixes__AddMod(item, type, value); }
+
 static void Affixes__AddMod(Item *item, const int type, const int value) {
     if (type < 0 || item->mod_count >= ITEM_MODS_MAX || value == 0) {
         return;
@@ -375,6 +379,20 @@ static void Affixes__AddMod(Item *item, const int type, const int value) {
     }
     item->mods[item->mod_count].type    = (uint8_t)type;
     item->mods[item->mod_count++].value = (int16_t)(value > 32000 ? 32000 : (value < -32000 ? -32000 : value));
+}
+
+void Affixes_AddProperty(Item *item, const char *code, const int min, const int max) {
+    int       pair = -1;
+    const int type = Affixes__Code(code, &pair);
+    if (type < 0) {
+        return;
+    }
+    if (pair >= 0) {
+        Affixes__AddMod(item, type, min);
+        Affixes__AddMod(item, pair, max);
+    } else {
+        Affixes__AddMod(item, type, Affixes__Roll(min, max));
+    }
 }
 
 static void Affixes__Apply(Item *item, const Prop *props, const int count) {
@@ -572,6 +590,12 @@ void Affixes_Name(const Item *item, char *line1, const size_t size1, char *line2
                  item->name1 > 0 && item->name1 <= unique_count ? uniques[item->name1 - 1].name : base_name);
         snprintf(line2, size2, "%s", base_name);
         return;
+    case ITEM_RUNEWORD: {
+        const char *word = Sockets_RunewordName(item->name1 - 1);
+        snprintf(line1, size1, "%s", word != NULL ? word : base_name);
+        snprintf(line2, size2, "%s", base_name);
+        return;
+    }
     default:
         snprintf(line1, size1, "%s", base_name);
         return;
@@ -584,6 +608,7 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b) 
         {0x69, 0x69, 0xFF}, // magic: blue
         {0xFF, 0xFF, 0x64}, // rare: yellow
         {0xC7, 0xB3, 0x77}, // unique: gold
+        {0xC7, 0xB3, 0x77}, // runeword: gold too
     };
     const int q = item->quality < ITEM_QUALITY_COUNT ? item->quality : 0;
     *r          = colors[q][0];
@@ -637,20 +662,27 @@ int Affixes_Total(const Character *character, const ItemModType type) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Saving
 
+// " <quality> <name1> <name2> <mods or ->" and, with sockets, " s<count>" and " g:<code>,<code>" (what's in them).
+// Plain items without sockets: nothing.
 void Affixes_Format(const Item *item, char *text, const size_t size) {
     text[0] = '\0';
-    if (item->quality == ITEM_NORMAL) {
+    if (item->quality == ITEM_NORMAL && item->sockets == 0 && item->mod_count == 0) {
         return;
     }
     size_t used = (size_t)snprintf(text, size, " %d %d %d ", item->quality, item->name1, item->name2);
     if (item->mod_count == 0) {
-        snprintf(text + used, size - used, "-");
-        return;
+        used += (size_t)snprintf(text + used, size - used, "-");
     }
     for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX && used < size; m++) {
         used += (size_t)snprintf(text + used, size - used, "%s%s:%d", m > 0 ? "," : "",
                                  item->mods[m].type < MOD_TYPE_COUNT ? mod_info[item->mods[m].type].save : "?",
                                  item->mods[m].value);
+    }
+    if (item->sockets > 0 && used < size) {
+        used += (size_t)snprintf(text + used, size - used, " s%d", item->sockets);
+        for (int s = 0; s < item->socketed_count && s < ITEM_SOCKETS_MAX && used < size; s++) {
+            used += (size_t)snprintf(text + used, size - used, "%s%s", s == 0 ? " g:" : ",", item->socketed[s]);
+        }
     }
 }
 
@@ -659,10 +691,26 @@ void Affixes_Parse(Item *item, const char *text) {
     int  name1   = 0;
     int  name2   = 0;
     char mods[512];
-    mods[0] = '\0';
-    if (text == NULL || sscanf(text, "%d %d %d %511s", &quality, &name1, &name2, mods) < 3 || quality <= 0 ||
+    mods[0]  = '\0';
+    int read = 0;
+    if (text == NULL || sscanf(text, "%d %d %d %511s%n", &quality, &name1, &name2, mods, &read) < 3 || quality < 0 ||
         quality >= ITEM_QUALITY_COUNT) {
         return;
+    }
+    // Sockets after the mods: " s3 g:gcv,r01"
+    if (read > 0) {
+        int  sockets = 0;
+        char in[128];
+        in[0]         = '\0';
+        const int got = sscanf(text + read, " s%d g:%127s", &sockets, in);
+        if (got >= 1 && sockets > 0) {
+            item->sockets        = (uint8_t)(sockets > ITEM_SOCKETS_MAX ? ITEM_SOCKETS_MAX : sockets);
+            item->socketed_count = 0;
+            for (char *part = strtok(in, ","); part != NULL && item->socketed_count < item->sockets;
+                 part       = strtok(NULL, ",")) {
+                snprintf(item->socketed[item->socketed_count++], ITEM_CODE_MAX, "%.7s", part);
+            }
+        }
     }
     item->quality   = (uint8_t)quality;
     item->name1     = (int16_t)name1;

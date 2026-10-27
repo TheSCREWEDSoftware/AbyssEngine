@@ -37,6 +37,15 @@ bool            Inventory_CanEquip(const Character *character, const Item *item,
 bool            Inventory_MeetsRequirements(const Character *character, const ItemBase *base);
 const ItemBase *Inventory_Weapon(const Character *character); // NULL: bare hands
 
+// The stash (in town): the same as the grid, 6 x 8, one page
+int  Stash_ItemAt(const Character *character, int cell_x, int cell_y);
+int  Stash_Covered(const Character *character, const ItemBase *base, int x, int y);
+bool Stash_Place(Character *character, const Item *item, int x, int y);
+bool Stash_Add(Character *character, const Item *item);
+void Stash_Remove(Character *character, int index);
+int  Stash_GoldLimit(const Character *character);     // the game's: 50,000 for every ten levels (and the first ten)
+int  Inventory_GoldLimit(const Character *character); // carried: 10,000 a level
+
 // The belt
 int  Inventory_BeltSize(const Character *character); // slots: 4 per row of the belt worn (4 without one)
 bool Inventory_AddToBelt(Character *character, const Item *item);

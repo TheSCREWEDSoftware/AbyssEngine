@@ -127,15 +127,19 @@ static void CharacterSelect__BuildSlots(SceneCharacterSelect *scene) {
         memset(&spec, 0, sizeof(spec));
         spec.base = "chars";
         snprintf(spec.token, sizeof(spec.token), "%s", Character_ClassToken(character->class_id));
-        snprintf(spec.weapon_class, sizeof(spec.weapon_class), "hth");
-        for (int c = 0; c < COF_COMPONENT_COUNT; c++) {
-            if (c != COF_COMPONENT_RH && c != COF_COMPONENT_LH && c != COF_COMPONENT_SH) {
-                snprintf(spec.armor[c], sizeof(spec.armor[c]), "lit");
+        // In what they wear (bare handed when the class has no picture of that weapon)
+        CharacterLooks looks;
+        Character_Looks(character, &looks);
+        for (int bare = 0; bare < 2 && slot->figure == NULL; bare++) {
+            snprintf(spec.weapon_class, sizeof(spec.weapon_class), "%s", bare ? "hth" : looks.weapon_class);
+            for (int c = 0; c < COF_COMPONENT_COUNT && c < CHARACTER_LOOK_LAYERS; c++) {
+                const bool hand = c == COF_COMPONENT_RH || c == COF_COMPONENT_LH;
+                snprintf(spec.armor[c], sizeof(spec.armor[c]), "%s", bare && hand ? "" : looks.layer[c]);
             }
-        }
-        slot->figure = Figure_Create(&spec, "tn", PALETTE_UNITS);
-        if (slot->figure == NULL) {
-            slot->figure = Figure_Create(&spec, "nu", PALETTE_UNITS);
+            slot->figure = Figure_Create(&spec, "tn", PALETTE_UNITS);
+            if (slot->figure == NULL) {
+                slot->figure = Figure_Create(&spec, "nu", PALETTE_UNITS);
+            }
         }
 
         slot->name_label = Label_Create(FONTS_FONT16, PALETTE_STATIC);

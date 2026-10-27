@@ -3,6 +3,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "../types/COF.h"
 #include "Affixes.h"
 #include "Inventory.h"
 #include "Skills.h"
@@ -524,6 +525,15 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
         Character__Print(file, "item inv %d %d %s %d %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
                          it->item.quantity, it->page, magic);
     }
+    // The stash: "item stash x y <code> <defense> <quantity>"
+    Character__Print(file, "stashgold %d\n", character->stash_gold);
+    for (int i = 0; i < character->stash_count; i++) {
+        const InventoryItem *it = &character->stash[i];
+        char                 magic[400];
+        Affixes_Format(&it->item, magic, sizeof(magic));
+        Character__Print(file, "item stash %d %d %s %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity, magic);
+    }
     for (int e = 0; e < EQUIP_COUNT; e++) {
         const Item *it = &character->equipped[e];
         if (it->code[0] != '\0') {
@@ -660,6 +670,8 @@ bool Character_ReadText(const char *text, Character *character) {
             snprintf(character->realm, sizeof(character->realm), "%.39s", value);
         } else if (strcmp(key, "gold") == 0) {
             character->gold = number > 0 ? number : 0;
+        } else if (strcmp(key, "stashgold") == 0) {
+            character->stash_gold = number > 0 ? number : 0;
         } else if (strcmp(key, "items") == 0) {
             has_items = true;
         } else if (strcmp(key, "item") == 0) {
@@ -671,8 +683,12 @@ bool Character_ReadText(const char *text, Character *character) {
             memset(&item, 0, sizeof(item));
             int page = 0;
             int used = 0;
-            if (sscanf(value, "inv %d %d %7s %d %d %d%n", &a, &b, code, &item.defense, &item.quantity, &page, &used) >=
-                5) {
+            if (sscanf(value, "stash %d %d %7s %d %d%n", &a, &b, code, &item.defense, &item.quantity, &used) == 5) {
+                snprintf(item.code, sizeof(item.code), "%s", code);
+                Affixes_Parse(&item, value + used);
+                Stash_Place(character, &item, a, b);
+            } else if (sscanf(value, "inv %d %d %7s %d %d %d%n", &a, &b, code, &item.defense, &item.quantity, &page,
+                              &used) >= 5) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 if (used > 0) {
                     Affixes_Parse(&item, value + used); // magic, after the page
@@ -803,3 +819,138 @@ int Character_ListSaved(Character **characters) {
 Character *Character_Current(void) { return &current; }
 
 void Character_SetCurrent(const Character *character) { current = *character; }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Looks
+
+static const char *const armor_looks[] = {"lit", "med", "hvy"};
+
+void Character_LooksDefault(CharacterLooks *looks) {
+    memset(looks, 0, sizeof(CharacterLooks));
+    snprintf(looks->weapon_class, sizeof(looks->weapon_class), "hth");
+    const int body[] = {COF_COMPONENT_HD, COF_COMPONENT_TR, COF_COMPONENT_LG, COF_COMPONENT_RA,
+                        COF_COMPONENT_LA, COF_COMPONENT_S1, COF_COMPONENT_S2};
+    for (size_t i = 0; i < sizeof(body) / sizeof(body[0]); i++) {
+        snprintf(looks->layer[body[i]], 4, "lit");
+    }
+}
+
+static void Character__ArmorLook(CharacterLooks *looks, const int component, const int level) {
+    if (level >= 0 && level <= 2) {
+        snprintf(looks->layer[component], 4, "%s", armor_looks[level]);
+    }
+}
+
+// Weapons in both hands (the Barbarian's and Assassin's): the classes the game has for the pair
+static const char *Character__DualClass(const char *right, const char *left) {
+    const bool right_throw = strcmp(right, "1ht") == 0;
+    const bool left_throw  = strcmp(left, "1ht") == 0;
+    if (strcmp(right, "ht1") == 0 && strcmp(left, "ht1") == 0) {
+        return "ht2"; // two claws
+    }
+    if (right_throw && left_throw) {
+        return "1jt";
+    }
+    if (right_throw) {
+        return "1jt";
+    }
+    if (left_throw) {
+        return "1st";
+    }
+    return "1ss";
+}
+
+void Character_Looks(const Character *character, CharacterLooks *looks) {
+    Character_LooksDefault(looks);
+    const Item     *helm_item  = &character->equipped[EQUIP_HEAD];
+    const ItemBase *helm       = helm_item->code[0] != '\0' ? Items_Find(helm_item->code) : NULL;
+    const Item     *body_item  = &character->equipped[EQUIP_TORSO];
+    const ItemBase *body       = body_item->code[0] != '\0' ? Items_Find(body_item->code) : NULL;
+    const Item     *right_item = &character->equipped[EQUIP_RIGHT_ARM];
+    const ItemBase *right      = right_item->code[0] != '\0' ? Items_Find(right_item->code) : NULL;
+    const Item     *left_item  = &character->equipped[EQUIP_LEFT_ARM];
+    const ItemBase *left       = left_item->code[0] != '\0' ? Items_Find(left_item->code) : NULL;
+    if (helm != NULL) {
+        snprintf(looks->layer[COF_COMPONENT_HD], 4, "%.3s", helm->gfx);
+    }
+    if (body != NULL) {
+        Character__ArmorLook(looks, COF_COMPONENT_TR, body->look_torso);
+        Character__ArmorLook(looks, COF_COMPONENT_LG, body->look_legs);
+        Character__ArmorLook(looks, COF_COMPONENT_RA, body->look_right_arm);
+        Character__ArmorLook(looks, COF_COMPONENT_LA, body->look_left_arm);
+        Character__ArmorLook(looks, COF_COMPONENT_S1, body->look_right_pad);
+        Character__ArmorLook(looks, COF_COMPONENT_S2, body->look_left_pad);
+    }
+    // Bows and crossbows are held in the left hand, everything else in the right
+    const ItemBase *weapon = right != NULL && right->kind == ITEM_KIND_WEAPON ? right : NULL;
+    const ItemBase *other  = left != NULL && left->kind == ITEM_KIND_WEAPON ? left : NULL;
+    if (weapon == NULL && other != NULL) {
+        weapon = other;
+        other  = NULL;
+    }
+    if (weapon != NULL && weapon->wclass[0] != '\0') {
+        const bool bow = strcmp(weapon->wclass, "bow") == 0 || strcmp(weapon->wclass, "xbw") == 0;
+        snprintf(looks->layer[bow ? COF_COMPONENT_LH : COF_COMPONENT_RH], 4, "%.3s", weapon->gfx);
+        const char *wclass = weapon->wclass;
+        if (other != NULL && other->wclass[0] != '\0' && !bow) {
+            wclass = Character__DualClass(weapon->wclass, other->wclass);
+            snprintf(looks->layer[COF_COMPONENT_LH], 4, "%.3s", other->gfx);
+        } else if (weapon->one_or_two && weapon->wclass_2h[0] != '\0' && left == NULL &&
+                   character->class_id == CHARACTER_BARBARIAN) {
+            wclass = weapon->wclass_2h; // a sword in both hands
+        }
+        snprintf(looks->weapon_class, sizeof(looks->weapon_class), "%.3s", wclass);
+    }
+    // A shield (or anything else worn in the other hand that isn't a weapon)
+    const ItemBase *shield = left != NULL && left->kind == ITEM_KIND_ARMOR ? left : NULL;
+    shield                 = shield == NULL && right != NULL && right->kind == ITEM_KIND_ARMOR ? right : shield;
+    if (shield != NULL) {
+        snprintf(looks->layer[COF_COMPONENT_SH], 4, "%.3s", shield->gfx);
+    }
+}
+
+void Character_LooksToText(const CharacterLooks *looks, char *text, const int size) {
+    int at = snprintf(text, (size_t)size, "%s", looks->weapon_class[0] != '\0' ? looks->weapon_class : "hth");
+    for (int c = 0; c < CHARACTER_LOOK_LAYERS && at > 0 && at < size; c++) {
+        at += snprintf(text + at, (size_t)(size - at), " %s", looks->layer[c][0] != '\0' ? looks->layer[c] : "-");
+    }
+}
+
+bool Character_LooksFromText(const char *text, CharacterLooks *looks) {
+    CharacterLooks read;
+    memset(&read, 0, sizeof(read));
+    char        word[8];
+    int         index = -1;
+    const char *at    = text;
+    while (*at != '\0' && index < CHARACTER_LOOK_LAYERS) {
+        while (*at == ' ') {
+            at++;
+        }
+        int length = 0;
+        while (at[length] != '\0' && at[length] != ' ') {
+            length++;
+        }
+        if (length == 0) {
+            break;
+        }
+        snprintf(word, sizeof(word), "%.*s", length > 3 ? 3 : length, at);
+        at += length;
+        for (char *w = word; *w != '\0'; w++) {
+            const bool ok = (*w >= 'a' && *w <= 'z') || (*w >= '0' && *w <= '9') || *w == '-';
+            if (!ok) {
+                return false; // not something we sent
+            }
+        }
+        if (index < 0) {
+            snprintf(read.weapon_class, sizeof(read.weapon_class), "%.3s", word);
+        } else if (strcmp(word, "-") != 0) {
+            snprintf(read.layer[index], 4, "%.3s", word);
+        }
+        index++;
+    }
+    if (index != CHARACTER_LOOK_LAYERS) {
+        return false;
+    }
+    *looks = read;
+    return true;
+}

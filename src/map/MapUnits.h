@@ -14,6 +14,8 @@ MapUnits *MapUnits_Create(void); // uses the session's Bestiary, built the first
 void      MapUnits_Destroy(MapUnits **units);
 // The figure for a character in one animation (cached). NULL if it has no graphics.
 struct Figure *MapUnits_GetFigure(MapUnits *units, const char *base, const char *id, const char *mode);
+// A figure made to measure (a character in what they wear): kept by what the spec says
+struct Figure *MapUnits_GetSpecFigure(MapUnits *units, const struct FigureSpec *spec, const char *mode);
 const char    *MapUnits_IdleMode(MapUnits *units, const char *base, const char *id);
 // Game direction for a turn index (0 = facing the viewer, clockwise, 16 steps) on a figure with n directions.
 int MapUnits_Direction(const struct Figure *figure, int turn);

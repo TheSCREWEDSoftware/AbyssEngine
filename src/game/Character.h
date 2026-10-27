@@ -20,6 +20,9 @@
 #define INVENTORY_PAGE      (INVENTORY_W * INVENTORY_H)
 #define INVENTORY_MAX       1024 // items on all the pages together (a page holds 40 at most)
 #define INVENTORY_PAGES_MAX 255
+#define STASH_W             6 // the stash in town (the expansion's big one), in cells
+#define STASH_H             8
+#define STASH_MAX           (STASH_W * STASH_H)
 #define BELT_MAX            16 // four rows of four, with the biggest belt
 
 typedef enum CharacterClass {
@@ -101,6 +104,10 @@ typedef struct Item {
     int16_t name2;
     uint8_t mod_count;
     ItemMod mods[ITEM_MODS_MAX];
+    // Sockets: how many it has, and the gems, runes and jewels in them (their codes; their magic is in mods)
+    uint8_t sockets;
+    uint8_t socketed_count;
+    char    socketed[ITEM_SOCKETS_MAX][ITEM_CODE_MAX];
 } Item;
 
 typedef struct InventoryItem {
@@ -136,10 +143,28 @@ typedef struct Character {
     Item          equipped[EQUIP_COUNT];
     Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
     int           gold;
+    InventoryItem stash[STASH_MAX]; // in town: page is always 0
+    int           stash_count;
+    int           stash_gold;
     uint64_t      waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
     int           bonus[BONUS_COUNT]; // from skills right now (not saved)
     char          realm[40]; // made in a multiplayer game that keeps its own characters: that host's id ("" = here)
 } Character;
+
+// How a character looks (what they wear and hold): the weapon class their animations use and each layer's picture
+// (data/global/chars/<class>/<layer>/...): "lit", "med", "hvy" for the body, the helm's, weapon's or shield's code.
+// Empty: that layer isn't drawn.
+#define CHARACTER_LOOK_LAYERS 16 // COF_COMPONENT_COUNT
+#define CHARACTER_LOOKS_TEXT  80
+typedef struct CharacterLooks {
+    char weapon_class[4];
+    char layer[CHARACTER_LOOK_LAYERS][4];
+} CharacterLooks;
+
+void Character_Looks(const Character *character, CharacterLooks *looks);
+void Character_LooksDefault(CharacterLooks *looks);                            // light armor, bare hands
+void Character_LooksToText(const CharacterLooks *looks, char *text, int size); // for the network
+bool Character_LooksFromText(const char *text, CharacterLooks *looks);
 
 #define CHARACTER_TEXT_MAX 49152 // a character as text (Character_WriteText): the save file's contents
 

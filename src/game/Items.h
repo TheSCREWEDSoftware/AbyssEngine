@@ -14,7 +14,15 @@ typedef enum ItemKind { ITEM_KIND_WEAPON, ITEM_KIND_ARMOR, ITEM_KIND_MISC } Item
 
 // An item's quality: normal (white), magic (blue: a prefix and/or a suffix), rare (yellow: a made-up name and up to
 // six affixes), unique (gold: one of the game's named items)
-typedef enum ItemQuality { ITEM_NORMAL, ITEM_MAGIC, ITEM_RARE, ITEM_UNIQUE, ITEM_QUALITY_COUNT } ItemQuality;
+// and a runeword (the right runes in the right order in a plain item's sockets: Runes.txt; name1 is its row)
+typedef enum ItemQuality {
+    ITEM_NORMAL,
+    ITEM_MAGIC,
+    ITEM_RARE,
+    ITEM_UNIQUE,
+    ITEM_RUNEWORD,
+    ITEM_QUALITY_COUNT
+} ItemQuality;
 
 // What magic does (the game's properties we know; Affixes.c turns Properties.txt codes into these). The ones marked *
 // are shown but don't do anything yet.
@@ -61,7 +69,8 @@ typedef enum ItemModType {
     MOD_TYPE_COUNT
 } ItemModType;
 
-#define ITEM_MODS_MAX 12
+#define ITEM_MODS_MAX    16
+#define ITEM_SOCKETS_MAX 6
 
 typedef struct ItemMod {
     uint8_t type; // ItemModType
@@ -114,8 +123,21 @@ typedef struct ItemBase {
     int  required_strength;
     int  required_dexterity;
     int  required_level;
-    int  belt_rows; // a belt: rows of four potions it holds
-    bool beltable;  // potions and scrolls go in the belt
+    // How it looks on the character (the layers of data/global/chars): the weapon's or helm's picture code
+    // (alternategfx), the weapon class it's held with, and armor's light/medium/heavy for each body part
+    char gfx[ITEM_CODE_MAX];
+    char wclass[4];      // "1hs", "stf", "bow", ...
+    char wclass_2h[4];   // held in both hands (a Barbarian's sword with nothing in the other hand)
+    bool one_or_two;     // can be held in one hand or both (1or2handed)
+    int  look_right_arm; // armor: 0 light, 1 medium, 2 heavy; -1 doesn't change it
+    int  look_left_arm;
+    int  look_torso;
+    int  look_legs;
+    int  look_right_pad;
+    int  look_left_pad;
+    int  max_sockets; // gemsockets
+    int  belt_rows;   // a belt: rows of four potions it holds
+    bool beltable;    // potions and scrolls go in the belt
     bool stackable;
     int  max_stack;
     // Potions
