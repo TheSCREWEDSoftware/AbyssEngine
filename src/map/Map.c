@@ -342,8 +342,12 @@ static void Map__AddPresetEntities(Map *map, const DS1 *ds1, const int tx, const
         const float      y      = (float)(object->y + (ty * MAP_SUBTILES)) + 0.5f;
         if (object->type == 1 && (flags & MAP_STAMP_NO_MONSTERS) == 0) {
             const char *monster = MonsterStats_PresetMonster(map->act, object->id);
+            const char *super   = MonsterStats_PresetSuperUnique(map->act, object->id);
             if (monster != NULL && monster[0] != '\0') {
-                Map_AddEntity(map, "monsters", monster, monster, x, y);
+                // A super unique (Bishibosh, Griswold, ...) is named "*<its name>": the game makes it tougher
+                char name[MAP_ENTITY_NAME_LEN];
+                snprintf(name, sizeof(name), "%s%s", super != NULL ? "*" : "", super != NULL ? super : monster);
+                Map_AddEntity(map, "monsters", monster, name, x, y);
             }
         } else if (object->type == 2) {
             ObjectInfo info;

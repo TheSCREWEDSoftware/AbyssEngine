@@ -156,8 +156,13 @@ typedef struct Character {
     bool     hireling_dead;
     uint32_t hireling_experience;
     // Quests: each one's QuestState (Quests.h) for Normal, Nightmare and Hell, and what rewards added for good
-    uint8_t  quests[3][CHARACTER_QUESTS];
-    int      quest_resist;
+    uint8_t quests[3][CHARACTER_QUESTS];
+    int     quest_resist;
+    // Your corpse (softcore death): what you wore and had in the belt stays on it until you get back to it (not saved
+    // as such: a save puts it back on you, the game's way of not losing it)
+    bool     has_corpse;
+    Item     corpse_equipped[EQUIP_COUNT];
+    Item     corpse_belt[BELT_MAX];
     int      quest_life;
     uint64_t waypoints; // the waypoints found (bit = World_WaypointIndex), the Rogue Encampment's from the start
     int      bonus[BONUS_COUNT]; // from skills right now (not saved)
@@ -234,6 +239,11 @@ int Character_ListSaved(Character **characters);
 // The character being played (copied in when the game starts)
 Character *Character_Current(void);
 void       Character_SetCurrent(const Character *character);
+// Single Player: the difficulty picked for the game (0 Normal, 1 Nightmare, 2 Hell), and how many are open to a
+// character (Nightmare once Normal is finished: Diablo dead, or Baal for expansion characters; Hell after Nightmare)
+void Character_SetDifficulty(int difficulty);
+int  Character_Difficulty(void);
+int  Character_DifficultiesOpen(const Character *character);
 
 void Character_Release(void); // frees the cached tables
 

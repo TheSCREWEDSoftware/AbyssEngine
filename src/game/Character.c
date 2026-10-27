@@ -571,6 +571,15 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
             Character__Print(file, "item belt %d %s %d %d%s\n", b, it->code, it->defense, it->quantity, magic);
         }
     }
+    // What's on your corpse comes back to you next time ("item corpse <slot>": worn slots, then the belt's)
+    for (int s = 0; character->has_corpse && s < EQUIP_COUNT + BELT_MAX; s++) {
+        const Item *it = s < EQUIP_COUNT ? &character->corpse_equipped[s] : &character->corpse_belt[s - EQUIP_COUNT];
+        if (it->code[0] != '\0') {
+            char magic[400];
+            Affixes_Format(it, magic, sizeof(magic));
+            Character__Print(file, "item corpse %d %s %d %d%s\n", s, it->code, it->defense, it->quantity, magic);
+        }
+    }
     Character__Print(file, "waypoints %llx\n", (unsigned long long)character->waypoints);
     if (character->realm[0] != '\0') {
         Character__Print(file, "realm %s\n", character->realm);
@@ -741,7 +750,14 @@ bool Character_ReadText(const char *text, Character *character) {
                        Items_Find(code) != NULL) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 Affixes_Parse(&item, value + used);
-                if (strcmp(where, "equip") == 0 && a >= 0 && a < EQUIP_COUNT) {
+                if (strcmp(where, "corpse") == 0 && a >= 0 && a < EQUIP_COUNT + BELT_MAX) {
+                    Item *slot = a < EQUIP_COUNT ? &character->equipped[a] : &character->belt[a - EQUIP_COUNT];
+                    if (slot->code[0] == '\0') {
+                        *slot = item; // back where it was
+                    } else if (!Inventory_Add(character, &item)) {
+                        Stash_Add(character, &item);
+                    }
+                } else if (strcmp(where, "equip") == 0 && a >= 0 && a < EQUIP_COUNT) {
                     character->equipped[a] = item;
                 } else if (strcmp(where, "belt") == 0 && a >= 0 && a < BELT_MAX) {
                     character->belt[a] = item;
@@ -859,6 +875,23 @@ int Character_ListSaved(Character **characters) {
 }
 
 Character *Character_Current(void) { return &current; }
+
+static int game_difficulty = 0;
+
+void Character_SetDifficulty(const int difficulty) {
+    game_difficulty = difficulty >= 0 && difficulty < 3 ? difficulty : 0;
+}
+
+int Character_Difficulty(void) { return game_difficulty; }
+
+int Character_DifficultiesOpen(const Character *character) {
+    const int last = character->expansion ? 26 : 20; // Quests.c: Eve of Destruction, Terror's End
+    int       open = 1;
+    for (int d = 0; d < 2 && character->quests[d][last] == 3; d++) {
+        open++;
+    }
+    return open;
+}
 
 void Character_SetCurrent(const Character *character) { current = *character; }
 

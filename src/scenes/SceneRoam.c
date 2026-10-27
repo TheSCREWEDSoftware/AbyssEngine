@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../data/DataTable.h"
+#include "../data/StringTable.h"
 #include "../drawing/AmountDialog.h"
 #include "../drawing/Button.h"
 #include "../drawing/ConfirmDialog.h"
@@ -157,60 +158,69 @@ typedef struct DrawContext {
 } DrawContext;
 
 typedef struct Unit {
-    char           base[12];
-    char           id[40];
-    char           name[48];
-    const char    *idle_mode;
-    float          x; // sub-tiles
-    float          y;
-    bool           even_speed; // the player with "the same speed on screen": steps scaled by Roam__ScreenSpeedFactor
-    float          target_x;   // walking towards
-    float          target_y;
-    int            turn;
-    UnitState      state;
-    const char    *mode; // animation currently shown
-    int            frame;
-    uint64_t       frame_time;
-    int            hp;
-    int            max_hp;
-    int            damage_min;
-    int            damage_max;
-    int            level;                 // monsters: from monstats; the player: the character's
-    int            defense;               // armor class
-    int            attack_rating;         // to-hit
-    int            experience;            // given for killing it
-    char           treasure[48];          // what it drops (TreasureClassEx.txt)
-    int            resist[ELEMENT_COUNT]; // monsters: percent (100 or more: immune)
-    int            element;               // monsters: their attack's elemental damage (0 none), chance, range
-    int            element_chance;
-    int            element_min;
-    int            element_max;
-    float          speed;
-    bool           npc;
-    bool           dropped;  // added in the Testing Grounds (Clear removes these)
-    bool           provoked; // hit by the player: fights back even far away
-    uint64_t       next_attack;
-    MapPath        path;        // the way around walls to where it's going
-    float          path_goal_x; // where the path was planned to
-    float          path_goal_y;
-    uint64_t       next_repath;
-    float          home_x; // where the map placed it: wandering stays around here
-    float          home_y;
-    bool           wandering;   // on a stroll (not fighting)
-    uint64_t       next_wander; // when to set off again
-    int            can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
-    int            can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
-    bool           vanished;    // died without death or corpse graphics: no longer drawn
-    bool           is_object;   // a chest, door, shrine, torch, ...
-    ObjectInfo     object;
-    char           object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
-    bool           used;           // opened / activated: can't be clicked again
-    int            rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
-    char           net_mode[4];    // another player (multiplayer): the animation their game says they're in
-    bool           hireling;       // the character's hireling (an ally that comes along from area to area)
-    float          reach;          // an ally that attacks from afar (a Rogue Scout's bow): how far, 0 = melee
-    bool           has_looks;      // a player: drawn in what they wear (looks), not the class's plain figure
-    CharacterLooks looks;
+    char        base[12];
+    char        id[40];
+    char        name[48];
+    const char *idle_mode;
+    float       x; // sub-tiles
+    float       y;
+    bool        even_speed; // the player with "the same speed on screen": steps scaled by Roam__ScreenSpeedFactor
+    float       target_x;   // walking towards
+    float       target_y;
+    int         turn;
+    UnitState   state;
+    const char *mode; // animation currently shown
+    int         frame;
+    uint64_t    frame_time;
+    int         hp;
+    int         max_hp;
+    int         damage_min;
+    int         damage_max;
+    int         level;                 // monsters: from monstats; the player: the character's
+    int         defense;               // armor class
+    int         attack_rating;         // to-hit
+    int         experience;            // given for killing it
+    char        treasure[48];          // what it drops (TreasureClassEx.txt)
+    int         resist[ELEMENT_COUNT]; // monsters: percent (100 or more: immune)
+    int         element;               // monsters: their attack's elemental damage (0 none), chance, range
+    int         element_chance;
+    int         element_min;
+    int         element_max;
+    float       speed;
+    bool        npc;
+    bool        dropped;  // added in the Testing Grounds (Clear removes these)
+    bool        provoked; // hit by the player: fights back even far away
+    uint64_t    next_attack;
+    MapPath     path;        // the way around walls to where it's going
+    float       path_goal_x; // where the path was planned to
+    float       path_goal_y;
+    uint64_t    next_repath;
+    float       home_x; // where the map placed it: wandering stays around here
+    float       home_y;
+    bool        wandering;   // on a stroll (not fighting)
+    uint64_t    next_wander; // when to set off again
+    int         can_walk;    // -1 = not checked yet, 0 = no walk animation, 1 = yes
+    int         can_attack;  // -1 = not checked yet, 0 = no attack animation (never attacks), 1 = yes
+    bool        vanished;    // died without death or corpse graphics: no longer drawn
+    bool        is_object;   // a chest, door, shrine, torch, ...
+    ObjectInfo  object;
+    char        object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
+    bool        used;           // opened / activated: can't be clicked again
+    int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
+    char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
+    bool        hireling;       // the character's hireling (an ally that comes along from area to area)
+    uint8_t     rank;           // UnitRank: a champion, a unique and its minions, a super unique (named in blue / gold)
+    // Monster AI (SceneRoamAI.inc): what it shoots, the spell it casts, when next, running away
+    char            shot[32];
+    const SkillRow *spell;
+    int             spell_level;
+    uint64_t        next_spell;
+    uint64_t        flee_until;
+    bool            ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
+    bool            pack_called;  // provoked: its pack has been called
+    float           reach;        // an ally that attacks from afar (a Rogue Scout's bow): how far, 0 = melee
+    bool            has_looks;    // a player: drawn in what they wear (looks), not the class's plain figure
+    CharacterLooks  looks;
     // Multiplayer monsters
     int      net_target; // the map's owner: the player it's after (0: the owner's own)
     float    net_from_x; // the others: shown moving smoothly to where the owner last said it is
@@ -352,6 +362,8 @@ typedef struct SceneRoam {
     float    spawn_x;
     float    spawn_y;
     uint64_t respawn_at;
+    Unit     corpse;     // Single Player: where you fell, with what you wore (the character's corpse_*)
+    int      corpse_key; // the map it's on (Roam__MapKey), 0 = none
     uint64_t safe_until; // grace period after respawning
     int      step_frame; // walk frame the last footstep was played on, -1 = none
 
@@ -775,6 +787,10 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
 
 static int Roam__Roll(const int low, const int high) { return high > low ? low + (rand() % (high - low + 1)) : low; }
 
+typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQUE, RANK_MINION } UnitRank;
+
+static int init_area_level = 0; // Roam__Populate: the area's monster level for the monsters being made (0: theirs)
+
 static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const float x, const float y) {
     CatalogCharacterInfo info;
     if (!CatalogCharacters_Find(MapSession_GetBestiary(), base, id, &info)) {
@@ -799,7 +815,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     unit->net_state  = -1;
 
     MonsterStats stats;
-    if (strcmp(base, "monsters") == 0 && MonsterStats_Get(id, &stats)) {
+    if (strcmp(base, "monsters") == 0 && MonsterStats_GetAtLevel(id, init_area_level, &stats)) {
         unit->max_hp        = Roam__Roll(stats.hp_min, stats.hp_max > stats.hp_min ? stats.hp_max : stats.hp_min);
         unit->max_hp        = unit->max_hp > 0 ? unit->max_hp : 20;
         unit->damage_min    = stats.damage_min > 0 ? stats.damage_min : 1;
@@ -816,6 +832,19 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         unit->element_chance = stats.element_chance;
         unit->element_min    = stats.element_min;
         unit->element_max    = stats.element_max;
+        // Archers' arrows; casters' bolts and novas (a skill with a missile that the engine has)
+        if (stats.missile[0] != '\0' && MissileData_Get(stats.missile) != NULL) {
+            snprintf(unit->shot, sizeof(unit->shot), "%s", stats.missile);
+        }
+        for (int s = 0; s < 2 && unit->spell == NULL; s++) {
+            const SkillRow *spell = stats.skill[s][0] != '\0' ? SkillData_Get(stats.skill[s]) : NULL;
+            const char     *name = spell != NULL ? (spell->missile[0] != '\0' ? spell->missile : spell->missile_a) : "";
+            if (spell != NULL && (spell->kind == SKILL_KIND_MISSILE || spell->kind == SKILL_KIND_NOVA) &&
+                MissileData_Get(name) != NULL) {
+                unit->spell       = spell;
+                unit->spell_level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
+            }
+        }
     } else if (strcmp(base, "chars") == 0) {
         unit->max_hp     = 50;
         unit->damage_min = 2;
@@ -1810,6 +1839,108 @@ static void Roam__FindSpawn(SceneRoam *roam) {
 }
 
 // Units for the map's NPCs, monsters and objects; then the player at the spawn point
+// Unique monsters' names, the game's way: a prefix, a suffix and sometimes a title ("Bile Spine the Hungry")
+static void Roam__UniqueName(char *out, const size_t size) {
+    static const char *files[3] = {"/data/global/excel/UniquePrefix.txt", "/data/global/excel/UniqueSuffix.txt",
+                                   "/data/global/excel/UniqueAppellation.txt"};
+    static DataTable  *tables[3];
+    static bool        loaded = false;
+    if (!loaded) {
+        loaded = true;
+        for (int t = 0; t < 3; t++) {
+            tables[t] = DataTable_Load(files[t]);
+        }
+    }
+    char parts[3][48] = {"", "", ""};
+    for (int t = 0; t < 3; t++) {
+        const int rows = tables[t] != NULL ? DataTable_GetRowCount(tables[t]) : 0;
+        if (rows <= 0 || (t == 2 && rand() % 2 == 0)) {
+            continue;
+        }
+        const char *key  = DataTable_GetString(tables[t], rand() % rows, DataTable_GetColumnIndex(tables[t], "Name"));
+        const char *text = StringTable_Find(key);
+        snprintf(parts[t], sizeof(parts[t]), "%s", text != NULL ? text : key);
+    }
+    snprintf(out, size, "%s%s%s%s%s", parts[0], parts[1][0] != '\0' ? " " : "", parts[1],
+             parts[2][0] != '\0' ? " " : "", parts[2]);
+}
+
+// Champions, uniques (with a power or two) and their minions, super uniques: tougher, worth more, better drops
+static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
+    (void)roam;
+    MonsterStats stats;
+    const bool   have = MonsterStats_GetAtLevel(unit->id, 0, &stats);
+    if (mark[0] == '*') {
+        char cls[40];
+        char tc[48];
+        if (MonsterStats_SuperUnique(mark + 1, cls, sizeof(cls), tc, sizeof(tc))) {
+            const char *name = StringTable_Find(mark + 1);
+            snprintf(unit->name, sizeof(unit->name), "%s", name != NULL ? name : mark + 1);
+            if (tc[0] != '\0') {
+                snprintf(unit->treasure, sizeof(unit->treasure), "%s", tc);
+            }
+        }
+        unit->rank        = RANK_SUPER_UNIQUE;
+        unit->max_hp     *= 4;
+        unit->damage_min += unit->damage_min / 2;
+        unit->damage_max += unit->damage_max / 2;
+        unit->experience *= 5;
+        unit->level      += 3;
+    } else if (strcmp(mark, "@champion") == 0) {
+        unit->rank           = RANK_CHAMPION;
+        unit->max_hp        *= 3;
+        unit->damage_min    += unit->damage_min / 4;
+        unit->damage_max    += unit->damage_max / 4;
+        unit->attack_rating += unit->attack_rating / 4;
+        unit->experience    *= 3;
+        unit->level         += 2;
+        unit->speed         *= 1.15f;
+        if (have && stats.treasure_champion[0] != '\0') {
+            snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure_champion);
+        }
+    } else if (strcmp(mark, "@unique") == 0) {
+        unit->rank = RANK_UNIQUE;
+        Roam__UniqueName(unit->name, sizeof(unit->name));
+        unit->max_hp        *= 4;
+        unit->damage_min    += unit->damage_min / 2;
+        unit->damage_max    += unit->damage_max / 2;
+        unit->attack_rating += unit->attack_rating / 3;
+        unit->experience    *= 5;
+        unit->level         += 3;
+        // One of the game's powers (MonUMod.txt's commonest)
+        switch (rand() % 6) {
+        case 0: // extra strong
+            unit->damage_min += unit->damage_min / 2;
+            unit->damage_max += unit->damage_max / 2;
+            break;
+        case 1: // extra fast
+            unit->speed *= 1.4f;
+            break;
+        case 2: // stone skin
+            unit->defense *= 3;
+            break;
+        default: { // fire, cold or lightning enchanted
+            static const int elements[3] = {ELEMENT_FIRE, ELEMENT_COLD, ELEMENT_LIGHTNING};
+            unit->element                = elements[rand() % 3];
+            unit->element_chance         = 100;
+            unit->element_min            = unit->damage_min;
+            unit->element_max            = unit->damage_max;
+            unit->resist[unit->element]  = 75;
+            break;
+        }
+        }
+        if (have && stats.treasure_unique[0] != '\0') {
+            snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure_unique);
+        }
+    } else if (strcmp(mark, "@minion") == 0) {
+        unit->rank        = RANK_MINION;
+        unit->max_hp     *= 2;
+        unit->experience *= 2;
+    }
+    unit->speed = unit->speed > 9.0f ? 9.0f : unit->speed;
+    unit->hp    = unit->max_hp;
+}
+
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     roam->npc_menu     = -1;
@@ -1824,7 +1955,14 @@ static void Roam__Populate(SceneRoam *roam) {
     roam->hover_exit = -1;
     for (int e = 0; e < roam->map->entity_count; e++) {
         const MapEntity *entity = &roam->map->entities[e];
-        Unit            *unit   = Roam__AddUnit(roam, entity->base, entity->id, entity->x, entity->y);
+        // The expansion's monster levels: from the area (Levels.txt MonLvl for the difficulty)
+        const MapArea *area = roam->game ? Map_AreaAt(roam->map, entity->x, entity->y) : NULL;
+        init_area_level     = roam->game ? MonsterStats_AreaLevel(area != NULL ? area->level_id : roam->area_level) : 0;
+        Unit *unit          = Roam__AddUnit(roam, entity->base, entity->id, entity->x, entity->y);
+        init_area_level     = 0;
+        if (unit != NULL && roam->game && strcmp(entity->base, "monsters") == 0) {
+            Roam__MakeRank(roam, unit, entity->name);
+        }
         if (unit != NULL) {
             unit->turn = entity->direction;
             if (unit->is_object && entity->object_row >= 0) {
@@ -2396,8 +2534,10 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         roam->character    = Character_Current();
         roam->player_class = (int)roam->character->class_id;
         roam->online       = NetClient_Stage() == NETC_IN_GAME;
-        // Monsters as tough as the game's Difficulty (multiplayer; Single Player is Normal for now)
-        MonsterStats_SetDifficulty(roam->online ? NetClient_Settings()->difficulty : 0);
+        // Monsters as tough as the game's Difficulty (multiplayer: the game's; Single Player: picked on the character
+        // list)
+        roam->difficulty = roam->online ? 0 : Character_Difficulty();
+        MonsterStats_SetDifficulty(Roam__Difficulty(roam));
         roam->spread_place = -1;
         if (roam->online) {
             roam->chat_box = TextBox_Create(FONTS_FONT16, 120, 500, 560, 22, "Say something (Enter sends, Esc stops)");
@@ -2735,8 +2875,82 @@ static void Roam__AttackInPlace(SceneRoam *roam, const int hovered, const float 
 
 #include "SceneRoamSkills.inc"
 
+// Softcore death, the game's way: some of the experience towards your next level goes (5% on Normal, 10% Nightmare,
+// 15% Hell; never below the level you have), some of your gold, and what you wear and carry in your belt stays on your
+// corpse where you fell until you walk back to it
+static void Roam__DeathPenalty(SceneRoam *roam) {
+    Character *c         = roam->character;
+    const int  pct       = 5 * (Roam__Difficulty(roam) + 1);
+    const int  level     = c->level;
+    uint32_t   floor     = Character_ExperienceFor(level);
+    uint32_t   next      = Character_ExperienceFor(level + 1);
+    uint32_t   lost_exp  = next > floor ? (next - floor) * (uint32_t)pct / 100 : 0;
+    lost_exp             = c->experience - floor < lost_exp ? c->experience - floor : lost_exp;
+    c->experience       -= lost_exp;
+    const int lost_gold  = c->gold * (10 + (Roam__Difficulty(roam) * 5)) / 100;
+    c->gold             -= lost_gold;
+    bool on_corpse       = false;
+    if (!c->has_corpse) { // (a second death before getting back to the first corpse leaves it as it is)
+        for (int e = 0; e < EQUIP_COUNT; e++) {
+            on_corpse = on_corpse || c->equipped[e].code[0] != '\0';
+        }
+        for (int b = 0; b < BELT_MAX; b++) {
+            on_corpse = on_corpse || c->belt[b].code[0] != '\0';
+        }
+    }
+    if (on_corpse) {
+        memcpy(c->corpse_equipped, c->equipped, sizeof(c->equipped));
+        memcpy(c->corpse_belt, c->belt, sizeof(c->belt));
+        memset(c->equipped, 0, sizeof(c->equipped));
+        memset(c->belt, 0, sizeof(c->belt));
+        c->has_corpse          = true;
+        roam->corpse           = roam->player;
+        roam->corpse.state     = UNIT_DEAD;
+        roam->corpse_key       = Roam__MapKey(roam);
+        roam->corpse.has_looks = true;
+        snprintf(roam->corpse.name, sizeof(roam->corpse.name), "%s's corpse", c->name);
+        Roam__ApplyCharacter(roam);
+    }
+    char text[160];
+    snprintf(text, sizeof(text), "You lost %u experience and %d gold.%s", lost_exp, lost_gold,
+             on_corpse ? " Your gear is on your corpse: go back for it." : "");
+    Roam__ShowMessage(roam, text);
+    Roam__StoreCharacter(roam);
+}
+
+// Walking up to your corpse gives you back what's on it (into the inventory, or at your feet, when you've put other
+// things on since)
+static void Roam__TakeCorpse(SceneRoam *roam) {
+    Character *c = roam->character;
+    if (!roam->game || !c->has_corpse || roam->corpse_key == 0 || roam->corpse_key != Roam__MapKey(roam) ||
+        !Roam__IsAlive(&roam->player) ||
+        Roam__Distance(roam->corpse.x, roam->corpse.y, roam->player.x, roam->player.y) > 1.8f) {
+        return;
+    }
+    for (int s = 0; s < EQUIP_COUNT + BELT_MAX; s++) {
+        Item *from = s < EQUIP_COUNT ? &c->corpse_equipped[s] : &c->corpse_belt[s - EQUIP_COUNT];
+        Item *to   = s < EQUIP_COUNT ? &c->equipped[s] : &c->belt[s - EQUIP_COUNT];
+        if (from->code[0] == '\0') {
+            continue;
+        }
+        if (to->code[0] == '\0') {
+            *to = *from;
+        } else if (!Inventory_Add(c, from)) {
+            Roam__PutOnGround(roam, from, roam->player.x, roam->player.y);
+        }
+        memset(from, 0, sizeof(Item));
+    }
+    c->has_corpse    = false;
+    roam->corpse_key = 0;
+    Roam__ApplyCharacter(roam);
+    Roam__ShowMessage(roam, "You took your things back from your corpse.");
+    Sounds_Play("item_pickup", SOUND_KIND_SFX);
+    Roam__StoreCharacter(roam);
+}
+
 static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit *player = &roam->player;
+    Roam__TakeCorpse(roam);
 
     if (player->state == UNIT_DEAD) {
         if (roam->game && roam->character->dead) {
@@ -2842,6 +3056,8 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 roam->leave_at        = now + HARDCORE_DEATH_MS;
                 Roam__StoreCharacter(roam);
                 Roam__ShowMessage(roam, "You have died. Hardcore characters don't come back.");
+            } else if (roam->game) {
+                Roam__DeathPenalty(roam);
             }
             return;
         } else {
@@ -3021,6 +3237,8 @@ static void Roam__Wander(SceneRoam *roam, Unit *unit, const float seconds, const
     unit->next_wander = now + WANDER_PAUSE_MIN_MS; // nowhere to go right now
 }
 
+#include "SceneRoamAI.inc"
+
 static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64_t now) {
     Unit          *player       = &roam->player;
     const bool     player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
@@ -3056,7 +3274,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
         if (Roam__Animate(roam, unit, now)) {
-            if (unit->state == UNIT_ATTACK && Roam__Combat(roam)) {
+            if (unit->state == UNIT_ATTACK && unit->ranged_swing) {
+                unit->ranged_swing = false; // a shot or a spell: what it threw does the damage
+            } else if (unit->state == UNIT_ATTACK && Roam__Combat(roam)) {
                 const Unit *other = NULL;
                 Unit       *ally  = unit->fight_ally > 0 && unit->fight_ally <= roam->unit_count
                                         ? &roam->units[unit->fight_ally - 1]
@@ -3152,6 +3372,17 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
             continue;
         }
         unit->wandering = false;
+        if (roam->game) {
+            unit->provoked = true; // it's seen you: its pack comes too
+            Roam__CallPack(roam, unit);
+            if (unit->fight_ally == 0 &&
+                (Roam__MonsterFlees(roam, unit, target_x, target_y, now, seconds) ||
+                 Roam__MonsterCasts(roam, unit, target_x, target_y, distance, now) ||
+                 Roam__MonsterShoots(roam, unit, target_x, target_y, distance, now, seconds))) {
+                unit->net_target = target_id;
+                continue;
+            }
+        }
         if (distance <= ATTACK_RANGE) {
             Roam__TurnTowards(&unit->turn, unit->x, unit->y, target_x, target_y);
             Roam__ClearPath(unit);
@@ -5265,7 +5496,14 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
     }
 
     Label_SetText(roam->target_label, unit->name);
-    Label_SetColor(roam->target_label, unit->npc ? 0xC0 : 0xFF, unit->npc ? 0xC0 : 0xE8, unit->npc ? 0xFF : 0xA0, 0xFF);
+    if (unit->rank == RANK_CHAMPION) {
+        Label_SetColor(roam->target_label, 0x69, 0x69, 0xFF, 0xFF); // the game's blue
+    } else if (unit->rank == RANK_UNIQUE || unit->rank == RANK_SUPER_UNIQUE) {
+        Label_SetColor(roam->target_label, 0xC7, 0xB3, 0x77, 0xFF); // gold
+    } else {
+        Label_SetColor(roam->target_label, unit->npc ? 0xC0 : 0xFF, unit->npc ? 0xC0 : 0xE8, unit->npc ? 0xFF : 0xA0,
+                       0xFF);
+    }
     Label_Draw(roam->target_label, sx, top - (show_bar ? 8 : 0));
     if (show_bar && unit->max_hp > 0) {
         const SDL_Rect back = {sx - 25, top - 6, 50, 5};
@@ -5497,7 +5735,7 @@ static void Roam__Render(SceneRoam *roam) {
     SDL_SetRenderDrawColor(sdl_renderer, 10, 10, 14, 255);
     SDL_RenderClear(sdl_renderer);
 
-    static MapDrawable drawables[MAX_UNITS + 1 + NET_MAX_PLAYERS + MAX_GROUND_ITEMS + MAX_MISSILES];
+    static MapDrawable drawables[MAX_UNITS + 2 + NET_MAX_PLAYERS + MAX_GROUND_ITEMS + MAX_MISSILES];
     int                count = 0;
     const uint64_t     now   = SDL_GetTicks64();
     for (int g = 0; g < roam->ground_count; g++) { // items on the ground first: under whoever stands there
@@ -5514,6 +5752,10 @@ static void Roam__Render(SceneRoam *roam) {
         if (Roam__PrepareDraw(roam, &roam->others[o], &drawables[count])) {
             count++;
         }
+    }
+    if (roam->corpse_key != 0 && roam->corpse_key == Roam__MapKey(roam) &&
+        Roam__PrepareDraw(roam, &roam->corpse, &drawables[count])) {
+        count++; // where you fell
     }
     if (Roam__PrepareDraw(roam, &roam->player, &drawables[count])) {
         count++;
@@ -5614,9 +5856,11 @@ static void Roam__Render(SceneRoam *roam) {
     }
     char status[200];
     if (roam->game) {
-        snprintf(status, sizeof(status), "%s   %s, level %d %s%s   light: %s", Roam__AreaName(roam),
-                 roam->character->name, roam->character->level, Character_ClassName(roam->character->class_id),
-                 roam->character->hardcore ? " (hardcore)" : "", light_levels[light_level].name);
+        static const char *difficulty_names[3] = {"", "   Nightmare", "   Hell"};
+        snprintf(status, sizeof(status), "%s%s   %s, level %d %s%s   light: %s", Roam__AreaName(roam),
+                 difficulty_names[Roam__Difficulty(roam)], roam->character->name, roam->character->level,
+                 Character_ClassName(roam->character->class_id), roam->character->hardcore ? " (hardcore)" : "",
+                 light_levels[light_level].name);
     } else {
         char seed[32] = "";
         if (roam->free_roam) {

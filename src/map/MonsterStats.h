@@ -12,12 +12,18 @@ typedef struct MonsterStats {
     int  hp_max;
     int  damage_min; // first attack
     int  damage_max;
-    int  defense;       // armor class
-    int  attack_rating; // first attack's to-hit
-    int  experience;    // given for killing it
-    int  velocity;      // walk speed
-    bool npc;           // town NPCs: never fight unless combat is forced on
-    char treasure[48];  // what it drops (TreasureClassEx.txt), for the difficulty
+    int  defense;               // armor class
+    int  attack_rating;         // first attack's to-hit
+    int  experience;            // given for killing it
+    int  velocity;              // walk speed
+    bool npc;                   // town NPCs: never fight unless combat is forced on
+    char treasure[48];          // what it drops (TreasureClassEx.txt), for the difficulty
+    char treasure_champion[48]; // ... as a champion (TreasureClass2), as a unique (TreasureClass3)
+    char treasure_unique[48];
+    bool boss;         // Andariel, Duriel, ...: keeps its own level
+    char missile[32];  // MissA1: what its first attack shoots (archers), "" = a blow
+    char skill[2][32]; // Skill1, Skill2 (skills.txt: Shaman fire, Andariel's poison bolts, Frost Nova, ...)
+    int  skill_level[2];
     // Resistances in percent (100 or more: immune): 0 physical, 1 fire, 2 cold, 3 lightning, 4 poison (Character.h's
     // Element order)
     int resist[5];
@@ -29,6 +35,12 @@ typedef struct MonsterStats {
 } MonsterStats;
 
 bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if unknown
+// ... at an area's level (the expansion's way: everything but bosses and town folk takes the area's level)
+bool MonsterStats_GetAtLevel(const char *monstats_id, int area_level, MonsterStats *stats);
+int  MonsterStats_AreaLevel(int level_id); // Levels.txt MonLvl for the difficulty (0: none)
+// A super unique (SuperUniques.txt, by its Superunique name): its base monster and what it drops at the difficulty
+bool MonsterStats_SuperUnique(const char *name, char *class_out, int class_size, char *treasure_out, int treasure_size);
+const char *MonsterStats_PresetSuperUnique(int act, int index); // the super unique a DS1 preset places, or NULL
 // monstats Id for a DS1 monster preset (act 0..4, index into that act's MonPreset rows); NULL for spawn markers
 const char *MonsterStats_PresetMonster(int act, int index);
 void        MonsterStats_Release(void);

@@ -14,8 +14,14 @@ between sessions, gain experience and levels, carry, wear and drop items and lea
 | Arrow keys, mouse wheel | Move through the list, scroll when there are more than eight |
 | **Exit** / **Esc** | Back to the main menu |
 
-Each character stands in their slot with their name, level and class, and "Expansion Character", "Hardcore" or
-"Dead".
+Each character stands in their slot, in what they wear, with their name, level and class, and "Expansion
+Character", "Hardcore" or "Dead".
+
+**Difficulty**: once a character has finished Normal (Diablo dead, or Baal for expansion characters: Terror's End or
+Eve of Destruction done) playing asks **Normal** or **Nightmare**, and after Nightmare **Hell** too (Esc goes back).
+Monsters use the game's Nightmare and Hell numbers (`monstats.txt`'s (N) and (H) columns and `MonLvl.txt`), quests
+start again for each difficulty, merchants sell better things, and your resistances take the game's penalty (-40 in
+Nightmare, -100 in Hell). The difficulty shows at the top of the screen.
 
 ## Creating a character
 
@@ -117,8 +123,28 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   out and you walk until it's back to a tenth.
 - **Life** doesn't come back by itself: drink a healing potion (it heals over a few seconds, like the game's: a
   Lesser Healing Potion gives 30 life over 8 seconds), or go to town, which fills life and mana up.
-- **Dying**: you wake up in the act's town after 3 seconds with full life. **Hardcore** characters die for good: they
-  stay in the list as "Dead" and can't be played.
+- **Dying**: you wake up in the act's town after 3 seconds with full life, having lost some of the experience towards
+  your next level (5% of it on Normal, 10% in Nightmare, 15% in Hell; never a level) and some of your gold (10%, 15%,
+  20%). What you wear and what's in your belt stay on your **corpse** where you fell: walk back to it and you take it
+  all back (into the inventory or at your feet if you've put on other things since). Saving and exiting before you get
+  there gives it back to you next time. **Hardcore** characters die for good: they stay in the list as "Dead" and can't
+  be played.
+
+### Monsters
+
+- **Levels**: in a game, monsters are as strong as the area they're in, the expansion's way (`Levels.txt` MonLvl for
+  the difficulty, with `MonLvl.txt`'s life, damage, defense, to-hit and experience for that level); bosses and town
+  folk keep their own.
+- **Champions and uniques**: about one pack in ten is special. Champions (named in blue) have three times the life,
+  hit harder and faster and drop better (`TreasureClass2`). A unique (gold, named the game's way from
+  `UniquePrefix.txt`, `UniqueSuffix.txt` and `UniqueAppellation.txt`: "Bane Burn the Sharp") has four times the life,
+  hits harder, has one of the game's powers (extra strong, extra fast, stone skin, or fire, cold or lightning
+  enchanted) and comes with its minions; it drops from `TreasureClass3`. The super uniques the area presets place
+  (Bishibosh, Rakanishu, Griswold, ...) are named and tough too, with their own treasure (`SuperUniques.txt`).
+- **What they do**: archers (`monstats.txt` MissA1: the Dark Wood's corrupt archers, skeleton archers) stand back and
+  shoot, stepping away when you get close; casters throw their spells now and then (Skill1/Skill2 with a missile: the
+  Fallen Shamans' fire, Andariel's poison, Mephisto's bolts, novas round them), at the spell's own damage; the Fallen
+  scatter for a moment when one of them dies near them; and a pack comes all together once one of it has seen you.
 - **Waypoints**: you start knowing the Rogue Encampment's. Click a waypoint to light it up ("Waypoint found."); it
   then shows in the waypoint list (V in town or next to a waypoint), and travelling to it puts you next to it. Found
   waypoints are kept with the character.

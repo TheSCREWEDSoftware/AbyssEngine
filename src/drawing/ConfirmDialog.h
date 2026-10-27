@@ -21,6 +21,8 @@ void           ConfirmDialog_Destroy(ConfirmDialog **dialog);
 void ConfirmDialog_Open(ConfirmDialog *dialog, const char *title, const char *text, const char *first,
                         const char *second, const char *third);
 bool ConfirmDialog_IsOpen(const ConfirmDialog *dialog);
+// Esc closes it without an answer (CONFIRM_NONE, and it's no longer open), instead of picking the last one
+void ConfirmDialog_EscapeCloses(ConfirmDialog *dialog, bool closes);
 
 // Once a frame while open: the answer picked this frame (which closes it), or CONFIRM_NONE
 ConfirmAnswer ConfirmDialog_Update(ConfirmDialog *dialog);

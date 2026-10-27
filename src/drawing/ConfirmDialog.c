@@ -30,6 +30,7 @@ struct ConfirmDialog {
     int     answer_count;
     int     y; // top of the panel
     int     height;
+    bool    escape_closes;
 };
 
 ConfirmDialog *ConfirmDialog_Create(void) {
@@ -113,6 +114,8 @@ void ConfirmDialog_Open(ConfirmDialog *dialog, const char *title, const char *te
 
 bool ConfirmDialog_IsOpen(const ConfirmDialog *dialog) { return dialog != NULL && dialog->open; }
 
+void ConfirmDialog_EscapeCloses(ConfirmDialog *dialog, const bool closes) { dialog->escape_closes = closes; }
+
 ConfirmAnswer ConfirmDialog_Update(ConfirmDialog *dialog) {
     if (!ConfirmDialog_IsOpen(dialog)) {
         return CONFIRM_NONE;
@@ -128,6 +131,11 @@ ConfirmAnswer ConfirmDialog_Update(ConfirmDialog *dialog) {
         answer = CONFIRM_FIRST;
     }
     if (answer == CONFIRM_NONE && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE)) {
+        if (dialog->escape_closes) {
+            dialog->open = false;
+            InputManager_ClearPresses();
+            return CONFIRM_NONE;
+        }
         answer = (ConfirmAnswer)(dialog->answer_count - 1);
     }
     InputManager_ClearPresses(); // nothing else reacts to keys while it's open

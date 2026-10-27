@@ -60,7 +60,7 @@ static void MonsterStats__Load(void) {
     }
 }
 
-bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
+static bool MonsterStats__Get(const char *monstats_id, const int area_level, MonsterStats *stats) {
     MonsterStats__Load();
     memset(stats, 0, sizeof(MonsterStats));
     if (monstats == NULL || monstats_id == NULL) {
@@ -70,6 +70,17 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         if (MonsterStats__Compare(DataTable_GetString(monstats, row, c_id), monstats_id) != 0) {
             continue;
         }
+        stats->boss = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, "boss")) != 0;
+        snprintf(stats->missile, sizeof(stats->missile), "%s",
+                 DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "MissA1")));
+        for (int s = 0; s < 2; s++) {
+            char column[16];
+            snprintf(column, sizeof(column), "Skill%d", s + 1);
+            snprintf(stats->skill[s], sizeof(stats->skill[s]), "%s",
+                     DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, column)));
+            snprintf(column, sizeof(column), "Sk%dlvl", s + 1);
+            stats->skill_level[s] = DataTable_GetInt(monstats, row, DataTable_GetColumnIndex(monstats, column));
+        }
         // monstats gives life and damage as percentages of the base values for the monster's level (MonLvl.txt)
         int base_hp      = 0;
         int base_damage  = 0;
@@ -77,7 +88,10 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         int base_to_hit  = 0;
         int base_exp     = 0;
         // Nightmare and Hell (multiplayer games' Difficulty): the game's own columns for them, higher levels and more
-        const int level = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "Level", "Level"));
+        int level = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "Level", "Level"));
+        if (area_level > 0 && !stats->boss && DataTable_GetInt(monstats, row, c_npc) == 0) {
+            level = area_level; // the expansion's way: an area's monsters are its level, whatever their kind
+        }
         if (monlvl != NULL) {
             const int c_lvl = DataTable_GetColumnIndex(monlvl, "Level");
             const int c_hp  = MonsterStats__Column(monlvl, "HP", "HP");
@@ -140,9 +154,89 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         snprintf(
             stats->treasure, sizeof(stats->treasure), "%s",
             DataTable_GetString(monstats, row, MonsterStats__Column(monstats, "TreasureClass1", "TreasureClass1")));
+        snprintf(
+            stats->treasure_champion, sizeof(stats->treasure_champion), "%s",
+            DataTable_GetString(monstats, row, MonsterStats__Column(monstats, "TreasureClass2", "TreasureClass2")));
+        snprintf(
+            stats->treasure_unique, sizeof(stats->treasure_unique), "%s",
+            DataTable_GetString(monstats, row, MonsterStats__Column(monstats, "TreasureClass3", "TreasureClass3")));
         return true;
     }
     return false;
+}
+
+bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) { return MonsterStats__Get(monstats_id, 0, stats); }
+
+bool MonsterStats_GetAtLevel(const char *monstats_id, const int area_level, MonsterStats *stats) {
+    return MonsterStats__Get(monstats_id, area_level, stats);
+}
+
+int MonsterStats_AreaLevel(const int level_id) {
+    static DataTable *levels = NULL;
+    static bool       tried  = false;
+    if (!tried) {
+        tried  = true;
+        levels = DataTable_Load("/data/global/excel/Levels.txt");
+    }
+    if (levels == NULL || level_id <= 0) {
+        return 0;
+    }
+    static const char *expansion[3] = {"MonLvl1Ex", "MonLvl2Ex", "MonLvl3Ex"};
+    static const char *original[3]  = {"MonLvl1", "MonLvl2", "MonLvl3"};
+    const int          c_level_id   = DataTable_GetColumnIndex(levels, "Id");
+    for (int r = 0; r < DataTable_GetRowCount(levels); r++) {
+        if (DataTable_GetInt(levels, r, c_level_id) != level_id) {
+            continue;
+        }
+        const int ex = DataTable_GetInt(levels, r, DataTable_GetColumnIndex(levels, expansion[difficulty]));
+        return ex > 0 ? ex : DataTable_GetInt(levels, r, DataTable_GetColumnIndex(levels, original[difficulty]));
+    }
+    return 0;
+}
+
+bool MonsterStats_SuperUnique(const char *name, char *class_out, const int class_size, char *treasure_out,
+                              const int treasure_size) {
+    MonsterStats__Load();
+    if (superuniques == NULL || name == NULL) {
+        return false;
+    }
+    const int c_name = DataTable_GetColumnIndex(superuniques, "Superunique");
+    for (int s = 0; s < DataTable_GetRowCount(superuniques); s++) {
+        if (MonsterStats__Compare(DataTable_GetString(superuniques, s, c_name), name) != 0) {
+            continue;
+        }
+        snprintf(class_out, (size_t)class_size, "%s",
+                 DataTable_GetString(superuniques, s, DataTable_GetColumnIndex(superuniques, "Class")));
+        static const char *tc[3] = {"TC", "TC(N)", "TC(H)"};
+        snprintf(treasure_out, (size_t)treasure_size, "%s",
+                 DataTable_GetString(superuniques, s, DataTable_GetColumnIndex(superuniques, tc[difficulty])));
+        return true;
+    }
+    return false;
+}
+
+const char *MonsterStats_PresetSuperUnique(const int act, const int index) {
+    MonsterStats__Load();
+    if (monpreset == NULL || superuniques == NULL) {
+        return NULL;
+    }
+    const int c_act   = DataTable_GetColumnIndex(monpreset, "Act");
+    const int c_place = DataTable_GetColumnIndex(monpreset, "Place");
+    int       seen    = 0;
+    for (int row = 0; row < DataTable_GetRowCount(monpreset); row++) {
+        if (DataTable_GetInt(monpreset, row, c_act) != act + 1 || seen++ != index) {
+            continue;
+        }
+        const char *place  = DataTable_GetString(monpreset, row, c_place);
+        const int   c_name = DataTable_GetColumnIndex(superuniques, "Superunique");
+        for (int s = 0; s < DataTable_GetRowCount(superuniques); s++) {
+            if (MonsterStats__Compare(DataTable_GetString(superuniques, s, c_name), place) == 0) {
+                return DataTable_GetString(superuniques, s, c_name);
+            }
+        }
+        return NULL;
+    }
+    return NULL;
 }
 
 const char *MonsterStats_PresetMonster(const int act, const int index) {

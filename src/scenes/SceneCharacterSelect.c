@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../drawing/Button.h"
+#include "../drawing/ConfirmDialog.h"
 #include "../drawing/Cursor.h"
 #include "../drawing/Figure.h"
 #include "../drawing/Label.h"
@@ -45,28 +46,29 @@ typedef struct Slot {
 } Slot;
 
 typedef struct SceneCharacterSelect {
-    Sprite    *background;
-    Sprite    *box;
-    Sprite    *popup;
-    Character *characters;
-    int        count;
-    int        selected; // index into characters, -1 = none
-    int        scroll;   // first row shown
-    Slot       slots[SLOT_COUNT];
-    int        slots_for_scroll; // the scroll position the slots were built for (-1 = not built)
-    Label     *title_label;
-    Label     *popup_label;
-    Label     *empty_label;
-    Label     *popup_note;
-    Button    *create_button;
-    Button    *delete_button;
-    Button    *exit_button;
-    Button    *ok_button;
-    Button    *popup_yes;
-    Button    *popup_no;
-    Button    *scroll_up;
-    Button    *scroll_down;
-    bool       confirming_delete;
+    Sprite        *background;
+    Sprite        *box;
+    Sprite        *popup;
+    Character     *characters;
+    int            count;
+    int            selected; // index into characters, -1 = none
+    int            scroll;   // first row shown
+    Slot           slots[SLOT_COUNT];
+    int            slots_for_scroll; // the scroll position the slots were built for (-1 = not built)
+    Label         *title_label;
+    Label         *popup_label;
+    Label         *empty_label;
+    Label         *popup_note;
+    Button        *create_button;
+    Button        *delete_button;
+    Button        *exit_button;
+    Button        *ok_button;
+    Button        *popup_yes;
+    Button        *popup_no;
+    Button        *scroll_up;
+    Button        *scroll_down;
+    bool           confirming_delete;
+    ConfirmDialog *difficulty; // Single Player: Normal, Nightmare or Hell (once they're open)
     // Multiplayer: the game's characters (yours on a dedicated server, or your own checked against its rules)
     bool     online;
     int      players_version; // NetClient's, when the slots were last labelled
@@ -261,6 +263,8 @@ void *CharacterSelect_Create(void) {
         Label_SetText(scene->game_label, text);
         Button_SetText(scene->exit_button, "Leave");
     }
+    scene->difficulty = ConfirmDialog_Create();
+    ConfirmDialog_EscapeCloses(scene->difficulty, true);
     CharacterSelect__Reload(scene);
     CharacterSelect__UpdateTitle(scene);
     return scene;
@@ -287,6 +291,7 @@ void CharacterSelect_Free(void **scene_ref) {
     Button_Destroy(&scene->popup_no);
     Button_Destroy(&scene->scroll_up);
     Button_Destroy(&scene->scroll_down);
+    ConfirmDialog_Destroy(&scene->difficulty);
     free(scene);
     *scene_ref = NULL;
 }
@@ -317,6 +322,13 @@ static void CharacterSelect__Play(SceneCharacterSelect *scene) {
         CharacterSelect__UpdateTitle(scene);
         return;
     }
+    const int open = Character_DifficultiesOpen(&scene->characters[scene->selected]);
+    if (open > 1) {
+        ConfirmDialog_Open(scene->difficulty, "Difficulty", "Which difficulty do you want to play?", "Normal",
+                           "Nightmare", open > 2 ? "Hell" : NULL);
+        return;
+    }
+    Character_SetDifficulty(0);
     Character_SetCurrent(&scene->characters[scene->selected]);
     Scene_Set(SCENE_REF(Game));
 }
@@ -369,6 +381,15 @@ void CharacterSelect_Update(void *scene_ref, const uint64_t delta) {
         }
     }
 
+    if (ConfirmDialog_IsOpen(scene->difficulty)) {
+        const ConfirmAnswer answer = ConfirmDialog_Update(scene->difficulty);
+        if (answer != CONFIRM_NONE && scene->selected >= 0) {
+            Character_SetDifficulty((int)answer);
+            Character_SetCurrent(&scene->characters[scene->selected]);
+            Scene_Set(SCENE_REF(Game));
+        }
+        return;
+    }
     if (scene->confirming_delete) {
         if (Button_Update(scene->popup_yes) || InputManager_ConsumeKeyPress(SDL_SCANCODE_RETURN)) {
             if (scene->online && NetClient_ServerKeepsCharacters()) {
@@ -529,4 +550,5 @@ void CharacterSelect_Render(void *scene_ref) {
         Button_Draw(scene->popup_yes);
         Button_Draw(scene->popup_no);
     }
+    ConfirmDialog_Draw(scene->difficulty);
 }

@@ -758,13 +758,17 @@ static void Builder__Populate(Map *map, const LevelInfo *level, const uint8_t *m
             if (crowded) {
                 continue; // let the player get their bearings first
             }
-            const int size = 2 + Rng_Below(rng, 4);
+            // Now and then a pack of champions, or a unique with its minions (the game: about one pack in ten)
+            const int   kind = Rng_Below(rng, 100);
+            const char *mark = kind < 7 ? "@champion" : (kind < 15 ? "@unique" : monster);
+            const int   size = kind < 7 ? 2 + Rng_Below(rng, 3) : 2 + Rng_Below(rng, 4);
             for (int m = 0; m < size; m++) {
                 for (int spot = 0; spot < 12; spot++) {
                     const int mx = x + Rng_Below(rng, 9) - 4;
                     const int my = y + Rng_Below(rng, 9) - 4;
                     if (mx >= 0 && my >= 0 && mx < sub_w && my < sub_h && main_area[(my * sub_w) + mx]) {
-                        Map_AddEntity(map, "monsters", monster, monster, (float)mx + 0.5f, (float)my + 0.5f);
+                        const char *name = m > 0 && kind >= 7 && kind < 15 ? "@minion" : mark;
+                        Map_AddEntity(map, "monsters", monster, name, (float)mx + 0.5f, (float)my + 0.5f);
                         break;
                     }
                 }
