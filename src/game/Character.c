@@ -575,8 +575,12 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
         const InventoryItem *it = &character->stash[i];
         char                 magic[400];
         Affixes_Format(&it->item, magic, sizeof(magic));
-        Character__Print(file, "item stash %d %d %s %d %d%s\n", it->x, it->y, it->item.code, it->item.defense,
-                         it->item.quantity, magic);
+        char page[16] = ""; // (last, so older builds read the line too: onto the first page)
+        if (it->page > 0) {
+            snprintf(page, sizeof(page), " P%d", it->page);
+        }
+        Character__Print(file, "item stash %d %d %s %d %d%s%s\n", it->x, it->y, it->item.code, it->item.defense,
+                         it->item.quantity, magic, page);
     }
     // In the Horadric Cube: "item cube x y <code> <defense> <quantity>"
     for (int i = 0; i < character->cube_count; i++) {
@@ -793,7 +797,8 @@ bool Character_ReadText(const char *text, Character *character) {
                 snprintf(item.code, sizeof(item.code), "%s", code);
                 Affixes_Parse(&item, value + used);
                 Character__Durability(&item);
-                if (!Stash_Place(character, &item, a, b) && !Stash_Add(character, &item)) {
+                const int on = Inventory_LinePage(value + used); // " P3": the stash's page
+                if (!Stash_PlaceOnPage(character, &item, a, b, on) && !Stash_Add(character, &item)) {
                     Inventory_Add(character, &item); // (a classic character's from when the stash was bigger)
                 }
             } else if (sscanf(value, "cube %d %d %7s %d %d%n", &a, &b, code, &item.defense, &item.quantity, &used) ==

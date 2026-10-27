@@ -100,6 +100,8 @@ void Multiplayer_LoadHostSettings(NetSettings *settings) {
             settings->speed = n < 0 ? 0 : (n >= SPEED_COUNT ? SPEED_COUNT - 1 : n);
         } else if (strcmp(key, "InventoryPages") == 0) {
             settings->inventory_pages = n < 1 ? 1 : (n > 255 ? 255 : n);
+        } else if (strcmp(key, "StashPages") == 0) {
+            settings->stash_pages = n < 1 ? 1 : (n > 255 ? 255 : n);
         } else if (strcmp(key, "Seed") == 0) {
             settings->seed = (uint32_t)strtoul(value, NULL, 10);
         } else if (strcmp(key, "Public") == 0) {
@@ -129,6 +131,7 @@ void Multiplayer_SaveHostSettings(const NetSettings *s) {
             s->max_players, s->difficulty, s->new_characters_only, s->made_here_only);
     fprintf(file, "Hardcore=%d\nLevelMin=%d\nLevelMax=%d\nPvP=%d\nSpeed=%d\nInventoryPages=%d\nSeed=%u\n", s->hardcore,
             s->level_min, s->level_max, s->pvp, s->speed, s->inventory_pages, (unsigned)s->seed);
+    fprintf(file, "StashPages=%d\n", s->stash_pages);
     fprintf(file, "Public=%d\nLAN=%d\nPort=%u\n", s->public_game, s->lan, (unsigned)s->port);
     fclose(file);
 }

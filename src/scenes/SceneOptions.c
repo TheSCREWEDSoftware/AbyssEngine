@@ -187,6 +187,8 @@ typedef struct SceneOptions {
     Checkbox *even_speed;
     Dropdown *worn_pickup;
     Slider   *inventory_pages;
+    Slider   *stash_pages;
+    Slider   *shared_pages;
 
     // Multiplayer
     Checkbox   *show_names;
@@ -383,6 +385,8 @@ static void Options__LoadGameplay(SceneOptions *options) {
     Checkbox_SetChecked(options->even_speed, settings->even_screen_speed);
     Dropdown_SetSelected(options->worn_pickup, settings->modern_pickup ? 1 : 0);
     Slider_SetValue(options->inventory_pages, settings->inventory_pages);
+    Slider_SetValue(options->stash_pages, settings->stash_pages);
+    Slider_SetValue(options->shared_pages, settings->shared_pages);
     char text[64];
     snprintf(text, sizeof(text), "Own settings for the %s", Settings_ProfileName(options->profile));
     Checkbox_Destroy(&options->own_profile);
@@ -531,7 +535,9 @@ OptionsPanel *OptionsPanel_Create(void) {
     options->confirm_entrances =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (3 * ROW_H) + 6, "Ask before going through an entrance");
     options->worn_pickup = Dropdown_Create(CONTENT_X + LABEL_W, CONTENT_Y + (7 * ROW_H) + 4, 260, pickup_choices, 2);
-    options->inventory_pages = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (8 * ROW_H) + 6, 200, 1, 255);
+    options->inventory_pages = Slider_Create(CONTENT_X + LABEL_W, CONTENT_Y + (8 * ROW_H) + 6, 50, 1, 255);
+    options->stash_pages     = Slider_Create(CONTENT_X + LABEL_W + 180, CONTENT_Y + (8 * ROW_H) + 6, 50, 1, 255);
+    options->shared_pages    = Slider_Create(CONTENT_X + LABEL_W + 380, CONTENT_Y + (8 * ROW_H) + 6, 45, 1, 255);
     options->even_speed =
         Checkbox_Create(CONTENT_X + LABEL_W, CONTENT_Y + (5 * ROW_H) + 20, "Same speed on screen in every direction");
     Options__LoadGameplay(options);
@@ -684,6 +690,8 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Checkbox_Destroy(&options->even_speed);
     Dropdown_Destroy(&options->worn_pickup);
     Slider_Destroy(&options->inventory_pages);
+    Slider_Destroy(&options->stash_pages);
+    Slider_Destroy(&options->shared_pages);
     Checkbox_Destroy(&options->show_names);
     Checkbox_Destroy(&options->show_circles);
     Dropdown_Destroy(&options->player_color);
@@ -1538,6 +1546,16 @@ static void OptionsPanel__Update(SceneOptions *options) {
                 settings.inventory_pages  = Slider_GetValue(options->inventory_pages);
                 Settings_SetGameplay(options->profile, &settings);
             }
+            if (editable && Slider_Update(options->stash_pages)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.stash_pages      = Slider_GetValue(options->stash_pages);
+                Settings_SetGameplay(options->profile, &settings);
+            }
+            if (editable && Slider_Update(options->shared_pages)) {
+                GameplaySettings settings = *Settings_GetGameplay(options->profile);
+                settings.shared_pages     = Slider_GetValue(options->shared_pages);
+                Settings_SetGameplay(options->profile, &settings);
+            }
             if (editable && Checkbox_Update(options->even_speed)) {
                 GameplaySettings settings  = *Settings_GetGameplay(options->profile);
                 settings.even_screen_speed = Checkbox_IsChecked(options->even_speed);
@@ -1581,7 +1599,8 @@ static void OptionsPanel__Update(SceneOptions *options) {
     for (int i = 0; i < PICTURE_COUNT; i++) {
         typing = typing || Slider_IsTyping(options->picture[i]);
     }
-    typing = typing || Slider_IsTyping(options->inventory_pages);
+    typing = typing || Slider_IsTyping(options->inventory_pages) || Slider_IsTyping(options->stash_pages) ||
+             Slider_IsTyping(options->shared_pages);
     if (Button_Update(options->cancel_button) || (!typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
         Options__Cancel(options);
         Options__Leave(options);
@@ -1727,6 +1746,12 @@ void OptionsPanel_Draw(OptionsPanel *options) {
         Dropdown_Draw(options->worn_pickup);
         Options__Name(options, "Inventory pages", CONTENT_Y + (8 * ROW_H) + 2);
         Slider_Draw(options->inventory_pages);
+        Options__Text(options, options->text_label, "Stash", CONTENT_X + LABEL_W + 132, CONTENT_Y + (8 * ROW_H) + 12,
+                      0xC7, 0xB3, 0x77);
+        Slider_Draw(options->stash_pages);
+        Options__Text(options, options->text_label, "Shared", CONTENT_X + LABEL_W + 312, CONTENT_Y + (8 * ROW_H) + 12,
+                      0xC7, 0xB3, 0x77);
+        Slider_Draw(options->shared_pages);
         Dropdown_DrawList(options->worn_pickup);
         break;
     }

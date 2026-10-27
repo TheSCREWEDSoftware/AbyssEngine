@@ -23,9 +23,10 @@
 #define CHARACTER_QUESTS    32 // (Quests.h QUEST_COUNT fits)
 #define STASH_W             6  // the stash in town (the expansion's big one), in cells
 #define STASH_H             8
-#define STASH_MAX           (STASH_W * STASH_H)
-#define BELT_MAX            16 // four rows of four, with the biggest belt
-#define CUBE_W              3  // the Horadric Cube's inside, in cells
+#define STASH_PAGE          (STASH_W * STASH_H)
+#define STASH_MAX           512 // items on all the stash's pages together (a page holds 48 at most)
+#define BELT_MAX            16  // four rows of four, with the biggest belt
+#define CUBE_W              3   // the Horadric Cube's inside, in cells
 #define CUBE_H              4
 #define CUBE_MAX            (CUBE_W * CUBE_H)
 
@@ -159,7 +160,7 @@ typedef struct Character {
     Item          equipped[EQUIP_COUNT];
     Item          belt[BELT_MAX]; // slot 0..3 the bottom row (keys 1-4), then the rows above
     int           gold;
-    InventoryItem stash[STASH_MAX]; // in town: page is always 0
+    InventoryItem stash[STASH_MAX]; // in town (Stash_Pages pages)
     int           stash_count;
     InventoryItem cube[CUBE_MAX];             // in the Horadric Cube (any cube you carry opens them)
     Item          hireling_items[HIRE_SLOTS]; // what your hireling wears

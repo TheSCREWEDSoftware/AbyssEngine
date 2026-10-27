@@ -86,6 +86,7 @@ typedef struct SceneMultiplayer {
     Slider     *level_min;
     Slider     *level_max;
     Slider     *pages;
+    Slider     *stash_pages;
 } SceneMultiplayer;
 
 DEFINE_SCENE_CALLBACKS(MultiplayerMenu);
@@ -156,7 +157,7 @@ static bool Menu__Typing(const SceneMultiplayer *menu) {
         }
     }
     return Slider_IsTyping(menu->max_players) || Slider_IsTyping(menu->level_min) || Slider_IsTyping(menu->level_max) ||
-           Slider_IsTyping(menu->pages);
+           Slider_IsTyping(menu->pages) || Slider_IsTyping(menu->stash_pages);
 }
 
 // The Browse list's lines: "Name   2/8   Hell   (password)"
@@ -208,6 +209,7 @@ static void Menu__LoadHost(SceneMultiplayer *menu) {
     Slider_SetValue(menu->level_min, s->level_min);
     Slider_SetValue(menu->level_max, s->level_max);
     Slider_SetValue(menu->pages, s->inventory_pages);
+    Slider_SetValue(menu->stash_pages, s->stash_pages);
 }
 
 static bool Menu__StoreHost(SceneMultiplayer *menu) {
@@ -238,6 +240,7 @@ static bool Menu__StoreHost(SceneMultiplayer *menu) {
     s->level_min           = Slider_GetValue(menu->level_min);
     s->level_max           = Slider_GetValue(menu->level_max);
     s->inventory_pages     = Slider_GetValue(menu->pages);
+    s->stash_pages         = Slider_GetValue(menu->stash_pages);
     if (s->level_max < s->level_min) {
         snprintf(menu->status, sizeof(menu->status), "The highest level is below the lowest.");
         return false;
@@ -294,10 +297,11 @@ void *MultiplayerMenu_Create(void) {
     menu->pvp           = Checkbox_Create(RIGHT_X, CONTENT_Y + 58, "PvP: players can hurt each other");
     menu->lan           = Checkbox_Create(RIGHT_X, CONTENT_Y + 84, "Show on the local network");
     menu->public_game   = Checkbox_Create(RIGHT_X, CONTENT_Y + 110, "List online (the lobby server)");
-    menu->hardcore  = Dropdown_Create(RIGHT_X + 110, CONTENT_Y + 146, 170, hardcore_rule_names, HARDCORE_RULE_COUNT);
-    menu->level_min = Slider_Create(RIGHT_X + 140, CONTENT_Y + 190, 80, 1, CHARACTER_MAX_LEVEL);
-    menu->level_max = Slider_Create(RIGHT_X + 140, CONTENT_Y + 230, 80, 1, CHARACTER_MAX_LEVEL);
-    menu->pages     = Slider_Create(RIGHT_X + 140, CONTENT_Y + 270, 80, 1, 255);
+    menu->hardcore    = Dropdown_Create(RIGHT_X + 110, CONTENT_Y + 146, 170, hardcore_rule_names, HARDCORE_RULE_COUNT);
+    menu->level_min   = Slider_Create(RIGHT_X + 140, CONTENT_Y + 190, 80, 1, CHARACTER_MAX_LEVEL);
+    menu->level_max   = Slider_Create(RIGHT_X + 140, CONTENT_Y + 230, 80, 1, CHARACTER_MAX_LEVEL);
+    menu->pages       = Slider_Create(RIGHT_X + 140, CONTENT_Y + 270, 80, 1, 255);
+    menu->stash_pages = Slider_Create(CONTENT_X + 150, CONTENT_Y + 286, 80, 1, 255);
     Multiplayer_LoadHostSettings(&menu->settings);
     Menu__LoadHost(menu);
 
@@ -340,6 +344,7 @@ void MultiplayerMenu_Free(void **scene_ref) {
     Slider_Destroy(&menu->level_min);
     Slider_Destroy(&menu->level_max);
     Slider_Destroy(&menu->pages);
+    Slider_Destroy(&menu->stash_pages);
     free(menu);
     *scene_ref = NULL;
 }
@@ -489,6 +494,7 @@ void MultiplayerMenu_Update(void *scene_ref, const uint64_t delta) {
         Slider_Update(menu->level_min);
         Slider_Update(menu->level_max);
         Slider_Update(menu->pages);
+        Slider_Update(menu->stash_pages);
         break;
     default:
         break;
@@ -603,6 +609,8 @@ void MultiplayerMenu_Render(void *scene_ref) {
         Slider_Draw(menu->level_max);
         Menu__Name(menu, "Inventory pages", RIGHT_X, CONTENT_Y + 266);
         Slider_Draw(menu->pages);
+        Menu__Name(menu, "Stash pages", CONTENT_X, CONTENT_Y + 282);
+        Slider_Draw(menu->stash_pages);
         Menu__Wrapped(menu,
                       "Your own game: others join by your address and port (open the port on your router to play "
                       "over the internet). Characters stay on each player's computer; ones made in your games are "

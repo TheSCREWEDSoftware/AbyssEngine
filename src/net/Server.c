@@ -249,6 +249,7 @@ static const char *server_ini_template =
     "PvP = false                  # players can hurt each other\n"
     "Speed = Normal               # Normal, Fast, Faster or Fastest (Diablo's game speed)\n"
     "InventoryPages = 1           # 1 to 255\n"
+    "StashPages = 1               # 1 to 255\n"
     "Seed = 0                     # the world; 0: a new one each start\n"
     "Public = false               # list it on the lobby server ([Network] Lobby in abyss.ini)\n"
     "LAN = true                   # answer LAN searches\n";
@@ -331,6 +332,8 @@ bool NetServer_LoadSettings(NetSettings *settings) {
             }
         } else if (strcasecmp(key, "InventoryPages") == 0) {
             settings->inventory_pages = number < 1 ? 1 : (number > 255 ? 255 : number);
+        } else if (strcasecmp(key, "StashPages") == 0) {
+            settings->stash_pages = number < 1 ? 1 : (number > 255 ? 255 : number);
         } else if (strcasecmp(key, "Seed") == 0) {
             settings->seed = (uint32_t)strtoul(value, NULL, 10);
         } else if (strcasecmp(key, "Public") == 0) {

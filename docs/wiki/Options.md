@@ -79,6 +79,8 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | `ConfirmEntrances` | `true` / `false` | Ask before going through a cave mouth, tomb door or stairs ("To The Den of Evil?": Go in / Stay). Off by default |
 | `WornGearPickup` | `Classic` / `Modern` | Picking up something you wear in the inventory. **Classic** (the game's): it comes off at once. **Modern**: it stays worn (faded in its slot, still counting) until you put it in the grid or another slot; put back in its own slot or closing the inventory, nothing changes. Default from the build's `DEFAULT_STYLE` |
 | `InventoryPages` | `1` to `255` | Pages of the inventory grid in Single Player (a multiplayer game sets its own). Arrows under the grid turn the page; an item carried along can be put down on another page. Never fewer pages than have something on them |
+| `StashPages` | `1` to `255` | Pages of the stash, the same way (Stash, beside it on the Gameplay tab; a multiplayer game sets its own) |
+| `SharedStashPages` | `1` to `255` | Pages of the shared stash (Shared; Single Player only) |
 | `EvenScreenSpeed` | `true` / `false` | The game covers the same ground in every direction, which on its slanted view looks twice as fast across the screen as up and down (running: about 210 pixels a second across, 110 up and down). On, you move the same number of pixels a second whichever way you go. Off by default, like the game |
 
 **Debug** (the Debug tab, `[Debug]` in `options.ini`; the same for every class; builds can hide the tab, CMake option

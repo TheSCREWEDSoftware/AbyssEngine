@@ -4473,6 +4473,14 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     const int               pages    = roam->online ? NetClient_Settings()->inventory_pages : gameplay->inventory_pages;
     const int               used     = Inventory_PagesUsed(character);
     Inventory_SetPages(pages > used ? pages : used);
+    GameInventory_SetStashPages(roam->inventory_ui,
+                                roam->online ? NetClient_Settings()->stash_pages : gameplay->stash_pages,
+                                gameplay->shared_pages);
+    if (!GameInventory_StashOpen(roam->inventory_ui)) {
+        const int stash_used  = Stash_PagesUsed(character);
+        const int stash_pages = roam->online ? NetClient_Settings()->stash_pages : gameplay->stash_pages;
+        Stash_SetPages(stash_pages > stash_used ? stash_pages : stash_used); // (for what goes in by itself)
+    }
     GameInventory_SetModernPickup(roam->inventory_ui, gameplay->modern_pickup);
 
     // The stash closes with the inventory, the character screen, or walking away from it

@@ -13,6 +13,8 @@ typedef struct SharedPage {
     int           count;
     InventoryItem saved[STASH_MAX]; // as last saved (to know when it changed)
     int           saved_count;
+    int           gold; // the shared gold
+    int           saved_gold;
 } SharedPage;
 
 static SharedPage pages[2]; // softcore, hardcore
@@ -37,6 +39,10 @@ static void SharedStash__Load(const int mode) {
         char line[600];
         while (fgets(line, sizeof(line), file) != NULL && page->count < STASH_MAX) {
             line[strcspn(line, "\r\n")] = '\0';
+            if (sscanf(line, "gold %d", &page->gold) == 1) {
+                page->gold = page->gold > 0 ? page->gold : 0;
+                continue;
+            }
             Item item;
             memset(&item, 0, sizeof(item));
             char code[ITEM_CODE_MAX];
@@ -53,12 +59,13 @@ static void SharedStash__Load(const int mode) {
             slot->item          = item;
             slot->x             = x;
             slot->y             = y;
-            slot->page          = 0;
+            slot->page          = Inventory_LinePage(line + used);
         }
         fclose(file);
     }
     memcpy(page->saved, page->items, sizeof(page->items));
     page->saved_count = page->count;
+    page->saved_gold  = page->gold;
 }
 
 static void SharedStash__Save(const int mode) {
@@ -70,16 +77,18 @@ static void SharedStash__Save(const int mode) {
         LOG_WARN("Could not save the shared stash '%s'", path);
         return;
     }
+    fprintf(file, "gold %d\n", page->gold);
     for (int i = 0; i < page->count; i++) {
         const InventoryItem *it = &page->items[i];
         char                 magic[400];
         Affixes_Format(&it->item, magic, sizeof(magic));
-        fprintf(file, "item %d %d %s %d %d%s\n", it->x, it->y, it->item.code, it->item.defense, it->item.quantity,
-                magic);
+        fprintf(file, "item %d %d %s %d %d%s P%d\n", it->x, it->y, it->item.code, it->item.defense, it->item.quantity,
+                magic, it->page);
     }
     fclose(file);
     memcpy(page->saved, page->items, sizeof(page->items));
     page->saved_count = page->count;
+    page->saved_gold  = page->gold;
 }
 
 void SharedStash_Swap(Character *character) {
@@ -94,9 +103,12 @@ void SharedStash_Swap(Character *character) {
     memcpy(character->stash, page->items, sizeof(held));
     character->stash_count = page->count;
     memcpy(page->items, held, sizeof(held));
-    page->count = count;
-    swapped     = !swapped;
-    if (!swapped && (page->count != page->saved_count ||
+    page->count           = count;
+    const int gold        = character->stash_gold;
+    character->stash_gold = page->gold;
+    page->gold            = gold;
+    swapped               = !swapped;
+    if (!swapped && (page->count != page->saved_count || page->gold != page->saved_gold ||
                      memcmp(page->items, page->saved, sizeof(InventoryItem) * (size_t)page->count) != 0)) {
         SharedStash__Save(mode); // (back in its place, and changed)
     }

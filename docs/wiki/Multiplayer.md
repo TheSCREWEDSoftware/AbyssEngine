@@ -107,6 +107,7 @@ The Host tab (remembered in `host.ini`) and a dedicated server's `server/server.
 | Lowest / highest level | `LevelMin`, `LevelMax` | Diablo II's level range |
 | PvP | `PvP` | Players can hurt each other outside town (D1's friendly fire, D2's hostile) |
 | Inventory pages | `InventoryPages` | 1 to 255 |
+| Stash pages | `StashPages` | 1 to 255 (the shared stash isn't used in multiplayer) |
 | Port | `Port` | TCP, 4000 by default (Diablo II's own). To play over the internet the host opens it on their router |
 | World seed | `Seed` | Empty / 0: a new world each game. Everyone gets the same world |
 | Show on the local network | `LAN` | Answers LAN searches (UDP port 4001) |

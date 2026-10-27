@@ -15,6 +15,7 @@ void NetSettings_Defaults(NetSettings *settings) {
     settings->level_max       = CHARACTER_MAX_LEVEL;
     settings->speed           = SPEED_NORMAL;
     settings->inventory_pages = 1;
+    settings->stash_pages     = 1;
     settings->lan             = true;
     settings->port            = NET_DEFAULT_PORT;
 }
@@ -95,6 +96,7 @@ void NetSettings_Write(const NetSettings *settings, NetWriter *writer, const boo
     NetWriter_U8(writer, settings->pvp ? 1 : 0);
     NetWriter_U8(writer, (uint8_t)settings->speed);
     NetWriter_U8(writer, (uint8_t)settings->inventory_pages);
+    NetWriter_U8(writer, (uint8_t)settings->stash_pages);
     NetWriter_U32(writer, settings->seed);
     NetWriter_U8(writer, settings->public_game ? 1 : 0);
     NetWriter_U8(writer, settings->lan ? 1 : 0);
@@ -118,6 +120,7 @@ void NetSettings_Read(NetSettings *settings, NetReader *reader) {
     settings->pvp                 = NetReader_U8(reader) != 0;
     settings->speed               = NetSettings__Clamp(NetReader_U8(reader), 0, SPEED_COUNT - 1);
     settings->inventory_pages     = NetSettings__Clamp(NetReader_U8(reader), 1, 255);
+    settings->stash_pages         = NetSettings__Clamp(NetReader_U8(reader), 1, 255);
     settings->seed                = NetReader_U32(reader);
     settings->public_game         = NetReader_U8(reader) != 0;
     settings->lan                 = NetReader_U8(reader) != 0;

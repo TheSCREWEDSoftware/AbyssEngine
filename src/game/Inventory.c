@@ -301,14 +301,52 @@ void Inventory_GiveStartingItems(Character *character) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The stash
 
+static int stash_pages = 1;
+static int stash_page  = 0;
+
+void Stash_SetPages(const int count) {
+    stash_pages = count < 1 ? 1 : (count > INVENTORY_PAGES_MAX ? INVENTORY_PAGES_MAX : count);
+    stash_page  = stash_page < stash_pages ? stash_page : stash_pages - 1;
+}
+
+int  Stash_Pages(void) { return stash_pages; }
+void Stash_SetPage(const int page) { stash_page = page < 0 ? 0 : (page >= stash_pages ? stash_pages - 1 : page); }
+int  Stash_Page(void) { return stash_page; }
+
+int Stash_PagesUsed(const Character *character) {
+    int used = 1;
+    for (int i = 0; i < character->stash_count; i++) {
+        used = character->stash[i].page + 1 > used ? character->stash[i].page + 1 : used;
+    }
+    return used;
+}
+
+bool Stash_PlaceOnPage(Character *character, const Item *item, const int x, const int y, const int page) {
+    const int shown = stash_page;
+    stash_page      = page < 0 ? 0 : (page >= INVENTORY_PAGES_MAX ? INVENTORY_PAGES_MAX - 1 : page);
+    const bool done = Stash_Place(character, item, x, y);
+    stash_page      = shown;
+    return done;
+}
+
+int Inventory_LinePage(const char *text) {
+    const char *last = strrchr(text, ' ');
+    last             = last != NULL ? last + 1 : text;
+    int page         = 0;
+    return last[0] == 'P' && sscanf(last + 1, "%d", &page) == 1 && page >= 0 && page < INVENTORY_PAGES_MAX ? page : 0;
+}
+
 int Stash_Rows(const Character *character) { return character->expansion ? STASH_H : 4; }
 
 int Stash_ItemAt(const Character *character, const int cell_x, const int cell_y) {
     for (int i = 0; i < character->stash_count; i++) {
-        const InventoryItem *it   = &character->stash[i];
-        const ItemBase      *base = Items_Find(it->item.code);
-        const int            w    = base != NULL ? base->width : 1;
-        const int            h    = base != NULL ? base->height : 1;
+        const InventoryItem *it = &character->stash[i];
+        if (it->page != stash_page) {
+            continue;
+        }
+        const ItemBase *base = Items_Find(it->item.code);
+        const int       w    = base != NULL ? base->width : 1;
+        const int       h    = base != NULL ? base->height : 1;
         if (cell_x >= it->x && cell_x < it->x + w && cell_y >= it->y && cell_y < it->y + h) {
             return i;
         }
@@ -342,7 +380,7 @@ bool Stash_Place(Character *character, const Item *item, const int x, const int 
     slot->item          = *item;
     slot->x             = x;
     slot->y             = y;
-    slot->page          = 0;
+    slot->page          = stash_page;
     return true;
 }
 
@@ -351,13 +389,19 @@ bool Stash_Add(Character *character, const Item *item) {
     if (base == NULL) {
         return false;
     }
-    for (int x = 0; x + base->width <= STASH_W; x++) {
-        for (int y = 0; y + base->height <= Stash_Rows(character); y++) {
-            if (Stash_Place(character, item, x, y)) {
-                return true;
+    const int shown = stash_page;
+    for (int p = 0; p < stash_pages; p++) {
+        stash_page = (shown + p) % stash_pages; // the page shown first
+        for (int x = 0; x + base->width <= STASH_W; x++) {
+            for (int y = 0; y + base->height <= Stash_Rows(character); y++) {
+                if (Stash_Place(character, item, x, y)) {
+                    stash_page = shown;
+                    return true;
+                }
             }
         }
     }
+    stash_page = shown;
     return false;
 }
 

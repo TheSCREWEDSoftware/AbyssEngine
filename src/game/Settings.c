@@ -96,6 +96,8 @@ void Settings_GameplayDefaults(GameplaySettings *settings) {
     settings->even_screen_speed = false;
     settings->modern_pickup     = DEFAULT_STYLE_MODERN;
     settings->inventory_pages   = 1;
+    settings->stash_pages       = 1;
+    settings->shared_pages      = 1;
 }
 
 void Settings_Load(void) {
@@ -180,6 +182,10 @@ void Settings_Load(void) {
         } else if (strcmp(key, "InventoryPages") == 0) {
             const int pages                   = atoi(value);
             gameplay[profile].inventory_pages = pages < 1 ? 1 : (pages > 255 ? 255 : pages);
+        } else if (strcmp(key, "StashPages") == 0 || strcmp(key, "SharedStashPages") == 0) {
+            const int pages = atoi(value);
+            *(strcmp(key, "StashPages") == 0 ? &gameplay[profile].stash_pages : &gameplay[profile].shared_pages) =
+                pages < 1 ? 1 : (pages > 255 ? 255 : pages);
         }
     }
     fclose(file);
@@ -231,7 +237,11 @@ void Settings_Save(void) {
         if (p == 0) {
             fprintf(file, "# Pages of the inventory grid, 1 to 255 (Single Player; a multiplayer game sets its own)\n");
         }
-        fprintf(file, "InventoryPages = %d\n\n", gameplay[p].inventory_pages);
+        fprintf(file, "InventoryPages = %d\n", gameplay[p].inventory_pages);
+        if (p == 0) {
+            fprintf(file, "# Pages of the stash and of the shared stash, 1 to 255 (the same)\n");
+        }
+        fprintf(file, "StashPages = %d\nSharedStashPages = %d\n\n", gameplay[p].stash_pages, gameplay[p].shared_pages);
     }
     fprintf(file,
             "[Debug]\n"

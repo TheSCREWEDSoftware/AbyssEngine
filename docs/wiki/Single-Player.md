@@ -194,10 +194,14 @@ the inventory. Gold too: at the stash the inventory's coin button puts gold in (
 levels), and the stash's own coin button takes it out (no more than you can carry). Walking away, closing the
 inventory or opening the character screen closes it. The stash is kept with the character.
 
-**Shared stash** (expansion characters): the **Personal** / **Shared** tabs under the grid switch to a page every
-character on this computer shares (softcore and hardcore characters each have their own), for passing items between
-your characters. It's kept in `save/shared.stash` (`shared_hc.stash`), saved as soon as it changes. Not in
-multiplayer games.
+**Pages**: like the inventory, the stash has as many pages as **Options › Gameplay › Stash** says (1 to 255; a
+multiplayer game sets its own), turned with the arrows under the grid (`2/5`); an item carried along can be put down on
+another page. Never fewer pages than have something on them.
+
+**Shared stash** (expansion characters): the **Personal** / **Shared** tabs under the grid switch to a stash every
+character on this computer shares (softcore and hardcore characters each have their own), for passing items and gold
+between your characters, with its own number of pages (**Options › Gameplay › Shared**). It's kept in
+`save/shared.stash` (`shared_hc.stash`), saved as soon as it changes. Not in multiplayer games.
 
 ### Sockets, gems and runes
 

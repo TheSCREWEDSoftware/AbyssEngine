@@ -22,6 +22,8 @@ typedef struct GameplaySettings {
     bool         even_screen_speed; // the same speed on screen in every direction (the game: the same over the ground)
     bool         modern_pickup; // picking up worn gear: Modern keeps it worn until it's put down (Classic: off at once)
     int          inventory_pages; // 1..255: pages of the inventory grid (Single Player; a multiplayer game has its own)
+    int          stash_pages;     // 1..255: pages of the stash (the same)
+    int          shared_pages;    // 1..255: pages of the shared stash (Single Player only)
 } GameplaySettings;
 
 // The defaults' style (CMake DEFAULT_STYLE / meson default_style): Classic like Diablo II, or Modern

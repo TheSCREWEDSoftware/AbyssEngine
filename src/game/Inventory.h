@@ -41,7 +41,16 @@ int             Inventory_Requirement(const Item *item, int stat);
 bool            Inventory_ItemMeetsRequirements(const Character *character, const Item *item);
 const ItemBase *Inventory_Weapon(const Character *character); // NULL: bare hands
 
-// The stash (in town): the same as the grid, 6 x 8 (the expansion's big one; classic characters' is 6 x 4), one page
+// The stash (in town): the same as the grid, 6 x 8 (the expansion's big one; classic characters' is 6 x 4), with
+// pages like the inventory's (Options > Gameplay > Stash pages; a multiplayer game's own setting). The functions below
+// work on the page being shown; Stash_Add tries it first, then the others.
+void Stash_SetPages(int count);
+int  Stash_Pages(void);
+void Stash_SetPage(int page);
+int  Stash_Page(void);
+int  Stash_PagesUsed(const Character *character); // 1 + the last page with something on it
+bool Stash_PlaceOnPage(Character *character, const Item *item, int x, int y, int page);
+int  Inventory_LinePage(const char *text); // a saved line's page (its last word " P3"), 0 if none
 int  Stash_Rows(const Character *character);
 int  Stash_ItemAt(const Character *character, int cell_x, int cell_y);
 int  Stash_Covered(const Character *character, const ItemBase *base, int x, int y);

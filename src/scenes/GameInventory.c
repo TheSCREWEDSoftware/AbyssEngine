@@ -135,13 +135,15 @@ struct GameInventory {
     TradeView          *trade;        // trading with another player (NULL: not)
     Sprite             *trade_panel;
     int                 shop_tab;
-    int                 difficulty;    // what they pay depends on it
-    char                tip_extra[48]; // the price line under a tooltip while trading
-    bool                stash_open;    // in town, at the stash
-    bool                shared_ok;     // the shared stash can be used (Single Player, an expansion character)
-    bool                shared_tab;    // showing the shared stash instead of the character's
-    bool                cube_open;     // the Horadric Cube (right click it in the inventory)
-    const HirelingView *hire;          // the hireling's screen (NULL: closed)
+    int                 difficulty;     // what they pay depends on it
+    char                tip_extra[48];  // the price line under a tooltip while trading
+    bool                stash_open;     // in town, at the stash
+    bool                shared_ok;      // the shared stash can be used (Single Player, an expansion character)
+    bool                shared_tab;     // showing the shared stash instead of the character's
+    int                 stash_pages[2]; // how many pages the stash and the shared stash have (the settings)
+    int                 stash_page[2];  // the page each is on
+    bool                cube_open;      // the Horadric Cube (right click it in the inventory)
+    const HirelingView *hire;           // the hireling's screen (NULL: closed)
     Sprite             *hire_panel;
     Sprite             *cube_panel;
     char                cube_message[200];
@@ -803,15 +805,54 @@ void GameInventory_SetSharedStash(GameInventory *inventory, const bool allowed) 
     inventory->shared_tab = allowed ? inventory->shared_tab : false;
 }
 
-// The stash's two tabs under its grid: the character's own, and the shared one
+void GameInventory_SetStashPages(GameInventory *inventory, const int pages, const int shared_pages) {
+    inventory->stash_pages[0] = pages > 0 ? pages : 1;
+    inventory->stash_pages[1] = shared_pages > 0 ? shared_pages : 1;
+}
+
+// Under the stash's grid: its two tabs (the character's own, the shared one), then the page arrows (< 2/5 >)
+static int GameInventory__StashRowY(void) { return stash_grid_y + (stash_rows * CELL) + 6; }
+
 static SDL_Rect GameInventory__StashTab(const int tab) {
-    const SDL_Rect rect = {STASH_GRID_X + (tab * 88), stash_grid_y + (STASH_H * CELL) + 6, 86, 20};
+    const SDL_Rect rect = {STASH_GRID_X + (tab * 60), GameInventory__StashRowY(), 58, 20};
+    return rect;
+}
+
+static SDL_Rect GameInventory__StashArrow(const int side) {
+    const SDL_Rect rect = {STASH_GRID_X + (side == 0 ? 120 : 158), GameInventory__StashRowY(), 16, 20};
     return rect;
 }
 
 static bool GameInventory__Shared(const GameInventory *inventory, const Character *character) {
     return inventory->stash_open && inventory->shared_ok && inventory->shared_tab && SharedStash_Allowed(character) &&
            inventory->shop == NULL && inventory->trade == NULL;
+}
+
+static bool GameInventory__TabsShown(const GameInventory *inventory, const Character *character) {
+    return inventory->stash_open && inventory->shared_ok && SharedStash_Allowed(character) && inventory->shop == NULL &&
+           inventory->trade == NULL;
+}
+
+// The stash being shown, in place for the grid functions: the shared one swapped in, on its page (Stash_*)
+static void GameInventory__StashEnter(GameInventory *inventory, Character *character, const bool shared) {
+    if (shared) {
+        SharedStash_Swap(character);
+    }
+    const int which = shared ? 1 : 0;
+    const int used  = Stash_PagesUsed(character);
+    Stash_SetPages(inventory->stash_pages[which] > used ? inventory->stash_pages[which] : used);
+    Stash_SetPage(inventory->stash_page[which]);
+}
+
+// ... and back: the character's own stash, on its page
+static void GameInventory__StashLeave(GameInventory *inventory, Character *character, const bool shared) {
+    inventory->stash_page[shared ? 1 : 0] = Stash_Page();
+    if (shared) {
+        SharedStash_Swap(character);
+        const int used = Stash_PagesUsed(character);
+        Stash_SetPages(inventory->stash_pages[0] > used ? inventory->stash_pages[0] : used);
+        Stash_SetPage(inventory->stash_page[0]);
+    }
 }
 
 static int GameInventory__UpdateInner(GameInventory *inventory, Character *character, bool open, int mouse_x,
@@ -837,14 +878,22 @@ int GameInventory_Update(GameInventory *inventory, Character *character, const b
         }
     }
     const bool shared = GameInventory__Shared(inventory, character);
-    if (shared) {
-        SharedStash_Swap(character);
+    GameInventory__StashEnter(inventory, character, shared);
+    int events = INVENTORY_EVENT_NONE;
+    if (inventory->stash_open && left_click && Stash_Pages() > 1) {
+        for (int side = 0; side < 2; side++) {
+            const SDL_Rect arrow = GameInventory__StashArrow(side);
+            if (GameInventory__In(&arrow, mouse_x, mouse_y)) {
+                Stash_SetPage((Stash_Page() + (side == 0 ? -1 : 1) + Stash_Pages()) % Stash_Pages());
+                *message = NULL;
+                GameInventory__StashLeave(inventory, character, shared);
+                return INVENTORY_EVENT_NONE;
+            }
+        }
     }
-    const int events = GameInventory__UpdateInner(inventory, character, open, mouse_x, mouse_y, left_click, right_click,
-                                                  shift, drunk, message);
-    if (shared) {
-        SharedStash_Swap(character);
-    }
+    events = GameInventory__UpdateInner(inventory, character, open, mouse_x, mouse_y, left_click, right_click, shift,
+                                        drunk, message);
+    GameInventory__StashLeave(inventory, character, shared);
     return events;
 }
 
@@ -1538,9 +1587,12 @@ static void GameInventory__DrawStash(GameInventory *inventory, const Character *
         }
     }
     for (int i = 0; i < character->stash_count; i++) {
-        const InventoryItem *it   = &character->stash[i];
-        const ItemBase      *base = Items_Find(it->item.code);
-        const SDL_Rect       rect = GameInventory__StashRect(it, base);
+        const InventoryItem *it = &character->stash[i];
+        if (it->page != Stash_Page()) {
+            continue; // (on another page)
+        }
+        const ItemBase *base = Items_Find(it->item.code);
+        const SDL_Rect  rect = GameInventory__StashRect(it, base);
         SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(sdl_renderer, 20, 20, 60, 90);
         SDL_RenderFillRect(sdl_renderer, &rect);
@@ -1669,15 +1721,37 @@ static void GameInventory__DrawInner(GameInventory *inventory, const Character *
 void GameInventory_Draw(GameInventory *inventory, const Character *character, const int mouse_x, const int mouse_y) {
     GameInventory__StashLayout(character);
     const bool shared = GameInventory__Shared(inventory, character);
-    if (shared) {
-        SharedStash_Swap((Character *)character); // (put back straight after)
-    }
+    GameInventory__StashEnter(inventory, (Character *)character, shared); // (put back straight after)
     GameInventory__DrawInner(inventory, character, mouse_x, mouse_y);
-    if (shared) {
-        SharedStash_Swap((Character *)character);
+    const int page  = Stash_Page();
+    const int pages = Stash_Pages();
+    GameInventory__StashLeave(inventory, (Character *)character, shared);
+    if (inventory->stash_open && inventory->shop == NULL && inventory->trade == NULL && pages > 1) {
+        for (int side = 0; side < 2; side++) {
+            const SDL_Rect box   = GameInventory__StashArrow(side);
+            const bool     hover = GameInventory__In(&box, mouse_x, mouse_y);
+            SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(sdl_renderer, hover ? 70 : 20, hover ? 60 : 18, hover ? 35 : 15, 230);
+            SDL_RenderFillRect(sdl_renderer, &box);
+            SDL_SetRenderDrawColor(sdl_renderer, 199, 179, 119, 255);
+            SDL_RenderDrawRect(sdl_renderer, &box);
+            const int cx = box.x + (box.w / 2);
+            const int cy = box.y + (box.h / 2);
+            for (int i = 0; i < 5; i++) { // a triangle pointing left or right
+                const int reach = side == 0 ? cx - 2 + i : cx + 2 - i;
+                SDL_RenderDrawLine(sdl_renderer, reach, cy - i, reach, cy + i);
+            }
+        }
+        char text[24];
+        snprintf(text, sizeof(text), "%d/%d", page + 1, pages);
+        Label_SetText(inventory->small, text);
+        Label_SetColor(inventory->small, 0xFF, 0xFF, 0xFF, 0xFF);
+        Label_SetAlignment(inventory->small, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+        const SDL_Rect left = GameInventory__StashArrow(0);
+        Label_Draw(inventory->small, left.x + left.w + 11, left.y + (left.h / 2));
+        Label_SetAlignment(inventory->small, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
     }
-    if (inventory->stash_open && inventory->shared_ok && SharedStash_Allowed(character) && inventory->shop == NULL &&
-        inventory->trade == NULL) {
+    if (GameInventory__TabsShown(inventory, character)) {
         static const char *const names[2] = {"Personal", "Shared"};
         for (int tab = 0; tab < 2; tab++) {
             const SDL_Rect rect = GameInventory__StashTab(tab);
@@ -1687,10 +1761,11 @@ void GameInventory_Draw(GameInventory *inventory, const Character *character, co
             SDL_RenderFillRect(sdl_renderer, &rect);
             SDL_SetRenderDrawColor(sdl_renderer, on ? 200 : 110, on ? 170 : 100, on ? 100 : 80, 255);
             SDL_RenderDrawRect(sdl_renderer, &rect);
-            Label_SetAlignment(inventory->text, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
-            Label_SetColor(inventory->text, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, 0xFF);
-            Label_SetText(inventory->text, names[tab]);
-            Label_Draw(inventory->text, rect.x + (rect.w / 2), rect.y + (rect.h / 2));
+            Label_SetAlignment(inventory->small, LABEL_ALIGN_CENTER, LABEL_ALIGN_CENTER);
+            Label_SetColor(inventory->small, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, on ? 0xFF : 0xA0, 0xFF);
+            Label_SetText(inventory->small, names[tab]);
+            Label_Draw(inventory->small, rect.x + (rect.w / 2), rect.y + (rect.h / 2));
+            Label_SetAlignment(inventory->small, LABEL_ALIGN_BEGIN, LABEL_ALIGN_CENTER);
         }
     }
 }
@@ -2013,13 +2088,9 @@ static void GameInventory__DrawOverlayInner(GameInventory *inventory, const Char
 void GameInventory_DrawOverlay(GameInventory *inventory, const Character *character, const bool open, const int mouse_x,
                                const int mouse_y) {
     const bool shared = GameInventory__Shared(inventory, character);
-    if (shared) {
-        SharedStash_Swap((Character *)character);
-    }
+    GameInventory__StashEnter(inventory, (Character *)character, shared);
     GameInventory__DrawOverlayInner(inventory, character, open, mouse_x, mouse_y);
-    if (shared) {
-        SharedStash_Swap((Character *)character);
-    }
+    GameInventory__StashLeave(inventory, (Character *)character, shared);
 }
 
 static void GameInventory__DrawOverlayInner(GameInventory *inventory, const Character *character, const bool open,
