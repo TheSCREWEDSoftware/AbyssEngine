@@ -3394,10 +3394,14 @@ void Game_Free(void **scene_ref) { Roam__Free(scene_ref); }
 // Update
 
 // Single Player: experience for a kill, and what comes with a new level
-static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
-    if (!roam->game || amount <= 0) {
+static void Roam__GainExperienceAmount(SceneRoam *roam, const int base_amount, const int monster_level) {
+    if (!roam->game || base_amount <= 0) {
         return;
     }
+    // (a quest's reward, monster_level -1, is as it is)
+    const int amount = monster_level < 0
+                           ? base_amount
+                           : (int)Character_KillExperience(roam->character, (uint32_t)base_amount, monster_level);
     // The Experience Shrine: half as much again
     const int boosted = roam->shrine_code == 15 && Roam__Now(roam) < roam->shrine_until
                             ? amount + (amount * roam->shrine_arg0 / 100)
@@ -3418,7 +3422,7 @@ static void Roam__GainExperienceAmount(SceneRoam *roam, const int amount) {
 }
 
 static void Roam__GainExperience(SceneRoam *roam, const Unit *victim) {
-    Roam__GainExperienceAmount(roam, victim->experience);
+    Roam__GainExperienceAmount(roam, victim->experience, victim->level);
     if (roam->game && Roam__IsAlive(&roam->player)) {
         // Life and mana after each kill
         const int life  = Affixes_Total(roam->character, MOD_LIFE_PER_KILL);
@@ -5688,7 +5692,7 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         if (map == key && index < roam->unit_count && !reader->failed && sharing > 0) {
             // A party shares it: the game's bonus of 35% for each member after the first, split evenly
             const int whole = roam->units[index].experience * (100 + (35 * (sharing - 1))) / 100;
-            Roam__GainExperienceAmount(roam, whole / sharing);
+            Roam__GainExperienceAmount(roam, whole / sharing, roam->units[index].level);
         }
         break;
     }

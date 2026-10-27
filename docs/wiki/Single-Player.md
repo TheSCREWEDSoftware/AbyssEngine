@@ -1,7 +1,7 @@
 # Single Player
 
 **Main menu › Single Player** opens the character list. This is the start of the real game: characters are kept
-between sessions, gain experience and levels, carry, wear and drop items and learn and cast skills. There are no quests yet (see [Feature Status](Feature-Status.md)).
+between sessions, gain experience and levels, carry, wear and drop items and learn and cast skills, and do the acts' quests (see [Feature Status](Feature-Status.md) for what's left).
 
 ## Character list
 
@@ -136,7 +136,9 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   damage) plus Strength's bonus (and Dexterity's, for weapons that have one). **Attack rating** comes from Dexterity,
   **defense** is Dexterity / 4 plus what you wear.
 - **Experience** for each kill comes from the game's tables (`monstats.txt` / `MonLvl.txt`, normal difficulty): a
-  Zombie gives 33. Levels follow `experience.txt` (500 for level 2, 1,500 for level 3, ...).
+  Zombie gives 33. Levels follow `experience.txt` (500 for level 2, 1,500 for level 3, ...). Like the game, a monster
+  more than 5 levels below you gives less (81%, 62%, 43%, 24%, then 5%), one more than 5 above gives your level over
+  its level, and `experience.txt`'s ExpRatio takes some off at the top levels (quest rewards are as they are).
 - **Levelling up** gives 5 stat points and a skill point and fills life, mana and stamina; you hear the level-up
   sound and "New stats!" blinks until you spend them. On the character screen, click the **+** next to a stat to
   spend a point. Vitality adds life and stamina, Energy adds mana, at your class's rates.

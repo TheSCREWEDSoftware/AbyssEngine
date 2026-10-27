@@ -67,6 +67,7 @@ typedef struct ClassInfo {
 
 static ClassInfo class_info[CHARACTER_CLASS_COUNT];
 static uint32_t  experience_table[CHARACTER_MAX_LEVEL + 1]; // [level] = needed to be that level
+static int       exp_ratio[CHARACTER_MAX_LEVEL + 1];        // [level] = experience.txt ExpRatio (of 1024) at that level
 static bool      tables_loaded = false;
 static Character current;
 
@@ -136,11 +137,13 @@ static void Character__LoadTables(void) {
     // experience.txt: the row for level L holds what's needed to reach level L + 1
     for (int level = 0; level <= CHARACTER_MAX_LEVEL; level++) {
         experience_table[level] = level <= 1 ? 0 : (uint32_t)(500.0 * level * level * level / 8.0); // fallback
+        exp_ratio[level]        = 1024;
     }
     DataTable *table = DataTable_Load(EXCEL_EXPERIENCE);
     if (table != NULL) {
         const int c_level  = DataTable_GetColumnIndex(table, "Level");
         const int c_amazon = DataTable_GetColumnIndex(table, "Amazon");
+        const int c_ratio  = DataTable_GetColumnIndex(table, "ExpRatio");
         for (int row = 0; row < DataTable_GetRowCount(table); row++) {
             const char *level_text = DataTable_GetString(table, row, c_level);
             if (!isdigit((unsigned char)level_text[0])) {
@@ -149,6 +152,10 @@ static void Character__LoadTables(void) {
             const int level = atoi(level_text) + 1;
             if (level >= 1 && level <= CHARACTER_MAX_LEVEL) {
                 experience_table[level] = (uint32_t)strtoul(DataTable_GetString(table, row, c_amazon), NULL, 10);
+            }
+            const int ratio = c_ratio >= 0 ? atoi(DataTable_GetString(table, row, c_ratio)) : 0;
+            if (level - 1 >= 1 && level - 1 <= CHARACTER_MAX_LEVEL && ratio > 0) {
+                exp_ratio[level - 1] = ratio; // (this row is level - 1's)
             }
         }
         DataTable_Destroy(&table);
@@ -403,6 +410,25 @@ uint32_t Character_ExperienceFor(const int level) {
         return 0;
     }
     return experience_table[level > CHARACTER_MAX_LEVEL ? CHARACTER_MAX_LEVEL : level];
+}
+
+// How much of a kill's experience a character gets: experience.txt's ExpRatio for its level (less at the top), then
+// the game's rule for the monster's level against yours (monster_level 0: not known, only the ratio)
+uint32_t Character_KillExperience(const Character *character, const uint32_t experience, const int monster_level) {
+    Character__LoadTables();
+    const int clvl =
+        character->level < 1 ? 1 : (character->level > CHARACTER_MAX_LEVEL ? CHARACTER_MAX_LEVEL : character->level);
+    uint64_t given = (uint64_t)experience * (uint64_t)exp_ratio[clvl] / 1024u;
+    if (monster_level > 0) {
+        const int below = clvl - monster_level;
+        if (below > 5) { // a monster far below you: 81%, 62%, 43%, 24%, then 5%
+            static const int left[5] = {81, 62, 43, 24, 5};
+            given                    = given * (uint64_t)left[below - 6 < 4 ? below - 6 : 4] / 100u;
+        } else if (monster_level - clvl > 5) { // far above you: your level over its level
+            given = given * (uint64_t)clvl / (uint64_t)monster_level;
+        }
+    }
+    return given > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)given;
 }
 
 int Character_AddExperience(Character *character, const uint32_t experience) {

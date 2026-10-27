@@ -225,7 +225,7 @@ static bool Roam__GiveQuestReward(SceneRoam *roam, const int index) {
     case REWARD_EXPERIENCE: {
         const uint32_t next = Character_ExperienceFor(c->level + 1);
         const uint32_t gap  = next > c->experience ? next - c->experience : 0;
-        Roam__GainExperienceAmount(roam, (int)(gap + (gap / 2) + 1));
+        Roam__GainExperienceAmount(roam, (int)(gap + (gap / 2) + 1), -1);
         snprintf(text, sizeof(text), "The Ancients' blessing: you gain experience.");
         break;
     }

@@ -264,8 +264,9 @@ int         Character_RunDrain(const Character *character);         // stamina u
 uint32_t    Character_ExperienceFor(int level);                     // experience a character needs to be this level
 // Adds experience; levels up as many times as it covers (stat and skill points, life/mana/stamina refilled).
 // Returns the number of levels gained.
-int  Character_AddExperience(Character *character, uint32_t experience);
-bool Character_SpendStatPoint(Character *character, CharacterStat stat);
+uint32_t Character_KillExperience(const Character *character, uint32_t experience, int monster_level);
+int      Character_AddExperience(Character *character, uint32_t experience);
+bool     Character_SpendStatPoint(Character *character, CharacterStat stat);
 
 // The game's hit chance (5..95%): attacker's attack rating and level against the defender's defense and level
 int Character_HitChance(int attack_rating, int attacker_level, int defense, int defender_level);
