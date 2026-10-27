@@ -473,8 +473,8 @@ quest items, three gems or runes into the next grade (with a gem for the higher 
 amulet (and back), rerolling a magic item with three perfect gems, magic weapons with a socket from three gems, the
 prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing, unique and rare weapons
 and armor made exceptional or elite (their magic kept), **crafted items** (Hit Power, Blood, Caster and Safety: the
-magic item can be its exceptional or elite version too). Recipes that need what this engine doesn't have (low and
-superior quality, the Pandemonium portals) aren't there. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
+magic item can be its exceptional or elite version too). Low quality weapons and armor made normal again (Ral or
+Ort and a chipped gem) are in too; the Pandemonium portals aren't yet. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
 in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
 the Cow King). What's inside is kept with the character; any cube you carry opens it.
 In multiplayer games bosses that aren't in the presets aren't put there yet.

@@ -107,7 +107,11 @@ enum {
     NEED_NORMAL_TIER = 128, // bas: a normal version (not exceptional or elite)
     NEED_EXCEPTIONAL = 256,
     NEED_ELITE       = 512,
-    NEED_ANY_TIER    = 1024, // upg: the exceptional and elite versions of it do too
+    NEED_ANY_TIER    = 1024,  // upg: the exceptional and elite versions of it do too
+    NEED_LOW         = 2048,  // low: low quality (cracked, crude, ...)
+    NEED_SUPERIOR    = 4096,  // hiq
+    NEED_ETHEREAL    = 8192,  // eth
+    NEED_NOT_ETH     = 16384, // noe
 };
 
 typedef struct RecipeInput {
@@ -194,8 +198,16 @@ static bool Cube__ParseInput(const char *text, RecipeInput *input) {
             input->needs |= NEED_ELITE;
         } else if (strcmp(token, "upg") == 0) {
             input->needs |= NEED_ANY_TIER;
-        } else if (strcmp(token, "noe") != 0) {
-            return false; // low, hiq, crf, eth: not in this engine
+        } else if (strcmp(token, "low") == 0) {
+            input->needs |= NEED_LOW;
+        } else if (strcmp(token, "hiq") == 0) {
+            input->needs |= NEED_SUPERIOR;
+        } else if (strcmp(token, "eth") == 0) {
+            input->needs |= NEED_ETHEREAL;
+        } else if (strcmp(token, "noe") == 0) {
+            input->needs |= NEED_NOT_ETH;
+        } else {
+            return false; // crf, ...: not in this engine
         }
         token = comma != NULL ? comma + 1 : NULL;
     }
@@ -350,7 +362,9 @@ static bool Cube__Matches(const RecipeInput *input, const Item *item) {
         ((needs & NEED_UNIQUE) && item->quality != ITEM_UNIQUE) || ((needs & NEED_SET) && item->quality != ITEM_SET) ||
         ((needs & NEED_SOCKETS) && item->sockets == 0) || ((needs & NEED_NO_SOCK) && item->sockets != 0) ||
         ((needs & NEED_NORMAL_TIER) && base->tier != 0) || ((needs & NEED_EXCEPTIONAL) && base->tier != 1) ||
-        ((needs & NEED_ELITE) && base->tier != 2)) {
+        ((needs & NEED_ELITE) && base->tier != 2) || ((needs & NEED_LOW) && !Item_IsLowQuality(item)) ||
+        ((needs & NEED_SUPERIOR) && item->grade != ITEM_GRADE_SUPERIOR) ||
+        ((needs & NEED_ETHEREAL) && !item->ethereal) || ((needs & NEED_NOT_ETH) && item->ethereal)) {
         return false;
     }
     return true;

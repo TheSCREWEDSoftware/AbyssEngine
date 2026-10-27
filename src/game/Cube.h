@@ -8,7 +8,7 @@
 // The Horadric Cube: its 3 x 4 inside (the character's cube[]) and Transmute, with the game's recipes from
 // cubemain.txt: quest items (the Horadric Staff, Khalim's Will), gems and runes up a grade, potions, rings and amulets,
 // rerolling magic items, sockets, repairs, crafted items, exceptional and elite upgrades, the cow level's portal.
-// Recipes with what the engine doesn't have (low and superior quality, ethereal) are left out.
+// Recipes with what the engine doesn't have (a unique by name, the Pandemonium portals) are left out.
 
 #define CUBE_ITEM "box"
 
