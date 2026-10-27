@@ -127,6 +127,9 @@ static void Roam__ScreenKeys(SceneRoam *roam) {
         roam->automap_no_names = !roam->automap_no_names;
         Roam__ShowMessage(roam, roam->automap_no_names ? "Automap: names hidden" : "Automap: names shown");
     }
+    if (Controls_Pressed(ACTION_SHOW_BELT)) {
+        roam->show_belt = !roam->show_belt;
+    }
     if (Controls_Pressed(ACTION_SHOW_PORTRAITS)) {
         roam->hide_portraits = !roam->hide_portraits;
     }

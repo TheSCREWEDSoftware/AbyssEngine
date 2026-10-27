@@ -119,6 +119,8 @@ bool GameInventory_IsOverBelt(const Character *character, int mouse_x, int mouse
 
 void GameInventory_Draw(GameInventory *inventory, const Character *character, int mouse_x, int mouse_y);
 void GameInventory_DrawBelt(GameInventory *inventory, const Character *character);
+// How many of the belt's slots show (4: the bottom row; more: the rows above too, which then take clicks)
+void GameInventory_SetBeltShown(int slots);
 // On top of everything: the carried item, and what's under the mouse
 void GameInventory_DrawOverlay(GameInventory *inventory, const Character *character, bool open, int mouse_x,
                                int mouse_y);

@@ -521,10 +521,12 @@ typedef struct SceneRoam {
     bool     log_open;
     bool     help_open;
     bool     hide_portraits; // Show portraits (Z) off
-    bool     automap_fade;   // the automap keys (F9-F12): see-through, no party, no names
-    bool     automap_no_party;
-    bool     automap_no_names;
-    int      automap_size; // 0 as Options say, 1 full view, 2 corner (Center automap)
+    bool     show_belt;      // Show belt: the belt's rows above the bottom one
+
+    bool automap_fade; // the automap keys (F9-F12): see-through, no party, no names
+    bool automap_no_party;
+    bool automap_no_names;
+    int  automap_size; // 0 as Options say, 1 full view, 2 corner (Center automap)
 
     char     chat_lines[CHAT_LINES][NET_CHAT_MAX + 24];
     uint64_t chat_times[CHAT_LINES];
@@ -4992,6 +4994,9 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     }
     const bool skills_took = (skill_events & SKILLS_EVENT_CLICKED) != 0;
     const bool shift       = (SDL_GetModState() & KMOD_SHIFT) != 0;
+    // The belt's rows above the bottom one: with Show belt, or while the mouse is over the belt
+    GameInventory_SetBeltShown(
+        roam->show_belt || GameInventory_IsOverBelt(character, mouse_x, mouse_y) ? Inventory_BeltSize(character) : 4);
     const int item_events = GameInventory_Update(roam->inventory_ui, character, roam->inventory_panel, mouse_x, mouse_y,
                                                  left_click && !skills_took,
                                                  right_click && Roam__IsAlive(&roam->player), shift, &drunk, &message);

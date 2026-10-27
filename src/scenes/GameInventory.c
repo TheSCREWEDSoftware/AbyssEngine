@@ -272,8 +272,16 @@ static SDL_Rect GameInventory__GridRect(const InventoryItem *it, const ItemBase 
     return rect;
 }
 
+// The belt's slots shown: the bottom row (4), or all of the worn belt's rows (Show belt, or the mouse over it)
+static int belt_shown_slots = 4;
+
+void GameInventory_SetBeltShown(const int slots) {
+    belt_shown_slots = slots < 4 ? 4 : (slots > BELT_MAX ? BELT_MAX : slots);
+}
+
+// A belt slot: 0..3 the bottom row on the control panel, the rows above going up from it
 static SDL_Rect GameInventory__BeltRect(const int slot) {
-    const SDL_Rect rect = {BELT_X + (slot * BELT_STEP), BELT_Y, CELL, CELL};
+    const SDL_Rect rect = {BELT_X + ((slot % 4) * BELT_STEP), BELT_Y - ((slot / 4) * BELT_STEP), CELL, CELL};
     return rect;
 }
 
@@ -502,7 +510,7 @@ static bool GameInventory__OverStashGold(const int mouse_x, const int mouse_y) {
 }
 
 static int GameInventory__BeltSlotAt(const int mouse_x, const int mouse_y) {
-    for (int s = 0; s < 4; s++) {
+    for (int s = 0; s < belt_shown_slots; s++) {
         const SDL_Rect rect = GameInventory__BeltRect(s);
         if (GameInventory__In(&rect, mouse_x, mouse_y)) {
             return s;
@@ -796,7 +804,7 @@ static bool GameInventory__Drink(Item *item, Item *drunk) {
 }
 
 bool GameInventory_DrinkBelt(Character *character, const int slot, Item *drunk) {
-    if (slot < 0 || slot >= 4 || !GameInventory__Drink(&character->belt[slot], drunk)) {
+    if (slot < 0 || slot >= BELT_MAX || !GameInventory__Drink(&character->belt[slot], drunk)) {
         return false;
     }
     Inventory_SettleBelt(character);
@@ -1901,6 +1909,24 @@ static void GameInventory__DrawInner(GameInventory *inventory, const Character *
 }
 
 void GameInventory_DrawBelt(GameInventory *inventory, const Character *character) {
+    if (belt_shown_slots > 4) {
+        // The rows above, on a dark frame over the game
+        const SDL_Rect top  = GameInventory__BeltRect(belt_shown_slots - 1);
+        const SDL_Rect back = {BELT_X - 3, top.y - 3, (4 * BELT_STEP) + 4, BELT_Y - top.y + 1};
+        SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 200);
+        SDL_RenderFillRect(sdl_renderer, &back);
+        SDL_SetRenderDrawColor(sdl_renderer, 0x80, 0x70, 0x48, 0xFF);
+        SDL_RenderDrawRect(sdl_renderer, &back);
+        for (int s = 4; s < belt_shown_slots; s++) {
+            const SDL_Rect rect = GameInventory__BeltRect(s);
+            SDL_SetRenderDrawColor(sdl_renderer, 0x30, 0x2A, 0x20, 0xFF);
+            SDL_RenderDrawRect(sdl_renderer, &rect);
+            if (character->belt[s].code[0] != '\0') {
+                GameInventory__DrawItem(inventory, &character->belt[s], &rect, true);
+            }
+        }
+    }
     for (int s = 0; s < 4; s++) {
         const SDL_Rect rect = GameInventory__BeltRect(s);
         const Item    *item = &character->belt[s];
