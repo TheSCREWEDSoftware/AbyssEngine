@@ -2672,6 +2672,25 @@ static void Roam__DrawWeather(const SceneRoam *roam, const SDL_Rect *view) {
                                view->y + (int)(y + 12.0f));
         }
     }
+    if (roam->atmosphere.snow) {
+        return;
+    }
+    // Splashes where drops land: each a little spreading ring for a fifth of a second, somewhere new each time
+    const int splashes = drops / 3;
+    for (int i = 0; i < splashes; i++) {
+        const uint32_t slot  = (uint32_t)((now + ((uint64_t)i * 37)) / 200) + ((uint32_t)i * 7919u);
+        uint32_t       h     = (slot * 2654435761u) ^ ((uint32_t)i * 40503u);
+        h                   ^= h >> 13;
+        h                   *= 0x5bd1e995u;
+        h                   ^= h >> 15;
+        const float age      = (float)((now + (uint64_t)i * 37) % 200) / 200.0f; // 0..1 through its life
+        const int   sx       = view->x + (int)(h % (uint32_t)view->w);
+        const int   sy       = view->y + (int)((h >> 12) % (uint32_t)view->h);
+        const int   w        = 2 + (int)(age * 5.0f);
+        SDL_SetRenderDrawColor(sdl_renderer, 170, 180, 205, (uint8_t)(120.0f * (1.0f - age)));
+        SDL_RenderDrawLine(sdl_renderer, sx - w, sy, sx - (w / 2), sy - 1);
+        SDL_RenderDrawLine(sdl_renderer, sx + (w / 2), sy - 1, sx + w, sy);
+    }
 }
 
 // Next to the waypoint of the area you're in (after travelling by waypoint)
