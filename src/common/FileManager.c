@@ -2,6 +2,7 @@
 #include "../util/Crypto.h"
 #include "AbyssConfiguration.h"
 #include "Logging.h"
+#include "Mods.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -144,6 +145,15 @@ void FileManager_AddMpq(const char *mpq_path) {
 // A loose file in the DataFolder (abyss.ini) for a path: "data\global\excel\levels.txt" ->
 // "<folder>/data/global/excel/levels.txt"
 static bool FileManager__Loose(const char *path_fixed, char *out, const size_t size) {
+    // The mods that are on come first, in their order
+    char relative[1024];
+    snprintf(relative, sizeof(relative), "%s", path_fixed);
+    for (char *c = relative; *c != '\0'; c++) {
+        *c = *c == '\\' ? '/' : *c;
+    }
+    if (Mods_FindFile(relative, out, (int)size)) {
+        return true;
+    }
     const char *folder = AbyssConfiguration_GetDataFolder();
     if (folder == NULL || folder[0] == '\0') {
         return false;

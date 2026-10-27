@@ -4,6 +4,7 @@
 #include "common/FileManager.h"
 #include "common/Globals.h"
 #include "common/Logging.h"
+#include "common/Mods.h"
 #include "common/Revision.h"
 #include "common/Terminal.h"
 #include "data/DataTable.h"
@@ -469,6 +470,7 @@ int main(int argc, char **argv) {
     }
 
     LOG_DEBUG("Initializing file manager...");
+    Mods_Load(); // (before the files: a mod's come first)
     FileManager_CreateSingleton();
     FileManager_SetLenient(text_mode); // (text mode can run from an extracted folder: no pictures needed)
 

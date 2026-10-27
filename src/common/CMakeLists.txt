@@ -3,6 +3,7 @@ target_sources(${PROJECT_NAME}
         AbyssConfiguration.c AbyssConfiguration.h
         CrashHandler.c CrashHandler.h
         FileManager.c FileManager.h
+        Mods.c Mods.h
         Terminal.c Terminal.h
         Globals.c Globals.h
         Logging.c Logging.h

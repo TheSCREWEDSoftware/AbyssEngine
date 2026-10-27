@@ -35,6 +35,7 @@ sources = [
     'common/AbyssConfiguration.c',
     'common/CrashHandler.c',
     'common/FileManager.c',
+    'common/Mods.c',
     'common/Terminal.c',
     'common/Globals.c',
     'common/Logging.c',
