@@ -1132,8 +1132,25 @@ void Affixes_ModText(const ItemMod *mod, char *text, const size_t size) {
     }
 }
 
-// What worn items add to a skill's level: All Skills, its class's, its tree's, the skill itself (only while you have a
-// point in it; "oskill" gives it anyway)
+// Charms (small, large, grand) give their magic from the inventory, like what's worn
+static bool Affixes__IsCharm(const Item *item) {
+    const ItemBase *base = item->code[0] != '\0' ? Items_Find(item->code) : NULL;
+    return base != NULL && Items_IsA(base, "char");
+}
+
+// What gives its magic: the worn items (0 .. EQUIP_COUNT-1), then the inventory's charms; NULL for the rest
+static int Affixes__GiverCount(const Character *character) { return EQUIP_COUNT + character->inventory_count; }
+
+static const Item *Affixes__Giver(const Character *character, const int index) {
+    if (index < EQUIP_COUNT) {
+        return &character->equipped[index];
+    }
+    const Item *item = &character->inventory[index - EQUIP_COUNT].item;
+    return Affixes__IsCharm(item) ? item : NULL;
+}
+
+// What worn items (and charms) add to a skill's level: All Skills, its class's, its tree's, the skill itself (only
+// while you have a point in it; "oskill" gives it anyway)
 int Affixes_SkillBonus(const Character *character, const int skill) {
     const SkillClass *skills = Skills_ForClass(character->class_id);
     if (skill < 0 || skill >= skills->count) {
@@ -1145,9 +1162,9 @@ int Affixes_SkillBonus(const Character *character, const int skill) {
     int             bonus   = 0;
     int             given   = 0; // oskill
     int             charged = 0; // the best charged level with charges left (when there's no point in it)
-    for (int s = 0; s < EQUIP_COUNT; s++) {
-        const Item *item = &character->equipped[s];
-        if (!Item_Works(item) || item->unidentified) {
+    for (int s = 0; s < Affixes__GiverCount(character); s++) {
+        const Item *item = Affixes__Giver(character, s);
+        if (item == NULL || !Item_Works(item) || item->unidentified) {
             continue;
         }
         for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
@@ -1450,9 +1467,10 @@ const char *Affixes_SetName(const Item *item) {
 
 int Affixes_Total(const Character *character, const ItemModType type) {
     int total = 0;
-    for (int s = 0; s < EQUIP_COUNT; s++) {
-        if (Item_Works(&character->equipped[s])) { // (a broken item does nothing)
-            total += Affixes_ItemTotal(&character->equipped[s], type);
+    for (int s = 0; s < Affixes__GiverCount(character); s++) {
+        const Item *item = Affixes__Giver(character, s); // (what's worn, and charms)
+        if (item != NULL && Item_Works(item)) {          // (a broken item does nothing)
+            total += Affixes_ItemTotal(item, type);
         }
     }
     return total + Affixes__SetTotal(character, type);

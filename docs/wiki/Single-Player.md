@@ -179,6 +179,8 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   doors, and red portals to Tristram, the Arcane Sanctuary, Duriel's Lair and the hells). Indoors it's dark except for
   the light around you; outdoors it rains (snows in Act V) now and then where the game has rain; each area plays its
   own music.
+- **Charms** (small, large and grand) give their magic from anywhere in the inventory, like the game (not from the
+  stash or the cube).
 - **Two weapon sets** (expansion characters): **W** or the **I** / **II** tabs above the hands in the inventory swap
   to the other set, with its own left and right skills, like the game. Both are saved.
 - **Town Portal**: right click a scroll or tome of Town Portal (in the inventory or the belt; text mode: **u** on it)
