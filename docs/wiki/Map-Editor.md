@@ -25,14 +25,15 @@ try them straight away in the [Testing Grounds](Testing-Grounds-and-Free-Roam.md
 
 | Tab | Left click | Right click |
 |-----|------------|-------------|
-| **Floor** | Paint the selected floor tile (hold and drag to paint many) | Remove the floor |
+| **Floor** | Paint the selected floor tile (hold and drag to paint many); **Shift**+click fills the area of the same floor joined to that tile | Remove the floor |
 | **Wall** | Place the selected wall / corner / door / pillar / tree / roof | Remove the top wall of that tile |
 | **Shadow** | Paint a shadow | Remove it |
 | **Units** | Place the selected monster, NPC, object or player (animated); **Q** / **E** turn the one under the mouse | Remove the nearest unit |
 
 The monsters, NPCs and players for **Units** are loaded when the editor opens (under its loading screen), so the tab is ready the first time you click it.
 
-**Fill Floor** (Floor tab) covers the whole map with the selected floor.
+**Fill Floor** (Floor tab) covers the whole map with the selected floor; **Shift**+click fills only the patch you click
+(the tiles joined to it side by side that have the same floor, or no floor), as one change to undo.
 
 ## Moving around
 

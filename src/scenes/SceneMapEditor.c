@@ -897,6 +897,59 @@ static void Editor__DrawDialog(const SceneMapEditor *editor) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Editing
 
+// Shift+click with a floor: every tile joined to the one clicked that has the same floor (side by side, not
+// corners) becomes the selected one, as one change
+static void Editor__FloodFill(SceneMapEditor *editor) {
+    Map                 *map    = editor->map;
+    const MapTileChoice *choice = Editor__SelectedChoice(editor);
+    const DS1Cell       *start  = Map_GetCell(map, MAP_LAYER_FLOOR, 0, editor->hover_tx, editor->hover_ty);
+    if (choice == NULL || start == NULL) {
+        return;
+    }
+    const DS1Cell was = *start;
+    if (was.prop1 != 0 && was.style == choice->style && was.sequence == choice->sequence) {
+        return; // already that
+    }
+    const int size  = map->width * map->height;
+    int      *queue = malloc(sizeof(int) * (size_t)size);
+    uint8_t  *seen  = calloc((size_t)size, 1);
+    FAIL_IF_NULL(queue);
+    FAIL_IF_NULL(seen);
+    int head                                                 = 0;
+    int tail                                                 = 0;
+    queue[tail++]                                            = (editor->hover_ty * map->width) + editor->hover_tx;
+    seen[(editor->hover_ty * map->width) + editor->hover_tx] = 1;
+    while (head < tail) {
+        const int c  = queue[head++];
+        const int tx = c % map->width;
+        const int ty = c / map->width;
+        MapHistory_SetCell(editor->history, map, MAP_LAYER_FLOOR, 0, tx, ty, choice);
+        static const int steps[4][2] = {
+            {1,  0 },
+            {-1, 0 },
+            {0,  1 },
+            {0,  -1}
+        };
+        for (int s = 0; s < 4; s++) {
+            const int nx = tx + steps[s][0];
+            const int ny = ty + steps[s][1];
+            if (nx < 0 || ny < 0 || nx >= map->width || ny >= map->height || seen[(ny * map->width) + nx]) {
+                continue;
+            }
+            const DS1Cell *next = Map_GetCell(map, MAP_LAYER_FLOOR, 0, nx, ny);
+            const bool     same = next != NULL && (next->prop1 != 0) == (was.prop1 != 0) &&
+                              (was.prop1 == 0 || (next->style == was.style && next->sequence == was.sequence));
+            if (same) {
+                seen[(ny * map->width) + nx] = 1;
+                queue[tail++]                = (ny * map->width) + nx;
+            }
+        }
+    }
+    free(queue);
+    free(seen);
+    editor->dirty = true;
+}
+
 static void Editor__Paint(SceneMapEditor *editor) {
     Map *map = editor->map;
     if (editor->tool == TOOL_UNITS) {
@@ -1091,7 +1144,10 @@ static void Editor__UpdateMapView(SceneMapEditor *editor, const uint64_t elapsed
     }
     if (editor->hover_valid && !editor->panning) {
         const bool continuous = editor->tool != TOOL_UNITS;
-        if (left && (continuous || !editor->prev_left)) {
+        const bool shift      = (SDL_GetModState() & KMOD_SHIFT) != 0;
+        if (left && !editor->prev_left && shift && editor->tool == TOOL_FLOOR) {
+            Editor__FloodFill(editor); // Shift+click: the floor's area of the same tile, not the whole map
+        } else if (left && (continuous || !editor->prev_left) && !(shift && editor->tool == TOOL_FLOOR)) {
             Editor__Paint(editor);
         }
         if (right && (continuous || !editor->prev_right)) {
