@@ -137,9 +137,13 @@ void Map_StampDS1(Map *map, const DS1 *ds1, int tx, int ty, unsigned flags);
 // Copies another map's tiles (where it has any), tile sets and entities in at (tx, ty); exits aren't copied
 void Map_StampMap(Map *map, const Map *source, int tx, int ty);
 void Map_Finish(Map *map);
-void Map_FillSeams(Map *map); // (after Map_Finish) outdoors: one- or two-tile gaps without floor get their neighbour's floor
+void Map_FillSeams(
+    Map *map); // (after Map_Finish) outdoors: one- or two-tile gaps without floor get their neighbour's floor
 // Wider gaps: holes with floor within widest on all four sides, and notches up to a third as wide along a row
 void Map_FillGaps(Map *map, int widest);
+// Separate walkable pieces a short gap (up to widest empty cells along a row or column) apart get a strip of floor
+// joining them (the Arcane Sanctuary's walkways); the joins made
+int Map_JoinPieces(Map *map, int widest);
 
 // Exits to other areas
 void           Map_AddExit(Map *map, int target_level, int x0, int y0, int x1, int y1, float arrive_x, float arrive_y);

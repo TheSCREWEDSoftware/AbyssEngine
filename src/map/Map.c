@@ -666,6 +666,107 @@ void Map_FillGaps(Map *map, const int widest) {
     free(from);
 }
 
+// Which walkable piece each tile is in (by its middle sub-tile; -1 not walkable): a flood over the tiles
+static void Map__LabelPieces(const Map *map, int *label) {
+    const int size  = map->width * map->height;
+    int      *queue = malloc(sizeof(int) * (size_t)size);
+    if (queue == NULL) {
+        return;
+    }
+    for (int c = 0; c < size; c++) {
+        label[c] = -2; // not looked at
+    }
+    int pieces = 0;
+    for (int start = 0; start < size; start++) {
+        if (label[start] != -2) {
+            continue;
+        }
+        if (!Map_IsWalkable(map, ((start % map->width) * MAP_SUBTILES) + 2,
+                            ((start / map->width) * MAP_SUBTILES) + 2)) {
+            label[start] = -1;
+            continue;
+        }
+        int head      = 0;
+        int tail      = 0;
+        queue[tail++] = start;
+        label[start]  = pieces;
+        while (head < tail) {
+            const int c  = queue[head++];
+            const int tx = c % map->width;
+            const int ty = c / map->width;
+            for (int d = 0; d < 4; d++) {
+                const int nx = tx + (d == 0 ? 1 : (d == 1 ? -1 : 0));
+                const int ny = ty + (d == 2 ? 1 : (d == 3 ? -1 : 0));
+                if (nx < 0 || ny < 0 || nx >= map->width || ny >= map->height) {
+                    continue;
+                }
+                const int n = (ny * map->width) + nx;
+                if (label[n] == -2 && Map_IsWalkable(map, (nx * MAP_SUBTILES) + 2, (ny * MAP_SUBTILES) + 2)) {
+                    label[n]      = pieces;
+                    queue[tail++] = n;
+                }
+            }
+        }
+        pieces++;
+    }
+    free(queue);
+}
+
+int Map_JoinPieces(Map *map, const int widest) {
+    const int size  = map->width * map->height;
+    int      *label = malloc(sizeof(int) * (size_t)size);
+    if (label == NULL) {
+        return 0;
+    }
+    int joined = 0;
+    for (int pass = 0; pass < 8; pass++) {
+        Map__LabelPieces(map, label);
+        int made = 0;
+        for (int dir = 0; dir < 2; dir++) {
+            const int lines = dir == 0 ? map->height : map->width;
+            const int along = dir == 0 ? map->width : map->height;
+            for (int line = 0; line < lines; line++) {
+                for (int at = 0; at + 1 < along; at++) {
+                    const int c = dir == 0 ? (line * map->width) + at : (at * map->width) + line;
+                    const int n = dir == 0 ? c + 1 : c + map->width;
+                    if (label[c] < 0 || !Map__Empty(map, n)) {
+                        continue;
+                    }
+                    // A run of empty cells from n on, ending at walkable floor of another piece
+                    int end = -1;
+                    int run = 0;
+                    for (int k = at + 1; k < along && run <= widest; k++, run++) {
+                        const int e = dir == 0 ? (line * map->width) + k : (k * map->width) + line;
+                        if (!Map__Empty(map, e)) {
+                            end = label[e] >= 0 && label[e] != label[c] ? k : -1;
+                            break;
+                        }
+                    }
+                    if (end < 0 || run > widest) {
+                        continue;
+                    }
+                    for (int k = at + 1; k < end; k++) {
+                        const int e            = dir == 0 ? (line * map->width) + k : (k * map->width) + line;
+                        map->floors[0][e]      = map->floors[0][c];
+                        map->floor_tiles[0][e] = map->floor_tiles[0][c];
+                    }
+                    const int other = dir == 0 ? label[(line * map->width) + end] : label[(end * map->width) + line];
+                    for (int i = 0; i < size; i++) { // one piece now
+                        label[i] = label[i] == other ? label[c] : label[i];
+                    }
+                    made++;
+                }
+            }
+        }
+        joined += made;
+        if (made == 0) {
+            break;
+        }
+    }
+    free(label);
+    return joined;
+}
+
 void Map_AddExit(Map *map, const int target_level, const int x0, const int y0, const int x1, const int y1,
                  const float arrive_x, const float arrive_y) {
     if (map->exit_count >= MAP_MAX_EXITS || target_level <= 0) {
