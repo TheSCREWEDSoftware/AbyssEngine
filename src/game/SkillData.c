@@ -120,9 +120,12 @@ static void SkillData__Load(void) {
         STR(s->range, "range");
         STR(s->cast_sound, "stsound");
         STR(s->do_sound, "dosound");
-        s->aura    = INT("aura") != 0;
-        s->passive = INT("passive") != 0;
-        s->left_ok = INT("leftskill") != 0;
+        s->progressive        = INT("progressive") != 0;
+        s->progressive_damage = INT("prgdam");
+        s->finishing          = INT("finishing") != 0;
+        s->aura               = INT("aura") != 0;
+        s->passive            = INT("passive") != 0;
+        s->left_ok            = INT("leftskill") != 0;
         for (int p = 0; p < 8; p++) {
             char name[8];
             snprintf(name, sizeof(name), "Param%d", p + 1);

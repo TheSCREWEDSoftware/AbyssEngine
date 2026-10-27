@@ -157,6 +157,10 @@ static int Roam__PlayerStates(const SceneRoam *roam, char states[][32], const in
     if (player->curse != NULL && now < player->curse_until && player->curse->target_state[0] != '\0' && count < max) {
         snprintf(states[count++], 32, "%s", player->curse->target_state);
     }
+    if (roam->charges > 0 && roam->charge_skill != NULL && roam->charge_skill->state[0] != '\0' && count < max &&
+        now < roam->charges_until) { // (the charges, around you)
+        snprintf(states[count++], 32, "%s", roam->charge_skill->state);
+    }
     int             level = 0;
     const SkillRow *aura  = roam->character != NULL ? Roam__ActiveAura(roam, &level) : NULL;
     if (aura != NULL && aura->state[0] != '\0' && count < max) {

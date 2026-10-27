@@ -477,15 +477,20 @@ typedef struct SceneRoam {
     float    spawn_x;
     float    spawn_y;
     uint64_t respawn_at;
-    Unit     corpse;           // Single Player: where you fell, with what you wore (the character's corpse_*)
-    int      corpse_key;       // the map it's on (Roam__MapKey), 0 = none
-    uint64_t safe_until;       // grace period after respawning
-    uint64_t stamina_until;    // a stamina potion: running doesn't tire you until then
-    uint64_t antidote_until;   // an antidote potion: +50 poison resistance (most 75%) until then
-    uint64_t thawing_until;    // a thawing potion: +50 cold resistance, can't be chilled, until then
-    uint64_t conviction_until; // near a unique's Conviction: your resistances lowered by conviction until then
-    int      conviction;
-    int      step_frame; // walk frame the last footstep was played on, -1 = none
+    Unit     corpse;     // Single Player: where you fell, with what you wore (the character's corpse_*)
+    int      corpse_key; // the map it's on (Roam__MapKey), 0 = none
+    uint64_t safe_until; // grace period after respawning
+    // The Assassin's charge-up attacks: which one holds charges, how many (3 at most), at what level, until when
+    const SkillRow *charge_skill;
+    int             charges;
+    int             charge_level;
+    uint64_t        charges_until;
+    uint64_t        stamina_until;    // a stamina potion: running doesn't tire you until then
+    uint64_t        antidote_until;   // an antidote potion: +50 poison resistance (most 75%) until then
+    uint64_t        thawing_until;    // a thawing potion: +50 cold resistance, can't be chilled, until then
+    uint64_t        conviction_until; // near a unique's Conviction: your resistances lowered by conviction until then
+    int             conviction;
+    int             step_frame; // walk frame the last footstep was played on, -1 = none
 
     Unit units[MAX_UNITS];
     int  unit_count;
@@ -3732,6 +3737,85 @@ static void Roam__HitEffects(SceneRoam *roam, Unit *target, const bool big, cons
     }
 }
 
+static void     Roam__SkillHit(SceneRoam *roam, Unit *unit, const int damage[ELEMENT_COUNT], int cold_frames,
+                               int poison_frames, bool ours, uint64_t now);
+static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+
+// The Assassin's charge-up attacks: a blow with one that lands adds a charge (three at most, gone after 30 seconds);
+// another charge-up skill's blow starts over with its own
+static void Roam__AddCharge(SceneRoam *roam, const SkillRow *skill, const int level, const uint64_t now) {
+    if (roam->charge_skill != skill || now >= roam->charges_until) {
+        roam->charges = 0;
+    }
+    roam->charge_skill  = skill;
+    roam->charge_level  = level;
+    roam->charges       = roam->charges < 3 ? roam->charges + 1 : 3;
+    roam->charges_until = now + 30000;
+    Sounds_Play("assassin_chargeup_tiger_1", SOUND_KIND_SFX);
+}
+
+// A finishing move lets them go into its blow: Tiger Strike more damage, Cobra Strike life and mana stolen, Fists of
+// Fire / Claws of Thunder / Blades of Ice their element (to the monsters around too from the second charge on),
+// Phoenix Strike fire, then lightning, then cold
+static void Roam__ReleaseCharges(SceneRoam *roam, Unit *target, int rolled[ELEMENT_COUNT], const uint64_t now) {
+    const SkillRow *skill   = roam->charge_skill;
+    const int       charges = roam->charges;
+    if (skill == NULL || charges <= 0 || now >= roam->charges_until) {
+        roam->charges = 0;
+        return;
+    }
+    const int level  = roam->charge_level;
+    int       low    = 0;
+    int       high   = 0;
+    int       frames = 0;
+    SkillData_ElementalDamage(roam->character, skill, level, &low, &high, &frames);
+    switch (skill->progressive_damage) {
+    case 1: // more damage
+        rolled[ELEMENT_PHYSICAL] +=
+            rolled[ELEMENT_PHYSICAL] * SkillData_Eval(roam->character, skill, level, skill->calc[0]) * charges / 100;
+        break;
+    case 2: { // life and mana stolen from the blow
+        const int pct    = skill->params[0] + (skill->params[1] * (level - 1));
+        const int stolen = rolled[ELEMENT_PHYSICAL] * pct * charges / 100 / 3;
+        roam->player.hp =
+            roam->player.hp + stolen < roam->player.max_hp ? roam->player.hp + stolen : roam->player.max_hp;
+        roam->mana = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)stolen);
+        break;
+    }
+    default: { // the element (Phoenix: fire, lightning, cold as the charges go up)
+        const Element element = skill->element > ELEMENT_PHYSICAL ? (Element)skill->element : ELEMENT_FIRE;
+        int           splash[ELEMENT_COUNT] = {0};
+        for (int c = 0; c < charges; c++) {
+            const Element e       = skill->progressive_damage == 3
+                                        ? (Element)(c == 0 ? ELEMENT_FIRE : (c == 1 ? ELEMENT_LIGHTNING : ELEMENT_COLD))
+                                        : element;
+            const int     amount  = Roam__Roll(low > 0 ? low : 1 + level, high > low ? high : 4 + (level * 3));
+            rolled[e]            += amount;
+            splash[e]            += c > 0 ? amount / 2 : 0;
+        }
+        if (charges >= 2 && Roam__RunsMonsters(roam)) { // (the explosion, nova or shards hit those around)
+            for (int i = 0; i < roam->unit_count; i++) {
+                Unit *other = &roam->units[i];
+                if (other != target && Roam__IsAlive(other) && Roam__IsCombatant(other) && !other->ally &&
+                    !other->npc && Roam__Distance(other->x, other->y, target->x, target->y) < 3.0f) {
+                    Roam__SkillHit(roam, other, splash, element == ELEMENT_COLD ? frames : 0, 0, true, now);
+                }
+            }
+            Roam__SpawnEffect(roam,
+                              element == ELEMENT_COLD
+                                  ? "bladesoficeexplode"
+                                  : (element == ELEMENT_LIGHTNING ? "lightninghit" : "fistsoffireexplode"),
+                              target->x, target->y, 0.0f, 1.0f);
+        }
+        if (element == ELEMENT_COLD) {
+            target->chill_until = now + (uint64_t)((frames > 0 ? frames : 50) * 40);
+        }
+        break;
+    }
+    }
+    roam->charges = 0;
+}
+
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
@@ -3762,11 +3846,16 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (skill != NULL) {
         // The skill's extra damage (Zeal, Fury and Fend keep it in their second calc), and what it adds
         const int percent = SkillData_Eval(roam->character, skill, level, skill->calc[skill->do_func == 13 ? 1 : 0]);
-        rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * percent / 100;
-        int low                   = 0;
-        int high                  = 0;
-        int frames                = 0;
+        if (!skill->progressive) { // (a charging blow is a plain one: its bonus comes with the finisher)
+            rolled[ELEMENT_PHYSICAL] += rolled[ELEMENT_PHYSICAL] * percent / 100;
+        }
+        int low    = 0;
+        int high   = 0;
+        int frames = 0;
         SkillData_ElementalDamage(roam->character, skill, level, &low, &high, &frames);
+        if (skill->progressive) {
+            high = 0; // (its element comes with the finisher)
+        }
         if (skill->element > ELEMENT_PHYSICAL && high > 0) {
             rolled[skill->element] += Roam__Roll(low, high);
             if (skill->element == ELEMENT_COLD) {
@@ -3794,6 +3883,11 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
         if (Roam__RunsMonsters(roam)) {
             Roam__HitEffects(roam, target, big, now);
         }
+    }
+    if (roam->game && skill != NULL && skill->finishing) {
+        Roam__ReleaseCharges(roam, target, rolled, now); // a finishing move: the charges go into this blow
+    } else if (roam->game && skill != NULL && skill->progressive) {
+        Roam__AddCharge(roam, skill, level, now);
     }
     if (rolled[ELEMENT_POISON] > 0 && Roam__RunsMonsters(roam)) {
         // Poison from what's worn: over two seconds, like the game's (in someone else's map: all at once)

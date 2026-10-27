@@ -27,41 +27,44 @@ typedef enum SkillKind {
 } SkillKind;
 
 typedef struct SkillRow {
-    char      id[64]; // skills.txt "skill"
-    int       row;
-    int       do_func; // srvdofunc
-    int       start_func;
-    char      missile[40];      // srvmissile (fired at the start)
-    char      missile_a[40];    // srvmissilea (fired by the skill's function)
-    char      summon[40];       // monstats Id
-    char      state[32];        // aurastate
-    char      target_state[32]; // auratargetstate (a curse's, on the monsters)
-    char      anim[4];          // the player's animation: SC, A1, TH, ...
-    char      range[8];         // "rng", "h2h", "none", "loc"
-    char      cast_sound[40];   // stsound
-    char      do_sound[40];     // dosound
-    bool      aura;
-    bool      passive;
-    bool      left_ok;
-    int       params[8];
-    int       mana, level_mana, mana_shift, min_mana;
-    int       to_hit, level_to_hit;
-    int       hit_shift;
-    int       min_damage, min_level_damage[5], max_damage, max_level_damage[5];
-    char      damage_synergy[SKILL_CALC_MAX];
-    int       element; // Element, -1 none
-    bool      magic;   // "mag": unresistable
-    int       element_min, element_min_level[5], element_max, element_max_level[5];
-    char      element_synergy[SKILL_CALC_MAX];
-    int       element_length, element_level_length[3]; // frames (25 a second)
-    char      aura_length[SKILL_CALC_MAX];
-    char      aura_range[SKILL_CALC_MAX];
-    char      aura_stat[SKILL_AURA_STATS][40];
-    char      aura_calc[SKILL_AURA_STATS][SKILL_CALC_MAX];
-    char      passive_stat[SKILL_PASSIVE_STATS][40];
-    char      passive_calc[SKILL_PASSIVE_STATS][SKILL_CALC_MAX];
-    char      pet_max[SKILL_CALC_MAX];
-    char      calc[4][SKILL_CALC_MAX];
+    char id[64]; // skills.txt "skill"
+    int  row;
+    int  do_func; // srvdofunc
+    int  start_func;
+    char missile[40];      // srvmissile (fired at the start)
+    char missile_a[40];    // srvmissilea (fired by the skill's function)
+    char summon[40];       // monstats Id
+    char state[32];        // aurastate
+    char target_state[32]; // auratargetstate (a curse's, on the monsters)
+    char anim[4];          // the player's animation: SC, A1, TH, ...
+    char range[8];         // "rng", "h2h", "none", "loc"
+    char cast_sound[40];   // stsound
+    char do_sound[40];     // dosound
+    bool aura;
+    bool passive;
+    bool left_ok;
+    int  params[8];
+    int  mana, level_mana, mana_shift, min_mana;
+    int  to_hit, level_to_hit;
+    int  hit_shift;
+    int  min_damage, min_level_damage[5], max_damage, max_level_damage[5];
+    char damage_synergy[SKILL_CALC_MAX];
+    int  element; // Element, -1 none
+    bool magic;   // "mag": unresistable
+    int  element_min, element_min_level[5], element_max, element_max_level[5];
+    char element_synergy[SKILL_CALC_MAX];
+    int  element_length, element_level_length[3]; // frames (25 a second)
+    char aura_length[SKILL_CALC_MAX];
+    char aura_range[SKILL_CALC_MAX];
+    char aura_stat[SKILL_AURA_STATS][40];
+    char aura_calc[SKILL_AURA_STATS][SKILL_CALC_MAX];
+    char passive_stat[SKILL_PASSIVE_STATS][40];
+    char passive_calc[SKILL_PASSIVE_STATS][SKILL_CALC_MAX];
+    char pet_max[SKILL_CALC_MAX];
+    char calc[4][SKILL_CALC_MAX];
+    bool progressive; // a charge-up attack (Tiger Strike, Fists of Fire, ...): each blow that lands adds a charge
+    int  progressive_damage; // prgdam: what its charges do (1 damage, 2 life and mana stolen, 3 Phoenix, 4 elemental)
+    bool finishing;          // a finishing move (Dragon Talon, Dragon Claw, ...): lets the charges go
     SkillKind kind;
 } SkillRow;
 
