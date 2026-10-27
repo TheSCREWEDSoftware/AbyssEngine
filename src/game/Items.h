@@ -207,6 +207,7 @@ const ItemBase *Items_Get(int index);
 bool            Items_IsA(const ItemBase *base, const char *type); // its type, or one it counts as ("mele", "armo")
 const char     *Items_SlotName(EquipSlot slot);
 bool            Items_IsPotion(const ItemBase *base);
+int             Items_SpecialPotion(const ItemBase *base); // 1 stamina, 2 antidote, 3 thawing, 0 none
 void            Items_Release(void);
 
 #endif // ABYSS_ITEMS_H

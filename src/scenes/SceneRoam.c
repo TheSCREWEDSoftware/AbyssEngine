@@ -452,10 +452,13 @@ typedef struct SceneRoam {
     float    spawn_x;
     float    spawn_y;
     uint64_t respawn_at;
-    Unit     corpse;     // Single Player: where you fell, with what you wore (the character's corpse_*)
-    int      corpse_key; // the map it's on (Roam__MapKey), 0 = none
-    uint64_t safe_until; // grace period after respawning
-    int      step_frame; // walk frame the last footstep was played on, -1 = none
+    Unit     corpse;         // Single Player: where you fell, with what you wore (the character's corpse_*)
+    int      corpse_key;     // the map it's on (Roam__MapKey), 0 = none
+    uint64_t safe_until;     // grace period after respawning
+    uint64_t stamina_until;  // a stamina potion: running doesn't tire you until then
+    uint64_t antidote_until; // an antidote potion: +50 poison resistance (most 75%) until then
+    uint64_t thawing_until;  // a thawing potion: +50 cold resistance, can't be chilled, until then
+    int      step_frame;     // walk frame the last footstep was played on, -1 = none
 
     Unit units[MAX_UNITS];
     int  unit_count;
@@ -1456,7 +1459,12 @@ static int Roam__ElementTaken(const SceneRoam *roam, const Element element, cons
     if (!roam->game) {
         return damage;
     }
-    int taken = Roam__Resisted(damage, Character_Resist(roam->character, element, Roam__ResistPenalty(roam)));
+    int resist = Character_Resist(roam->character, element, Roam__ResistPenalty(roam));
+    if ((element == ELEMENT_POISON && Roam__Now(roam) < roam->antidote_until) ||
+        (element == ELEMENT_COLD && Roam__Now(roam) < roam->thawing_until)) { // (antidote / thawing potions)
+        resist = resist >= 75 ? resist : (resist + 50 < 75 ? resist + 50 : 75);
+    }
+    int taken = Roam__Resisted(damage, resist);
     if (element == ELEMENT_POISON) { // Poison Length Reduced: poison here is all at once, so less of it (at most 75%)
         const int shorter = Affixes_Total(roam->character, MOD_POISON_LENGTH);
         taken             = taken * (100 - (shorter < 75 ? shorter : 75)) / 100;
@@ -1469,7 +1477,7 @@ static int Roam__ElementTaken(const SceneRoam *roam, const Element element, cons
 
 // Chilled or frozen: slowed for so long, unless what's worn says otherwise (Cannot Be Frozen, Half Freeze Duration)
 static void Roam__ChillMe(SceneRoam *roam, int ms, const uint64_t now) {
-    if (roam->game && Affixes_Total(roam->character, MOD_CANNOT_FREEZE) > 0) {
+    if (now < roam->thawing_until || (roam->game && Affixes_Total(roam->character, MOD_CANNOT_FREEZE) > 0)) {
         return;
     }
     if (roam->game && Affixes_Total(roam->character, MOD_HALF_FREEZE) > 0) {
@@ -3753,7 +3761,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             roam->mana          = fminf(max_mana, roam->mana + gained);
         }
         if (Roam__IsRunning(roam) && !roam->sprinting && !(roam->shrine_code == 14 && now < roam->shrine_until) &&
-            (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
+            now >= roam->stamina_until && (roam->moving || roam->key_dx != 0.0f || roam->key_dy != 0.0f)) {
             // charstats RunDrain is per frame (25 a second), in 256ths
             roam->stamina -= (float)Character_RunDrain(roam->character) * 25.0f / 256.0f * seconds;
             if (roam->stamina <= 0.0f) {
@@ -4774,6 +4782,25 @@ static void Roam__Drink(SceneRoam *roam, const Item *item) {
         roam->player.hp      = roam->player.hp + (roam->player.max_hp * base->rejuvenate_pct / 100);
         roam->player.hp      = roam->player.hp > roam->player.max_hp ? roam->player.max_hp : roam->player.hp;
         roam->mana           = fminf(max_mana, roam->mana + (max_mana * (float)base->rejuvenate_pct / 100.0f));
+    }
+    // Stamina, antidote and thawing: 30 seconds each (antidote cures poison, thawing warms you up)
+    const uint64_t now = Roam__Now(roam);
+    switch (Items_SpecialPotion(base)) {
+    case 1:
+        roam->stamina_until = now + 30000;
+        roam->stamina       = (float)Character_MaxStamina(roam->character);
+        roam->exhausted     = false;
+        break;
+    case 2:
+        roam->antidote_until     = now + 30000;
+        roam->player.poison_left = 0.0f;
+        break;
+    case 3:
+        roam->thawing_until      = now + 30000;
+        roam->player.chill_until = 0;
+        break;
+    default:
+        break;
     }
     Sounds_Play(base->use_sound[0] != '\0' ? base->use_sound : "item_potion", SOUND_KIND_SFX);
 }

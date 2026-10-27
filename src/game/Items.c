@@ -33,7 +33,18 @@ static bool      loaded     = false;
 const char *Items_SlotName(const EquipSlot slot) { return slot < EQUIP_COUNT ? slot_info[slot].name : "?"; }
 
 bool Items_IsPotion(const ItemBase *base) {
-    return base != NULL && (base->life > 0 || base->mana > 0 || base->rejuvenate_pct > 0);
+    return base != NULL &&
+           (base->life > 0 || base->mana > 0 || base->rejuvenate_pct > 0 || Items_SpecialPotion(base) != 0);
+}
+
+// Stamina, antidote and thawing potions (by their code): 1, 2, 3; 0 for anything else
+int Items_SpecialPotion(const ItemBase *base) {
+    if (base == NULL) {
+        return 0;
+    }
+    return strcmp(base->code, "vps") == 0
+               ? 1
+               : (strcmp(base->code, "yps") == 0 ? 2 : (strcmp(base->code, "wms") == 0 ? 3 : 0));
 }
 
 // Only what the game's fonts draw
