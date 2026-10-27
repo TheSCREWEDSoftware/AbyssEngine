@@ -21,10 +21,12 @@ typedef struct ObjectInfo {
     bool        collision[OBJECT_MODE_COUNT];   // blocks walking while in that mode
     int         frame_count[OBJECT_MODE_COUNT]; // frames the animation uses, from start_frame on (the files of all
     int         start_frame[OBJECT_MODE_COUNT]; // modes often hold the same frames: closed, opening..., open)
-    int operate_fn; // what clicking it does (objects.txt OperateFn): 2 shrine, 4 chest, 8 door, 23 waypoint, ...
-    int parm[OBJECT_PARMS]; // what OperateFn uses (a shrine's Parm0: 1 health, 2 mana, 3 any other)
-    const char *idle_mode;  // how it starts: "on" for torches and fires (lit), otherwise "nu"
-    int         automap;    // its mark on the automap (objects.txt AutoMap): a piece of the act's MaxiMap.dc6, 0 = none
+    int  operate_fn; // what clicking it does (objects.txt OperateFn): 2 shrine, 4 chest, 8 door, 23 waypoint, ...
+    int  parm[OBJECT_PARMS]; // what OperateFn uses (a shrine's Parm0: 1 health, 2 mana, 3 any other)
+    bool lockable;           // can be locked (chests): a key opens it
+    int  trap_prob;          // percent chance it's trapped
+    const char *idle_mode;   // how it starts: "on" for torches and fires (lit), otherwise "nu"
+    int         automap; // its mark on the automap (objects.txt AutoMap): a piece of the act's MaxiMap.dc6, 0 = none
 } ObjectInfo;
 
 extern const char *const object_mode_tokens[OBJECT_MODE_COUNT];

@@ -238,6 +238,8 @@ typedef struct Unit {
     ObjectInfo  object;
     char        object_mode[4]; // the animation it rests in: "nu" (closed), "on" (opened, lit)
     bool        used;           // opened / activated: can't be clicked again
+    bool        locked;         // a locked chest: a key (or an Assassin) opens it
+    bool        trapped;        // goes off when opened
     int         rest_frame;     // >= 0: show this frame of the "op" animation (doors that rest on their last frame)
     char        net_mode[4];    // another player (multiplayer): the animation their game says they're in
     bool        hireling;       // the character's hireling (an ally that comes along from area to area)
@@ -913,6 +915,16 @@ typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQ
 
 static int init_area_level = 0; // Roam__Populate: the area's monster level for the monsters being made (0: theirs)
 
+// An object named the game's way: objects.txt's Name through the string tables ("chest" -> "Chest")
+static void Roam__NameObject(Unit *unit) {
+    const char *shown = unit->object.name != NULL ? StringTable_Find(unit->object.name) : NULL;
+    if (shown != NULL && shown[0] != '\0') {
+        snprintf(unit->name, sizeof(unit->name), "%s", shown);
+    } else if (unit->object.name != NULL && unit->object.name[0] != '\0') {
+        snprintf(unit->name, sizeof(unit->name), "%s", unit->object.name);
+    }
+}
+
 static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const float x, const float y) {
     CatalogCharacterInfo info;
     if (!CatalogCharacters_Find(MapSession_GetBestiary(), base, id, &info)) {
@@ -981,6 +993,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
     if (strcmp(base, "objects") == 0 && Objects_Get(Objects_FindToken(id), &unit->object)) {
         unit->is_object = true;
         unit->turn      = 0;
+        Roam__NameObject(unit);
         if (unit->object.row == 251) {
             unit->object.selectable = true; // the Gidbinn's altar (its quest uses it)
         }
@@ -1493,9 +1506,43 @@ static void Roam__ApplyUsedObjects(SceneRoam *roam) {
     }
 }
 
-static void Roam__ShowMessage(SceneRoam *roam, const char *text);
-static void Roam__RefreshList(SceneRoam *roam);
-static void Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
+static void     Roam__ShowMessage(SceneRoam *roam, const char *text);
+static void     Roam__RefreshList(SceneRoam *roam);
+static void     Roam__UseShrine(SceneRoam *roam, const Unit *shrine, uint64_t now);
+static Missile *Roam__SpawnEffect(SceneRoam *roam, const char *name, float x, float y, float dx, float dy);
+
+// A trapped chest goes off at whoever opens it: a bolt of lightning, stronger in later areas
+static void Roam__SpringTrap(SceneRoam *roam, Unit *object, const uint64_t now) {
+    object->trapped = false;
+    if (!roam->game || (roam->online && !roam->use_is_ours)) {
+        return;
+    }
+    const int level  = MonsterStats_AreaLevel(roam->area_level);
+    const int damage = Roam__Roll(level, (level * 3) + 5);
+    Roam__SpawnEffect(roam, "lightningstrike", roam->player.x, roam->player.y, 0.0f, 1.0f);
+    Roam__Damage(roam, &roam->player, damage, now);
+    Roam__ShowMessage(roam, "It was trapped!");
+}
+
+// A key for a locked chest: one off the stack (the Assassin needs none)
+static bool Roam__Unlock(SceneRoam *roam) {
+    if (!roam->game || roam->character == NULL || roam->character->class_id == CHARACTER_ASSASSIN) {
+        return true;
+    }
+    Character *c = roam->character;
+    for (int i = 0; i < c->inventory_count; i++) {
+        Item *item = &c->inventory[i].item;
+        if (strcmp(item->code, "key") == 0) {
+            if (item->quantity > 1) {
+                item->quantity--;
+            } else {
+                Inventory_Remove(c, i);
+            }
+            return true;
+        }
+    }
+    return false;
+}
 static void Roam__TakePortal(SceneRoam *roam);
 static void Roam__PlacePortals(SceneRoam *roam);
 static void Roam__UseWell(SceneRoam *roam);
@@ -1563,6 +1610,9 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
         char treasure[32];
         snprintf(treasure, sizeof(treasure), "Act %d Chest A", Roam__Act(roam) + 1);
         Roam__DropTreasure(roam, treasure, roam->character->level, unit->x, unit->y);
+    }
+    if (unit->trapped) {
+        Roam__SpringTrap(roam, unit, now);
     }
     if (unit->object.has_mode[1] && unit->object.frame_count[1] > 0 &&
         MapUnits_GetFigure(roam->units_cache, unit->base, unit->id, "op") != NULL) {
@@ -2044,6 +2094,17 @@ static bool Roam__TryUse(SceneRoam *roam, const uint64_t now) {
     roam->moving     = false;
     roam->use_target = -1;
     Roam__ClearPath(player);
+    if (object->locked) {
+        if (!Roam__Unlock(roam)) {
+            Roam__ShowMessage(roam, "It's locked: you need a key.");
+            Sounds_Play("cursor_error", SOUND_KIND_UI);
+            return true;
+        }
+        object->locked = false;
+        if (strncmp(object->name, "Locked ", 7) == 0) {
+            memmove(object->name, object->name + 7, strlen(object->name + 7) + 1);
+        }
+    }
     if (roam->online && object->is_object && object->object.operate_fn != 23 && object->object.operate_fn != 32 &&
         object->object.operate_fn != 15) { // (a Town Portal is your own)
         // Multiplayer: the server says who opens it (the first to ask), and everyone's game shows it open
@@ -2203,6 +2264,32 @@ static void Roam__PlayFilm(SceneRoam *roam, const int film) {
     }
 }
 
+// Chests: some are locked (Lockable; named "Locked Chest"), some trapped (TrapProb), the same in everyone's game (from
+// the world seed, the map and the object)
+static void Roam__LockAndTrap(SceneRoam *roam, Unit *unit, const int index) {
+    const int fn = unit->object.operate_fn;
+    if (!roam->game || !(fn == 1 || fn == 3 || fn == 4 || fn == 5 || fn == 14)) {
+        return;
+    }
+    const MapArea *area = Map_AreaAt(roam->map, unit->x, unit->y);
+    for (int t = 0; t < TOWN_COUNT; t++) {
+        if (town_level_ids[t] == (area != NULL ? area->level_id : roam->area_level)) {
+            return; // (none in town)
+        }
+    }
+    uint32_t h    = (World_GetSeed() * 2654435761u) ^ ((uint32_t)Roam__MapKey(roam) * 40503u) ^ ((uint32_t)index * 97u);
+    h            ^= h >> 13;
+    h            *= 0x5bd1e995u;
+    h            ^= h >> 15;
+    unit->locked  = unit->object.lockable && (h % 100) < 15;
+    unit->trapped = unit->object.trap_prob > 0 && ((h >> 8) % 100) < (uint32_t)unit->object.trap_prob;
+    if (unit->locked) { // (a trap gives no sign, like the game's)
+        char name[sizeof(unit->name)];
+        snprintf(name, sizeof(name), "Locked %s", unit->name);
+        snprintf(unit->name, sizeof(unit->name), "%s", name);
+    }
+}
+
 static void Roam__Populate(SceneRoam *roam) {
     roam->stash_object = -1; // (the stash panel closes: Roam__UpdateUi sees there's no stash)
     roam->npc_menu     = -1;
@@ -2236,8 +2323,10 @@ static void Roam__Populate(SceneRoam *roam) {
             unit->turn = entity->direction;
             if (unit->is_object && entity->object_row >= 0) {
                 Objects_Get(entity->object_row, &unit->object); // the exact object the map placed
+                Roam__NameObject(unit);
                 snprintf(unit->object_mode, sizeof(unit->object_mode), "%s",
                          entity->mode[0] != '\0' ? entity->mode : unit->object.idle_mode);
+                Roam__LockAndTrap(roam, unit, e);
             }
         }
     }

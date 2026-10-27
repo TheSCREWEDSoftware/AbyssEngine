@@ -36,6 +36,8 @@ static int        c_frames[OBJECT_MODE_COUNT];
 static int        c_start[OBJECT_MODE_COUNT];
 static int        c_cycle_on;
 static int        c_operate;
+static int        c_lockable;
+static int        c_trap;
 static int        c_parm[OBJECT_PARMS];
 static int        c_automap;
 
@@ -57,6 +59,8 @@ static void Objects__Load(void) {
     c_is_door    = DataTable_GetColumnIndex(objects, "IsDoor");
     c_cycle_on   = DataTable_GetColumnIndex(objects, "CycleAnim2");
     c_operate    = DataTable_GetColumnIndex(objects, "OperateFn");
+    c_lockable   = DataTable_GetColumnIndex(objects, "Lockable");
+    c_trap       = DataTable_GetColumnIndex(objects, "TrapProb");
     for (int p = 0; p < OBJECT_PARMS; p++) {
         char column[8];
         snprintf(column, sizeof(column), "Parm%d", p);
@@ -122,6 +126,8 @@ bool Objects_Get(const int row, ObjectInfo *info) {
     info->selectable    = DataTable_GetInt(objects, row, c_selectable) != 0;
     info->is_door       = DataTable_GetInt(objects, row, c_is_door) != 0;
     info->operate_fn    = DataTable_GetInt(objects, row, c_operate);
+    info->lockable      = c_lockable >= 0 && DataTable_GetInt(objects, row, c_lockable) != 0;
+    info->trap_prob     = c_trap >= 0 ? DataTable_GetInt(objects, row, c_trap) : 0;
     for (int p = 0; p < OBJECT_PARMS; p++) {
         info->parm[p] = c_parm[p] >= 0 ? DataTable_GetInt(objects, row, c_parm[p]) : 0;
     }

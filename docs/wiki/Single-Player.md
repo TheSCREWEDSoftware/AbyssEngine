@@ -156,6 +156,9 @@ the left skill, a spot for dropping items on the ground (between the skills), th
   outside town and a blue portal opens beside you. Through it you're in the act's town, by its other end; back
   through that one you're where you opened it, and it closes. A new portal closes the old one. In multiplayer games
   it's yours alone for now (the others don't see it).
+- **Locked chests** ("Locked Chest") take a key from your inventory (one off the stack; the Assassin opens them
+  without). Some chests and other containers are **trapped** (objects.txt's TrapProb), with no sign: opening one
+  strikes you with lightning, harder in later areas.
 - **Shrines** do the game's shrine effects (`shrines.txt`): health and mana shrines fill you up; the others are one
   of Refilling, Armor (+100% defense), Combat (+200% attack rating and damage), the four Resist shrines (+75%), Skill
   (+2 to your skills), Mana Recharge (+400%), Stamina (running doesn't tire you), Experience (+50%), Gem (one of your
