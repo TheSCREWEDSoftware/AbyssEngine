@@ -205,6 +205,9 @@ const SkillRow *SkillData_ByRow(const int row) {
 }
 
 const SkillRow *SkillData_ForCharacter(const Character *character, const int skill) {
+    if (skill >= SKILL_FROM_ITEM) {
+        return SkillData_ByRow(skill - SKILL_FROM_ITEM);
+    }
     const SkillClass *skills = Skills_ForClass(character->class_id);
     return skill >= 0 && skill < skills->count ? SkillData_Get(skills->skills[skill].id) : NULL;
 }

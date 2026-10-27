@@ -27,7 +27,17 @@ void Affixes_QualityColor(const Item *item, uint8_t *r, uint8_t *g, uint8_t *b);
 // One property as the game words it: "+5 to Strength", "+20% Enhanced Defense"
 void Affixes_ModText(const ItemMod *mod, char *text, size_t size);
 // What worn items add to one of the class's skills (its index in Skills_ForClass): +skills of all kinds
+// (a skill with no point in it that a worn item has charges of: the charged level)
 int Affixes_SkillBonus(const Character *character, int skill);
+// Skills worn items give that aren't the class's own (charges with some left, another class's "oskill"), by
+// skills.txt row; the count
+int Affixes_ItemSkills(const Character *character, int *rows, int max);
+// Such a skill's level (charged: it comes only from charges, so using it takes one)
+int Affixes_ItemSkillLevel(const Character *character, int row, bool *charged);
+// Uses up a charge of the skill (the item with the best level); false if it's not from charges
+bool Affixes_UseCharge(Character *character, int row);
+// Fills an item's charges (repairs do); the charges added
+int Affixes_Recharge(Item *item);
 // The inventory picture (uniques have their own)
 const char *Affixes_InvFile(const Item *item);
 // The sum of one property over the items worn

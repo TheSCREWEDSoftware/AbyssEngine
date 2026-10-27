@@ -5,6 +5,7 @@
 #include "../data/DataTable.h"
 #include "../data/StringTable.h"
 #include "Affixes.h"
+#include "SkillData.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -275,6 +276,11 @@ bool Skills_Raise(Character *character, const int skill) {
 bool Skills_CanAssign(const Character *character, const int skill, const bool left) {
     if (skill == SKILL_ATTACK) {
         return true;
+    }
+    if (skill >= SKILL_FROM_ITEM) {
+        const SkillRow *row = SkillData_ByRow(skill - SKILL_FROM_ITEM);
+        return row != NULL && !row->passive && (!left || row->left_ok) &&
+               Affixes_ItemSkillLevel(character, skill - SKILL_FROM_ITEM, NULL) > 0;
     }
     const SkillClass *skills = Skills_ForClass(character->class_id);
     if (skill < 0 || skill >= skills->count ||

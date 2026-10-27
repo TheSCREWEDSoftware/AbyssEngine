@@ -262,13 +262,20 @@ bool Shop_Repairs(const char *npc_id) { return Shop__In(smiths, sizeof(smiths) /
 
 // Each item's share: its worth times the part worn away, times their repair multiplier
 static long Shop__RepairOne(const Item *item, const int repair_mult) {
+    long recharge = 0; // charged skills are filled up too: so much a charge, more for higher levels
+    for (int m = 0; item->code[0] != '\0' && m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+        const ItemMod *mod = &item->mods[m];
+        if (mod->type == MOD_CHARGED && ItemMod_Charges(mod) < mod->extra) {
+            recharge += (long)(mod->extra - ItemMod_Charges(mod)) * (10 + (ItemMod_ChargeLevel(mod) * 15));
+        }
+    }
     if (item->code[0] == '\0' || item->max_durability <= 0 || item->durability >= item->max_durability) {
-        return 0;
+        return recharge;
     }
     const long value   = Shop__Value(item);
     const long missing = item->max_durability - item->durability;
     const long cost    = value * missing / item->max_durability * repair_mult / 1024;
-    return cost > 0 ? cost : 1;
+    return (cost > 0 ? cost : 1) + recharge;
 }
 
 int Shop_RepairCost(const char *npc_id, const Character *character) {
@@ -286,9 +293,11 @@ int Shop_RepairCost(const char *npc_id, const Character *character) {
 void Shop_RepairAll(Character *character) {
     for (int s = 0; s < EQUIP_COUNT; s++) {
         character->equipped[s].durability = character->equipped[s].max_durability;
+        Affixes_Recharge(&character->equipped[s]);
     }
     for (int i = 0; i < character->inventory_count; i++) {
         character->inventory[i].item.durability = character->inventory[i].item.max_durability;
+        Affixes_Recharge(&character->inventory[i].item);
     }
 }
 

@@ -16,6 +16,8 @@
 #define SKILL_MAX_LEVEL      20
 #define SKILL_TEXT_MAX       160
 #define SKILL_ATTACK         -1 // the basic attack every class has (left or right)
+// A skill from an item that isn't the class's own (charges, another class's skill): this plus its skills.txt row
+#define SKILL_FROM_ITEM 1000
 
 typedef struct SkillDef {
     char id[64]; // skills.txt "skill" (what reqskill columns and save files name)

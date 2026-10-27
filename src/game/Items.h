@@ -95,6 +95,7 @@ typedef enum ItemModType {
     MOD_SKILL_ON_STRUCK,    // ... when you're struck
     MOD_AURA,               // param: the aura; value: its level (on while it's worn)
     MOD_REQUIREMENTS,       // percent (negative: less) on the item's own requirements ("ease")
+    MOD_CHARGED,            // param: the skill; value: its level x 256 + the charges left; extra: the most charges
     MOD_TYPE_COUNT
 } ItemModType;
 
@@ -105,7 +106,12 @@ typedef struct ItemMod {
     uint8_t type; // ItemModType
     int16_t value;
     int16_t param; // which skill, tree or class (MOD_SKILL, MOD_TAB_SKILLS, MOD_CLASS_SKILLS); 0 for the rest
+    uint8_t extra; // MOD_CHARGED: how many charges it holds when full
 } ItemMod;
+
+// A charged skill's level and charges left (MOD_CHARGED)
+static inline int ItemMod_ChargeLevel(const ItemMod *mod) { return (uint16_t)mod->value >> 8; }
+static inline int ItemMod_Charges(const ItemMod *mod) { return (uint16_t)mod->value & 0xFF; }
 
 // Where an item can be worn (bodylocs.txt)
 typedef enum EquipSlot {

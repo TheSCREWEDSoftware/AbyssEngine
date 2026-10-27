@@ -94,6 +94,7 @@ static const ModInfo mod_info[MOD_TYPE_COUNT] = {
     [MOD_SKILL_ON_STRUCK]      = {"gethit-skill", "Chance to cast a skill when struck"              },
     [MOD_AURA]                 = {"aura",         "An aura when equipped"                           },
     [MOD_REQUIREMENTS]         = {"ease",         "Requirements %+d%%"                              },
+    [MOD_CHARGED]              = {"charged",      "A skill with charges"                            },
 };
 
 // Properties.txt codes we know: one property, or a pair (minimum to the first, maximum to the second). IGNORE: fine
@@ -167,6 +168,7 @@ static const struct {
     {"skilltab",     MOD_TAB_SKILLS,           -1               },
     {"skill",        MOD_SKILL,                -1               },
     {"oskill",       MOD_OSKILL,               -1               },
+    {"charged",      MOD_CHARGED,              -1               },
     {"dur",          MOD_DURABILITY,           -1               },
     {"indestruct",   MOD_INDESTRUCTIBLE,       -1               },
     {"sock",         IGNORE,                   -1               }, // (sockets: made part of the item, Affixes__Apply)
@@ -211,7 +213,8 @@ static int Affixes__Param(const char *code, const int type, const char *param) {
     case MOD_OSKILL:
     case MOD_SKILL_ON_HIT:
     case MOD_SKILL_ON_STRUCK:
-    case MOD_AURA: {
+    case MOD_AURA:
+    case MOD_CHARGED: {
         if (param[0] >= '0' && param[0] <= '9') {
             return atoi(param);
         }
@@ -592,6 +595,8 @@ void Affixes_AddMod(Item *item, const int type, const int value) { Affixes__AddM
 
 static void Affixes__AddMod(Item *item, const int type, const int value) { Affixes__AddModParam(item, type, value, 0); }
 
+static int roll_level = 30; // the item level of what's being rolled (charged skills on magic items scale with it)
+
 static void Affixes__AddModParam(Item *item, const int type, const int value, const int param) {
     if (type < 0 || item->mod_count >= ITEM_MODS_MAX ||
         (value == 0 && type != MOD_INDESTRUCTIBLE && type != MOD_IGNORE_DEFENSE)) {
@@ -605,6 +610,7 @@ static void Affixes__AddModParam(Item *item, const int type, const int value, co
     }
     item->mods[item->mod_count].type    = (uint8_t)type;
     item->mods[item->mod_count].param   = (int16_t)param;
+    item->mods[item->mod_count].extra   = 0;
     item->mods[item->mod_count++].value = (int16_t)(value > 32000 ? 32000 : (value < -32000 ? -32000 : value));
 }
 
@@ -632,6 +638,28 @@ static void Affixes__ApplyOne(Item *item, const char *code, const char *param, c
         value            = (chance * 100) + level; // (both kept in the one number)
     } else if (type == MOD_AURA) {
         value = Affixes__Roll(min, max) > 0 ? Affixes__Roll(min, max) : 1; // its level
+    } else if (type == MOD_CHARGED) {
+        // min: the charges, max: the level. Negative (magic affixes): the most, scaled by the item's level
+        int level   = max;
+        int charges = min;
+        if (level < 0) {
+            level = (-level * roll_level) / 99;
+        }
+        if (charges < 0) {
+            charges = (-charges / 2) + (rand() % ((-charges / 2) + 1));
+        }
+        level           = level < 1 ? 1 : (level > 99 ? 99 : level);
+        charges         = charges < 1 ? 1 : (charges > 255 ? 255 : charges);
+        const int which = Affixes__Param(code, type, param);
+        if (which < 0 || item->mod_count >= ITEM_MODS_MAX) {
+            return;
+        }
+        ItemMod *mod = &item->mods[item->mod_count++];
+        mod->type    = MOD_CHARGED;
+        mod->param   = (int16_t)which;
+        mod->value   = (int16_t)((level << 8) | charges);
+        mod->extra   = (uint8_t)charges;
+        return;
     } else if (type == MOD_DEFENSE_PER_LEVEL || type == MOD_MAX_DAMAGE_PER_LEVEL) {
         value = atoi(param); // eighths a level
     } else if (type == MOD_IGNORE_DEFENSE || type == MOD_INDESTRUCTIBLE) {
@@ -774,6 +802,7 @@ bool Affixes_MakeRare(Item *item, const int item_level) {
         return false;
     }
     item->mod_count = 0;
+    roll_level      = item_level > 0 ? item_level : 1;
     return Affixes__MakeRare(item, base, item_level > 0 ? item_level : 1);
 }
 
@@ -858,6 +887,7 @@ bool Affixes_RollQuality(Item *item, const int item_level, const ItemQuality qua
     }
     const int level = item_level > 0 ? item_level : 1;
     item->mod_count = 0;
+    roll_level      = level;
     switch (quality) {
     case ITEM_UNIQUE:
         return Affixes__MakeUnique(item, base, level);
@@ -888,6 +918,7 @@ void Affixes_Roll(Item *item, const int item_level) {
         return; // potions, scrolls, keys, gold: always normal
     }
     const int level = item_level > 0 ? item_level : 1;
+    roll_level      = level;
     // Out of 1,000: unique 10 (1 in 100), set 20 (1 in 50), rare 30 (1 in 20), magic 250 (1 in 4); Magic Find makes
     // each likelier, with the game's diminishing returns for the better ones
     const int mf     = magic_find;
@@ -1055,6 +1086,13 @@ void Affixes_ModText(const ItemMod *mod, char *text, const size_t size) {
         snprintf(text, size, "Level %d %s Aura When Equipped", mod->value, name);
         return;
     }
+    case MOD_CHARGED: {
+        char name[64];
+        Affixes__SkillName(mod->param, name, sizeof(name));
+        snprintf(text, size, "Level %d %s (%d/%d Charges)", ItemMod_ChargeLevel(mod), name, ItemMod_Charges(mod),
+                 mod->extra);
+        return;
+    }
     case MOD_DEFENSE_PER_LEVEL:
     case MOD_MAX_DAMAGE_PER_LEVEL: {
         const Character *c = Character_Current();
@@ -1079,6 +1117,7 @@ int Affixes_SkillBonus(const Character *character, const int skill) {
     const bool      learned = skill < CHARACTER_SKILLS && character->skill_levels[skill] > 0;
     int             bonus   = 0;
     int             given   = 0; // oskill
+    int             charged = 0; // the best charged level with charges left (when there's no point in it)
     for (int s = 0; s < EQUIP_COUNT; s++) {
         const Item *item = &character->equipped[s];
         if (!Item_Works(item) || item->unidentified) {
@@ -1102,12 +1141,117 @@ int Affixes_SkillBonus(const Character *character, const int skill) {
             case MOD_OSKILL:
                 given += row != NULL && mod->param == row->row ? mod->value : 0;
                 break;
+            case MOD_CHARGED:
+                if (row != NULL && mod->param == row->row && ItemMod_Charges(mod) > 0 &&
+                    ItemMod_ChargeLevel(mod) > charged) {
+                    charged = ItemMod_ChargeLevel(mod);
+                }
+                break;
             default:
                 break;
             }
         }
     }
-    return (learned ? bonus : 0) + given;
+    const int own = (learned ? bonus : 0) + given;
+    return own > 0 || learned ? own : charged;
+}
+
+// The items worn and carried that give a skill: charges count from anything worn
+static int Affixes__ItemSkill(const Character *character, const int row, bool *charged, Item **charger) {
+    int given   = 0;
+    int charges = 0;
+    *charger    = NULL;
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        Item *item = (Item *)&character->equipped[s];
+        if (!Item_Works(item) || item->unidentified) {
+            continue;
+        }
+        for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+            const ItemMod *mod = &item->mods[m];
+            if (mod->param != row) {
+                continue;
+            }
+            if (mod->type == MOD_OSKILL) {
+                given += mod->value;
+            } else if (mod->type == MOD_CHARGED && ItemMod_Charges(mod) > 0 && ItemMod_ChargeLevel(mod) > charges) {
+                charges  = ItemMod_ChargeLevel(mod);
+                *charger = item;
+            }
+        }
+    }
+    *charged = given <= 0 && charges > 0;
+    return given > 0 ? given : charges;
+}
+
+int Affixes_ItemSkills(const Character *character, int *rows, const int max) {
+    const SkillClass *skills = Skills_ForClass(character->class_id);
+    int               count  = 0;
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        const Item *item = &character->equipped[s];
+        if (!Item_Works(item) || item->unidentified) {
+            continue;
+        }
+        for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX && count < max; m++) {
+            const ItemMod  *mod = &item->mods[m];
+            const SkillRow *row =
+                mod->type == MOD_CHARGED || mod->type == MOD_OSKILL ? SkillData_ByRow(mod->param) : NULL;
+            if (row == NULL || Skills_Find(skills, row->id) >= 0 ||
+                (mod->type == MOD_CHARGED && ItemMod_Charges(mod) <= 0)) {
+                continue; // (the class's own skills are in its list already)
+            }
+            bool known = false;
+            for (int k = 0; k < count && !known; k++) {
+                known = rows[k] == row->row;
+            }
+            if (!known) {
+                rows[count++] = row->row;
+            }
+        }
+    }
+    return count;
+}
+
+int Affixes_ItemSkillLevel(const Character *character, const int row, bool *charged) {
+    Item     *charger = NULL;
+    bool      only    = false;
+    const int level   = Affixes__ItemSkill(character, row, &only, &charger);
+    if (charged != NULL) {
+        *charged = only;
+    }
+    return level;
+}
+
+bool Affixes_UseCharge(Character *character, const int row) {
+    Item *charger = NULL;
+    bool  only    = false;
+    if (Affixes__ItemSkill(character, row, &only, &charger) <= 0 || !only || charger == NULL) {
+        return false;
+    }
+    int best = -1;
+    for (int m = 0; m < charger->mod_count && m < ITEM_MODS_MAX; m++) {
+        const ItemMod *mod = &charger->mods[m];
+        if (mod->type == MOD_CHARGED && mod->param == row && ItemMod_Charges(mod) > 0 &&
+            (best < 0 || ItemMod_ChargeLevel(mod) > ItemMod_ChargeLevel(&charger->mods[best]))) {
+            best = m;
+        }
+    }
+    if (best < 0) {
+        return false;
+    }
+    charger->mods[best].value = (int16_t)(charger->mods[best].value - 1);
+    return true;
+}
+
+int Affixes_Recharge(Item *item) {
+    int used = 0;
+    for (int m = 0; m < item->mod_count && m < ITEM_MODS_MAX; m++) {
+        ItemMod *mod = &item->mods[m];
+        if (mod->type == MOD_CHARGED && ItemMod_Charges(mod) < mod->extra) {
+            used       += mod->extra - ItemMod_Charges(mod);
+            mod->value  = (int16_t)((ItemMod_ChargeLevel(mod) << 8) | mod->extra);
+        }
+    }
+    return used;
 }
 
 const char *Affixes_InvFile(const Item *item) {
@@ -1256,6 +1400,9 @@ void Affixes_Format(const Item *item, char *text, const size_t size) {
         if (item->mods[m].param != 0 && used < size) {
             used += (size_t)snprintf(text + used, size - used, "@%d", item->mods[m].param); // which skill, tree, class
         }
+        if (item->mods[m].extra != 0 && used < size) {
+            used += (size_t)snprintf(text + used, size - used, "^%d", item->mods[m].extra); // the most charges
+        }
     }
     if (item->sockets > 0 && used < size) {
         used += (size_t)snprintf(text + used, size - used, " s%d", item->sockets);
@@ -1323,6 +1470,8 @@ void Affixes_Parse(Item *item, const char *text) {
         for (int t = 0; t < MOD_TYPE_COUNT; t++) {
             if (strcmp(mod_info[t].save, part) == 0) {
                 const char *at                      = strchr(colon + 1, '@');
+                const char *most                    = strchr(colon + 1, '^');
+                item->mods[item->mod_count].extra   = (uint8_t)(most != NULL ? atoi(most + 1) : 0);
                 item->mods[item->mod_count].type    = (uint8_t)t;
                 item->mods[item->mod_count].param   = (int16_t)(at != NULL ? atoi(at + 1) : 0);
                 item->mods[item->mod_count++].value = (int16_t)atoi(colon + 1);

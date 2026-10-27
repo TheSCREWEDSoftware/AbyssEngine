@@ -24,6 +24,9 @@ static int  Roam__FindHireling(const SceneRoam *roam);
 
 // The level a skill works at: its points and what worn items add (+skills)
 static int Roam__SkillPoints(const SceneRoam *roam, const int skill) {
+    if (roam->character != NULL && skill >= SKILL_FROM_ITEM) {
+        return roam->game ? Affixes_ItemSkillLevel(roam->character, skill - SKILL_FROM_ITEM, NULL) : 0;
+    }
     if (roam->character == NULL || skill < 0 || skill >= CHARACTER_SKILLS) {
         return 0;
     }
@@ -1451,6 +1454,23 @@ static void Roam__CastMode(SceneRoam *roam, const SkillRow *s, char *mode) {
 
 // Using a skill on the spot (or monster) under the mouse. Returns true when something happened (or was refused with
 // a message), false when the click should do its usual thing (walk, attack).
+// A charge of a skill used from an item: gone, and when the last goes the skill comes off the button
+static void Roam__TakeCharge(SceneRoam *roam, const SkillRow *s, const bool charged) {
+    if (!charged || s == NULL || !Affixes_UseCharge(roam->character, s->row)) {
+        return;
+    }
+    if (Affixes_ItemSkillLevel(roam->character, s->row, NULL) <= 0) {
+        int *hands[2] = {&roam->character->left_skill, &roam->character->right_skill};
+        for (int h = 0; h < 2; h++) {
+            const SkillRow *on = *hands[h] != SKILL_ATTACK ? SkillData_ForCharacter(roam->character, *hands[h]) : NULL;
+            if (on == s && !Skills_CanAssign(roam->character, *hands[h], h == 0)) {
+                *hands[h] = SKILL_ATTACK;
+            }
+        }
+        Roam__ShowMessage(roam, "No charges left.");
+    }
+}
+
 static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, const float y, const int hovered,
                            const uint64_t now) {
     Unit *player = &roam->player;
@@ -1480,7 +1500,14 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         Roam__ShowMessage(roam, "You can't use that in town.");
         return true;
     }
-    const float cost = s != NULL ? SkillData_ManaCost(s, level) : 0.0f;
+    // A skill used from an item's charges costs no mana: it takes a charge
+    bool charged = false;
+    if (s != NULL && skill >= SKILL_FROM_ITEM) {
+        Affixes_ItemSkillLevel(roam->character, s->row, &charged);
+    } else if (s != NULL && skill >= 0 && skill < CHARACTER_SKILLS && roam->character->skill_levels[skill] == 0) {
+        Affixes_ItemSkillLevel(roam->character, s->row, &charged);
+    }
+    const float cost = s != NULL && !charged ? SkillData_ManaCost(s, level) : 0.0f;
     if (roam->mana < cost) {
         Roam__ShowMessage(roam, "Not enough mana.");
         Sounds_Play("cursor_cantdo", SOUND_KIND_UI);
@@ -1491,24 +1518,26 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         if (hovered < 0 || !Roam__IsCombatant(&roam->units[hovered]) || roam->units[hovered].ally) {
             return false;
         }
-        roam->mana            -= cost;
-        roam->melee_skill      = s;
-        roam->melee_level      = level;
-        roam->attack_target    = hovered;
-        roam->attack_in_place  = false;
-        roam->use_target       = -1;
-        roam->item_target      = -1;
+        roam->mana -= cost;
+        Roam__TakeCharge(roam, s, charged);
+        roam->melee_skill     = s;
+        roam->melee_level     = level;
+        roam->attack_target   = hovered;
+        roam->attack_in_place = false;
+        roam->use_target      = -1;
+        roam->item_target     = -1;
         return true;
     }
-    roam->mana          -= cost;
-    roam->cast_skill     = s;
-    roam->cast_level     = level;
-    roam->cast_target    = hovered;
-    roam->cast_x         = hovered >= 0 ? roam->units[hovered].x : x;
-    roam->cast_y         = hovered >= 0 ? roam->units[hovered].y : y;
-    roam->cast_fired     = false;
-    roam->moving         = false;
-    roam->attack_target  = -1;
+    roam->mana -= cost;
+    Roam__TakeCharge(roam, s, charged);
+    roam->cast_skill    = s;
+    roam->cast_level    = level;
+    roam->cast_target   = hovered;
+    roam->cast_x        = hovered >= 0 ? roam->units[hovered].x : x;
+    roam->cast_y        = hovered >= 0 ? roam->units[hovered].y : y;
+    roam->cast_fired    = false;
+    roam->moving        = false;
+    roam->attack_target = -1;
     Roam__ClearPath(player);
     Roam__TurnTowards(&player->turn, player->x, player->y, roam->cast_x, roam->cast_y);
     Roam__CastMode(roam, s, player->cast_mode);

@@ -7,6 +7,7 @@
 #include "Affixes.h"
 #include "Cube.h"
 #include "Inventory.h"
+#include "SkillData.h"
 #include "Skills.h"
 #include <ctype.h>
 #include <errno.h>
@@ -530,8 +531,11 @@ size_t Character_WriteText(const Character *character, char *text, const size_t 
     }
     const int hands[2] = {character->left_skill, character->right_skill};
     for (int h = 0; h < 2; h++) {
+        const SkillRow *from_item = hands[h] >= SKILL_FROM_ITEM ? SkillData_ByRow(hands[h] - SKILL_FROM_ITEM) : NULL;
         Character__Print(file, "%s %s\n", h == 0 ? "leftskill" : "rightskill",
-                         hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id : "attack");
+                         from_item != NULL                           ? from_item->id
+                         : hands[h] >= 0 && hands[h] < skills->count ? skills->skills[hands[h]].id
+                                                                     : "attack");
     }
     // Items: "item <where> <code> <defense> <quantity>", where is "inv x y", "equip <slot>" or "belt <slot>"
     Character__Print(file, "gold %d\n", character->gold);
@@ -741,9 +745,10 @@ bool Character_ReadText(const char *text, Character *character) {
                 }
             }
         } else if (strcmp(key, "leftskill") == 0 || strcmp(key, "rightskill") == 0) {
-            const int k = Skills_Find(Skills_ForClass(character->class_id), value);
+            const int       k         = Skills_Find(Skills_ForClass(character->class_id), value);
+            const SkillRow *from_item = k < 0 ? SkillData_Get(value) : NULL; // (an item's skill)
             *(strcmp(key, "leftskill") == 0 ? &character->left_skill : &character->right_skill) =
-                k >= 0 ? k : SKILL_ATTACK;
+                k >= 0 ? k : (from_item != NULL ? SKILL_FROM_ITEM + from_item->row : SKILL_ATTACK);
         } else if (strcmp(key, "waypoints") == 0) {
             character->waypoints = strtoull(value, NULL, 16) | 1ull; // the Rogue Encampment's is always known
         } else if (strcmp(key, "realm") == 0) {

@@ -6,6 +6,7 @@
 #include "../drawing/Label.h"
 #include "../drawing/Sprite.h"
 #include "../game/Affixes.h"
+#include "../game/SkillData.h"
 #include "../game/Skills.h"
 #include "GameInventory.h"
 #include <SDL2/SDL.h>
@@ -41,8 +42,9 @@ struct GameSkills {
     CharacterClass    class_id;
     const SkillClass *table;
     Sprite           *tree;
-    Sprite           *icons;  // the class's
-    Sprite           *shared; // Attack and the other skills every class has
+    Sprite           *icons;                         // the class's
+    Sprite           *shared;                        // Attack and the other skills every class has
+    Sprite           *others[CHARACTER_CLASS_COUNT]; // other classes' icons (skills from items), when needed
     Label            *text;
     Label            *small;
     int               page;   // 1..3
@@ -75,6 +77,9 @@ void GameSkills_Destroy(GameSkills **skills_ref) {
     Sprite_Destroy(&skills->tree);
     Sprite_Destroy(&skills->icons);
     Sprite_Destroy(&skills->shared);
+    for (int c = 0; c < CHARACTER_CLASS_COUNT; c++) {
+        Sprite_Destroy(&skills->others[c]);
+    }
     Label_Destroy(&skills->text);
     Label_Destroy(&skills->small);
     free(skills);
@@ -121,6 +126,15 @@ static int GameSkills__PickerList(const GameSkills *skills, const Character *cha
     int count     = 0;
     list[count++] = SKILL_ATTACK;
     rows[0]       = 0;
+    // Skills from items (charges, another class's) beside Attack
+    int       from_items[16];
+    const int items = Affixes_ItemSkills(character, from_items, 16);
+    for (int i = 0; i < items && count < PICKER_MAX; i++) {
+        if (Skills_CanAssign(character, SKILL_FROM_ITEM + from_items[i], left)) {
+            rows[count]   = 0;
+            list[count++] = SKILL_FROM_ITEM + from_items[i];
+        }
+    }
     for (int page = 1; page <= SKILL_PAGES; page++) {
         for (int s = 0; s < skills->table->count && count < PICKER_MAX; s++) {
             if (skills->table->skills[s].page == page && Skills_CanAssign(character, s, left)) {
@@ -232,9 +246,37 @@ static void GameSkills__Text(Label *label, const char *text, const int x, const 
 }
 
 // A skill's icon (SKILL_ATTACK: the shared Attack icon); dimmed: darkened, the game's look for skills not available yet
-static void GameSkills__DrawIcon(const GameSkills *skills, const int skill, const int x, const int y,
-                                 const bool dimmed) {
-    if (skill == SKILL_ATTACK || skill < 0) {
+// A skill from an item: the class it belongs to and its place in that class's list (false: no class's)
+static bool GameSkills__ItemSkill(const int skill, CharacterClass *owner, const SkillDef **def) {
+    const SkillRow *row = SkillData_ByRow(skill - SKILL_FROM_ITEM);
+    for (int c = 0; row != NULL && c < CHARACTER_CLASS_COUNT; c++) {
+        const SkillClass *table = Skills_ForClass((CharacterClass)c);
+        const int         k     = Skills_Find(table, row->id);
+        if (k >= 0) {
+            *owner = (CharacterClass)c;
+            *def   = &table->skills[k];
+            return true;
+        }
+    }
+    return false;
+}
+
+static void GameSkills__DrawIcon(GameSkills *skills, const int skill, const int x, const int y, const bool dimmed) {
+    CharacterClass  owner = (CharacterClass)0;
+    const SkillDef *def   = NULL;
+    if (skill >= SKILL_FROM_ITEM) {
+        if (GameSkills__ItemSkill(skill, &owner, &def)) {
+            const SkillClass *table = Skills_ForClass(owner);
+            if (skills->others[owner] == NULL && FileManager_FileExists(table->icon_path)) {
+                skills->others[owner] = Sprite_Create(table->icon_path, PALETTE_SKY);
+            }
+            if (skills->others[owner] != NULL) {
+                Sprite_DrawScaled(skills->others[owner], def->icon_frame, x, y, 1.0f);
+            }
+        } else {
+            Sprite_DrawScaled(skills->shared, ATTACK_ICON, x, y, 1.0f);
+        }
+    } else if (skill == SKILL_ATTACK || skill < 0) {
         Sprite_DrawScaled(skills->shared, ATTACK_ICON, x, y, 1.0f);
     } else if (skills->icons != NULL) {
         Sprite_DrawScaled(skills->icons, skills->table->skills[skill].icon_frame, x, y, 1.0f);
@@ -379,6 +421,24 @@ static void GameSkills__SkillTip(GameSkills *skills, const Character *character,
     if (skill == SKILL_ATTACK) {
         GameSkills__AddLine(lines, colors, &count, "Attack", 0xFF, 0xFF, 0xFF);
         GameSkills__AddLine(lines, colors, &count, "Your weapon's own attack", 0xC0, 0xC0, 0xC0);
+        GameSkills__Tip(skills, lines, colors, count, x, y);
+        return;
+    }
+    if (skill >= SKILL_FROM_ITEM) {
+        CharacterClass  owner   = (CharacterClass)0;
+        const SkillDef *def     = NULL;
+        bool            charged = false;
+        const int       level   = Affixes_ItemSkillLevel(character, skill - SKILL_FROM_ITEM, &charged);
+        if (GameSkills__ItemSkill(skill, &owner, &def)) {
+            GameSkills__AddLine(lines, colors, &count, def->name, 0x60, 0xE0, 0x60);
+            if (def->short_desc[0] != '\0') {
+                GameSkills__AddWrapped(skills, lines, colors, &count, def->short_desc);
+            }
+        }
+        snprintf(text, sizeof(text), "Skill Level: %d", level);
+        GameSkills__AddLine(lines, colors, &count, text, 0xFF, 0xFF, 0xFF);
+        GameSkills__AddLine(lines, colors, &count, charged ? "From an item's charges" : "From an item", 0x90, 0x90,
+                            0xFF);
         GameSkills__Tip(skills, lines, colors, count, x, y);
         return;
     }
