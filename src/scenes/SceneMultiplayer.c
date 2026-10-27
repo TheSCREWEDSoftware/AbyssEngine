@@ -541,7 +541,7 @@ void MultiplayerMenu_Update(void *scene_ref, const uint64_t delta) {
 
 // The selected game's rules, in a line or two
 static void Menu__DrawGameDetails(SceneMultiplayer *menu, const NetGameInfo *game, const int y) {
-    char rules[400];
+    char rules[700];
     char levels[40] = "";
     if (game->level_min > 1 || game->level_max < CHARACTER_MAX_LEVEL) {
         snprintf(levels, sizeof(levels), "Levels %d-%d. ", game->level_min, game->level_max);
@@ -554,6 +554,22 @@ static void Menu__DrawGameDetails(SceneMultiplayer *menu, const NetGameInfo *gam
              levels, game->new_characters_only ? "New characters only. " : "",
              game->made_here_only ? "Only characters made there. " : "", game->pvp ? "PvP. " : "",
              game->locked ? "Needs a password." : "");
+    // Who's playing (name, level, class)
+    if (game->roster[0] != '\0') {
+        const size_t used = strlen(rules);
+        snprintf(rules + used, sizeof(rules) - used, " Playing:");
+        const char *cursor = game->roster;
+        char        name[CHARACTER_NAME_MAX];
+        int         level = 0;
+        int         cls   = 0;
+        bool        first = true;
+        while (NetGameInfo_RosterNext(&cursor, name, sizeof(name), &level, &cls)) {
+            const size_t at = strlen(rules);
+            snprintf(rules + at, sizeof(rules) - at, "%s %s (%d %s)", first ? "" : ",", name, level,
+                     cls >= 0 && cls < CHARACTER_CLASS_COUNT ? Character_ClassName((CharacterClass)cls) : "?");
+            first = false;
+        }
+    }
     Menu__Wrapped(menu, rules, CONTENT_X, y, PANEL_X + PANEL_W - 16);
 }
 

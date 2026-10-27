@@ -174,8 +174,11 @@ typedef struct NetGameInfo {
     bool     new_characters_only;
     bool     made_here_only;
     bool     pvp;
-    uint32_t instance; // this run of the server (the same game heard twice, by two addresses, is one)
+    uint32_t instance;    // this run of the server (the same game heard twice, by two addresses, is one)
+    char     roster[180]; // who's playing: "Name/level/class,..." (class: CharacterClass), as many as fit
 } NetGameInfo;
+// The roster's players, one at a time: false when there are no more
+bool NetGameInfo_RosterNext(const char **cursor, char *name, int name_size, int *level, int *class_id);
 
 // The one-line description servers send to LAN searches and the lobby: "ABYSS <version> <port> <players> ..."
 int  NetGameInfo_Format(const NetGameInfo *info, char *text, int size);

@@ -32,7 +32,7 @@ static void Lobby__Sleep(const int ms) {
 #define MAX_CALLERS        64
 #define GAME_EXPIRES_S     90
 #define CALLER_TIMEOUT_S   5
-#define LINE_MAX           300
+#define LINE_MAX           480 // (a game's description, with who's playing)
 
 typedef struct Game {
     bool   used;

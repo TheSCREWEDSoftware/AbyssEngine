@@ -251,9 +251,11 @@ int NetGameInfo_Format(const NetGameInfo *info, char *text, const int size) {
     const int flags = (info->locked ? INFO_LOCKED : 0) | (info->dedicated ? INFO_DEDICATED : 0) |
                       (info->new_characters_only ? INFO_NEW_ONLY : 0) | (info->made_here_only ? INFO_MADE_HERE : 0) |
                       (info->pvp ? INFO_PVP : 0);
-    return snprintf(text, (size_t)size, "ABYSS %d %u %d %d %d %d %d %d %d %d %08x %s", NET_PROTOCOL_VERSION,
+    // The name, then (after a tab) who's playing
+    return snprintf(text, (size_t)size, "ABYSS %d %u %d %d %d %d %d %d %d %d %08x %s%s%s", NET_PROTOCOL_VERSION,
                     (unsigned)info->port, info->players, info->max_players, info->difficulty, flags, info->speed,
-                    info->hardcore, info->level_min, info->level_max, (unsigned)info->instance, info->name);
+                    info->hardcore, info->level_min, info->level_max, (unsigned)info->instance, info->name,
+                    info->roster[0] != '\0' ? "\t" : "", info->roster);
 }
 
 bool NetGameInfo_Parse(const char *text, NetGameInfo *info) {
@@ -275,7 +277,36 @@ bool NetGameInfo_Parse(const char *text, NetGameInfo *info) {
     info->new_characters_only = (flags & INFO_NEW_ONLY) != 0;
     info->made_here_only      = (flags & INFO_MADE_HERE) != 0;
     info->pvp                 = (flags & INFO_PVP) != 0;
-    snprintf(info->name, sizeof(info->name), "%s", text + used);
-    info->name[strcspn(info->name, "\r\n")] = '\0';
+    const char  *rest         = text + used;
+    const size_t name         = strcspn(rest, "\t\r\n");
+    snprintf(info->name, sizeof(info->name), "%.*s", (int)name, rest);
+    info->roster[0] = '\0';
+    if (rest[name] == '\t') {
+        snprintf(info->roster, sizeof(info->roster), "%s", rest + name + 1);
+        info->roster[strcspn(info->roster, "\r\n")] = '\0';
+    }
+    return true;
+}
+
+bool NetGameInfo_RosterNext(const char **cursor, char *name, const int name_size, int *level, int *class_id) {
+    while (**cursor == ',') {
+        (*cursor)++;
+    }
+    if (**cursor == '\0') {
+        return false;
+    }
+    const char  *start = *cursor;
+    const size_t len   = strcspn(start, ",");
+    char         entry[64];
+    snprintf(entry, sizeof(entry), "%.*s", (int)(len < sizeof(entry) - 1 ? len : sizeof(entry) - 1), start);
+    *cursor     += len;
+    char *slash  = strchr(entry, '/');
+    *level       = 0;
+    *class_id    = 0;
+    if (slash != NULL) {
+        *slash = '\0';
+        sscanf(slash + 1, "%d/%d", level, class_id);
+    }
+    snprintf(name, (size_t)name_size, "%s", entry);
     return true;
 }

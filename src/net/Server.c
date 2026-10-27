@@ -80,7 +80,7 @@ struct NetServer {
     NetSocket lobby;
     uint64_t  lobby_started;
     uint64_t  lobby_next;
-    char      lobby_line[256];
+    char      lobby_line[480];
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1369,6 +1369,23 @@ static void Server__Info(const NetServer *server, NetGameInfo *info) {
     info->made_here_only      = server->settings.made_here_only;
     info->pvp                 = server->settings.pvp;
     info->instance            = server->instance;
+    // Who's playing, as many as fit
+    size_t used = 0;
+    for (int p = 0; p < MAX_CONNECTIONS; p++) {
+        const Peer *peer = &server->peers[p];
+        if (peer->connection == NULL || peer->stage != STAGE_IN_GAME) {
+            continue;
+        }
+        const int level = peer->level > peer->character.level ? peer->level : peer->character.level;
+        char      entry[48];
+        const int n = snprintf(entry, sizeof(entry), "%s%s/%d/%d", used > 0 ? "," : "", peer->character.name, level,
+                               (int)peer->character.class_id);
+        if (n <= 0 || used + (size_t)n >= sizeof(info->roster)) {
+            break;
+        }
+        memcpy(info->roster + used, entry, (size_t)n + 1);
+        used += (size_t)n;
+    }
 }
 
 static void Server__AnswerSearches(NetServer *server) {
@@ -1421,7 +1438,7 @@ static void Server__TellLobby(NetServer *server, const uint64_t now) {
     }
     NetGameInfo info;
     Server__Info(server, &info);
-    char line[240];
+    char line[440];
     NetGameInfo_Format(&info, line, sizeof(line));
     snprintf(server->lobby_line, sizeof(server->lobby_line), "REGISTER %s\n", line);
     server->lobby         = Net_Connect(host, port);

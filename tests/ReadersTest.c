@@ -212,11 +212,55 @@ static void FuzzNetItems(void) {
     }
 }
 
+// A game's one-line description (LAN answers, the lobby) with who's playing, and back
+static void TestGameInfo(void) {
+    NetGameInfo info;
+    memset(&info, 0, sizeof(info));
+    snprintf(info.name, sizeof(info.name), "Cow runs");
+    snprintf(info.roster, sizeof(info.roster), "Hostone/18/4,Joiner/12/1");
+    info.port        = 4000;
+    info.players     = 2;
+    info.max_players = 8;
+    char text[512];
+    NetGameInfo_Format(&info, text, sizeof(text));
+    NetGameInfo back;
+    memset(&back, 0, sizeof(back));
+    CHECK(NetGameInfo_Parse(text, &back));
+    CHECK(strcmp(back.name, "Cow runs") == 0 && back.players == 2 && back.port == 4000);
+    const char *cursor = back.roster;
+    char        name[16];
+    int         level = 0;
+    int         cls   = 0;
+    CHECK(NetGameInfo_RosterNext(&cursor, name, sizeof(name), &level, &cls) && strcmp(name, "Hostone") == 0 &&
+          level == 18 && cls == 4);
+    CHECK(NetGameInfo_RosterNext(&cursor, name, sizeof(name), &level, &cls) && strcmp(name, "Joiner") == 0 &&
+          level == 12 && cls == 1);
+    CHECK(!NetGameInfo_RosterNext(&cursor, name, sizeof(name), &level, &cls));
+    for (int round = 0; round < 3000; round++) { // random lines: parsed or refused, never a crash
+        char junk[300];
+        snprintf(junk, sizeof(junk), "ABYSS 17 4000 1 8 0 0 0 0 1 99 0 ");
+        const size_t at = strlen(junk);
+        for (size_t b = at; b < sizeof(junk) - 1; b++) {
+            junk[b] = (char)(32 + (Random() % 95));
+            if (Random() % 40 == 0) {
+                junk[b] = '\t';
+            }
+        }
+        junk[sizeof(junk) - 1] = '\0';
+        if (NetGameInfo_Parse(junk, &back)) {
+            cursor = back.roster;
+            while (NetGameInfo_RosterNext(&cursor, name, sizeof(name), &level, &cls)) {
+            }
+        }
+    }
+}
+
 int main(void) {
     const char *given = getenv("ABYSS_FUZZ_SEED"); // (another seed: other random input)
     seed              = given != NULL && strtoul(given, NULL, 10) != 0 ? (uint32_t)strtoul(given, NULL, 10) : seed;
     TestDataTable();
     TestDc6();
+    TestGameInfo();
     FuzzReaders();
     FuzzNetItems();
     if (failures > 0) {

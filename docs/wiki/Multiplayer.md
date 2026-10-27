@@ -32,7 +32,7 @@ knows whose characters are whose by it.
 
 | Tab | |
 |---|---|
-| **Browse** | **Local network (LAN)**: games on your network answer a broadcast; **Online**: the games a lobby server lists ([below](#online-games-the-lobby-server)). Pick one (its rules show underneath, and a password box if it has one), then **Join** or double click it. **Refresh** asks again |
+| **Browse** | **Local network (LAN)**: games on your network answer a broadcast; **Online**: the games a lobby server lists ([below](#online-games-the-lobby-server)). Pick one (its rules and who's playing, with their level and class, show underneath, and a password box if it has one), then **Join** or double click it. **Refresh** asks again |
 | **Direct IP** | An address: a name or IP, with `:port` if it isn't **4000** (`1.2.3.4`, `example.com:4100`, `[::1]:4000`), and the password if there is one. The last address is remembered |
 | **Host** | Your own game, with the settings below. **Start** opens it and takes you to the character screen |
 
