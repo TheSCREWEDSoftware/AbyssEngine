@@ -35,6 +35,18 @@ typedef enum CharacterClass {
 
 typedef enum CharacterStat { STAT_STRENGTH, STAT_DEXTERITY, STAT_VITALITY, STAT_ENERGY, STAT_COUNT } CharacterStat;
 
+// Kinds of damage, and the resistances against them
+typedef enum Element {
+    ELEMENT_PHYSICAL,
+    ELEMENT_FIRE,
+    ELEMENT_COLD,
+    ELEMENT_LIGHTNING,
+    ELEMENT_POISON,
+    ELEMENT_COUNT
+} Element;
+
+#define RESIST_MAX 75 // the most a resistance can be, like the game
+
 // One item a character has (a base item from Items.h, maybe with magic: Affixes.h). code[0] == '\0': none.
 typedef struct Item {
     char    code[ITEM_CODE_MAX];
@@ -97,8 +109,13 @@ void Character_Create(Character *character, const char *name, CharacterClass cla
 
 // Derived numbers
 // A stat with what's worn added (requirements, damage, life and mana use this one)
-int         Character_Stat(const Character *character, CharacterStat stat);
-int         Character_ItemDefense(const Item *item); // an armor's defense with its enhanced defense
+int Character_Stat(const Character *character, CharacterStat stat);
+int Character_ItemDefense(const Item *item); // an armor's defense with its enhanced defense
+// A resistance (fire, cold, lightning, poison) from what's worn, less the difficulty's penalty (the game's: 0, 40,
+// 100), at most RESIST_MAX
+int Character_Resist(const Character *character, Element element, int penalty);
+// Fire, cold, lightning and poison damage added to each blow (what's worn)
+void        Character_ElementDamage(const Character *character, Element element, int *minimum, int *maximum);
 int         Character_MaxLife(const Character *character);
 int         Character_MaxMana(const Character *character);
 int         Character_MaxStamina(const Character *character);

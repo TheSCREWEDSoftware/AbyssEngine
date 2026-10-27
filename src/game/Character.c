@@ -276,15 +276,39 @@ void Character_Damage(const Character *character, int *minimum, int *maximum) {
     const int bonus     = ((Character_Stat(character, STAT_STRENGTH) * str_bonus) / 100) +
                       ((Character_Stat(character, STAT_DEXTERITY) * dex_bonus) / 100) +
                       (Affixes_Total(character, MOD_DAMAGE_PCT) - weapon_pct);
-    // Added damage, and fire, cold and lightning (no resistances yet: it's all damage)
-    *minimum = weapon_min + ((weapon_min * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MIN) +
-               Affixes_Total(character, MOD_FIRE_MIN) + Affixes_Total(character, MOD_COLD_MIN) +
-               Affixes_Total(character, MOD_LIGHTNING_MIN);
-    *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX) +
-               Affixes_Total(character, MOD_FIRE_MAX) + Affixes_Total(character, MOD_COLD_MAX) +
-               Affixes_Total(character, MOD_LIGHTNING_MAX);
+    // Added damage (fire, cold, lightning and poison are their own: Character_ElementDamage)
+    *minimum = weapon_min + ((weapon_min * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MIN);
+    *maximum = weapon_max + ((weapon_max * bonus) / 100) + Affixes_Total(character, MOD_DAMAGE_MAX);
     *minimum = *minimum > 0 ? *minimum : 1;
     *maximum = *maximum > *minimum ? *maximum : *minimum;
+}
+
+void Character_ElementDamage(const Character *character, const Element element, int *minimum, int *maximum) {
+    static const ItemModType mods[ELEMENT_COUNT][2] = {
+        {MOD_TYPE_COUNT,    MOD_TYPE_COUNT   },
+        {MOD_FIRE_MIN,      MOD_FIRE_MAX     },
+        {MOD_COLD_MIN,      MOD_COLD_MAX     },
+        {MOD_LIGHTNING_MIN, MOD_LIGHTNING_MAX},
+        {MOD_POISON,        MOD_POISON       },
+    };
+    *minimum = 0;
+    *maximum = 0;
+    if (element <= ELEMENT_PHYSICAL || element >= ELEMENT_COUNT) {
+        return;
+    }
+    *minimum = Affixes_Total(character, mods[element][0]);
+    *maximum = Affixes_Total(character, mods[element][1]);
+    *maximum = *maximum > *minimum ? *maximum : *minimum;
+}
+
+int Character_Resist(const Character *character, const Element element, const int penalty) {
+    static const ItemModType mods[ELEMENT_COUNT] = {MOD_TYPE_COUNT, MOD_RES_FIRE, MOD_RES_COLD, MOD_RES_LIGHTNING,
+                                                    MOD_RES_POISON};
+    if (element <= ELEMENT_PHYSICAL || element >= ELEMENT_COUNT) {
+        return 0;
+    }
+    const int resist = Affixes_Total(character, mods[element]) + Affixes_Total(character, MOD_RES_ALL) - penalty;
+    return resist < RESIST_MAX ? resist : RESIST_MAX;
 }
 
 const char *Character_WeaponName(const Character *character) {

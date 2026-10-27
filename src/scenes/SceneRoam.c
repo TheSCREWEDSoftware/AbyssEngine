@@ -157,11 +157,16 @@ typedef struct Unit {
     int         max_hp;
     int         damage_min;
     int         damage_max;
-    int         level;         // monsters: from monstats; the player: the character's
-    int         defense;       // armor class
-    int         attack_rating; // to-hit
-    int         experience;    // given for killing it
-    char        treasure[48];  // what it drops (TreasureClassEx.txt)
+    int         level;                 // monsters: from monstats; the player: the character's
+    int         defense;               // armor class
+    int         attack_rating;         // to-hit
+    int         experience;            // given for killing it
+    char        treasure[48];          // what it drops (TreasureClassEx.txt)
+    int         resist[ELEMENT_COUNT]; // monsters: percent (100 or more: immune)
+    int         element;               // monsters: their attack's elemental damage (0 none), chance, range
+    int         element_chance;
+    int         element_min;
+    int         element_max;
     float       speed;
     bool        npc;
     bool        dropped;  // added in the Testing Grounds (Clear removes these)
@@ -654,6 +659,11 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         unit->attack_rating = stats.attack_rating > 0 ? stats.attack_rating : 10;
         unit->experience    = stats.experience;
         snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure);
+        memcpy(unit->resist, stats.resist, sizeof(unit->resist));
+        unit->element        = stats.element;
+        unit->element_chance = stats.element_chance;
+        unit->element_min    = stats.element_min;
+        unit->element_max    = stats.element_max;
     } else if (strcmp(base, "chars") == 0) {
         unit->max_hp     = 50;
         unit->damage_min = 2;
@@ -952,9 +962,37 @@ static int Roam__OtherAt(const SceneRoam *roam, const float sub_x, const float s
     return nearest;
 }
 
+// The difficulty's penalty to the player's resistances: the game's 0, 40 (Nightmare), 100 (Hell)
+static int Roam__ResistPenalty(const SceneRoam *roam) {
+    static const int penalties[3] = {0, 40, 100};
+    const int        difficulty   = roam->online && NetClient_Settings() != NULL ? NetClient_Settings()->difficulty : 0;
+    return difficulty >= 0 && difficulty < 3 ? penalties[difficulty] : 0;
+}
+
+// Damage after a resistance: 100% or more is immune; below 0 it hurts more
+static int Roam__Resisted(const int damage, const int resist) {
+    if (resist >= 100 || damage <= 0) {
+        return 0;
+    }
+    return damage * (100 - resist) / 100;
+}
+
+// The player's blow, each kind of damage rolled: physical, then fire, cold, lightning, poison (what's worn)
+static void Roam__RollPlayerDamage(const SceneRoam *roam, int damage[ELEMENT_COUNT]) {
+    damage[ELEMENT_PHYSICAL] = Roam__Roll(roam->player.damage_min, roam->player.damage_max);
+    for (int e = ELEMENT_FIRE; e < ELEMENT_COUNT; e++) {
+        int low  = 0;
+        int high = 0;
+        if (roam->game) {
+            Character_ElementDamage(roam->character, (Element)e, &low, &high);
+        }
+        damage[e] = high > 0 ? Roam__Roll(low, high) : 0;
+    }
+}
+
 // A blow at another player (a monster's, or ours in PvP): they roll whether it lands, with their own defense
 static void Roam__SendHitPlayer(const int target, const bool pvp, const int attack_rating, const int level,
-                                const int damage) {
+                                const int damage[ELEMENT_COUNT]) {
     NetWriter *writer = malloc(sizeof(NetWriter));
     if (writer == NULL) {
         return;
@@ -964,7 +1002,9 @@ static void Roam__SendHitPlayer(const int target, const bool pvp, const int atta
     NetWriter_U8(writer, pvp ? 1 : 0);
     NetWriter_I32(writer, attack_rating);
     NetWriter_I32(writer, level);
-    NetWriter_I32(writer, damage);
+    for (int e = 0; e < ELEMENT_COUNT; e++) {
+        NetWriter_I32(writer, damage[e]); // physical, then fire, cold, lightning, poison: they resist those
+    }
     NetClient_Send(MSG_HIT_PLAYER, writer);
     free(writer);
 }
@@ -2294,11 +2334,18 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
                           Character_HitChance(player->attack_rating, player->level, target->defense, target->level)) {
         return; // missed
     }
-    const int damage = Roam__Roll(player->damage_min, player->damage_max);
+    // Each kind of damage against the monster's resistance to it (an immune monster takes none of that kind)
+    int rolled[ELEMENT_COUNT];
+    Roam__RollPlayerDamage(roam, rolled);
+    int damage = 0;
+    for (int e = 0; e < ELEMENT_COUNT; e++) {
+        damage += Roam__Resisted(rolled[e], target->resist[e]);
+    }
     if (roam->game) {
-        // Life and mana stolen with each blow that lands
-        const int life  = damage * Affixes_Total(roam->character, MOD_LIFE_STEAL) / 100;
-        const int mana  = damage * Affixes_Total(roam->character, MOD_MANA_STEAL) / 100;
+        // Life and mana stolen with each blow that lands (from its physical damage, like the game)
+        const int physical = Roam__Resisted(rolled[ELEMENT_PHYSICAL], target->resist[ELEMENT_PHYSICAL]);
+        const int life     = physical * Affixes_Total(roam->character, MOD_LIFE_STEAL) / 100;
+        const int mana     = physical * Affixes_Total(roam->character, MOD_MANA_STEAL) / 100;
         roam->player.hp = roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
         roam->mana      = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
     }
@@ -2441,8 +2488,9 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             if (roam->attack_other > 0 && Roam__PvP(roam) && Roam__OtherById(roam, roam->attack_other, &other) &&
                 Roam__Distance(player->x, player->y, other->x, other->y) <= ATTACK_RANGE + 0.5f) {
                 // PvP: they roll whether it lands, with their defense
-                Roam__SendHitPlayer(roam->attack_other, true, player->attack_rating, player->level,
-                                    Roam__Roll(player->damage_min, player->damage_max));
+                int rolled[ELEMENT_COUNT];
+                Roam__RollPlayerDamage(roam, rolled);
+                Roam__SendHitPlayer(roam->attack_other, true, player->attack_rating, player->level, rolled);
             }
             if (roam->attack_in_place) {
                 roam->attack_target   = -1; // one swing, no chasing
@@ -2671,13 +2719,26 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                     if (player_alive && Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
                         (!roam->game || Roam__Roll(1, 100) <= Character_HitChance(unit->attack_rating, unit->level,
                                                                                   player->defense, player->level))) {
-                        Roam__Damage(roam, player, Roam__Roll(unit->damage_min, unit->damage_max), now);
+                        int damage = Roam__Roll(unit->damage_min, unit->damage_max);
+                        if (unit->element > 0 && Roam__Roll(1, 100) <= unit->element_chance) {
+                            // Its fire, cold, lightning or poison, against our resistance to it
+                            const int resist = roam->game ? Character_Resist(roam->character, (Element)unit->element,
+                                                                             Roam__ResistPenalty(roam))
+                                                          : 0;
+                            damage += Roam__Resisted(Roam__Roll(unit->element_min, unit->element_max), resist);
+                        }
+                        Roam__Damage(roam, player, damage, now);
                     }
                 } else if (Roam__OtherById(roam, unit->net_target, &other) && Roam__OtherAlive(other) &&
                            Roam__Distance(unit->x, unit->y, other->x, other->y) <= ATTACK_RANGE + 1.0f) {
-                    // Another player: they roll whether it lands
-                    Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level,
-                                        Roam__Roll(unit->damage_min, unit->damage_max));
+                    // Another player: they roll whether it lands, and resist the elemental part themselves
+                    int damage[ELEMENT_COUNT] = {0};
+                    damage[ELEMENT_PHYSICAL]  = Roam__Roll(unit->damage_min, unit->damage_max);
+                    if (unit->element > 0 && unit->element < ELEMENT_COUNT &&
+                        Roam__Roll(1, 100) <= unit->element_chance) {
+                        damage[unit->element] = Roam__Roll(unit->element_min, unit->element_max);
+                    }
+                    Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level, damage);
                 }
             }
             if (unit->state == UNIT_OPERATE) {
@@ -2843,6 +2904,13 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
     int damage_min;
     int damage_max;
     Character_Damage(character, &damage_min, &damage_max);
+    for (int e = ELEMENT_FIRE; e < ELEMENT_COUNT; e++) { // the elemental damage counts too (before resistances)
+        int low  = 0;
+        int high = 0;
+        Character_ElementDamage(character, (Element)e, &low, &high);
+        damage_min += low;
+        damage_max += high;
+    }
     Roam__PanelText(roam, small, "Damage", 210, 92, 0xC7, 0xB3, 0x77);
     snprintf(text, sizeof(text), "%d-%d", damage_min, damage_max);
     Roam__PanelText(roam, value, text, 286, 92, 0xFF, 0xFF, 0xFF);
@@ -2877,8 +2945,12 @@ static void Roam__DrawCharacterPanel(SceneRoam *roam) {
 
     static const char *resists[4] = {"Fire Resist", "Cold Resist", "Lightning Res.", "Poison Resist"};
     for (int r = 0; r < 4; r++) {
+        // With the difficulty's penalty; the game shows them red below 0 and blue when boosted
+        const int resist = Character_Resist(character, (Element)(ELEMENT_FIRE + r), Roam__ResistPenalty(roam));
+        snprintf(text, sizeof(text), "%d%%", resist);
         Roam__PanelText(roam, small, resists[r], 222, 341 + (r * 24), 0xC7, 0xB3, 0x77);
-        Roam__PanelText(roam, value, "0%", 291, 341 + (r * 24), 0xFF, 0xFF, 0xFF);
+        Roam__PanelText(roam, value, text, 291, 341 + (r * 24), resist < 0 ? 0xFF : (resist > 0 ? 0x69 : 0xFF),
+                        resist < 0 ? 0x40 : (resist > 0 ? 0x69 : 0xFF), resist < 0 ? 0x40 : 0xFF);
     }
 
     Roam__PanelText(roam, small, "Stat Points", 66, 396, 0xC7, 0xB3, 0x77);
@@ -3870,8 +3942,15 @@ static void Roam__HandleGameMessage(SceneRoam *roam, const uint8_t type, NetRead
         const bool pvp           = NetReader_U8(reader) != 0;
         const int  attack_rating = NetReader_I32(reader);
         const int  level         = NetReader_I32(reader);
-        const int  damage        = NetReader_I32(reader);
-        Unit      *player        = &roam->player;
+        int        damage        = 0;
+        for (int e = 0; e < ELEMENT_COUNT; e++) { // physical as it is; the rest against our resistances
+            const int part = NetReader_I32(reader);
+            damage +=
+                e == ELEMENT_PHYSICAL
+                    ? part
+                    : Roam__Resisted(part, Character_Resist(roam->character, (Element)e, Roam__ResistPenalty(roam)));
+        }
+        Unit *player = &roam->player;
         if (reader->failed || target != NetClient_MyId() || !Roam__IsAlive(player) || now < roam->safe_until ||
             (pvp && roam->in_town)) {
             break;

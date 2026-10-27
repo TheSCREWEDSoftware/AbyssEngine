@@ -187,11 +187,20 @@ knows and leave out the rest (skills, charges, sockets).
 
 | Works | Shown, but doesn't do anything yet |
 |---|---|
-| Strength, Dexterity, Vitality, Energy (requirements count them, like the game; the character screen shows them in blue), Life, Mana, Stamina, Attack Rating (and %), Defense, Enhanced Defense (of the item it's on), Enhanced Damage (on a weapon: its damage; elsewhere: added to strength's bonus), minimum / maximum damage, fire / cold / lightning damage (added to each blow; no resistances yet), Life and Mana Stolen per Hit, Replenish Life, Faster Run/Walk, Damage Reduced, Extra Gold | Resistances, poison damage, Magic Find, attack speed, hit recovery, block, light radius, thorns, magic damage reduced |
+| Strength, Dexterity, Vitality, Energy (requirements count them, like the game; the character screen shows them in blue), Life, Mana, Stamina, Attack Rating (and %), Defense, Enhanced Defense (of the item it's on), Enhanced Damage (on a weapon: its damage; elsewhere: added to strength's bonus), minimum / maximum damage, fire / cold / lightning / poison damage (added to each blow, against the monster's resistance to it; poison all at once for now), resistances, Life and Mana Stolen per Hit, Replenish Life, Faster Run/Walk, Damage Reduced, Extra Gold | Magic Find, attack speed, hit recovery, block, light radius, thorns, magic damage reduced |
 
 The name on the ground and the tooltip are in the quality's colour; the tooltip shows damage and defense with the
 item's own magic in (blue when it changed them), then the properties in blue. Saved with the character (after an
 item's other numbers, so older builds still read the save, as plain items).
+
+### Resistances
+
+The character screen shows Fire, Cold, Lightning and Poison resistance (blue when boosted, red below 0): what's worn
+(each resistance, and All Resistances), at most 75%, less the difficulty's penalty in a multiplayer game (Nightmare 40,
+Hell 100, like the game). Monsters whose first attack has fire, cold, lightning or poison in it (`monstats.txt` El1,
+e.g. Andariel's poison) hit with that too, less your resistance. Monsters resist too (`monstats.txt` ResDm, ResFi,
+ResCo, ResLi, ResPo, the difficulty's own in multiplayer): your physical and elemental damage are each cut by theirs,
+and an immune monster (100% or more) takes none of that kind. Life and mana stolen come from the physical part.
 
 ## Skills
 

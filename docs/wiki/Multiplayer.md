@@ -68,7 +68,7 @@ and sprint ([Free Roam](Testing-Grounds-and-Free-Roam.md#in-single-player-and-mu
   a dedicated server the character is saved there as you drop or pick something up. Leaving the game, what's lying
   around stays for the others until the game ends.
 
-Each of these changed what games send each other (now protocol version 4: magic items go over the network too):
+Each of these changed what games send each other (now protocol version 5: magic items go over the network too, and blows carry their elemental damage):
 everyone needs the same build, or the game says the host runs a different version.
 
 ## Game settings

@@ -113,6 +113,30 @@ bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats) {
         stats->experience    = base_exp * experience / 100;
         stats->velocity      = DataTable_GetInt(monstats, row, c_velocity);
         stats->npc           = DataTable_GetInt(monstats, row, c_npc) != 0;
+        static const char *resists[5] = {"ResDm", "ResFi", "ResCo", "ResLi", "ResPo"};
+        for (int r = 0; r < 5; r++) {
+            stats->resist[r] = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, resists[r], resists[r]));
+        }
+        // Elemental damage with the first attack: like its physical damage, a percentage of the level's base
+        const char        *el_mode  = DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "El1Mode"));
+        const char        *el_type  = DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "El1Type"));
+        static const char *types[5] = {"", "fire", "cold", "ltng", "pois"};
+        for (int e = 1; e < 5 && strcmp(el_mode, "A1") == 0; e++) {
+            if (strcmp(el_type, types[e]) == 0) {
+                stats->element   = e;
+                const int chance = DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "El1Pct", "El1Pct"));
+                stats->element_chance = chance > 0 ? chance : 100;
+                stats->element_min =
+                    base_damage *
+                    DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "El1MinD", "El1MinD")) / 100;
+                stats->element_max =
+                    base_damage *
+                    DataTable_GetInt(monstats, row, MonsterStats__Column(monstats, "El1MaxD", "El1MaxD")) / 100;
+                if (stats->element_max <= 0) {
+                    stats->element = 0; // named, but none
+                }
+            }
+        }
         snprintf(
             stats->treasure, sizeof(stats->treasure), "%s",
             DataTable_GetString(monstats, row, MonsterStats__Column(monstats, "TreasureClass1", "TreasureClass1")));

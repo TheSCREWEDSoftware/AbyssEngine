@@ -18,6 +18,14 @@ typedef struct MonsterStats {
     int  velocity;      // walk speed
     bool npc;           // town NPCs: never fight unless combat is forced on
     char treasure[48];  // what it drops (TreasureClassEx.txt), for the difficulty
+    // Resistances in percent (100 or more: immune): 0 physical, 1 fire, 2 cold, 3 lightning, 4 poison (Character.h's
+    // Element order)
+    int resist[5];
+    // Its attack's elemental damage (El1, when it's for the first attack): element (0: none), chance in percent, range
+    int element;
+    int element_chance;
+    int element_min;
+    int element_max;
 } MonsterStats;
 
 bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if unknown

@@ -10,7 +10,9 @@
 // passes it on. It runs inside the hosting player's game, or on its own (AbyssEngine --server). Clients send what
 // they do; the server checks it and tells everyone.
 
-#define NET_PROTOCOL_VERSION 4    // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic
+#define NET_PROTOCOL_VERSION                                                                                           \
+    5 // 2: items on the ground, monsters and combat; 3: chests and doors, parties; 4: magic;
+      // 5: elemental damage in blows
 #define NET_DEFAULT_PORT     4000 // Diablo II's own TCP/IP game port
 #define NET_DISCOVERY_PORT   4001 // LAN: "is anyone hosting?" over UDP broadcast
 #define NET_LOBBY_PORT       4002 // abyss-lobby: the list of online games
@@ -43,10 +45,12 @@ typedef enum NetMessageType {
     MSG_MONSTERS,       // owner: map, count, then index, x, y, hp, max hp, state, turn, vanished for each
     MSG_HIT_MONSTER,    // map, monster index, damage (to the map's owner, who takes it off)
     MSG_MONSTER_KILLED, // owner: map, monster index, killer's player id (the killer and their party get the experience)
-    MSG_HIT_PLAYER,     // player id, pvp, attack rating, level, damage (the one hit rolls whether it lands)
-    MSG_OBJECT_USE,     // map, object index: "I'd like to open it" (the first to ask opens it, for everyone)
-    MSG_PARTY_INVITE,   // player id
-    MSG_PARTY_ACCEPT,   // the inviter's player id
+    MSG_HIT_PLAYER,   // player id, pvp, attack rating, level, damage: physical, fire, cold, lightning, poison (the one
+                      // hit
+                      // rolls whether it lands, and resists the elements)
+    MSG_OBJECT_USE,   // map, object index: "I'd like to open it" (the first to ask opens it, for everyone)
+    MSG_PARTY_INVITE, // player id
+    MSG_PARTY_ACCEPT, // the inviter's player id
     MSG_PARTY_LEAVE,
     // Server -> client
     MSG_WELCOME = 64, // the game's settings, whether characters are kept here, the realm id

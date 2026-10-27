@@ -33,18 +33,18 @@ typedef enum ItemModType {
     MOD_DAMAGE_PCT,  // enhanced damage: on a weapon, of its damage; elsewhere, added to strength's bonus
     MOD_DAMAGE_MIN,
     MOD_DAMAGE_MAX,
-    MOD_FIRE_MIN, // elemental damage: added to each blow (no resistances yet)
+    MOD_FIRE_MIN, // elemental damage: added to each blow, against the monster's resistance
     MOD_FIRE_MAX,
     MOD_COLD_MIN,
     MOD_COLD_MAX,
     MOD_LIGHTNING_MIN,
     MOD_LIGHTNING_MAX,
-    MOD_POISON,               // * poison damage over time
-    MOD_RES_FIRE,             // *
-    MOD_RES_COLD,             // *
-    MOD_RES_LIGHTNING,        // *
-    MOD_RES_POISON,           // *
-    MOD_RES_ALL,              // *
+    MOD_POISON,               // poison damage, added to each blow (all at once for now)
+    MOD_RES_FIRE,             // against monsters' attacks
+    MOD_RES_COLD,             // against monsters' attacks
+    MOD_RES_LIGHTNING,        // against monsters' attacks
+    MOD_RES_POISON,           // against monsters' attacks
+    MOD_RES_ALL,              // against monsters' attacks
     MOD_LIFE_STEAL,           // life back from each blow's damage
     MOD_MANA_STEAL,           // mana back from each blow's damage
     MOD_MAGIC_FIND,           // *
