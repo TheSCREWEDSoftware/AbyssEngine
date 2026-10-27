@@ -190,6 +190,7 @@ typedef struct DrawContext {
     const char *palette;                 // the act's (the overlays')
     char        states[UNIT_STATES][32]; // states.txt names: their overlays are drawn with the figure
     int         state_count;
+    uint8_t     alpha; // see-through (a ghostly champion); 0: solid
 } DrawContext;
 
 typedef struct Unit {
@@ -265,6 +266,7 @@ typedef struct Unit {
     uint64_t        aura_pulse;   // its next pulse
     bool            burrowed;     // under the ground (Submerge / Emerge: frog demons, tentacles)
     uint8_t         portal_owner; // a Town Portal's: 0 ours, else the player id whose it is
+    uint8_t         champion;     // CHAMPION_*: what kind of champion (shown under its name)
 
     uint64_t       flee_until;
     bool           ranged_swing; // the attack being played was a shot or a spell (no blow at the end)
@@ -983,6 +985,9 @@ static bool Roam__Animate(SceneRoam *roam, Unit *unit, const uint64_t now) {
 static int Roam__Roll(const int low, const int high) { return high > low ? low + (rand() % (high - low + 1)) : low; }
 
 typedef enum UnitRank { RANK_NORMAL, RANK_CHAMPION, RANK_UNIQUE, RANK_SUPER_UNIQUE, RANK_MINION } UnitRank;
+// The game's kinds of champion: plain, Fanatic (fast), Berserker (hits hard, little defense), Ghostly (see-through,
+// slow, cold, half physical damage), Possessed (Hell only: twice the life)
+enum { CHAMPION_PLAIN, CHAMPION_FANATIC, CHAMPION_BERSERKER, CHAMPION_GHOSTLY, CHAMPION_POSSESSED };
 
 static int init_area_level = 0; // Roam__Populate: the area's monster level for the monsters being made (0: theirs)
 
@@ -2392,7 +2397,6 @@ static void Roam__UniqueName(char *out, const size_t size) {
 
 // Champions, uniques (with a power or two) and their minions, super uniques: tougher, worth more, better drops
 static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
-    (void)roam;
     MonsterStats stats;
     const bool   have = MonsterStats_GetAtLevel(unit->id, 0, &stats);
     if (mark[0] == '*') {
@@ -2422,6 +2426,31 @@ static void Roam__MakeRank(SceneRoam *roam, Unit *unit, const char *mark) {
         unit->speed         *= 1.15f;
         if (have && stats.treasure_champion[0] != '\0') {
             snprintf(unit->treasure, sizeof(unit->treasure), "%s", stats.treasure_champion);
+        }
+        // Which kind: the whole pack shares it in the game; here each rolls (the same for everyone in multiplayer)
+        const int kind = rand() % 100;
+        if (kind >= 95 && Roam__Difficulty(roam) >= 2) {
+            unit->champion  = CHAMPION_POSSESSED;
+            unit->max_hp   *= 2;
+        } else if (kind >= 80) {
+            unit->champion                  = CHAMPION_GHOSTLY;
+            unit->draw.alpha                = 130;
+            unit->speed                    *= 0.75f;
+            unit->resist[ELEMENT_PHYSICAL]  = unit->resist[ELEMENT_PHYSICAL] > 50 ? unit->resist[ELEMENT_PHYSICAL] : 50;
+            if (unit->element == ELEMENT_PHYSICAL || unit->element_chance <= 0) {
+                unit->element        = ELEMENT_COLD;
+                unit->element_chance = 100;
+                unit->element_min    = 1 + (unit->damage_min / 2);
+                unit->element_max    = 1 + (unit->damage_max / 2);
+            }
+        } else if (kind >= 60) {
+            unit->champion    = CHAMPION_BERSERKER;
+            unit->damage_min += unit->damage_min / 2;
+            unit->damage_max += unit->damage_max / 2;
+            unit->defense    /= 2;
+        } else if (kind >= 40) {
+            unit->champion  = CHAMPION_FANATIC;
+            unit->speed    *= 1.25f;
         }
     } else if (strcmp(mark, "@unique") == 0) {
         unit->rank = RANK_UNIQUE;
@@ -6516,7 +6545,13 @@ static void Roam__DrawOverlays(const DrawContext *draw, const int screen_x, cons
 static void Roam__DrawFigure(void *context, const int screen_x, const int screen_y, const float zoom) {
     const DrawContext *draw = context;
     Roam__DrawOverlays(draw, screen_x, screen_y, zoom, true);
+    if (draw->alpha != 0) {
+        Figure_SetAlpha(draw->figure, draw->alpha);
+    }
     Figure_Draw(draw->figure, draw->direction, draw->frame, screen_x, screen_y, zoom);
+    if (draw->alpha != 0) {
+        Figure_SetAlpha(draw->figure, 255);
+    }
     Roam__DrawOverlays(draw, screen_x, screen_y, zoom, false);
 }
 
@@ -6726,10 +6761,16 @@ static void Roam__DrawUnitInfo(SceneRoam *roam, const SDL_Rect *view, const Unit
     if (show_bar && roam->game && !unit->npc && !unit->is_object && roam->log_label != NULL) {
         static const char *const elements[ELEMENT_COUNT] = {"Physical", "Fire", "Cold", "Lightning", "Poison"};
         char                     text[128]               = "";
+        if (unit->rank == RANK_CHAMPION && unit->champion != CHAMPION_PLAIN) {
+            static const char *const kinds[] = {"", "Fanatic", "Berserker", "Ghostly", "Possessed"};
+            snprintf(text, sizeof(text), "%s", kinds[unit->champion < 5 ? unit->champion : 0]);
+        }
         for (int e = 0; e < ELEMENT_COUNT; e++) {
             if (unit->resist[e] >= 100) {
                 const size_t used = strlen(text);
-                snprintf(text + used, sizeof(text) - used, "%s%s", used == 0 ? "Immune to " : ", ", elements[e]);
+                snprintf(text + used, sizeof(text) - used, "%s%s",
+                         used == 0 ? "Immune to " : (strstr(text, "Immune") == NULL ? " - Immune to " : ", "),
+                         elements[e]);
             }
         }
         if (unit->aura != NULL) {
