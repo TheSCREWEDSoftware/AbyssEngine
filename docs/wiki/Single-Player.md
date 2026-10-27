@@ -310,8 +310,10 @@ and an immune monster (100% or more) takes none of that kind. Life and mana stol
   - The Druid's shapes (Werewolf, Werebear: the wolf's or bear's pictures and the form's bonuses; cast it again to
     change back), Whirlwind (you spin to the spot, striking each monster on the way), Leap Attack, Charge and Dragon
     Flight (there in an instant, and the blow), Static Field (a quarter of each nearby monster's life), Telekinesis,
-    Psychic Hammer, Mind Blast, Revive (a corpse fights for you for three minutes).
-  Not yet: Attract, Bone Prison, Taunt, Double Throw; the Assassin's traps act like summons that fight. Skills that
+    Psychic Hammer, Mind Blast, Revive (a corpse fights for you for three minutes), Attract (the monster turns on its
+    own kind until the skill's time is up, then it's a monster again), Bone Prison (eight bone walls round the
+    monster), Taunt (it comes for you, its damage down), Double Throw (both throwing weapons at once).
+  Not yet: the Assassin's traps act like summons that fight. Skills that
   aren't in say so and cost no mana.
 
 ## Town folk

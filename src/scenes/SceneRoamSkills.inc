@@ -1369,6 +1369,70 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
         Roam__SetState(revived, UNIT_IDLE, now);
         return true;
     }
+    case 59: { // Attract: the monster nearest the spot turns on its own kind a while (and they on it)
+        Unit *victim = target != NULL ? target : NULL;
+        float near   = 5.0f;
+        for (int i = 0; victim == NULL && i < roam->unit_count; i++) {
+            Unit *unit = &roam->units[i];
+            if (Roam__IsAlive(unit) && Roam__IsCombatant(unit) && !unit->ally && !unit->boss &&
+                Roam__Distance(unit->x, unit->y, tx, ty) < near) {
+                near   = Roam__Distance(unit->x, unit->y, tx, ty);
+                victim = unit;
+            }
+        }
+        if (victim == NULL || victim->boss) {
+            return true;
+        }
+        const int frames = s->aura_length[0] != '\0' ? SkillData_Eval(roam->character, s, level, s->aura_length) : 300;
+        victim->ally     = true;
+        victim->turned   = true;
+        victim->ally_until = now + ((uint64_t)(frames > 0 ? frames : 300) * 40);
+        Roam__SpawnEffect(roam, "attract", victim->x, victim->y, 1.0f, 0.0f);
+        return true;
+    }
+    case 62: { // Bone Prison: bone walls round the monster
+        if (target == NULL) {
+            return true;
+        }
+        const SkillRow *wall = SkillData_Get("Bone Wall");
+        for (int k = 0; k < 8; k++) {
+            const float angle = (float)k * (float)M_PI / 4.0f;
+            const float x     = target->x + (cosf(angle) * 2.5f);
+            const float y     = target->y + (sinf(angle) * 2.5f);
+            if (!Map_IsWalkable(roam->map, (int)x, (int)y)) {
+                continue;
+            }
+            Unit *bone = Roam__AddUnit(roam, "monsters", "bonewall", x, y);
+            if (bone != NULL) {
+                bone->ally        = true;
+                bone->summoned_by = wall != NULL ? wall : s;
+                bone->npc         = false;
+                bone->experience  = 0;
+                bone->treasure[0] = '\0';
+                bone->max_hp = bone->hp = 20 + (level * 25);
+                bone->ally_until        = now + 24000;
+            }
+        }
+        return true;
+    }
+    case 71: // Taunt: the monster comes for you, hitting less often and less hard
+        if (target != NULL) {
+            target->curse       = s;
+            target->curse_level = level;
+            target->curse_until = now + 30000;
+            target->provoked    = true;
+        }
+        return true;
+    case 74: { // Double Throw: both throwing weapons at once
+        const char *name = Roam__WeaponMissile(roam);
+        if (name == NULL) {
+            Roam__ShowMessage(roam, "Double Throw needs throwing weapons.");
+            return true;
+        }
+        Roam__FireMissiles(roam, name, NULL, 0, 2, 8.0f, false, target != NULL ? target->x : tx,
+                           target != NULL ? target->y : ty);
+        return true;
+    }
     default:
         return false;
     }
@@ -1488,7 +1552,7 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         return false; // always on / on while it's chosen: the click walks
     } else if (s->kind == SKILL_KIND_OTHER && s->do_func != 20 && s->do_func != 21 && s->do_func != 33 &&
                s->do_func != 51 && s->do_func != 52 && s->do_func != 67 && s->do_func != 76 && s->do_func != 78 &&
-               s->do_func != 58) {
+               s->do_func != 58 && s->do_func != 59 && s->do_func != 62 && s->do_func != 71 && s->do_func != 74) {
         char text[96];
         snprintf(text, sizeof(text), "%s isn't in the engine yet.", s->id);
         Roam__ShowMessage(roam, text);
@@ -1675,6 +1739,13 @@ static int Roam__AllyTarget(const SceneRoam *roam, const Unit *ally) {
 
 // A summoned monster's turn: fight what's near, otherwise keep close to the player
 static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, const uint64_t now) {
+    if (ally->turned && now >= ally->ally_until) {
+        ally->ally       = false; // Attract's over: a monster again
+        ally->turned     = false;
+        ally->ally_until = 0;
+        ally->provoked   = true;
+        return;
+    }
     if (ally->ally_until != 0 && now >= ally->ally_until && Roam__IsAlive(ally)) {
         ally->hp       = 0;
         ally->vanished = true;
@@ -1733,13 +1804,14 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
         return;
     }
     const float to_player = Roam__Distance(ally->x, ally->y, roam->player.x, roam->player.y);
-    if (to_player > 45.0f) {
+    const bool  stays     = ally->turned || ally->speed <= 0.0f; // an attracted monster, a bone wall: where it is
+    if (to_player > 45.0f && !stays) {
         // Left far behind (a waypoint, a long run): it catches up
         Roam__ArrivalSpot(roam->map, roam->player.x + 2.0f, roam->player.y + 2.0f, &ally->x, &ally->y);
         Roam__ClearPath(ally);
         return;
     }
-    const int target = to_player < SKILL_SUMMON_LEASH ? Roam__AllyTarget(roam, ally) : -1;
+    const int target = to_player < SKILL_SUMMON_LEASH || ally->turned ? Roam__AllyTarget(roam, ally) : -1;
     float     goal_x = roam->player.x;
     float     goal_y = roam->player.y;
     if (target >= 0) {
@@ -1758,7 +1830,7 @@ static void Roam__UpdateAlly(SceneRoam *roam, Unit *ally, const float seconds, c
         }
         goal_x = victim->x;
         goal_y = victim->y;
-    } else if (to_player < 4.0f) {
+    } else if (to_player < 4.0f || stays) {
         Roam__SetState(ally, UNIT_IDLE, now);
         return;
     }

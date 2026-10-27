@@ -235,6 +235,7 @@ typedef struct Unit {
     bool            ally;        // summoned by the player: fights the monsters
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
+    bool            turned;      // a monster on our side for a while (Attract): back to a monster then, not gone
     int             fight_ally;  // a monster: the ally it's after (index + 1), 0 = a player
     const SkillRow *curse;       // the curse on it (one at a time, like the game)
     int             curse_level;
