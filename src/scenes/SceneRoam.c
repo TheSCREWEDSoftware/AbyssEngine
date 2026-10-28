@@ -3916,6 +3916,25 @@ static void Roam__SkillBlow(SceneRoam *roam, const SkillRow *skill, const int le
     }
 }
 
+// A curse of that name on the monster, still on: its percent (Iron Maiden: of its blows back on it; Life Tap: of the
+// blows on it back as life), else 0
+static int Roam__CursePercent(const SceneRoam *roam, const Unit *unit, const char *name, const uint64_t now) {
+    if (unit->curse == NULL || now >= unit->curse_until || strcmp(unit->curse->id, name) != 0) {
+        return 0;
+    }
+    return SkillData_Eval(roam->character, unit->curse, unit->curse_level, unit->curse->calc[0]);
+}
+
+// Iron Maiden: the cursed monster's blow, that much of it back on it
+static void Roam__IronMaiden(SceneRoam *roam, Unit *unit, const int damage, const uint64_t now) {
+    const int percent = Roam__CursePercent(roam, unit, "Iron Maiden", now);
+    if (percent > 0 && damage > 0 && Roam__IsAlive(unit)) {
+        int back[ELEMENT_COUNT] = {0};
+        back[ELEMENT_PHYSICAL]  = damage * percent / 100;
+        Roam__SkillHit(roam, unit, back, 0, 0, true, now);
+    }
+}
+
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
@@ -4009,8 +4028,11 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     if (roam->game) {
         // Life and mana stolen with each blow that lands (from its physical damage, like the game)
         const int physical = Roam__Resisted(rolled[ELEMENT_PHYSICAL], target->resist[ELEMENT_PHYSICAL]);
-        const int life     = physical * (Affixes_Total(roam->character, MOD_LIFE_STEAL) + life_steal) / 100;
-        const int mana     = physical * (Affixes_Total(roam->character, MOD_MANA_STEAL) + mana_steal) / 100;
+        const int life     = physical *
+                         (Affixes_Total(roam->character, MOD_LIFE_STEAL) + life_steal +
+                          Roam__CursePercent(roam, target, "Life Tap", now)) /
+                         100; // (Life Tap on it: some as life)
+        const int mana  = physical * (Affixes_Total(roam->character, MOD_MANA_STEAL) + mana_steal) / 100;
         roam->player.hp = roam->player.hp + life < roam->player.max_hp ? roam->player.hp + life : roam->player.max_hp;
         roam->mana      = fminf((float)Character_MaxMana(roam->character), roam->mana + (float)mana);
     }
@@ -4559,7 +4581,9 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         Roam__Distance(unit->x, unit->y, ally->x, ally->y) <= ATTACK_RANGE + 0.5f &&
                         Roam__Roll(1, 100) <=
                             Character_HitChance(unit->attack_rating, unit->level, ally->defense, ally->level)) {
-                        Roam__Damage(roam, ally, Roam__Roll(unit->damage_min, unit->damage_max), now);
+                        const int damage = Roam__Roll(unit->damage_min, unit->damage_max);
+                        Roam__Damage(roam, ally, damage, now);
+                        Roam__IronMaiden(roam, unit, damage, now);
                     }
                 } else if (unit->net_target == 0) {
                     if (player_alive && Roam__Distance(unit->x, unit->y, player->x, player->y) <= ATTACK_RANGE + 0.5f &&
@@ -4592,6 +4616,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                                 roam->mana = fmaxf(0.0f, roam->mana - (float)damage);
                             }
                             Roam__Damage(roam, player, damage, now);
+                            Roam__IronMaiden(roam, unit, damage, now);
                         }
                         const int thorns = roam->game ? Affixes_Total(roam->character, MOD_THORNS) : 0;
                         const int zap    = roam->game ? Affixes_Total(roam->character, MOD_LIGHTNING_THORNS) : 0;
@@ -4617,6 +4642,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         damage[ELEMENT_PHYSICAL] += damage[ELEMENT_PHYSICAL] / 2; // its Might
                     }
                     Roam__SendHitPlayer(unit->net_target, false, unit->attack_rating, unit->level, damage);
+                    Roam__IronMaiden(roam, unit, damage[ELEMENT_PHYSICAL], now);
                 }
             }
             if (unit->state == UNIT_OPERATE) {
@@ -4645,7 +4671,14 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
         const int nearer_ally =
             Roam__AllyNear(roam, unit, target ? Roam__Distance(unit->x, unit->y, target_x, target_y) : AGGRO_RANGE);
         unit->fight_ally = 0;
-        if (nearer_ally >= 0) {
+        const int foe    = Roam__ConfusedFoe(roam, unit, now);
+        if (foe >= 0) { // Confuse: it goes for one of its own instead
+            target           = true;
+            target_x         = roam->units[foe].x;
+            target_y         = roam->units[foe].y;
+            target_id        = 0;
+            unit->fight_ally = foe + 1;
+        } else if (nearer_ally >= 0) {
             target           = true;
             target_x         = roam->units[nearer_ally].x;
             target_y         = roam->units[nearer_ally].y;

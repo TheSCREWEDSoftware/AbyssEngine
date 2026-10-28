@@ -351,6 +351,28 @@ static void Roam__Burrowed(SceneRoam *roam, Unit *unit, const bool player_alive,
     Roam__SetState(unit, UNIT_IDLE, now);
 }
 
+// Confuse: the cursed monster goes for whatever's nearest, one of its own (-1: not confused, or nothing near)
+static int Roam__ConfusedFoe(const SceneRoam *roam, const Unit *unit, const uint64_t now) {
+    if (unit->curse == NULL || now >= unit->curse_until || unit->curse->do_func != 61) {
+        return -1;
+    }
+    int   best     = -1;
+    float distance = AGGRO_RANGE;
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *other = &roam->units[i];
+        if (other == unit || !Roam__IsAlive(other) || !Roam__IsCombatant(other) || other->npc || other->is_object ||
+            other->trap != NULL) {
+            continue;
+        }
+        const float d = Roam__Distance(unit->x, unit->y, other->x, other->y);
+        if (d < distance) {
+            distance = d;
+            best     = i;
+        }
+    }
+    return best;
+}
+
 // The Fallen: when one of theirs falls nearby, the rest scatter for a moment
 static bool Roam__MonsterFlees(SceneRoam *roam, Unit *unit, const float tx, const float ty, const uint64_t now,
                                const float seconds) {
