@@ -148,7 +148,32 @@ static const struct {
     {26, 27, WORLD_SIDE_N},
     {81, 82, WORLD_SIDE_N},
     {82, 83, WORLD_SIDE_N},
+    {78, 79, WORLD_SIDE_N}, // Lower Kurast's way in from the Flayer Jungle: the middle of its
+  // south-west edge
 };
+
+// The game's rules for the other ways on (which edges a way out can be on, as bits of WorldSide; the screen's
+// top-right edge is north, bottom-left south): the Black Marsh never leads to the Tamoe Highland from its bottom-left
+// edge, the Outer Steppes never come into the Plains of Despair by the plains' south-east edge, and the Frigid
+// Highlands lead on to the Arreat Plateau from their far north-west or north-east edge
+static const struct {
+    int      from;
+    int      to;
+    unsigned allowed; // of "from"'s sides
+} allowed_sides[] = {
+    {6,   7,   (1u << WORLD_SIDE_N) | (1u << WORLD_SIDE_E) | (1u << WORLD_SIDE_W)},
+    {104, 105, (1u << WORLD_SIDE_N) | (1u << WORLD_SIDE_S) | (1u << WORLD_SIDE_E)},
+    {111, 112, (1u << WORLD_SIDE_N) | (1u << WORLD_SIDE_W)                       },
+};
+
+static unsigned World__AllowedSides(const int from, const int to) {
+    for (size_t i = 0; i < sizeof(allowed_sides) / sizeof(allowed_sides[0]); i++) {
+        if (allowed_sides[i].from == from && allowed_sides[i].to == to) {
+            return allowed_sides[i].allowed;
+        }
+    }
+    return 0xFu;
+}
 
 static bool (*area_size)(int level_id, int *width, int *height) = NULL;
 
@@ -247,7 +272,8 @@ static void World__Layout(void) {
             int       least = 0;
             for (int k = 0; k < 4; k++) {
                 const WorldSide candidate = (WorldSide)((first + k) % 4);
-                if (used_sides[a][candidate] || reserved[a][candidate] || reserved[b][World__Opposite(candidate)]) {
+                if (used_sides[a][candidate] || reserved[a][candidate] || reserved[b][World__Opposite(candidate)] ||
+                    (World__AllowedSides(a, b) & (1u << candidate)) == 0) {
                     continue;
                 }
                 const WorldRect next    = World__Beside(&rects[a], candidate, bw, bh);
