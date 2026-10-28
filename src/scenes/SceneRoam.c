@@ -302,6 +302,7 @@ typedef struct Unit {
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
     bool            clone;       // the Diablo Clone (he leaves Annihilus)
+    bool            wave;        // one of Baal's minion waves (the Throne of Destruction)
     bool            corpse_used; // a corpse a skill has already been used on (Find Item, Find Potion, Grim Ward)
     bool            decoy;       // the Amazon's Decoy: stands there drawing the monsters, never strikes
     bool            shadow;      // the Assassin's Shadow Warrior / Master: fights with your own skills
@@ -548,6 +549,8 @@ typedef struct SceneRoam {
     uint64_t last_allies;        // our summons last sent at
     int      attack_other;       // PvP: the player being attacked (their id), 0 = none
     uint64_t storm_next;         // Thunder Storm's next bolt
+    int      baal_wave;          // the Throne of Destruction: Baal's wave on (1-5), 0 not begun, 6 all beaten
+    uint64_t baal_wave_at;       // the next wave comes then (0: when this one's beaten)
     float    prison_x, prison_y; // Diablo's Bone Prison round you: you can't leave it while a wall stands
     uint64_t prison_until;
     int      pandemonium_opened; // this game's red portals opened: bits for Matron's Den, Forgotten Sands, Furnace
@@ -1905,6 +1908,11 @@ static void Roam__PlacePortals(SceneRoam *roam);
 static void Roam__UseWell(SceneRoam *roam);
 
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (unit->object.operate_fn == 70 && roam->area_level == 131 && roam->game && !roam->online &&
+        roam->baal_wave < 6) {
+        Roam__ShowMessage(roam, "Baal won't let you pass while his minions stand.");
+        return; // (the Worldstone Chamber's portal: once his five waves are beaten)
+    }
     if (unit->object.operate_fn == 15) {
         Roam__TakePortal(roam, unit); // a Town Portal
         return;
@@ -7178,6 +7186,7 @@ static void Roam__Update(SceneRoam *roam) {
     Roam__UpdateSkillBonuses(roam, now);
     Roam__UpdatePlayer(roam, seconds, now);
     Roam__UpdateUnits(roam, seconds, now);
+    Roam__BaalWaves(roam, now);
     Roam__UpdateMissiles(roam, seconds, now);
     Roam__SkillPulse(roam, now);
     if (roam->game) {

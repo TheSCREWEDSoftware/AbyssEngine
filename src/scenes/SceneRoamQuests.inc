@@ -743,6 +743,86 @@ static void Roam__CowLevel(SceneRoam *roam) {
     Cube_GiveBack(roam->character); // (not opened: what went in comes back)
 }
 
+// The Throne of Destruction (single player): come near Baal and his five waves of minions come one after another, each
+// led by its own: Colenzo the Annihilator and his Warped Shamans, Achmel the Cursed and the Unravelers, Bartuc the
+// Bloody and the Council, Ventar the Unholy and the Venom Lords, Lister the Tormentor and Baal's own minions. When the
+// last is beaten Baal leaves for the Worldstone Chamber and its portal opens.
+static void Roam__BaalWaves(SceneRoam *roam, const uint64_t now) {
+    static const struct {
+        const char *leader;
+        const char *id;
+        int         count;
+    } waves[5] = {
+        {"Colenzo the Annihilator", "fallenshaman6",  5},
+        {"Achmel the Cursed",       "unraveler6",     4},
+        {"Bartuc the Bloody",       "baalhighpriest", 3},
+        {"Ventar the Unholy",       "venomlord",      3},
+        {"Lister the Tormentor",    "baalminion1",    4},
+    };
+    if (!roam->game || roam->online || roam->area_level != 131 || roam->baal_wave >= 6) {
+        return;
+    }
+    int throne = -1;
+    for (int i = 0; i < roam->unit_count && throne < 0; i++) {
+        throne = strcmp(roam->units[i].id, "baalthrone") == 0 && Roam__IsAlive(&roam->units[i]) ? i : -1;
+    }
+    if (throne < 0) {
+        return;
+    }
+    Unit *baal     = &roam->units[throne];
+    baal->speed    = 0.0f; // (he sits it out)
+    baal->provoked = false;
+    if (roam->baal_wave == 0) { // (not begun: begins when you come near)
+        if (Roam__Distance(baal->x, baal->y, roam->player.x, roam->player.y) < 40.0f) {
+            roam->baal_wave_at = now + 2000;
+            roam->baal_wave    = -1; // (coming)
+            Roam__ShowMessage(roam, "Baal: \"Welcome to your doom!\"");
+        }
+        return;
+    }
+    if (roam->baal_wave > 0 && roam->baal_wave_at == 0) {
+        for (int i = 0; i < roam->unit_count; i++) {
+            if (roam->units[i].wave && Roam__IsAlive(&roam->units[i])) {
+                return; // this wave's still standing
+            }
+        }
+        roam->baal_wave_at = now + 3000;
+        if (roam->baal_wave == 5) {
+            roam->baal_wave = 6;
+            baal->hp        = 0;
+            baal->vanished  = true;
+            Roam__SetState(baal, UNIT_DEAD, now);
+            Roam__ShowMessage(roam, "Baal: \"Fools! Come to the Worldstone Chamber, if you dare!\" (his portal opens)");
+        }
+        return;
+    }
+    if (roam->baal_wave_at == 0 || now < roam->baal_wave_at) {
+        return;
+    }
+    roam->baal_wave    = roam->baal_wave < 0 ? 1 : roam->baal_wave + 1;
+    roam->baal_wave_at = 0;
+    const int w        = roam->baal_wave - 1;
+    for (int k = 0; k <= waves[w].count; k++) {
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, baal->x + (float)Roam__Roll(-6, 6), baal->y + 18.0f + (float)Roam__Roll(0, 6), &x,
+                          &y);
+        Unit *unit = Roam__AddUnit(roam, "monsters", waves[w].id, x, y);
+        if (unit == NULL) {
+            continue;
+        }
+        unit->wave     = true;
+        unit->provoked = true;
+        if (k == 0) {
+            Roam__MakeRank(roam, unit, "@unique");
+            snprintf(unit->name, sizeof(unit->name), "%s", waves[w].leader);
+        }
+    }
+    char text[96];
+    snprintf(text, sizeof(text), "%s comes with Baal's minions.", waves[w].leader);
+    Roam__ShowMessage(roam, text);
+}
+
 // Pandemonium's Ubers, in their areas until they're beaten this game: Lilith in Matron's Den, Uber Duriel in the
 // Forgotten Sands, Uber Izual in the Furnace of Pain; Uber Mephisto, Diablo and Baal in Uber Tristram. And the Diablo
 // Clone when he walks the earth.
