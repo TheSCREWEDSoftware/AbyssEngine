@@ -1,4 +1,5 @@
 #include "MapRenderer.h"
+#include "../common/FileManager.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../types/Palette.h"
@@ -58,9 +59,13 @@ struct MapRenderer {
     int        cut_radius;
     uint64_t   wall_tick;
 
-    SDL_Texture   *light; // white with alpha: transparent in the middle, opaque at the edge
-    uint8_t        light_darkness;
-    SDL_Texture   *dark_mask; // MapRenderer_DrawLights: the darkness at a quarter of the view's size
+    SDL_Texture *light; // white with alpha: transparent in the middle, opaque at the edge
+    uint8_t      light_darkness;
+    SDL_Texture *dark_mask; // MapRenderer_DrawLights: the darkness at a quarter of the view's size
+    // The dark in the act's colours: for each amount of darkness (0..255), what each of red, green and blue is
+    // multiplied by, from the palette's light levels (pal.pl2), so the shadows go the way the game's do
+    const Palette *shade_palette;
+    uint8_t        shade[256][3];
     int            dark_w;
     int            dark_h;
     TextureEntry  *entries; // open addressing, keyed by tile pointer
@@ -1083,6 +1088,69 @@ void MapRenderer_DrawTilePreview(MapRenderer *renderer, const Map *map, const DT
     SDL_RenderCopy(sdl_renderer, texture, NULL, &dest);
 }
 
+// The game darkens by its palette's light levels (pal.pl2: 32 tables, each mapping a colour to the one it becomes at
+// that level), so its dark isn't plain black over the picture: each act's colours sink their own way. Worked out here
+// as the average change of red, green and blue at each level, put in order of how dark it is.
+static void MapRenderer__BuildShade(MapRenderer *renderer, const Palette *palette) {
+    renderer->shade_palette = palette;
+    for (int f = 0; f < 256; f++) { // (no pl2: plain black)
+        renderer->shade[f][0] = renderer->shade[f][1] = renderer->shade[f][2] = (uint8_t)(255 - f);
+    }
+    if (palette == NULL || palette->name == NULL) {
+        return;
+    }
+    char path[256];
+    snprintf(path, sizeof(path), "/data/global/Palette/%s/Pal.pl2", palette->name);
+    if (!FileManager_FileExists(path)) {
+        return;
+    }
+    MpqStream *stream = FileManager_OpenFile(path);
+    if (stream == NULL) {
+        return;
+    }
+    enum { LEVELS = 32 };
+    static uint8_t data[1024 + (LEVELS * 256)];
+    const bool     read =
+        MpqStream_GetSize(stream) >= sizeof(data) && MpqStream_Read(stream, data, 0, sizeof(data)) == sizeof(data);
+    MpqStream_Destroy(&stream);
+    if (!read) {
+        return;
+    }
+    // Each level: how much of each channel is left (mapped colours against the palette's own)
+    float ratio[LEVELS][4];
+    for (int l = 0; l < LEVELS; l++) {
+        double from[3] = {0.0, 0.0, 0.0};
+        double to[3]   = {0.0, 0.0, 0.0};
+        for (int i = 1; i < 256; i++) {
+            const uint8_t *was = &data[i * 4]; // (pl2's palette: R, G, B, unused)
+            const uint8_t *now = &data[data[1024 + (l * 256) + i] * 4];
+            for (int c = 0; c < 3; c++) {
+                from[c] += was[c];
+                to[c]   += now[c];
+            }
+        }
+        for (int c = 0; c < 3; c++) {
+            ratio[l][c] = from[c] > 0.0 ? (float)(to[c] / from[c]) : 0.0f;
+            ratio[l][c] = ratio[l][c] > 1.0f ? 1.0f : ratio[l][c];
+        }
+        ratio[l][3] = (ratio[l][0] * 0.3f) + (ratio[l][1] * 0.59f) + (ratio[l][2] * 0.11f); // how bright it leaves
+    }
+    // For each amount of darkness: the level (between two) that leaves that much light
+    for (int f = 0; f < 256; f++) {
+        const float want = 1.0f - ((float)f / 255.0f);
+        int         best = 0;
+        for (int l = 1; l < LEVELS; l++) {
+            best = fabsf(ratio[l][3] - want) < fabsf(ratio[best][3] - want) ? l : best;
+        }
+        // (scaled so it leaves exactly as much light as wanted, keeping that level's tint)
+        const float scale = ratio[best][3] > 0.001f ? want / ratio[best][3] : 0.0f;
+        for (int c = 0; c < 3; c++) {
+            const float v         = ratio[best][c] * scale;
+            renderer->shade[f][c] = (uint8_t)(v >= 1.0f ? 255 : (v <= 0.0f ? 0 : (int)(v * 255.0f)));
+        }
+    }
+}
+
 void MapRenderer_DrawLights(MapRenderer *renderer, const MapCamera *camera, const SDL_Rect *view,
                             const MapLight *lights, const int count, const uint8_t darkness) {
     if (darkness == 0 || view->w <= 0 || view->h <= 0) {
@@ -1101,8 +1169,11 @@ void MapRenderer_DrawLights(MapRenderer *renderer, const MapCamera *camera, cons
         if (renderer->dark_mask == NULL) {
             return;
         }
-        SDL_SetTextureBlendMode(renderer->dark_mask, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureBlendMode(renderer->dark_mask, SDL_BLENDMODE_MOD); // (the picture times the shade)
         SDL_SetTextureScaleMode(renderer->dark_mask, SDL_ScaleModeLinear);
+    }
+    if (renderer->shade_palette != renderer->palette || renderer->shade_palette == NULL) {
+        MapRenderer__BuildShade(renderer, renderer->palette);
     }
     // Each pool on screen: its middle and half width (the pools are flat ellipses, twice as wide as high)
     enum { POOLS = 64 };
@@ -1143,7 +1214,9 @@ void MapRenderer_DrawLights(MapRenderer *renderer, const MapCamera *camera, cons
                 const float t = d * d * (3.0f - (2.0f * d)); // smooth fall-off
                 shade         = t < shade ? t : shade;
             }
-            row[x] = (uint32_t)(shade * (float)darkness); // RGBA8888: black, alpha
+            const uint8_t *tint = renderer->shade[(int)(shade * (float)darkness)];
+            row[x] =
+                ((uint32_t)tint[0] << 24) | ((uint32_t)tint[1] << 16) | ((uint32_t)tint[2] << 8) | 0xFFu; // RGBA8888
         }
     }
     SDL_UnlockTexture(renderer->dark_mask);
