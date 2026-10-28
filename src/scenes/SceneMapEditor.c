@@ -14,12 +14,14 @@
 #include "../drawing/TextBox.h"
 #include "../game/Settings.h"
 #include "../managers/InputManager.h"
+#include "../map/LevelBuilder.h"
 #include "../map/LevelTypes.h"
 #include "../map/Map.h"
 #include "../map/MapHistory.h"
 #include "../map/MapRenderer.h"
 #include "../map/MapSession.h"
 #include "../map/MapUnits.h"
+#include "../map/World.h"
 #include "CatalogCharacters.h"
 #include "SceneMainMenu.h"
 #include "SceneTestingGrounds.h"
@@ -100,6 +102,7 @@ typedef struct SceneMapEditor {
     Label     *preview_label;
     Label     *info_labels[4];
     Button    *fill_button;
+    Button    *try_button; // Try in Area: a preset of a built area, built into one and played
     Button    *back_button;
 
     // File buttons
@@ -180,6 +183,56 @@ DEFINE_SCENE_CALLBACKS(MapEditor);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Helpers
+
+static void Editor__Message(SceneMapEditor *editor, const char *text);
+
+// Try in Area: the map is one of the game's presets that a built area is made of (a cave's room, a wilderness
+// border, ...; lvlprest.txt): that area is built with this copy of it in, and played from where it went (a few tries,
+// as the build doesn't always use every piece). The map stays here, as it was, for when you come back.
+static void Editor__TryInArea(SceneMapEditor *editor) {
+    const char *name = editor->map->name + (editor->map->name[0] == '/' || editor->map->name[0] == '\\' ? 1 : 0);
+    char        game_path[160];
+    snprintf(game_path, sizeof(game_path), "%s.ds1", name);
+    char      preset[64] = "";
+    const int level =
+        SDL_strncasecmp(name, "data", 4) == 0 ? LevelBuilder_LevelForPreset(game_path, preset, sizeof(preset)) : -1;
+    if (level < 0) {
+        Editor__Message(editor, "Try in Area: for a piece of a built area (Play tries a map alone)");
+        return;
+    }
+    char temp[4300];
+    snprintf(temp, sizeof(temp), "%s/try-in-area.ds1", AbyssConfiguration_GetConfigFolder());
+    if (!Map_SaveDS1(editor->map, temp)) {
+        Editor__Message(editor, "Could not write the copy to try");
+        return;
+    }
+    LoadingScreen_Begin("Building the area...");
+    LevelBuilder_SetOverride(game_path, temp);
+    Map *built = NULL;
+    int  tx    = 0;
+    int  ty    = 0;
+    for (int attempt = 0; attempt < 12 && built == NULL; attempt++) {
+        built = LevelBuilder_Build(level, World_LevelSeed(level) + (uint32_t)attempt * 7919u);
+        if (built != NULL && !LevelBuilder_OverrideSpot(&tx, &ty)) {
+            Map_Destroy(&built); // (it didn't use this piece: another layout)
+        }
+    }
+    LevelBuilder_SetOverride(NULL, NULL);
+    LoadingScreen_End();
+    remove(temp);
+    if (built == NULL) {
+        char text[160];
+        snprintf(text, sizeof(text), "%s: the area's builds didn't use it (its exits may not fit)", preset);
+        Editor__Message(editor, text);
+        return;
+    }
+    built->has_start = true; // (you start on it)
+    built->start_x   = ((float)tx + 0.5f) * MAP_SUBTILES;
+    built->start_y   = ((float)ty + 0.5f) * MAP_SUBTILES;
+    MapSession_ParkMap(editor->map, true);
+    MapSession_SetTryMap(built);
+    Scene_Set(SCENE_REF(TestingGrounds));
+}
 
 static void Editor__Message(SceneMapEditor *editor, const char *text) {
     snprintf(editor->message, sizeof(editor->message), "%s", text);
@@ -421,7 +474,9 @@ void *MapEditor_Create(void) {
     }
 
     editor->fill_button = Button_Create(BUTTON_TYPE_MEDIUM, "Fill Floor");
-    Button_SetPosition(editor->fill_button, PANEL_INNER_X + 38, 512);
+    Button_SetPosition(editor->fill_button, PANEL_INNER_X + 38, 498);
+    editor->try_button = Button_Create(BUTTON_TYPE_SHORT, "Try in Area");
+    Button_SetPosition(editor->try_button, PANEL_INNER_X + 35, 536);
     editor->back_button = Button_Create(BUTTON_TYPE_MEDIUM, "Back");
     Button_SetPosition(editor->back_button, PANEL_INNER_X + 38, BOTTOM_Y);
 
@@ -592,6 +647,7 @@ void MapEditor_Free(void **scene_ref) {
         Label_Destroy(&editor->info_labels[i]);
     }
     Button_Destroy(&editor->fill_button);
+    Button_Destroy(&editor->try_button);
     Button_Destroy(&editor->back_button);
     Button_Destroy(&editor->new_button);
     Button_Destroy(&editor->open_button);
@@ -1435,6 +1491,10 @@ void MapEditor_Update(void *scene_ref, const uint64_t delta) {
         editor->selected[editor->tool] = ListBox_GetSelectedIndex(editor->list);
     }
 
+    if (Button_Update(editor->try_button)) {
+        Editor__TryInArea(editor);
+        return;
+    }
     if (Button_Update(editor->fill_button)) {
         const MapTileChoice *choice = editor->tool == TOOL_FLOOR ? Editor__SelectedChoice(editor) : NULL;
         if (choice != NULL) {
@@ -1537,6 +1597,7 @@ static void Editor__DrawPanel(SceneMapEditor *editor) {
     if (editor->tool == TOOL_FLOOR) {
         Button_Draw(editor->fill_button);
     }
+    Button_Draw(editor->try_button);
     Button_Draw(editor->back_button);
 }
 

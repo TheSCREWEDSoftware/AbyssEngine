@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define EXCEL_LEVELS   "/data/global/excel/Levels.txt"
 #define EXCEL_LVLPREST "/data/global/excel/LvlPrest.txt"
@@ -535,11 +536,31 @@ static bool Builder__GetLevel(const int level_id, LevelInfo *info) {
     return true;
 }
 
+// Map Editor › Try in area: the preset being edited stands in for the game's (LevelBuilder_SetOverride), and where it
+// went is kept
+static char override_path[160] = "";
+static DS1 *override_ds1       = NULL;
+static bool override_placed    = false;
+static int  override_x         = 0;
+static int  override_y         = 0;
+
+static void Builder__Stamp(Map *map, const DS1 *ds1, const int tx, const int ty, const unsigned flags) {
+    if (ds1 == override_ds1 && override_ds1 != NULL && !override_placed) {
+        override_placed = true;
+        override_x      = tx + (ds1->width / 2);
+        override_y      = ty + (ds1->height / 2);
+    }
+    Map_StampDS1(map, ds1, tx, ty, flags);
+}
+
 static const DS1 *Builder__LoadDS1(const char *file) {
     char path[128];
     snprintf(path, sizeof(path), "data\\global\\tiles\\%s", file);
     for (char *c = path; *c != '\0'; c++) {
         *c = *c == '/' ? '\\' : *c;
+    }
+    if (override_ds1 != NULL && Builder__SameName(override_path, path)) {
+        return override_ds1;
     }
     for (int i = 0; i < ds1_cache_count; i++) {
         if (Builder__SameName(ds1_cache[i].path, path)) {
@@ -585,6 +606,12 @@ static bool Rng_Chance(Rng *rng, const int percent) { return Rng_Below(rng, 100)
 static const DS1 *Builder__PickFile(Rng *rng, const Preset *preset) {
     if (preset == NULL || preset->file_count == 0) {
         return NULL;
+    }
+    for (int i = 0; i < preset->file_count && override_ds1 != NULL; i++) {
+        const DS1 *ds1 = Builder__LoadDS1(preset->files[i]);
+        if (ds1 == override_ds1) {
+            return ds1; // (the one being tried, whichever of the preset's files it is)
+        }
     }
     const int first = Rng_Below(rng, preset->file_count);
     for (int i = 0; i < preset->file_count; i++) {
@@ -667,7 +694,7 @@ static void Builder__StampGround(Map *map, const DS1 *source, const DS1Cell *gro
     for (int c = 0; c < block.width * block.height; c++) {
         block.floors[0][c] = *ground;
     }
-    Map_StampDS1(map, &block, tx, ty, MAP_STAMP_FILLED_ONLY);
+    Builder__Stamp(map, &block, tx, ty, MAP_STAMP_FILLED_ONLY);
     free(block.floors[0]);
     free(block.shadows);
 }
@@ -941,7 +968,7 @@ static void Builder__StampCluster(Map *map, const Cluster *cluster, const int tx
         }
         part.shadows[d] = src->shadows[c];
     }
-    Map_StampDS1(map, &part, tx, ty, MAP_STAMP_FILLED_ONLY);
+    Builder__Stamp(map, &part, tx, ty, MAP_STAMP_FILLED_ONLY);
     for (int w = 0; w < part.wall_layer_count; w++) {
         free(part.walls[w]);
     }
@@ -1064,7 +1091,7 @@ static bool Builder__PlacePiece(Map *map, Grid *grid, Rng *rng, const Preset *pr
         const int y = 1 + Rng_Below(rng, grid->height - 1 - h);
         if (Grid__Free(grid, x, y, w, h)) {
             Grid__Take(grid, x, y, w, h);
-            Map_StampDS1(map, ds1, x * cell, y * cell, 0);
+            Builder__Stamp(map, ds1, x * cell, y * cell, 0);
             if (placed != NULL) {
                 *placed    = ds1;
                 *placed_tx = x * cell;
@@ -1255,7 +1282,7 @@ static void Builder__Decorate(Map *map, const Grid *grid, const LevelInfo *level
             const int x = (free_x[next] * cell) + (cell - ds1->width + 1) / 2;
             const int y = (free_y[next] * cell) + (cell - ds1->height + 1) / 2;
             next++;
-            Map_StampDS1(map, ds1, x, y, MAP_STAMP_FILLED_ONLY | MAP_STAMP_NO_MONSTERS);
+            Builder__Stamp(map, ds1, x, y, MAP_STAMP_FILLED_ONLY | MAP_STAMP_NO_MONSTERS);
         }
     }
 
@@ -1398,13 +1425,13 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
             if (shapes[y][x] > 0) {
                 const DS1 *piece = Builder__Border(&borders, rng, shapes[y][x]);
                 if (piece != NULL) {
-                    Map_StampDS1(map, piece, x * cell, y * cell, MAP_STAMP_NO_MONSTERS);
+                    Builder__Stamp(map, piece, x * cell, y * cell, MAP_STAMP_NO_MONSTERS);
                 }
             } else if (shapes[y][x] <= -2) {
                 // The border piece with a path through it where there is one, plain ground otherwise
                 const DS1 *piece = borders.openings[-2 - shapes[y][x]];
                 if (piece != NULL) {
-                    Map_StampDS1(map, piece, x * cell, y * cell, MAP_STAMP_NO_ENTITIES);
+                    Builder__Stamp(map, piece, x * cell, y * cell, MAP_STAMP_NO_ENTITIES);
                 } else {
                     Builder__StampGround(map, ground_source, &ground, x * cell, y * cell, cell, cell);
                 }
@@ -1854,7 +1881,7 @@ static Map *Builder__BuildMaze(const MazeArea *maze, const LevelInfo *level, Rng
         const int tx = (rooms[i].gx - min_x) * room_w;
         const int ty = (rooms[i].gy - min_y) * room_h;
         // Rooms share their edge row; later rooms must not wipe a neighbour's walls with empty cells
-        Map_StampDS1(map, ds1, tx, ty, MAP_STAMP_FILLED_ONLY);
+        Builder__Stamp(map, ds1, tx, ty, MAP_STAMP_FILLED_ONLY);
         const int target = (i == 0 && warp_count > 0)         ? warp_targets[0]
                            : (i == exit_at && warp_count > 1) ? warp_targets[1]
                                                               : 0;
@@ -1989,7 +2016,7 @@ static Map *Builder__BuildStrips(const LevelInfo *level, Rng *rng) {
     Map *map = Map_CreateEmpty((count * strip) + 1, height, level->act);
     snprintf(map->name, sizeof(map->name), "%s", level->name);
     for (int i = 0; i < count; i++) {
-        Map_StampDS1(map, strips[i], (count - 1 - i) * strip, offsets[i] - low, i == 0 ? 0 : MAP_STAMP_FILLED_ONLY);
+        Builder__Stamp(map, strips[i], (count - 1 - i) * strip, offsets[i] - low, i == 0 ? 0 : MAP_STAMP_FILLED_ONLY);
     }
     const int sub_w = map->width * MAP_SUBTILES;
     map->has_start  = true;
@@ -2041,7 +2068,7 @@ static const DS1 *Builder__StampPiece(Map *map, Rng *rng, const char *name, cons
         LOG_WARN("%s: no piece '%s'", map->name, name);
         return NULL;
     }
-    Map_StampDS1(map, ds1, tx, ty, MAP_STAMP_FILLED_ONLY);
+    Builder__Stamp(map, ds1, tx, ty, MAP_STAMP_FILLED_ONLY);
     return ds1;
 }
 
@@ -2188,6 +2215,7 @@ Map *LevelBuilder_Build(const int level_id, uint32_t seed) {
     }
     Rng rng = {seed != 0 ? seed : 0x9E3779B9u};
     LOG_INFO("Building %s (seed %u)", level.name, seed);
+    override_placed = false;
 
     Map *map = NULL;
     if (level_id == STRIP_LEVEL_ID) {
@@ -2245,4 +2273,80 @@ void LevelBuilder_Release(void) {
     DataTable_Destroy(&levels_table);
     DataTable_Destroy(&maze_table);
     DataTable_Destroy(&monstats_table);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Map Editor › Try in area
+
+void LevelBuilder_SetOverride(const char *game_path, const char *disk_file) {
+    DS1_Destroy(&override_ds1);
+    override_path[0] = '\0';
+    override_placed  = false;
+    if (game_path == NULL || disk_file == NULL) {
+        return;
+    }
+    override_ds1 = DS1_LoadDiskFile(disk_file);
+    if (override_ds1 != NULL) {
+        snprintf(override_path, sizeof(override_path), "%s", game_path);
+        for (char *c = override_path; *c != '\0'; c++) {
+            *c = *c == '/' ? '\\' : *c;
+        }
+    }
+}
+
+bool LevelBuilder_OverrideSpot(int *tile_x, int *tile_y) {
+    *tile_x = override_x;
+    *tile_y = override_y;
+    return override_placed;
+}
+
+int LevelBuilder_LevelForPreset(const char *game_path, char *preset_name, const size_t size) {
+    Builder__LoadTables();
+    // lvlprest.txt's row with that file ("data\global\tiles\Act1\Caves\CaveNE1.ds1")
+    const char *file = game_path;
+    if (strncasecmp(file, "data\\global\\tiles\\", 18) == 0 || strncasecmp(file, "data/global/tiles/", 18) == 0) {
+        file += 18;
+    }
+    const Preset *found = NULL;
+    for (int i = 0; i < preset_count && found == NULL; i++) {
+        for (int f = 0; f < presets[i].file_count && found == NULL; f++) {
+            found = Builder__SameName(presets[i].files[f], file) ? &presets[i] : NULL;
+        }
+    }
+    if (found == NULL) {
+        return -1;
+    }
+    if (preset_name != NULL) {
+        snprintf(preset_name, size, "%s", found->name);
+    }
+    const char *name = found->name;
+    // A maze's room, its first or last room or its other dead end
+    for (size_t m = 0; m < sizeof(maze_areas) / sizeof(maze_areas[0]); m++) {
+        const MazeArea *area = &maze_areas[m];
+        const size_t    n    = strlen(area->family);
+        if ((strncasecmp(name, area->family, n) == 0 && name[n] == ' ') ||
+            (area->entry != NULL && strncasecmp(name, area->entry, strlen(area->entry)) == 0) ||
+            (area->exit != NULL && strncasecmp(name, area->exit, strlen(area->exit)) == 0) ||
+            (area->special != NULL && strncasecmp(name, area->special, strlen(area->special)) == 0)) {
+            return area->level_id;
+        }
+    }
+    // An outdoor area's border, landmark or filler
+    for (size_t o = 0; o < sizeof(outdoor_areas) / sizeof(outdoor_areas[0]); o++) {
+        const OutdoorArea *area = &outdoor_areas[o];
+        if (area->borders != NULL && strncasecmp(name, area->borders, strlen(area->borders)) == 0) {
+            return area->level_id;
+        }
+        for (int k = 0; k < 10 && area->landmarks[k] != NULL; k++) {
+            if (strcasecmp(name, area->landmarks[k]) == 0) {
+                return area->level_id;
+            }
+        }
+        for (int k = 0; k < 24 && area->fills[k] != NULL; k++) {
+            if (strcasecmp(name, area->fills[k]) == 0) {
+                return area->level_id;
+            }
+        }
+    }
+    return -1;
 }

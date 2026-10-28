@@ -15,6 +15,9 @@ void       MapSession_ParkMap(Map *map, bool playtest);
 Map       *MapSession_TakeMap(void);
 const Map *MapSession_PeekMap(void);
 bool       MapSession_IsPlaytest(void); // Testing Grounds was opened from the editor
+// Try in area: a built area with the edited preset in it, played instead of the parked map (which stays the editor's)
+void MapSession_SetTryMap(Map *map);
+Map *MapSession_TakeTryMap(void); // (the taker owns it)
 
 // Frees everything (back at the main menu).
 void MapSession_Release(void);

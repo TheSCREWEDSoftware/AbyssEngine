@@ -64,6 +64,11 @@ The monsters, NPCs and players for **Units** are loaded when the editor opens (u
   (a saved game area comes back exactly as it was).
 - **Play**: try the map in the Testing Grounds right away. **Back** there returns to the editor with your map as you
   left it (its file and its undo history too).
+- **Try in Area** (right, above Back): for one of the game's presets that a built area is made of (a cave's room, the
+  Den of Evil's last room, a wilderness border or filler; `lvlprest.txt` says which), the area is built with your copy
+  of it in place of the game's and played in the Testing Grounds, starting on it. A build doesn't always use every
+  piece, so it tries a few layouts; if none fits (its exits don't match any room the area needs) it says so. **Back**
+  returns to the editor with your map as it was.
 - **Back** (or **Esc**) asks first: with unsaved changes it offers **Save** (into the map's file, or asks for a name),
   **Leave** (lose them) or **Cancel**; otherwise "Return to the main menu?".
 

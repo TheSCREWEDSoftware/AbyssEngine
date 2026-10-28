@@ -457,7 +457,8 @@ typedef struct SceneRoam {
     bool            free_roam; // Free Roam, or the game (both travel between the game's areas)
     bool            game;      // Single Player: the character from Character_Current(), real combat and levels
     Map            *map;
-    bool            borrowed; // the editor's map (play-test): not ours to free
+    bool            borrowed;    // the editor's map (play-test): not ours to free
+    bool            from_editor; // play-testing from the Map Editor (its map, or Try in Area's): Back goes there
     MapRenderer    *renderer;
     MapUnits       *units_cache; // figures
     MapCamera       camera;
@@ -3800,9 +3801,15 @@ static void *Roam__Create(const bool free_roam, const bool game) {
         Roam__Teleport(roam, start);
     }
     if (roam->map == NULL) {
-        if (!free_roam && MapSession_IsPlaytest() && MapSession_PeekMap() != NULL) {
-            roam->map      = (Map *)MapSession_PeekMap();
-            roam->borrowed = true;
+        Map *tried = !free_roam && MapSession_IsPlaytest() ? MapSession_TakeTryMap() : NULL;
+        if (tried != NULL) {
+            roam->map         = tried; // (Map Editor › Try in area: ours, gone with us)
+            roam->borrowed    = false;
+            roam->from_editor = true;
+        } else if (!free_roam && MapSession_IsPlaytest() && MapSession_PeekMap() != NULL) {
+            roam->map         = (Map *)MapSession_PeekMap();
+            roam->borrowed    = true;
+            roam->from_editor = true;
         } else {
             char path[4200];
             if (!free_roam) {
@@ -6898,7 +6905,7 @@ static void Roam__Leave(SceneRoam *roam) {
         }
         Roam__ExitGame(roam);
     } else {
-        Scene_Set(roam->borrowed ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
+        Scene_Set(roam->from_editor ? SCENE_REF(MapEditor) : SCENE_REF(MainMenu));
     }
 }
 
@@ -6907,7 +6914,7 @@ enum { ROAM_ASK_LEAVE, ROAM_ASK_NEW_SEED, ROAM_ASK_ENTER };
 // Free Roam and Testing Grounds ask before leaving (Back, or Leave in the menu)
 static void Roam__AskLeave(SceneRoam *roam) {
     roam->question = ROAM_ASK_LEAVE;
-    if (roam->borrowed) {
+    if (roam->from_editor) {
         ConfirmDialog_Open(roam->confirm, "Back to the Map Editor", "Stop play-testing and go back to the editor?",
                            "Yes", "No", NULL);
     } else {
@@ -8209,7 +8216,7 @@ static void Roam__Render(SceneRoam *roam) {
         }
         snprintf(status, sizeof(status),
                  "%s%s   %s   %d units (%d NPCs, %d alive)   combat %s   light: %s%s   speed %.1f/s (%.0f px/s)",
-                 Roam__AreaName(roam), roam->borrowed ? " (play-test)" : "", player_classes[roam->player_class][0],
+                 Roam__AreaName(roam), roam->from_editor ? " (play-test)" : "", player_classes[roam->player_class][0],
                  roam->unit_count, npcs, alive, combat_enabled ? "ON" : "off", light_levels[light_level].name, seed,
                  (double)roam->speed, (double)roam->screen_speed);
     }
