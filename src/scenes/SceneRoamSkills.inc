@@ -2061,7 +2061,34 @@ static void Roam__UpdateCast(SceneRoam *roam, const uint64_t now) {
     const int frames = figure != NULL ? Figure_GetFramesPerDirection(figure) : 1;
     if (!roam->cast_fired && player->frame >= frames / 2) {
         Roam__ApplyCast(roam, now);
+        roam->channel_next = now + 250;
+        return;
     }
+    // Channelled (Inferno, Arctic Blast): while the button's held, the flames keep coming, the animation holding on
+    // its middle, its mana per frame (skills.txt mana is a frame's) until it runs out
+    const SkillRow *s = roam->cast_skill;
+    if (s == NULL || s->do_func != 19 || !roam->cast_fired || !roam->channel_held) {
+        return;
+    }
+    if (player->frame >= frames - 1) {
+        player->frame = frames / 2;
+    }
+    if (now < roam->channel_next) {
+        return;
+    }
+    // A frame's mana in 256ths, scaled by 2^manashift (minmana is only what it takes to start); a burst is 6.25 frames
+    const int   raw  = s->mana + (s->level_mana * (roam->cast_level > 1 ? roam->cast_level - 1 : 0));
+    const float cost = ldexpf((float)raw, s->mana_shift - 8) * 6.25f;
+    if (roam->mana < cost) {
+        roam->channel_held = false;
+        return;
+    }
+    roam->mana         -= cost;
+    roam->channel_next  = now + 250;
+    roam->cast_x        = roam->channel_x;
+    roam->cast_y        = roam->channel_y;
+    Roam__TurnTowards(&player->turn, player->x, player->y, roam->cast_x, roam->cast_y);
+    Roam__ApplyCast(roam, now);
 }
 
 // Auras' pulses and the storms' strikes: Prayer heals, Holy Fire / Freeze / Shock hurt what's near, Sanctuary hurts

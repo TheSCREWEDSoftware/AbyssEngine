@@ -546,6 +546,10 @@ typedef struct SceneRoam {
     uint64_t last_allies;   // our summons last sent at
     int      attack_other;  // PvP: the player being attacked (their id), 0 = none
     uint64_t storm_next;    // Thunder Storm's next bolt
+    // A channelled skill (Inferno, Arctic Blast): the right button still held, where the mouse is, the next burst
+    bool     channel_held;
+    float    channel_x, channel_y;
+    uint64_t channel_next;
     // Grim Wards: corpses turned into totems the monsters run from, while they last
     struct {
         float    x, y, radius;
@@ -6978,7 +6982,10 @@ static void Roam__Update(SceneRoam *roam) {
     const bool stand_still = Controls_Held(ACTION_STAND_STILL);
 
     // Single Player: the right skill (held down: again and again), and the left one at a monster or with Shift
-    bool used_skill = false;
+    bool used_skill    = false;
+    roam->channel_held = right && over_view && !roam->ui_owns_press;
+    roam->channel_x    = sub_x;
+    roam->channel_y    = sub_y;
     if (roam->game && over_view && Roam__IsAlive(&roam->player) && roam->player.state != UNIT_CAST &&
         now >= roam->next_cast) {
         const bool at_monster = roam->hovered >= 0 && Roam__IsCombatant(&roam->units[roam->hovered]) &&
