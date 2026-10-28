@@ -18,5 +18,6 @@ target_sources(${PROJECT_NAME}
         Settings.c Settings.h
         Skills.c Skills.h
         SkillData.c SkillData.h
+        SkillReport.c SkillReport.h
         MissileData.c MissileData.h
 )

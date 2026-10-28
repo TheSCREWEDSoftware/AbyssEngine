@@ -17,6 +17,7 @@
 #include "game/Controls.h"
 #include "game/ControlsExport.h"
 #include "game/Settings.h"
+#include "game/SkillReport.h"
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
 #include "managers/VideoManager.h"
@@ -55,6 +56,8 @@ static void Main__Usage(void) {
            "                                       character, or a new one of class N: 0 Amazon .. 6 Assassin;\n"
            "                                       no NAME: the last one played). Keys: wasd move, f fight, u use,\n"
            "                                       g pick up, 1-4 potions, t town, Q quit\n"
+           "  AbyssEngine --skill-report FILE      every skill's numbers at levels 1 to 20 into FILE, and a check of\n"
+           "                                       the well known ones against the game's (exit code 1 if any differ)\n"
            "  AbyssEngine --editor [MAP]           the Map Editor on its own (MAP: one of yours, by name or .abm\n"
            "                                       file, or one of the game's, \"act1/town/townN1.ds1\")\n"
            "  AbyssEngine --extract DIR            copy the game's data out of the MPQs into DIR: the tables\n"
@@ -390,6 +393,7 @@ int main(int argc, char **argv) {
     int         server_port    = 0;
     bool        text_mode      = false;
     const char *extract_folder = NULL;
+    const char *skill_report   = NULL;
     bool        extract_small  = false;
     const char *text_name      = NULL;
     int         text_class     = CHARACTER_BARBARIAN;
@@ -403,6 +407,9 @@ int main(int argc, char **argv) {
             }
         } else if (strcmp(argv[a], "--export-controls") == 0 && a + 1 < argc) {
             export_folder = argv[++a];
+        } else if (strcmp(argv[a], "--skill-report") == 0 && a + 1 < argc) {
+            skill_report = argv[++a];
+            dedicated    = true; // (no window: just the data)
         } else if (strcmp(argv[a], "--server") == 0) {
             dedicated = true;
         } else if (strcmp(argv[a], "--port") == 0 && a + 1 < argc) {
@@ -432,6 +439,9 @@ int main(int argc, char **argv) {
         SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
         SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
         Log_SetConsole(false); // the log file keeps the lines
+    }
+    if (skill_report != NULL) {
+        Log_SetConsole(false); // (just the line at the end)
     }
     if (extract_folder != NULL) {
         SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
@@ -528,6 +538,9 @@ int main(int argc, char **argv) {
     LOG_DEBUG("Loading game strings...");
     StringTable_InitializeSingleton("eng");
 
+    if (skill_report != NULL) {
+        return SkillReport_Write(skill_report) == 0 ? 0 : 1;
+    }
     if (dedicated) {
         return Main__DedicatedServer(server_port); // the game's data tables, no window
     }

@@ -79,6 +79,7 @@ sources = [
     'game/Settings.c',
     'game/Skills.c',
     'game/SkillData.c',
+    'game/SkillReport.c',
     'game/MissileData.c',
 
     'drawing/Button.c',
