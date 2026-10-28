@@ -185,7 +185,7 @@ static void MapRenderer__Insert(MapRenderer *renderer, const DT1Tile *tile, SDL_
 }
 
 static SDL_Texture *MapRenderer__Texture(MapRenderer *renderer, const Map *map, const DT1Tile *tile) {
-    const Palette *palette = Palette_Get(MapView_ActPalette(map->act));
+    const Palette *palette = Palette_Get(MapView_ActPalette(map->palette >= 0 ? map->palette : map->act));
     if (palette != renderer->palette) {
         MapRenderer_ClearCache(renderer);
         renderer->palette = palette;

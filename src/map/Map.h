@@ -72,7 +72,8 @@ typedef struct Map {
     char     name[64];
     int      width;
     int      height;
-    int      act; // 0..4, picks the palette
+    int      act;     // 0..4, picks the palette (and the presets' tables)
+    int      palette; // a palette other than the act's (Levels.txt Pal: Act 5's lava areas use Act 4's), -1 none
     int      dt1_count;
     char    *dt1_paths[MAP_MAX_DT1];
     DT1     *dt1s[MAP_MAX_DT1];

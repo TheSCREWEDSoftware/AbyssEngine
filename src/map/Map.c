@@ -279,6 +279,7 @@ static Map *Map__Allocate(const int width, const int height, const int wall_laye
     FAIL_IF_NULL(map);
     map->width             = width;
     map->height            = height;
+    map->palette           = -1;
     map->wall_layer_count  = wall_layers;
     map->floor_layer_count = floor_layers;
 

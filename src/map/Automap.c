@@ -296,13 +296,14 @@ void Automap_SetArea(Automap *automap, const Map *map, const int level_id, const
     if (automap->dc6 == NULL) {
         automap->dc6 = DC6_Load(AUTOMAP_DC6);
     }
-    if (automap->texture_act != map->act) {
+    const int act = map->palette >= 0 ? map->palette : map->act; // (its colours)
+    if (automap->texture_act != act) {
         Automap__FreeTextures(automap);
         if (automap->dc6 != NULL) {
             automap->texture_count = (int)DC6_GetTotalFrameCount(automap->dc6);
             automap->textures      = calloc((size_t)automap->texture_count, sizeof(SDL_Texture *));
             FAIL_IF_NULL(automap->textures);
-            automap->texture_act = map->act;
+            automap->texture_act = act;
         }
     }
 }
