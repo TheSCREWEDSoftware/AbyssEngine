@@ -26,6 +26,7 @@ typedef struct ObjectInfo {
     bool lockable;           // can be locked (chests): a key opens it
     int  trap_prob;          // percent chance it's trapped
     const char *idle_mode;   // how it starts: "on" for torches and fires (lit), otherwise "nu"
+    const char *loop_sound;  // what it sounds like all the time (a torch, a river), NULL nothing
     int         automap; // its mark on the automap (objects.txt AutoMap): a piece of the act's MaxiMap.dc6, 0 = none
 } ObjectInfo;
 

@@ -32,9 +32,10 @@ typedef struct AudioManager {
     float               volume[AUDIO_SET_VOLUME_TYPE_MAX];
     float               volume_actual[AUDIO_SET_VOLUME_TYPE_MAX];
     AudioVoice          voices[AUDIO_MAX_VOICES];
-    AudioVoice          speech;   // one line of speech at a time (NPCs), at the speech volume
-    AudioVoice          ambience; // the area's background loop, at the sound effects' volume
-    AudioVoice          weather;  // rain, over the ambience
+    AudioVoice          speech;                  // one line of speech at a time (NPCs), at the speech volume
+    AudioVoice          ambience;                // the area's background loop, at the sound effects' volume
+    AudioVoice          weather;                 // rain, over the ambience
+    AudioVoice          spots[AUDIO_SPOT_LOOPS]; // things near you that sound all the time (torches, rivers)
 } AudioManager;
 
 AudioManager *audio_manager;
@@ -86,6 +87,21 @@ void AudioManager_FillBuffer(void *userdata, Uint8 *stream, int len) {
                                 manager->ambience.volume * volume_sfx);
             if (++manager->ambience.position >= manager->ambience.sound->frame_count * 2) {
                 manager->ambience.position = 0;
+            }
+        }
+
+        // Things near you that sound all the time (a torch, a river), panned like the sound effects
+        for (int s = 0; s < AUDIO_SPOT_LOOPS; s++) {
+            AudioVoice *spot = &manager->spots[s];
+            if (spot->sound != NULL) {
+                float volume = spot->volume * volume_sfx;
+                if ((spot->position & 1) == 0 ? spot->pan > 0.0f : spot->pan < 0.0f) {
+                    volume *= 1.0f - fabsf(spot->pan);
+                }
+                sample += (int32_t)((float)spot->sound->samples[spot->position] * volume);
+                if (++spot->position >= spot->sound->frame_count * 2) {
+                    spot->position = 0;
+                }
             }
         }
 
@@ -356,6 +372,21 @@ void AudioManager_PlayWeather(const SoundEffect *sound, const float volume) {
     SDL_UnlockAudioDevice(audio_manager->audio_device_id);
 }
 
+void AudioManager_PlaySpot(const int slot, const SoundEffect *sound, const float volume, const float pan) {
+    if (audio_manager == NULL || !audio_manager->audio_available || slot < 0 || slot >= AUDIO_SPOT_LOOPS) {
+        return;
+    }
+    SDL_LockAudioDevice(audio_manager->audio_device_id);
+    AudioVoice *spot = &audio_manager->spots[slot];
+    if (spot->sound != sound) {
+        spot->sound    = sound != NULL && sound->frame_count > 0 ? sound : NULL;
+        spot->position = 0;
+    }
+    spot->volume = volume;
+    spot->pan    = pan < -1.0f ? -1.0f : (pan > 1.0f ? 1.0f : pan);
+    SDL_UnlockAudioDevice(audio_manager->audio_device_id);
+}
+
 void AudioManager_StopSounds(void) {
     if (audio_manager == NULL) {
         return;
@@ -369,6 +400,9 @@ void AudioManager_StopSounds(void) {
     audio_manager->speech.sound   = NULL;
     audio_manager->ambience.sound = NULL;
     audio_manager->weather.sound  = NULL;
+    for (int s = 0; s < AUDIO_SPOT_LOOPS; s++) {
+        audio_manager->spots[s].sound = NULL;
+    }
     if (audio_manager->audio_available) {
         SDL_UnlockAudioDevice(audio_manager->audio_device_id);
     }

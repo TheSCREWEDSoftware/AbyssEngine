@@ -3319,6 +3319,54 @@ static void Roam__ArrivalSpot(const Map *map, const float x, const float y, floa
     }
 }
 
+// What's near you that sounds all the time (torches and braziers burning, fires, rivers, fountains, a bubbling pool,
+// flies): the nearest of each kind, up to four kinds, each from where it is
+static void Roam__SpotSounds(SceneRoam *roam) {
+    const char *names[AUDIO_SPOT_LOOPS] = {NULL};
+    float       dx[AUDIO_SPOT_LOOPS];
+    float       dy[AUDIO_SPOT_LOOPS];
+    float       best[AUDIO_SPOT_LOOPS];
+    int         count = 0;
+    for (int i = 0; i < roam->unit_count && roam->game; i++) {
+        const Unit *unit = &roam->units[i];
+        const char *loop = unit->is_object ? unit->object.loop_sound : NULL;
+        if (loop == NULL || unit->vanished) {
+            continue;
+        }
+        const float ux = unit->x - roam->player.x;
+        const float uy = unit->y - roam->player.y;
+        const float d  = sqrtf((ux * ux) + (uy * uy));
+        int         s  = 0;
+        while (s < count && strcmp(names[s], loop) != 0) {
+            s++;
+        }
+        if (s == count) {
+            if (count == AUDIO_SPOT_LOOPS) {
+                int far = 0; // (full: the furthest kind gives way)
+                for (int k = 1; k < count; k++) {
+                    far = best[k] > best[far] ? k : far;
+                }
+                if (d >= best[far]) {
+                    continue;
+                }
+                s = far;
+            } else {
+                count++;
+            }
+            names[s] = loop;
+            best[s]  = 1e9f;
+        }
+        if (d < best[s]) {
+            best[s] = d;
+            dx[s]   = ux;
+            dy[s]   = uy;
+        }
+    }
+    for (int s = 0; s < AUDIO_SPOT_LOOPS; s++) {
+        Sounds_PlaySpot(s, s < count ? names[s] : NULL, s < count ? dx[s] : 0.0f, s < count ? dy[s] : 0.0f);
+    }
+}
+
 // Outdoors after dusk the area has its night sounds (SoundEnviron.txt's Night Ambience / Night Event)
 static bool Roam__NightSounds(const SceneRoam *roam) { return !roam->atmosphere.inside && Roam__Night() >= 0.5f; }
 
@@ -3345,6 +3393,7 @@ static void Roam__AmbientEvents(SceneRoam *roam, const uint64_t now) {
     if (roam->game && !roam->online) {
         Roam__RechargeShrines(roam, now);
     }
+    Roam__SpotSounds(roam);
     // The rain's sound, as loud as the shower is heavy (snow falls quietly)
     const float rain = roam->atmosphere.snow ? 0.0f : Roam__WeatherLevel(roam, SDL_GetTicks64()); // (as drawn)
     Sounds_PlayWeather(rain > 0.02f ? "scene_rain" : NULL, rain);
@@ -3742,7 +3791,10 @@ static void Roam__Free(void **scene_ref) {
         free(roam->shops[s]);
     }
     free(roam->gamble);
-    Sounds_PlayAmbience(NULL); // (the area's background stops with the game)
+    Sounds_PlayAmbience(NULL); // (the area's background stops with the game, and the torches' and rivers')
+    for (int s = 0; s < AUDIO_SPOT_LOOPS; s++) {
+        Sounds_PlaySpot(s, NULL, 0.0f, 0.0f);
+    }
     Sounds_PlayWeather(NULL, 0.0f);
     free(roam->trade);
     roam->shop_count = 0;

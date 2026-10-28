@@ -30,6 +30,9 @@ void Sounds_StopSpeech(void);
 // The area's background loop (sounds.txt name; NULL or "": none)
 void Sounds_PlayAmbience(const char *name);
 // Rain over it (sounds.txt name; NULL, "" or loudness 0: none), loudness 0 to 1 as the shower comes and goes
+// A loop of something near you (a torch, a river) in one of the spot slots (AUDIO_SPOT_LOOPS), as loud as it is near
+// and from its side; NULL (or too far) stops that slot. Called every so often with where it is now
+void Sounds_PlaySpot(int slot, const char *name, float dx, float dy);
 void Sounds_PlayWeather(const char *name, float loudness);
 // The name of a monster's sound (monstats.txt "MonSound" -> MonSounds.txt), NULL if it has none
 const char *Sounds_MonsterSound(const char *monstats_id, MonsterSound which);

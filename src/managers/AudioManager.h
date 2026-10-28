@@ -32,6 +32,9 @@ void AudioManager_StopSpeech(void);
 // The area's background loop (NULL: none); the same one again keeps playing where it is
 void AudioManager_PlayAmbience(const SoundEffect *sound, float volume);
 void AudioManager_PlayWeather(const SoundEffect *sound, float volume); // rain: a second loop (NULL stops it)
+// Loops of things near you (a torch, a river): slot 0..AUDIO_SPOT_LOOPS-1, NULL stops it
+#define AUDIO_SPOT_LOOPS 4
+void AudioManager_PlaySpot(int slot, const SoundEffect *sound, float volume, float pan);
 
 int                 AudioManager_GetOutputRate(void); // 0 when there's no audio device
 SDL_AudioSpec       AudioManager_GetAudioSpec(void);

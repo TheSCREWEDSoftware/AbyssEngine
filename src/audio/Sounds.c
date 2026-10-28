@@ -190,6 +190,24 @@ void Sounds_PlayWeather(const char *name, const float loudness) {
 
 static bool Sounds__Play(const char *name, SoundKind kind, float loudness, float pan);
 
+void Sounds_PlaySpot(const int slot, const char *name, const float dx, const float dy) {
+    const int   row      = name != NULL && name[0] != '\0' ? Sounds__FindRow(name) : -1;
+    const int   rate     = AudioManager_GetOutputRate();
+    const float distance = sqrtf((dx * dx) + (dy * dy));
+    if (row < 0 || rate <= 0 || distance >= SOUND_SILENT_DISTANCE || (load_rate != 0 && load_rate != rate)) {
+        AudioManager_PlaySpot(slot, NULL, 0.0f, 0.0f);
+        return;
+    }
+    float loudness = 1.0f;
+    if (distance > SOUND_FULL_DISTANCE) {
+        loudness = 1.0f - ((distance - SOUND_FULL_DISTANCE) / (SOUND_SILENT_DISTANCE - SOUND_FULL_DISTANCE));
+    }
+    load_rate                 = rate;
+    const SoundEffect *effect = Sounds__Effect(row, rate);
+    const int volume = DataTable_HasValue(sounds, row, c_volume) ? DataTable_GetInt(sounds, row, c_volume) : 255;
+    AudioManager_PlaySpot(slot, effect, (float)volume / 255.0f * 0.6f * loudness, ((dx - dy) * 16.0f / 400.0f) * 0.75f);
+}
+
 bool Sounds_Play(const char *name, const SoundKind kind) { return Sounds__Play(name, kind, 1.0f, 0.0f); }
 
 bool Sounds_PlayAt(const char *name, const SoundKind kind, const float dx, const float dy) {

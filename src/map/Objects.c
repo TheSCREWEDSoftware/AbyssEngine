@@ -40,6 +40,39 @@ static int        c_lockable;
 static int        c_trap;
 static int        c_parm[OBJECT_PARMS];
 static int        c_automap;
+static int        c_description;
+
+// The sound an object makes all the time (sounds.txt object_*_loop), from what objects.txt's description says it is:
+// torches and braziers burn, fires crackle, rivers and fountains run, a pool of blood bubbles, flies buzz
+static const char *Objects__LoopSound(const char *description) {
+    char text[128];
+    snprintf(text, sizeof(text), "%s", description != NULL ? description : "");
+    for (char *c = text; *c != '\0'; c++) {
+        *c = (char)tolower((unsigned char)*c);
+    }
+    if (strstr(text, "torch") != NULL) {
+        return "object_fire_loop_torch";
+    }
+    if (strstr(text, "brazier") != NULL) {
+        return strstr(text, "hell") != NULL ? "object_fire_loop_hellbrazier" : "object_fire_loop_brazier";
+    }
+    if (strstr(text, "bonfire") != NULL || strncmp(text, "fire ", 5) == 0 || strstr(text, "burning") != NULL) {
+        return "object_fire_loop_house";
+    }
+    if (strstr(text, "river") != NULL || strstr(text, "waterfall") != NULL) {
+        return "object_river";
+    }
+    if (strstr(text, "fountain") != NULL && strstr(text, "well") == NULL) {
+        return "object_fountain";
+    }
+    if (strstr(text, "bubbl") != NULL) {
+        return "object_bubbles";
+    }
+    if (strstr(text, "flies") != NULL) {
+        return "object_flies_loop";
+    }
+    return NULL;
+}
 
 static void Objects__Load(void) {
     if (loaded) {
@@ -50,17 +83,18 @@ static void Objects__Load(void) {
     if (objects == NULL) {
         return;
     }
-    c_id         = DataTable_GetColumnIndex(objects, "Id");
-    c_name       = DataTable_GetColumnIndex(objects, "Name");
-    c_token      = DataTable_GetColumnIndex(objects, "Token");
-    c_size_x     = DataTable_GetColumnIndex(objects, "SizeX");
-    c_size_y     = DataTable_GetColumnIndex(objects, "SizeY");
-    c_selectable = DataTable_GetColumnIndex(objects, "Selectable0");
-    c_is_door    = DataTable_GetColumnIndex(objects, "IsDoor");
-    c_cycle_on   = DataTable_GetColumnIndex(objects, "CycleAnim2");
-    c_operate    = DataTable_GetColumnIndex(objects, "OperateFn");
-    c_lockable   = DataTable_GetColumnIndex(objects, "Lockable");
-    c_trap       = DataTable_GetColumnIndex(objects, "TrapProb");
+    c_id          = DataTable_GetColumnIndex(objects, "Id");
+    c_name        = DataTable_GetColumnIndex(objects, "Name");
+    c_description = DataTable_GetColumnIndex(objects, "description - not loaded");
+    c_token       = DataTable_GetColumnIndex(objects, "Token");
+    c_size_x      = DataTable_GetColumnIndex(objects, "SizeX");
+    c_size_y      = DataTable_GetColumnIndex(objects, "SizeY");
+    c_selectable  = DataTable_GetColumnIndex(objects, "Selectable0");
+    c_is_door     = DataTable_GetColumnIndex(objects, "IsDoor");
+    c_cycle_on    = DataTable_GetColumnIndex(objects, "CycleAnim2");
+    c_operate     = DataTable_GetColumnIndex(objects, "OperateFn");
+    c_lockable    = DataTable_GetColumnIndex(objects, "Lockable");
+    c_trap        = DataTable_GetColumnIndex(objects, "TrapProb");
     for (int p = 0; p < OBJECT_PARMS; p++) {
         char column[8];
         snprintf(column, sizeof(column), "Parm%d", p);
@@ -121,6 +155,7 @@ bool Objects_Get(const int row, ObjectInfo *info) {
     }
     info->token[length] = '\0';
     info->name          = DataTable_GetString(objects, row, c_name);
+    info->loop_sound    = Objects__LoopSound(DataTable_GetString(objects, row, c_description));
     info->size_x        = DataTable_GetInt(objects, row, c_size_x);
     info->size_y        = DataTable_GetInt(objects, row, c_size_y);
     info->selectable    = DataTable_GetInt(objects, row, c_selectable) != 0;
