@@ -74,7 +74,7 @@ static void Roam__AddSkillStat(Character *character, const char *stat, const int
         {"passive_critical_strike",      BONUS_CRITICAL            },
         {"passive_dodge",                BONUS_DODGE               },
         {"passive_avoid",                BONUS_AVOID               },
-        {"passive_evade",                BONUS_AVOID               },
+        {"passive_evade",                BONUS_EVADE               },
         {"skill_pierce",                 BONUS_PIERCE              },
         {"passive_fire_mastery",         BONUS_FIRE_SKILL_PCT      },
         {"passive_ltng_mastery",         BONUS_LIGHTNING_SKILL_PCT },
@@ -629,9 +629,9 @@ static bool Roam__MissileHitsUnit(SceneRoam *roam, Missile *missile, const int i
     return true; // spent
 }
 
-// A monster's missile reaching the player (dodged with Avoid / Evade)
+// A monster's missile reaching the player (out of its way with Avoid standing, Evade moving)
 static void Roam__MissileHitsPlayer(SceneRoam *roam, Missile *missile, const uint64_t now) {
-    if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_AVOID]) {
+    if (Roam__Dodges(roam, true, now)) {
         return;
     }
     if (Roam__Blocks(roam, true)) {

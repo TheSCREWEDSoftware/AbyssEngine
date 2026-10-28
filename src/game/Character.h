@@ -92,7 +92,8 @@ typedef enum CharacterBonus {
     BONUS_THORNS_PCT,     // melee damage taken, given back
     BONUS_CRITICAL,       // chance of double damage
     BONUS_DODGE,          // chance to dodge a blow
-    BONUS_AVOID,          // chance to avoid a missile
+    BONUS_AVOID,          // chance to avoid a missile (standing)
+    BONUS_EVADE,          // chance to get out of the way of a blow or a missile while moving
     BONUS_PIERCE,         // chance a missile goes on through
     BONUS_FIRE_SKILL_PCT, // the masteries: more damage from those skills
     BONUS_LIGHTNING_SKILL_PCT,

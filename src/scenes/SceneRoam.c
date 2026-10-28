@@ -1626,7 +1626,41 @@ static int Roam__DefenseAgainstUs(const SceneRoam *roam, const Unit *target) {
     const int most = target->boss || target->rank != 0 ? 25 : 50;
     int       cut  = Affixes_Total(roam->character, MOD_REDUCE_DEFENSE);
     cut            = cut < most ? (cut > 0 ? cut : 0) : most;
-    return target->defense * (100 - cut) / 100;
+    int defense    = target->defense * (100 - cut) / 100;
+    if (target->curse != NULL && Roam__Now(roam) < target->curse_until) {
+        for (int a = 0; a < SKILL_AURA_STATS; a++) { // Inner Sight: its defense lowered
+            if (strcmp(target->curse->aura_stat[a], "armorclass") == 0) {
+                defense +=
+                    SkillData_Eval(roam->character, target->curse, target->curse_level, target->curse->aura_calc[a]);
+            }
+        }
+    }
+    return defense > 0 ? defense : 0;
+}
+
+// Dodge (a blow, standing or attacking), Avoid (a missile, standing) and Evade (either, while moving): out of the way,
+// with the game's little side step (the S1 animation)
+static bool Roam__Dodges(SceneRoam *roam, const bool missile, const uint64_t now) {
+    if (!roam->game) {
+        return false;
+    }
+    Unit      *player = &roam->player;
+    const bool moving = player->state == UNIT_WALK;
+    const int  chance =
+        moving ? roam->character->bonus[BONUS_EVADE] : roam->character->bonus[missile ? BONUS_AVOID : BONUS_DODGE];
+    if (chance <= 0 || Roam__Roll(1, 100) > chance) {
+        return false;
+    }
+    if ((player->state == UNIT_IDLE || moving) &&
+        MapUnits_GetFigure(roam->units_cache, player->base, player->id, "s1") != NULL) {
+        roam->moving     = false;
+        roam->cast_skill = NULL;
+        roam->cast_fired = true; // (nothing to cast at the end of it)
+        Roam__ClearPath(player);
+        snprintf(player->cast_mode, sizeof(player->cast_mode), "s1");
+        Roam__SetState(player, UNIT_CAST, now);
+    }
+    return true;
 }
 
 // The player's blow, each kind of damage rolled: physical, then fire, cold, lightning, poison (what's worn)
@@ -4625,7 +4659,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
                         // Amplify Damage / Decrepify on you: more of it gets through
                         const int taken = 100 - Roam__PlayerCurse(roam, "damageresist");
                         damage          = damage * (taken > 0 ? taken : 0) / 100;
-                        if (roam->game && Roam__Roll(1, 100) <= roam->character->bonus[BONUS_DODGE]) {
+                        if (Roam__Dodges(roam, false, now)) {
                             damage = 0; // dodged
                         } else if (Roam__Blocks(roam, false)) {
                             damage = 0;

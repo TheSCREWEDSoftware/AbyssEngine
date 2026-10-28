@@ -15,6 +15,13 @@ static void Roam__MonsterMissile(SceneRoam *roam, const Unit *unit, const char *
     Missile *missile = Roam__SpawnMissile(roam, name, unit->x, unit->y, tx - unit->x, ty - unit->y, false);
     if (missile != NULL) {
         memcpy(missile->damage, damage, sizeof(missile->damage));
+        for (int a = 0; unit->curse != NULL && Roam__Now(roam) < unit->curse_until && a < SKILL_AURA_STATS; a++) {
+            if (strcmp(unit->curse->aura_stat[a], "skill_handofathena") == 0) { // Slow Missiles: its shots crawl
+                const int percent =
+                    SkillData_Eval(roam->character, unit->curse, unit->curse_level, unit->curse->aura_calc[a]);
+                missile->speed = missile->speed * (float)(percent > 5 ? percent : 5) / 100.0f;
+            }
+        }
     }
     Roam__SendShot(roam, name, unit->x, unit->y, tx, ty, damage); // (the others see it, and it can hit them)
 }
