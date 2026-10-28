@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
@@ -109,6 +110,8 @@ bool Dropdown_Update(Dropdown *dropdown) {
     dropdown->hovered = -1;
     if (dropdown->open) {
         const int list_y = dropdown->y + DROPDOWN_HEIGHT;
+        PadNav_RegisterKind(&(SDL_Rect){dropdown->x, list_y, dropdown->width, dropdown->count * DROPDOWN_ROW},
+                            PAD_NAV_LIST, dropdown->width, DROPDOWN_ROW);
         if (mouse_x >= dropdown->x && mouse_x < dropdown->x + dropdown->width && mouse_y >= list_y &&
             mouse_y < list_y + (dropdown->count * DROPDOWN_ROW)) {
             dropdown->hovered = (mouse_y - list_y) / DROPDOWN_ROW;
@@ -122,6 +125,9 @@ bool Dropdown_Update(Dropdown *dropdown) {
             }
         }
         return false;
+    }
+    if (dropdown->count > 0) {
+        PadNav_Register(&(SDL_Rect){dropdown->x, dropdown->y, dropdown->width, DROPDOWN_HEIGHT});
     }
     if (clicked && over_box && dropdown->count > 0) {
         dropdown->open = true;

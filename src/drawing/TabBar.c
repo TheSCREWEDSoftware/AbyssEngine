@@ -1,8 +1,10 @@
 #include "TabBar.h"
+#include "../audio/Sounds.h"
 #include "../common/Globals.h"
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
@@ -118,6 +120,17 @@ bool TabBar_Update(TabBar *tab_bar, const int x, const int y, const int width) {
 
     const bool clicked       = !mouse_left && tab_bar->prev_mouse_left;
     tab_bar->prev_mouse_left = mouse_left;
+    for (int i = 0; i < tab_bar->count; i++) {
+        const SDL_Rect rect = TabBar__Rect(tab_bar, x, y, width, i);
+        PadNav_Register(&rect);
+    }
+    // A controller's LB / RB: the tab before / after (the first bar on the screen to look takes it: the main tabs)
+    const int step = tab_bar->count > 1 ? PadNav_TakeTabStep() : 0;
+    if (step != 0) {
+        tab_bar->selected = (tab_bar->selected + step + tab_bar->count) % tab_bar->count;
+        Sounds_Play("cursor_button_click", SOUND_KIND_UI);
+        return true;
+    }
     if (!clicked) {
         return false;
     }

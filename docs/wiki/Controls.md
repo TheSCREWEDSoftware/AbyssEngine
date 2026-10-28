@@ -38,12 +38,12 @@ own bindings, next to `abyss.ini`.
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Move / attack / use | `Mouse Left` | - | - |  |
+| Move / attack / use | `Mouse Left` | - | `Pad Button 2 (Down)` |  |
 | Move up | - | `Up` | `Pad Left Stick Up` |  |
 | Move down | - | `Down` | `Pad Left Stick Down` |  |
 | Move left | - | `Left` | `Pad Left Stick Left` |  |
 | Move right | - | `Right` | `Pad Left Stick Right` |  |
-| Run / walk | - | `R` | - |  |
+| Run / walk | - | `R` | `Pad Button 11 (Left Stick Press)` |  |
 | Run (hold) | - | `Left Ctrl` | - |  |
 | Stand still | - | `Left Shift`, `Right Shift` | - |  |
 
@@ -52,7 +52,7 @@ own bindings, next to `abyss.ini`.
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
 | Attack | - | `E` | `Pad Button 1 (Left)` |  |
-| Right skill / drop monster | `Mouse Right` | - | - |  |
+| Right skill / drop monster | `Mouse Right` | - | `Pad Button 3 (Right)`, `Pad Button 8 (Right Trigger)` |  |
 | Swap weapons | - | `W` | - |  |
 | Skill 1 | - | `F1` | - |  |
 | Skill 2 | - | `F2` | - |  |
@@ -62,30 +62,27 @@ own bindings, next to `abyss.ini`.
 | Skill 6 | - | `F6` | - |  |
 | Skill 7 | - | `F7` | - |  |
 | Skill 8 | - | `F8` | - |  |
-| Previous skill \* | - | - | - |  |
-| Next skill \* | - | - | - |  |
-| Skill tree | - | `T` | - |  |
+| Previous skill | - | - | `Pad Button 5 (Left Bumper)` |  |
+| Next skill | - | - | `Pad Button 6 (Right Bumper)` |  |
+| Skill tree | - | `T` | `Pad Button 12 (Right Stick Press)` |  |
 | Skill speed bar | - | `S` | - |  |
-
-> [!NOTE]
-> \* **Not implemented yet:** Previous skill, Next skill. Their inputs are already set (the game's defaults) so they work as soon as the engine does them.
 
 ## Belt
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Use belt 1 | - | `1` | - |  |
-| Use belt 2 | - | `2` | - |  |
-| Use belt 3 | - | `3` | - |  |
-| Use belt 4 | - | `4` | - |  |
+| Use belt 1 | - | `1` | `Pad D-pad Left` |  |
+| Use belt 2 | - | `2` | `Pad D-pad Up` |  |
+| Use belt 3 | - | `3` | `Pad D-pad Right` |  |
+| Use belt 4 | - | `4` | `Pad D-pad Down` |  |
 | Show belt | - | `` ` `` | - |  |
 
 ## Screens
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Character screen | - | `A`, `C` | - | `C` also on an action that's never active at the same time |
-| Inventory | - | `B`, `I` | - | `B` also on an action that's never active at the same time |
+| Character screen | - | `A`, `C` | `Pad Button 9 (Select)` | `C` also on an action that's never active at the same time |
+| Inventory | - | `B`, `I` | `Pad Button 4 (Up)` | `B` also on an action that's never active at the same time |
 | Party screen | - | `P` | - | `P` also on an action that's never active at the same time |
 | Hireling screen | - | `O` | - |  |
 | Quest log | - | `Q` | - |  |
@@ -101,7 +98,7 @@ own bindings, next to `abyss.ini`.
 
 | Action | Mouse | Keyboard | Controller | Note |
 |---|---|---|---|---|
-| Automap | - | `Tab` | - |  |
+| Automap | - | `Tab` | `Pad Button 7 (Left Trigger)` |  |
 | Center automap | - | `F9` | - |  |
 | Fade automap | - | `F10` | - |  |
 | Party on automap | - | `F11` | - |  |

@@ -34,6 +34,7 @@
 #include "../game/Treasure.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "../managers/VideoManager.h"
 #include "../map/Automap.h"
 #include "../map/LevelTypes.h"
@@ -703,7 +704,10 @@ typedef struct SceneRoam {
     bool           ui_prev_left; // the mouse buttons last frame, for the panels' clicks
     bool           ui_prev_right;
     bool           ui_owns_press; // a press that started on the panels stays theirs until the button is let go
-    float          potion_life;   // still to come from the potions drunk, and how fast
+    float          pad_face_x;    // a controller: the way the left stick last pointed (on screen), for its aim
+    float          pad_face_y;
+    bool           pad_swung;   // (A held after swinging at nothing: once per press)
+    float          potion_life; // still to come from the potions drunk, and how fast
     float          potion_life_rate;
     float          potion_mana;
     float          potion_mana_rate;
@@ -6035,6 +6039,32 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
             GameSkills_ClosePicker(roam->skills_ui);
         }
     }
+    // Previous / next skill: the right skill steps through the skills on the skill keys, like the game's wheel
+    const int cycle = Controls_Pressed(ACTION_SKILL_NEXT) ? 1 : (Controls_Pressed(ACTION_SKILL_PREVIOUS) ? -1 : 0);
+    if (cycle != 0) {
+        int current = -1;
+        for (int h = 0; h < 8; h++) {
+            if (character->hotkey_set[h] && !character->hotkey_left[h] &&
+                character->hotkey_skill[h] == character->right_skill) {
+                current = h;
+                break;
+            }
+        }
+        for (int step = 1; step <= 8; step++) {
+            const int h = current < 0 ? (cycle > 0 ? step - 1 : 8 - step) : (current + (cycle * step) + 16) % 8;
+            if (character->hotkey_set[h] && !character->hotkey_left[h]) {
+                character->right_skill  = character->hotkey_skill[h];
+                const SkillClass *table = Skills_ForClass(character->class_id);
+                char              text[96];
+                snprintf(text, sizeof(text), "%s",
+                         h >= 0 && character->right_skill >= 0 && character->right_skill < table->count
+                             ? table->skills[character->right_skill].name
+                             : "Attack");
+                Roam__ShowMessage(roam, text);
+                break;
+            }
+        }
+    }
     if (Controls_Pressed(ACTION_SKILL_BAR)) {
         GameSkills_ToggleSpeedBar(roam->skills_ui);
     }
@@ -7075,6 +7105,141 @@ static bool Roam__UpdateMenu(SceneRoam *roam) {
     return true;
 }
 
+// A controller in play (managers/PadNav): the pointer goes on what you'd want to hit, open, talk to or pick up -
+// the nearest the way you face (the left stick), close by - or a little ahead of you, like Diablo III on a
+// controller. Not while the right stick has just moved it (aiming by hand).
+static void Roam__PadAim(SceneRoam *roam, const SDL_Rect *view) {
+    const float sx = Controls_Amount(ACTION_MOVE_RIGHT) - Controls_Amount(ACTION_MOVE_LEFT);
+    const float sy = Controls_Amount(ACTION_MOVE_DOWN) - Controls_Amount(ACTION_MOVE_UP);
+    const float sl = sqrtf((sx * sx) + (sy * sy));
+    if (sl > 0.3f) {
+        roam->pad_face_x = sx / sl;
+        roam->pad_face_y = sy / sl;
+    } else if (fabsf(roam->pad_face_x) + fabsf(roam->pad_face_y) < 0.01f) {
+        roam->pad_face_y = 1.0f; // (to start with: towards the bottom of the screen)
+    }
+    float wx;
+    float wy;
+    int   px;
+    int   py;
+    MapView_SubtileToWorld(roam->player.x, roam->player.y, &wx, &wy);
+    MapView_WorldToScreen(&roam->camera, view, wx, wy, &px, &py);
+    int   aim_x = px + (int)(roam->pad_face_x * 70.0f);
+    int   aim_y = py + (int)(roam->pad_face_y * 70.0f);
+    float best  = 1e9f;
+// Scored on screen: how far, and more so the further from the way you face (behind you only when very close)
+#define PAD_AIM_CONSIDER(tx, ty)                                                                                       \
+    do {                                                                                                               \
+        const float dx_   = (float)((tx) - px);                                                                        \
+        const float dy_   = (float)((ty) - py);                                                                        \
+        const float dist_ = sqrtf((dx_ * dx_) + (dy_ * dy_));                                                          \
+        const float cos_  = dist_ > 1.0f ? ((dx_ * roam->pad_face_x) + (dy_ * roam->pad_face_y)) / dist_ : 1.0f;       \
+        if (dist_ <= 220.0f && (cos_ > 0.35f || dist_ < 48.0f)) {                                                      \
+            const float score_ = dist_ * (2.2f - cos_);                                                                \
+            if (score_ < best) {                                                                                       \
+                best  = score_;                                                                                        \
+                aim_x = (tx);                                                                                          \
+                aim_y = (ty);                                                                                          \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
+    for (int u = 0; u < roam->unit_count; u++) {
+        const Unit *unit = &roam->units[u];
+        const bool  hostile =
+            Roam__IsCombatant(unit) && Roam__IsAlive(unit) && !unit->ally && !Roam__IsPeaceful(roam, unit);
+        if (!hostile && !Roam__CanUse(unit) && !(roam->game && Roam__CanTalk(roam, unit))) {
+            continue;
+        }
+        float ux;
+        float uy;
+        int   tx;
+        int   ty;
+        MapView_SubtileToWorld(unit->x, unit->y, &ux, &uy);
+        MapView_WorldToScreen(&roam->camera, view, ux, uy, &tx, &ty);
+        PAD_AIM_CONSIDER(tx, ty);
+    }
+    const int key = Roam__MapKey(roam);
+    for (int g = 0; g < roam->ground_count; g++) {
+        if (roam->ground[g].map_key == key && roam->ground[g].on_screen) {
+            PAD_AIM_CONSIDER(roam->ground[g].screen_x, roam->ground[g].screen_y);
+        }
+    }
+#undef PAD_AIM_CONSIDER
+    aim_x = aim_x < view->x ? view->x : (aim_x >= view->x + view->w ? view->x + view->w - 1 : aim_x);
+    aim_y = aim_y < view->y ? view->y : (aim_y >= view->y + view->h ? view->y + view->h - 1 : aim_y);
+    InputManager_SetPointer(aim_x, aim_y);
+}
+
+// Where a controller can go on the game's own panels (the widgets say where they are themselves)
+static void Roam__PadPlaces(SceneRoam *roam) {
+    if (!roam->game || roam->character == NULL) {
+        return;
+    }
+    SDL_Rect close;
+    if (Roam__PanelClose(roam, &close)) {
+        PadNav_Register(&close);
+    }
+    for (int stat = 0; roam->char_panel && roam->character->stat_points > 0 && stat < STAT_COUNT; stat++) {
+        PadNav_Register(&(SDL_Rect){112, stat_rows[stat] - 10, 23, 21});
+    }
+    const CtrlLayout *at = Roam__Ctrl();
+    PadNav_Register(&(SDL_Rect){at->run_x, at->run_y, 16, 20});
+    if (at->has_menu) {
+        PadNav_Register(&(SDL_Rect){at->menu_x, at->menu_y, 15, 24});
+    }
+    if (roam->character->stat_points > 0) {
+        PadNav_Register(&(SDL_Rect){at->level_x, at->level_y, 30, 30});
+    }
+    if (roam->character->skill_points > 0) {
+        PadNav_Register(&(SDL_Rect){at->skills_x, at->skills_y, 30, 30});
+    }
+    for (int b = 0; (roam->mini_open || at->modern) && b < CTRL_MINI_COUNT; b++) {
+        PadNav_Register(&(SDL_Rect){at->mini_x + 4 + (b * CTRL_MINI_STEP), at->mini_y + 3, 20, 20});
+    }
+    if (roam->quest_panel) {
+        for (int a = 0; a < 5; a++) {
+            PadNav_Register(&(SDL_Rect){10 + (a * 60), 34, 56, 22});
+        }
+        int row = 0;
+        for (int q = 0; q < QUEST_COUNT; q++) {
+            if (Quests_Get(q)->act == roam->quest_act) {
+                PadNav_Register(&(SDL_Rect){10, 64 + (row * 60), GAME_PANEL_W - 20, 58});
+                row++;
+            }
+        }
+        const int step  = PadNav_TakeTabStep(); // (LB / RB: the acts)
+        roam->quest_act = step != 0 ? (roam->quest_act + step + 5) % 5 : roam->quest_act;
+    }
+    for (int r = 0; roam->npc_menu >= 0 && r < roam->npc_option_count; r++) {
+        const SDL_Rect row = Roam__NpcMenuRow(r);
+        PadNav_Register(&row);
+    }
+    if (roam->party_panel && roam->online) {
+        NetPlayer *players = NULL;
+        const int  count   = NetClient_Players(&players);
+        for (int r = 0; r < count && r < PARTY_ROWS; r++) {
+            const SDL_Rect buttons[4] = {Roam__PartyButton(r), Roam__PartyTradeButton(r), Roam__PartyLootButton(r),
+                                         Roam__PartyHostileButton(r)};
+            for (int b = 0; b < (Roam__PvPGame() ? 4 : 3); b++) {
+                PadNav_Register(&buttons[b]);
+            }
+        }
+        const SDL_Rect leave = Roam__PartyLeaveButton(count < PARTY_ROWS ? count : PARTY_ROWS);
+        PadNav_Register(&leave);
+    }
+}
+
+// A controller plays (rather than working a menu) when nothing's open over the world
+static bool Roam__PadPlays(const SceneRoam *roam) {
+    return !roam->menu_open && roam->options_panel == NULL && roam->panel == PANEL_NONE && !roam->char_panel &&
+           !roam->inventory_panel && !roam->skill_panel && !roam->party_panel && !roam->quest_panel &&
+           !roam->hire_open && roam->npc_menu < 0 && roam->shop_npc < 0 && roam->trade_state != TRADE_STATE_OPEN &&
+           !roam->log_open && !roam->help_open && !roam->mini_open && !ConfirmDialog_IsOpen(roam->confirm) &&
+           !AmountDialog_IsOpen(roam->amount) && (roam->skills_ui == NULL || !GameSkills_PickerOpen(roam->skills_ui)) &&
+           (roam->chat_box == NULL || !TextBox_IsFocused(roam->chat_box)) &&
+           (roam->seed_box == NULL || !TextBox_IsFocused(roam->seed_box));
+}
+
 static void Roam__Update(SceneRoam *roam) {
     const uint64_t now = Roam__Clock(roam);
     Roam__AmbientEvents(roam, now);
@@ -7144,10 +7309,19 @@ static void Roam__Update(SceneRoam *roam) {
     const GameplaySettings *gameplay = Roam__Gameplay(roam);
     roam->player.even_speed          = gameplay->even_screen_speed;
 
-    int  mouse_x;
-    int  mouse_y;
-    bool left  = Controls_Held(ACTION_MOVE_ATTACK);
-    bool right = Controls_Held(ACTION_RIGHT_SKILL);
+    int        mouse_x;
+    int        mouse_y;
+    bool       left      = Controls_Held(ACTION_MOVE_ATTACK);
+    bool       right     = Controls_Held(ACTION_RIGHT_SKILL);
+    const bool pad_plays = Roam__PadPlays(roam);
+    PadNav_SetGameplay(pad_plays);
+    if (!pad_plays) {
+        Roam__PadPlaces(roam);
+    }
+    const bool pad_aims = pad_plays && PadNav_Active() && !PadNav_FreeAim();
+    if (pad_aims) {
+        Roam__PadAim(roam, &view);
+    }
     InputManager_GetMousePosition(&mouse_x, &mouse_y);
     const bool over_panel =
         (roam->panel != PANEL_NONE && mouse_x >= PANEL_X) ||
@@ -7223,7 +7397,7 @@ static void Roam__Update(SceneRoam *roam) {
     // Modern / Combined: the movement keys (and the left stick) walk
     roam->key_dx = 0.0f;
     roam->key_dy = 0.0f;
-    if (gameplay->movement != MOVEMENT_CLASSIC) {
+    if (gameplay->movement != MOVEMENT_CLASSIC || PadNav_Active()) { // (a controller walks with its stick anyway)
         // On screen, up is towards lower x and y in sub-tiles, right towards higher x and lower y
         // As far as each is pushed: keys all the way, a stick (or anything analog bound there) part way
         const float sx     = Controls_Amount(ACTION_MOVE_RIGHT) - Controls_Amount(ACTION_MOVE_LEFT);
@@ -7273,6 +7447,17 @@ static void Roam__Update(SceneRoam *roam) {
     roam->hover_valid = over_view;
     roam->hover_x     = floorf(sub_x) + 0.5f;
     roam->hover_y     = floorf(sub_y) + 0.5f;
+    // A controller's A with nothing near to aim at swings where you stand (the stick walks, not A)
+    if (pad_aims && left && over_view && roam->hovered < 0 && roam->hover_item < 0 && roam->hover_other < 0 &&
+        roam->hover_exit < 0) {
+        if (!roam->pad_swung && Roam__IsAlive(&roam->player)) {
+            Roam__AttackInPlace(roam, -1, sub_x, sub_y, now);
+        }
+        roam->pad_swung = true;
+        left            = false;
+    } else if (!left) {
+        roam->pad_swung = false;
+    }
 
     // Modern / Combined: the attack key hits what's under the mouse, or the nearest monster in reach
     if (gameplay->movement != MOVEMENT_CLASSIC && Controls_Pressed(ACTION_ATTACK) && Roam__IsAlive(&roam->player)) {

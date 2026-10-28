@@ -51,4 +51,15 @@ float    InputManager_GetAmount(InputKind kind,
 uint16_t InputManager_GetMods(void);
 float    InputManager_GetPadAxis(SDL_GameControllerAxis axis); // -1..1, the strongest of the connected pads
 
+// The controller in menus (managers/PadNav): it moves the pointer and clicks for you
+bool  InputManager_PadConnected(void);
+bool  InputManager_PadInUse(void);                         // the controller was used more recently than mouse or keys
+bool  InputManager_RawPadButton(SDL_GameControllerButton button); // held, whatever the capture says
+float InputManager_RawPadAxis(SDL_GameControllerAxis axis);
+void  InputManager_SetPadCapture(bool capture); // true: the controller drives the menus, the bindings don't see it
+void  InputManager_SetPointer(int x, int y);    // the pointer to there (800x600)
+void  InputManager_SetMouseButton(int button, bool down); // as if that mouse button went down / up
+void  InputManager_PressKey(SDL_Scancode scancode);        // as if that key was pressed (once)
+void  InputManager_AddWheel(int steps);                    // as if the wheel turned
+
 #endif // ABYSS_INPUT_MANAGER_H

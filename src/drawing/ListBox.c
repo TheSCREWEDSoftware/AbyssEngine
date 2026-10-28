@@ -3,6 +3,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include <stdlib.h>
 #include <string.h>
@@ -195,6 +196,12 @@ bool ListBox_Update(ListBox *list_box) {
     const bool hovered = mouse_x >= list_box->x && mouse_x < list_box->x + list_box->width && mouse_y >= list_box->y &&
                          mouse_y < list_box->y + height;
 
+    if (list_box->item_count > 0) { // (a controller: a row at a time, scrolling at the ends)
+        const int rows = list_box->item_count < list_box->visible_rows ? list_box->item_count : list_box->visible_rows;
+        PadNav_RegisterList(&(SDL_Rect){list_box->x, list_box->y, list_box->width, rows * list_box->row_height},
+                            list_box->row_height, list_box->scroll_offset > 0,
+                            list_box->scroll_offset + list_box->visible_rows < list_box->item_count);
+    }
     // Always consume the wheel so scrolling elsewhere doesn't pile up and jump the list later.
     const int wheel = InputManager_ConsumeMouseWheel();
     if (hovered && wheel != 0) {

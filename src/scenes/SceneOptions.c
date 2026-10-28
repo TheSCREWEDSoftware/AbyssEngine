@@ -21,6 +21,7 @@
 #include "../game/Settings.h"
 #include "../managers/AudioManager.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "../net/Protocol.h"
 #include "SceneMainMenu.h"
 #include <ctype.h>
@@ -251,6 +252,10 @@ typedef struct SceneOptions {
     Button   *mouse_default;
     Button   *mouse_close;
     int       mouse_before[4]; // across, up/down, match, wheel: to put back on Cancel
+    Dropdown *pad_menus;       // a controller in the menus: Console (like Diablo III) or Cursor
+    Button   *pad_layout;      // adds the controller's default buttons to the controls (kept from older versions)
+    Slider   *pad_speed;       // how fast a stick moves the pointer
+    int       pad_before[2];   // cursor, speed: to put back on Cancel
     bool      scroll_drag;     // dragging the controls table's scrollbar
 
     // Configure dialog
@@ -269,6 +274,7 @@ typedef struct SceneOptions {
     Button         *dialog_cancel_button;
     bool            dialog_armed;     // the mouse button that opened it has been let go
     int             pending_modifier; // a modifier key pressed alone: bound when it's let go, unless a key follows
+    uint64_t        pad_hold_since;   // the bindings window: Start or B held since (a second: OK / Cancel)
     uint64_t        last_bind_time;
     ControlInput    last_bound;
 } SceneOptions;
@@ -363,6 +369,8 @@ static void Options__LoadMouse(SceneOptions *options) {
     bool match;
     int  wheel;
     AbyssConfiguration_GetMouse(&x, &y, &match, &wheel);
+    Dropdown_SetSelected(options->pad_menus, AbyssConfiguration_GetPadCursor() ? 1 : 0);
+    Slider_SetValue(options->pad_speed, AbyssConfiguration_GetPadPointerSpeed());
     Checkbox_SetChecked(options->match_axes, match);
     Slider_SetValue(options->mouse_x, x);
     Slider_SetValue(options->mouse_y, y);
@@ -376,6 +384,7 @@ static void Options__ApplyMouse(const SceneOptions *options) {
     AbyssConfiguration_SetMouse(x, match ? x : Slider_GetValue(options->mouse_y), match,
                                 Slider_GetValue(options->wheel));
     InputManager_ApplyMouseSettings();
+    AbyssConfiguration_SetPad(Dropdown_GetSelected(options->pad_menus) == 1, Slider_GetValue(options->pad_speed));
 }
 
 static void Options__ApplyVolumes(const SceneOptions *options) {
@@ -617,7 +626,7 @@ OptionsPanel *OptionsPanel_Create(void) {
     Options__BuildRows(options);
     options->export_button  = Button_Create(BUTTON_TYPE_MEDIUM, "Export");
     options->presets_button = Button_Create(BUTTON_TYPE_MEDIUM, "Presets");
-    options->mouse_button   = Button_Create(BUTTON_TYPE_CANCEL, "Mouse");
+    options->mouse_button   = Button_Create(BUTTON_TYPE_CANCEL, "Pointer");
     options->copy_button    = Button_Create(BUTTON_TYPE_CANCEL, "Copy");
     Button_SetPosition(options->export_button, CONTENT_X, CONTROLS_BTN_Y);
     Button_SetPosition(options->presets_button, CONTENT_X + 136, CONTROLS_BTN_Y);
@@ -660,6 +669,14 @@ OptionsPanel *OptionsPanel_Create(void) {
     for (int i = 0; i < 4; i++) {
         Slider_SetFormat(speeds[i], 100, 2, "x");
     }
+    static const char *pad_styles[2] = {"Console (like Diablo III)", "Cursor (a stick moves it)"};
+    options->pad_menus               = Dropdown_Create(DIALOG_X + 200, DIALOG_Y + 352, 300, pad_styles, 2);
+    options->pad_speed               = Slider_Create(DIALOG_X + 200, DIALOG_Y + 394, 300, MOUSE_MIN, MOUSE_MAX);
+    Slider_SetFormat(options->pad_speed, 100, 2, "x");
+    options->pad_before[0] = AbyssConfiguration_GetPadCursor();
+    options->pad_before[1] = AbyssConfiguration_GetPadPointerSpeed();
+    options->pad_layout    = Button_Create(BUTTON_TYPE_MEDIUM, "Pad Layout");
+    Button_SetPosition(options->pad_layout, DIALOG_X + (DIALOG_W / 2) - 64, DIALOG_Y + DIALOG_H - 44);
     options->mouse_default = Button_Create(BUTTON_TYPE_CANCEL, "Default");
     options->mouse_close   = Button_Create(BUTTON_TYPE_CANCEL, "Close");
     Button_SetPosition(options->mouse_default, DIALOG_X + 16, DIALOG_Y + DIALOG_H - 44);
@@ -742,6 +759,9 @@ void OptionsPanel_Destroy(OptionsPanel **panel) {
     Dropdown_Destroy(&options->profile_dropdown);
     Dropdown_Destroy(&options->movement);
     Dropdown_Destroy(&options->autosave);
+    Dropdown_Destroy(&options->pad_menus);
+    Button_Destroy(&options->pad_layout);
+    Slider_Destroy(&options->pad_speed);
     Dropdown_Destroy(&options->copy_to);
     ListBox_Destroy(&options->preset_list);
     TextBox_Destroy(&options->preset_name);
@@ -819,6 +839,7 @@ static void Options__Cancel(SceneOptions *options) {
     AbyssConfiguration_SetMouse(options->mouse_before[0], options->mouse_before[1], options->mouse_before[2] != 0,
                                 options->mouse_before[3]);
     InputManager_ApplyMouseSettings();
+    AbyssConfiguration_SetPad(options->pad_before[0] != 0, options->pad_before[1]);
 }
 
 static void Options__Defaults(SceneOptions *options, const OptionsTab tab) {
@@ -941,6 +962,40 @@ static bool Options__IsModifierKey(const int scancode) {
 }
 
 static void Options__UpdateDialog(SceneOptions *options, const int mouse_x, const int mouse_y, const bool clicked) {
+    // A controller's presses are bound here, not used to move about the menus (managers/PadNav). Held a second,
+    // Start is OK and B is Cancel (the press that was held isn't kept).
+    PadNav_Suspend();
+    const bool pad_start = InputManager_RawPadButton(SDL_CONTROLLER_BUTTON_START);
+    const bool pad_back  = InputManager_RawPadButton(SDL_CONTROLLER_BUTTON_B);
+    if (!pad_start && !pad_back) {
+        options->pad_hold_since = 0;
+    } else if (options->pad_hold_since == 0) {
+        options->pad_hold_since = SDL_GetTicks64();
+    } else if (SDL_GetTicks64() - options->pad_hold_since >= 1000) {
+        const ControlInput held = {INPUT_PAD_BUTTON, pad_start ? SDL_CONTROLLER_BUTTON_START : SDL_CONTROLLER_BUTTON_B,
+                                   0, false};
+        ControlBindings   *list = &options->dialog_bindings;
+        bool               was  = false;
+        for (int b = 0; b < options->dialog_original.count; b++) {
+            was = was || Controls_SameInput(&options->dialog_original.inputs[b], &held);
+        }
+        for (int b = 0; !was && b < list->count; b++) {
+            if (Controls_SameInput(&list->inputs[b], &held)) {
+                for (int c = b; c + 1 < list->count; c++) {
+                    list->inputs[c] = list->inputs[c + 1];
+                }
+                list->count--;
+                break;
+            }
+        }
+        if (pad_start) {
+            Options__CommitDialog(options);
+        }
+        options->dialog         = false;
+        options->pad_hold_since = 0;
+        InputManager_ClearPresses();
+        return;
+    }
     // Inputs pressed: keys (with the modifiers held), gamepad buttons and sticks. Mouse buttons and the wheel come
     // from the list (the mouse is busy with the dialog).
     InputPress press;
@@ -1138,6 +1193,13 @@ static void Options__DrawPresets(SceneOptions *options) {
 static void Options__UpdateMouse(SceneOptions *options) {
     const bool match   = Checkbox_IsChecked(options->match_axes);
     bool       changed = false;
+    if (Dropdown_IsOpen(options->pad_menus)) { // (an open list takes the clicks)
+        if (Dropdown_Update(options->pad_menus)) {
+            Options__ApplyMouse(options);
+        }
+        return;
+    }
+    changed = Dropdown_Update(options->pad_menus) || Slider_Update(options->pad_speed);
     if (Checkbox_Update(options->match_axes)) {
         if (Checkbox_IsChecked(options->match_axes)) {
             Slider_SetValue(options->mouse_both, Slider_GetValue(options->mouse_x));
@@ -1147,24 +1209,58 @@ static void Options__UpdateMouse(SceneOptions *options) {
         }
         changed = true;
     } else if (match) {
-        changed = Slider_Update(options->mouse_both);
+        changed = Slider_Update(options->mouse_both) || changed;
     } else {
-        changed = Slider_Update(options->mouse_x) | Slider_Update(options->mouse_y);
+        changed = (Slider_Update(options->mouse_x) | Slider_Update(options->mouse_y)) || changed;
     }
     changed = Slider_Update(options->wheel) || changed;
+    if (Button_Update(options->pad_layout)) {
+        // The controller's buttons from the defaults (A, B, X, Y, the bumpers and triggers, the D-pad for the belt)
+        // on every action that hasn't got them, as long as there's room; the rest stays as it is
+        int added = 0;
+        for (int a = 0; a < ACTION_COUNT; a++) {
+            ControlBindings defaults;
+            Controls_GetDefaults((ControlAction)a, &defaults);
+            ControlBindings list = *Controls_GetBindings(options->profile, (ControlAction)a);
+            for (int d = 0; d < defaults.count; d++) {
+                const ControlInput *input = &defaults.inputs[d];
+                bool                there = input->kind != INPUT_PAD_BUTTON && input->kind != INPUT_PAD_AXIS;
+                for (int b = 0; !there && b < list.count; b++) {
+                    there = Controls_SameInput(&list.inputs[b], input);
+                }
+                if (!there && list.count < CONTROL_MAX_BINDINGS) {
+                    list.inputs[list.count++] = *input;
+                    added++;
+                }
+            }
+            Controls_SetBindings(options->profile, (ControlAction)a, &list);
+        }
+        char text[160];
+        if (added > 0) {
+            snprintf(text, sizeof(text), "Added %d controller inputs to %s (OK keeps them).", added,
+                     Settings_ProfileName(options->profile));
+        } else {
+            snprintf(text, sizeof(text), "%s already has the controller layout.",
+                     Settings_ProfileName(options->profile));
+        }
+        Options__Message(options, text);
+    }
     if (Button_Update(options->mouse_default)) {
         Checkbox_SetChecked(options->match_axes, true);
         Slider_SetValue(options->mouse_x, 100);
         Slider_SetValue(options->mouse_y, 100);
         Slider_SetValue(options->mouse_both, 100);
         Slider_SetValue(options->wheel, 100);
+        Dropdown_SetSelected(options->pad_menus, 0);
+        Slider_SetValue(options->pad_speed, 100);
         changed = true;
     }
     if (changed) {
         Options__ApplyMouse(options);
     }
     const bool typing = Slider_IsTyping(options->mouse_x) || Slider_IsTyping(options->mouse_y) ||
-                        Slider_IsTyping(options->mouse_both) || Slider_IsTyping(options->wheel);
+                        Slider_IsTyping(options->mouse_both) || Slider_IsTyping(options->wheel) ||
+                        Slider_IsTyping(options->pad_speed);
     if (Button_Update(options->mouse_close) || (!typing && InputManager_ConsumeKeyPress(SDL_SCANCODE_ESCAPE))) {
         options->mouse = false;
     }
@@ -1180,7 +1276,7 @@ static void Options__DrawMouse(SceneOptions *options) {
     Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H, 18, 16, 14, 245);
     Options__Fill(DIALOG_X, DIALOG_Y, DIALOG_W, 26, 160, 110, 40, 255);
     Options__Frame(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H);
-    Options__Text(options, options->text_label, "MOUSE", DIALOG_X + 10, DIALOG_Y + 13, 0xFF, 0xFF, 0xFF);
+    Options__Text(options, options->text_label, "MOUSE AND CONTROLLER", DIALOG_X + 10, DIALOG_Y + 13, 0xFF, 0xFF, 0xFF);
     Checkbox_Draw(options->match_axes);
     if (Checkbox_IsChecked(options->match_axes)) {
         Options__SliderRow(options, "Pointer speed", options->mouse_both, DIALOG_Y + 100);
@@ -1198,8 +1294,14 @@ static void Options__DrawMouse(SceneOptions *options) {
                      "Wheel: how far each notch scrolls lists and the Map Editor (fine-stepping wheels and touchpads "
                      "add up their part steps). The changes work straight away; Options' Cancel puts them back.",
                      DIALOG_X + 16, DIALOG_Y + 300, DIALOG_X + DIALOG_W - 16);
+    Options__Text(options, options->text_label, "Controller menus", DIALOG_X + 16, DIALOG_Y + 352 + 10, 0xC7, 0xB3,
+                  0x77);
+    Options__SliderRow(options, "Controller pointer", options->pad_speed, DIALOG_Y + 394);
     Button_Draw(options->mouse_default);
+    Button_Draw(options->pad_layout);
     Button_Draw(options->mouse_close);
+    Dropdown_Draw(options->pad_menus);
+    Dropdown_DrawList(options->pad_menus);
 }
 
 // The controls table's scrollbar: the track and thumb (wider than the old 4 pixels), and where to click
@@ -1265,6 +1367,13 @@ static void Options__UpdateControls(SceneOptions *options, const int mouse_x, co
         return;
     }
 
+    // A controller: the keys column a row at a time (A there opens the row's bindings; the ends scroll)
+    const int shown = options->row_count < TABLE_ROWS ? options->row_count : TABLE_ROWS;
+    if (shown > 0) {
+        PadNav_RegisterList(&(SDL_Rect){CONTENT_X + TABLE_KEYS_X, TABLE_Y, SCROLLBAR_X - 2 - CONTENT_X - TABLE_KEYS_X,
+                                        shown * TABLE_ROW_H},
+                            TABLE_ROW_H, options->scroll > 0, options->scroll < most);
+    }
     options->hovered_row = -1;
     if (mouse_x >= CONTENT_X && mouse_x < SCROLLBAR_X - 2 && mouse_y >= TABLE_Y &&
         mouse_y < TABLE_Y + (TABLE_ROWS * TABLE_ROW_H)) {
@@ -1424,6 +1533,8 @@ static void Options__DrawDialog(SceneOptions *options) {
                            : "Press any key or gamepad button to bind it (twice quickly for a "
                              "double tap).  Esc: cancel.";
     Options__Text(options, options->small_label, hint, DIALOG_X + 16, DIALOG_Y + 406, 0xFF, 0xFF, 0xFF);
+    Options__Text(options, options->small_label, "Controller: hold Start a second for OK, hold B to cancel.",
+                  DIALOG_X + 16, DIALOG_Y + 424, 0xA0, 0xA0, 0xA0);
     const char *help = Controls_ActionHelp(action);
     if (help != NULL) {
         Options__Text(options, options->small_label, help, DIALOG_X + 16, DIALOG_Y + 84, 0xA0, 0xA0, 0xA0);

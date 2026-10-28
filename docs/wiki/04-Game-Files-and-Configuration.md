@@ -64,6 +64,8 @@ MouseSpeedX = 100           # pointer speed in percent (100 = the system's own);
 MouseSpeedY = 100
 MatchAxes = true            # true: MouseSpeedX for both
 WheelSpeed = 100            # percent of each wheel step; 25-400
+PadMenus = Console          # a controller in the menus: Console (jump between buttons, like Diablo III) or Cursor
+PadPointerSpeed = 100       # how fast a stick moves the pointer, percent; 25-300
 
 [Network]
 # Lobby = lobby.example.com:4002  # abyss-lobby, for Multiplayer > Browse > Online

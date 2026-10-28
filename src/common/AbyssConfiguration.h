@@ -52,6 +52,10 @@ void AbyssConfiguration_SetPicture(int brightness, int contrast, int gamma);
 // The mouse: pointer speed in percent across and up/down (one speed when match_axes), and the wheel's speed
 void AbyssConfiguration_GetMouse(int *speed_x, int *speed_y, bool *match_axes, int *wheel_speed);
 void AbyssConfiguration_SetMouse(int speed_x, int speed_y, bool match_axes, int wheel_speed);
+// A controller in the menus ([Input] PadMenus = Console / Cursor, PadPointerSpeed = percent)
+bool AbyssConfiguration_GetPadCursor(void); // true: the stick moves the pointer; false: console style (like Diablo III)
+int  AbyssConfiguration_GetPadPointerSpeed(void);
+void AbyssConfiguration_SetPad(bool cursor, int pointer_speed);
 // Multiplayer: the lobby server listing online games ("" = none), and the last Direct IP address
 const char *AbyssConfiguration_GetLobby(void);
 const char *AbyssConfiguration_GetLastAddress(void);

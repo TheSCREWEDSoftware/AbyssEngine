@@ -11,6 +11,7 @@
 #include "../drawing/Sprite.h"
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "../map/MapUnits.h"
 #include "../net/Multiplayer.h"
 #include "SceneCharacterCreate.h"
@@ -415,6 +416,13 @@ void CharacterSelect_Update(void *scene_ref, const uint64_t delta) {
     const bool clicked = left && !scene->prev_left;
     scene->prev_left   = left;
 
+    for (int s = 0; s < SLOT_COUNT; s++) { // (a controller can get to them: A twice plays, like a double click)
+        SDL_Rect rect;
+        CharacterSelect__SlotRect(s, &rect);
+        if ((scene->scroll * SLOT_COLUMNS) + s < scene->count) {
+            PadNav_Register(&rect);
+        }
+    }
     if (clicked) {
         for (int s = 0; s < SLOT_COUNT; s++) {
             SDL_Rect rect;

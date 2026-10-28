@@ -102,6 +102,7 @@ sources = [
 
     'managers/AudioManager.c',
     'managers/InputManager.c',
+    'managers/PadNav.c',
     'managers/VideoManager.c',
 
     'net/Client.c',

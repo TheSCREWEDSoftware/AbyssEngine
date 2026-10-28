@@ -40,6 +40,9 @@ typedef struct InputManager {
     float pointer_y;
     float wheel_speed;
     float wheel_rest; // part of a wheel step not passed on yet
+
+    bool pad_in_use;  // the last thing touched was the controller
+    bool pad_capture; // the menus have the controller (PadNav): the bindings don't see it
 } InputManager;
 
 InputManager *input_manager;
@@ -111,6 +114,9 @@ void InputManager_DestroySingleton(void) {
 bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
     switch (sdl_event->type) {
     case SDL_MOUSEMOTION: {
+        if (abs(sdl_event->motion.xrel) + abs(sdl_event->motion.yrel) >= 3) {
+            input_manager->pad_in_use = false; // (the mouse again)
+        }
         if (input_manager->own_pointer) {
             float x = input_manager->pointer_x + (float)sdl_event->motion.xrel * input_manager->pointer_speed_x;
             float y = input_manager->pointer_y + (float)sdl_event->motion.yrel * input_manager->pointer_speed_y;
@@ -141,6 +147,7 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         return true;
     }
     case SDL_MOUSEBUTTONDOWN:
+        input_manager->pad_in_use = false;
         if (!input_manager->own_pointer) {
             input_manager->mouse_x = sdl_event->button.x;
             input_manager->mouse_y = sdl_event->button.y;
@@ -191,6 +198,7 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
     case SDL_CONTROLLERBUTTONDOWN:
         if (sdl_event->cbutton.button < SDL_CONTROLLER_BUTTON_MAX) {
             input_manager->pad_buttons[sdl_event->cbutton.button] = true;
+            input_manager->pad_in_use                             = true;
             InputManager__Press(INPUT_PAD_BUTTON, sdl_event->cbutton.button);
         }
         return true;
@@ -214,6 +222,9 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         const float before                 = InputManager__AxisValue(pad, (SDL_GameControllerAxis)axis);
         const float after                  = (float)sdl_event->caxis.value / 32767.0f;
         input_manager->pad_axes[pad][axis] = after;
+        if (fabsf(after) > INPUT_PAD_DEAD_ZONE * 2.0f) {
+            input_manager->pad_in_use = true;
+        }
         if (before < INPUT_PAD_AXIS_THRESHOLD && after >= INPUT_PAD_AXIS_THRESHOLD) {
             InputManager__Press(INPUT_PAD_AXIS, (axis * 2) + 1);
         }
@@ -235,6 +246,7 @@ bool InputManager_ProcessSdlEvent(SDL_Event *sdl_event) {
         }
         input_manager->key_pressed[sdl_event->key.keysym.scancode] = true;
         input_manager->mods                                        = InputManager__Mods(sdl_event->key.keysym.mod);
+        input_manager->pad_in_use                                  = false;
         if (!sdl_event->key.repeat && sdl_event->key.keysym.scancode < SDL_NUM_SCANCODES) {
             input_manager->key_down[sdl_event->key.keysym.scancode] = true;
             InputManager__Press(INPUT_KEY, sdl_event->key.keysym.scancode);
@@ -312,14 +324,65 @@ void InputManager_SetTextInput(const char *text) {
 }
 
 bool InputManager_PollPress(InputPress *press) {
-    if (input_manager->press_count == 0) {
-        return false;
+    while (input_manager->press_count > 0) {
+        *press                    = input_manager->presses[input_manager->press_head];
+        input_manager->press_head = (input_manager->press_head + 1) % MAX_PRESSES;
+        input_manager->press_count--;
+        if (input_manager->pad_capture && (press->kind == INPUT_PAD_BUTTON || press->kind == INPUT_PAD_AXIS)) {
+            continue; // (the menus have the controller)
+        }
+        return true;
     }
-    *press                    = input_manager->presses[input_manager->press_head];
-    input_manager->press_head = (input_manager->press_head + 1) % MAX_PRESSES;
-    input_manager->press_count--;
-    return true;
+    return false;
 }
+
+bool InputManager_PadConnected(void) {
+    for (int p = 0; p < MAX_PADS; p++) {
+        if (input_manager->pads[p] != NULL) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InputManager_PadInUse(void) { return input_manager->pad_in_use && InputManager_PadConnected(); }
+
+bool InputManager_RawPadButton(const SDL_GameControllerButton button) {
+    return button >= 0 && button < SDL_CONTROLLER_BUTTON_MAX && input_manager->pad_buttons[button];
+}
+
+float InputManager_RawPadAxis(const SDL_GameControllerAxis axis) { return InputManager_GetPadAxis(axis); }
+
+void InputManager_SetPadCapture(const bool capture) { input_manager->pad_capture = capture; }
+
+void InputManager_SetPointer(const int x, const int y) {
+    input_manager->mouse_x   = x < 0 ? 0 : (x > 799 ? 799 : x);
+    input_manager->mouse_y   = y < 0 ? 0 : (y > 599 ? 599 : y);
+    input_manager->pointer_x = (float)input_manager->mouse_x;
+    input_manager->pointer_y = (float)input_manager->mouse_y;
+}
+
+void InputManager_SetMouseButton(const int button, const bool down) {
+    if (button <= 0 || button > 8) {
+        return;
+    }
+    if (down) {
+        input_manager->mouse_buttons |= SDL_BUTTON(button);
+        InputManager__Press(INPUT_MOUSE_BUTTON, button);
+    } else {
+        input_manager->mouse_buttons &= ~SDL_BUTTON(button);
+    }
+}
+
+void InputManager_PressKey(const SDL_Scancode scancode) {
+    if (scancode <= SDL_SCANCODE_UNKNOWN || scancode >= SDL_NUM_SCANCODES) {
+        return;
+    }
+    input_manager->key_pressed[scancode] = true;
+    InputManager__Press(INPUT_KEY, scancode);
+}
+
+void InputManager_AddWheel(const int steps) { input_manager->mouse_wheel_y += steps; }
 
 void InputManager_ClearPresses(void) {
     input_manager->press_head  = 0;
@@ -338,6 +401,9 @@ float InputManager_GetPadAxis(const SDL_GameControllerAxis axis) {
 }
 
 bool InputManager_IsDown(const InputKind kind, const int value) {
+    if (input_manager->pad_capture && (kind == INPUT_PAD_BUTTON || kind == INPUT_PAD_AXIS)) {
+        return false;
+    }
     switch (kind) {
     case INPUT_KEY:
         return value >= 0 && value < SDL_NUM_SCANCODES && input_manager->key_down[value];
@@ -357,6 +423,9 @@ bool InputManager_IsDown(const InputKind kind, const int value) {
 }
 
 float InputManager_GetAmount(const InputKind kind, const int value) {
+    if (input_manager->pad_capture && (kind == INPUT_PAD_BUTTON || kind == INPUT_PAD_AXIS)) {
+        return 0.0f;
+    }
     switch (kind) {
     case INPUT_PAD_AXIS: {
         // A stick or trigger, as far as it's pushed that way (a little dead zone in the middle)

@@ -51,39 +51,39 @@
 <circle cx="726" cy="285" r="3" fill="#8c8c94"/>
 <circle cx="654" cy="375" r="3" fill="#8c8c94"/>
 <text x="250" y="60" font-size="13" font-weight="bold" text-anchor="end">Left trigger (Button 7)</text>
-<text x="250" y="75" font-size="11" text-anchor="end" fill="#7c7c84">(free)</text>
+<text x="250" y="75" font-size="11" text-anchor="end">Automap</text>
 <text x="250" y="110" font-size="13" font-weight="bold" text-anchor="end">Left bumper (Button 5)</text>
-<text x="250" y="125" font-size="11" text-anchor="end" fill="#7c7c84">(free)</text>
+<text x="250" y="125" font-size="11" text-anchor="end">Previous skill</text>
 <text x="250" y="165" font-size="13" font-weight="bold" text-anchor="end">Select (Button 9)</text>
-<text x="250" y="180" font-size="11" text-anchor="end" fill="#7c7c84">(free)</text>
+<text x="250" y="180" font-size="11" text-anchor="end">Character screen</text>
 <text x="250" y="215" font-size="13" font-weight="bold" text-anchor="end">D-pad</text>
-<text x="250" y="230" font-size="11" text-anchor="end" fill="#7c7c84">Up: (free)</text>
-<text x="250" y="245" font-size="11" text-anchor="end" fill="#7c7c84">Down: (free)</text>
-<text x="250" y="260" font-size="11" text-anchor="end" fill="#7c7c84">Left: (free)</text>
-<text x="250" y="275" font-size="11" text-anchor="end" fill="#7c7c84">Right: (free)</text>
+<text x="250" y="230" font-size="11" text-anchor="end">Up: Use belt 2</text>
+<text x="250" y="245" font-size="11" text-anchor="end">Down: Use belt 4</text>
+<text x="250" y="260" font-size="11" text-anchor="end">Left: Use belt 1</text>
+<text x="250" y="275" font-size="11" text-anchor="end">Right: Use belt 3</text>
 <text x="250" y="315" font-size="13" font-weight="bold" text-anchor="end">Left stick</text>
 <text x="250" y="330" font-size="11" text-anchor="end">Up: Move up</text>
 <text x="250" y="345" font-size="11" text-anchor="end">Down: Move down</text>
 <text x="250" y="360" font-size="11" text-anchor="end">Left: Move left</text>
 <text x="250" y="375" font-size="11" text-anchor="end">Right: Move right</text>
-<text x="250" y="390" font-size="11" text-anchor="end" fill="#7c7c84">Press (Button 11): (free)</text>
+<text x="250" y="390" font-size="11" text-anchor="end">Press (Button 11): Run / walk</text>
 <text x="850" y="60" font-size="13" font-weight="bold" text-anchor="start">Right trigger (Button 8)</text>
-<text x="850" y="75" font-size="11" text-anchor="start" fill="#7c7c84">(free)</text>
+<text x="850" y="75" font-size="11" text-anchor="start">Right skill / drop monster</text>
 <text x="850" y="110" font-size="13" font-weight="bold" text-anchor="start">Right bumper (Button 6)</text>
-<text x="850" y="125" font-size="11" text-anchor="start" fill="#7c7c84">(free)</text>
+<text x="850" y="125" font-size="11" text-anchor="start">Next skill</text>
 <text x="850" y="165" font-size="13" font-weight="bold" text-anchor="start">Start (Button 10)</text>
 <text x="850" y="180" font-size="11" text-anchor="start" fill="#7c7c84">(free)</text>
 <text x="850" y="215" font-size="13" font-weight="bold" text-anchor="start">Buttons (the right-hand D-pad)</text>
-<text x="850" y="230" font-size="11" text-anchor="start" fill="#7c7c84">Up (Button 4): (free)</text>
-<text x="850" y="245" font-size="11" text-anchor="start" fill="#7c7c84">Down (Button 2): (free)</text>
+<text x="850" y="230" font-size="11" text-anchor="start">Up (Button 4): Inventory</text>
+<text x="850" y="245" font-size="11" text-anchor="start">Down (Button 2): Move / attack / use</text>
 <text x="850" y="260" font-size="11" text-anchor="start">Left (Button 1): Attack</text>
-<text x="850" y="275" font-size="11" text-anchor="start" fill="#7c7c84">Right (Button 3): (free)</text>
+<text x="850" y="275" font-size="11" text-anchor="start">Right (Button 3): Right skill / drop monster</text>
 <text x="850" y="315" font-size="13" font-weight="bold" text-anchor="start">Right stick</text>
 <text x="850" y="330" font-size="11" text-anchor="start" fill="#7c7c84">Up: (free)</text>
 <text x="850" y="345" font-size="11" text-anchor="start" fill="#7c7c84">Down: (free)</text>
 <text x="850" y="360" font-size="11" text-anchor="start" fill="#7c7c84">Left: (free)</text>
 <text x="850" y="375" font-size="11" text-anchor="start" fill="#7c7c84">Right: (free)</text>
-<text x="850" y="390" font-size="11" text-anchor="start" fill="#7c7c84">Press (Button 12): (free)</text>
+<text x="850" y="390" font-size="11" text-anchor="start">Press (Button 12): Skill tree</text>
 <text x="550" y="462" font-size="13" font-weight="bold" text-anchor="middle">Home (Button 13)</text>
 <text x="550" y="477" font-size="11" text-anchor="middle" fill="#7c7c84">(free)</text>
 <text x="20" y="566" font-size="12">Buttons are numbered as Windows numbers them and named by where they are (the four on the right are a second D-pad), whatever the pad prints on them.</text>

@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include <SDL2/SDL.h>
 #include <stdlib.h>
@@ -55,6 +56,9 @@ bool Checkbox_Update(Checkbox *checkbox) {
     int text_w;
     int text_h;
     Label_GetSize(checkbox->label, &text_w, &text_h);
+    if (checkbox->enabled) {
+        PadNav_Register(&(SDL_Rect){checkbox->x, checkbox->y, BOX_SIZE + 8 + text_w, BOX_SIZE});
+    }
     const bool over = mouse_x >= checkbox->x && mouse_x < checkbox->x + BOX_SIZE + 8 + text_w &&
                       mouse_y >= checkbox->y && mouse_y < checkbox->y + BOX_SIZE;
     if (clicked && over && checkbox->enabled) {

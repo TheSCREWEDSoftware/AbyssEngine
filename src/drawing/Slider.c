@@ -3,6 +3,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include "TextBox.h"
 #include <SDL2/SDL.h>
@@ -116,7 +117,14 @@ bool Slider_Update(Slider *slider) {
     }
     slider->prev_left = left;
 
-    const int before = slider->value;
+    const int      before = slider->value;
+    const SDL_Rect place  = {slider->x - KNOB_WIDTH, slider->y, slider->width + (KNOB_WIDTH * 2), SLIDER_HEIGHT};
+    PadNav_RegisterKind(&place, PAD_NAV_SLIDER, 0, 0);
+    const int pad_step = PadNav_SliderStep(&place); // a controller: left / right a step (a twentieth, at least 1)
+    if (pad_step != 0) {
+        const int range = slider->maximum - slider->minimum;
+        Slider_SetValue(slider, slider->value + (pad_step * (range / 20 > 1 ? range / 20 : 1)));
+    }
     if (slider->dragging) {
         const int range = slider->maximum - slider->minimum;
         const int along = mouse_x - slider->x;

@@ -4,6 +4,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include "Sprite.h"
 
@@ -234,6 +235,7 @@ bool Button_Update(Button *button) {
         return false;
     }
 
+    PadNav_Register(&(SDL_Rect){button->x, button->y, button->width, button->height}); // (a controller can get here)
     button->hovered = mouse_x >= button->x && mouse_x < button->x + button->width && mouse_y >= button->y &&
                       mouse_y < button->y + button->height;
 

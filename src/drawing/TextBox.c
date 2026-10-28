@@ -3,6 +3,7 @@
 #include "../common/Logging.h"
 #include "../common/ResourcePaths.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "Label.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,6 +113,7 @@ bool TextBox_Update(TextBox *text_box) {
     const bool was_mouse_left = text_box->prev_mouse_left;
     text_box->prev_mouse_left = mouse_left;
 
+    PadNav_RegisterKind(&(SDL_Rect){text_box->x, text_box->y, text_box->width, text_box->height}, PAD_NAV_TEXT, 0, 0);
     if (mouse_left && !was_mouse_left) {
         const bool hovered = mouse_x >= text_box->x && mouse_x < text_box->x + text_box->width &&
                              mouse_y >= text_box->y && mouse_y < text_box->y + text_box->height;

@@ -13,6 +13,7 @@
 #include "../game/Shop.h"
 #include "../game/Sockets.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -896,10 +897,71 @@ static int GameInventory__UpdateInner(GameInventory *inventory, Character *chara
                                       int mouse_y, bool left_click, bool right_click, bool shift, Item *drunk,
                                       const char **message);
 
+// Where a controller can go (managers/PadNav): the grids a cell at a time, what's worn, the panels' buttons
+static void GameInventory__PadPlaces(GameInventory *inventory, const Character *character) {
+    const int box = SHOP_BUTTON_SZ;
+    PadNav_RegisterKind(&(SDL_Rect){GRID_X, GRID_Y, INVENTORY_W * CELL, INVENTORY_H * CELL}, PAD_NAV_GRID, CELL, CELL);
+    for (int s = 0; s < EQUIP_COUNT; s++) {
+        PadNav_Register(&slot_rects[s]);
+    }
+    for (int arm = 0; character->expansion && arm < 2; arm++) {
+        for (int set = 0; set < 2; set++) {
+            const SDL_Rect tab = GameInventory__SetTab(arm, set);
+            PadNav_Register(&tab);
+        }
+    }
+    PadNav_Register(&(SDL_Rect){GOLD_BUTTON_X, GOLD_BUTTON_Y, GOLD_BUTTON_W, GOLD_BUTTON_H});
+    if (inventory->trade != NULL) {
+        PadNav_RegisterKind(&(SDL_Rect){TRADE_GRID_X, TRADE_THEIR_Y, TRADE_W * CELL, TRADE_H * CELL}, PAD_NAV_GRID,
+                            CELL, CELL);
+        PadNav_RegisterKind(&(SDL_Rect){TRADE_GRID_X, TRADE_MY_Y, TRADE_W * CELL, TRADE_H * CELL}, PAD_NAV_GRID, CELL,
+                            CELL);
+        PadNav_Register(&(SDL_Rect){TRADE_ACCEPT_X, TRADE_BUTTONS_Y, box, box});
+        PadNav_Register(&(SDL_Rect){TRADE_CLOSE_X, TRADE_BUTTONS_Y, box, box});
+        PadNav_Register(&(SDL_Rect){156, 225, 150, 20});
+    } else if (inventory->shop != NULL) {
+        PadNav_RegisterKind(&(SDL_Rect){SHOP_GRID_X, SHOP_GRID_Y, SHOP_W * CELL, SHOP_H * CELL}, PAD_NAV_GRID, CELL,
+                            CELL);
+        for (int t = 0; t < SHOP_TABS; t++) {
+            PadNav_Register(&(SDL_Rect){t * SHOP_TAB_W, 0, SHOP_TAB_W, SHOP_TAB_H});
+        }
+        PadNav_Register(&(SDL_Rect){SHOP_CLOSE_X, SHOP_CLOSE_Y, box, box});
+        const int step = PadNav_TakeTabStep(); // (LB / RB: the store's tabs)
+        if (step != 0) {
+            inventory->shop_tab = (inventory->shop_tab + step + SHOP_TABS) % SHOP_TABS;
+        }
+    } else if (inventory->cube_open) {
+        PadNav_RegisterKind(&(SDL_Rect){CUBE_GRID_X, CUBE_GRID_Y, CUBE_W * CELL, CUBE_H * CELL}, PAD_NAV_GRID, CELL,
+                            CELL);
+        PadNav_Register(&(SDL_Rect){CUBE_TRANSMUTE_X, CUBE_TRANSMUTE_Y, box, box});
+        PadNav_Register(&(SDL_Rect){CUBE_CLOSE_X, CUBE_CLOSE_Y, box, box});
+    } else if (inventory->hire != NULL) {
+        for (int s = 0; s < HIRE_SLOTS; s++) {
+            PadNav_Register(&hire_rects[s]);
+        }
+        PadNav_Register(&(SDL_Rect){HIRE_CLOSE_X, HIRE_CLOSE_Y, box, box});
+    } else if (inventory->stash_open) {
+        PadNav_RegisterKind(&(SDL_Rect){STASH_GRID_X, stash_grid_y, STASH_W * CELL, stash_rows * CELL}, PAD_NAV_GRID,
+                            CELL, CELL);
+        PadNav_Register(&(SDL_Rect){STASH_GOLD_BUTTON_X, stash_gold_y, GOLD_BUTTON_W, GOLD_BUTTON_H});
+        for (int side = 0; Stash_Pages() > 1 && side < 2; side++) {
+            const SDL_Rect arrow = GameInventory__StashArrow(side);
+            PadNav_Register(&arrow);
+        }
+        for (int tab = 0; GameInventory__TabsShown(inventory, character) && tab < 2; tab++) {
+            const SDL_Rect rect = GameInventory__StashTab(tab);
+            PadNav_Register(&rect);
+        }
+    }
+}
+
 int GameInventory_Update(GameInventory *inventory, Character *character, const bool open, const int mouse_x,
                          const int mouse_y, const bool left_click, const bool right_click, const bool shift,
                          Item *drunk, const char **message) {
     GameInventory__StashLayout(character);
+    if (open) {
+        GameInventory__PadPlaces(inventory, character);
+    }
     // The weapon set tabs (the expansion): the other one swaps
     for (int arm = 0; open && left_click && character->expansion && arm < 2; arm++) {
         for (int set = 0; set < 2; set++) {

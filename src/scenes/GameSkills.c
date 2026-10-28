@@ -8,6 +8,7 @@
 #include "../game/Affixes.h"
 #include "../game/SkillData.h"
 #include "../game/Skills.h"
+#include "../managers/PadNav.h"
 #include "GameInventory.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
@@ -227,6 +228,33 @@ bool GameSkills_IsOver(const GameSkills *skills, const bool tree_open, const int
 int GameSkills_Update(GameSkills *skills, Character *character, const bool tree_open, const int mouse_x,
                       const int mouse_y, const bool left_click, const char **message) {
     *message = NULL;
+    // Where a controller can go (managers/PadNav): the two skill buttons, a picker's skills, the tree and its tabs
+    PadNav_Register(&(SDL_Rect){GAME_SKILL_LEFT_X, GAME_SKILL_Y, ICON, ICON});
+    PadNav_Register(&(SDL_Rect){GAME_SKILL_RIGHT_X, GAME_SKILL_Y, ICON, ICON});
+    if (skills->picker != 0) {
+        int      list[PICKER_MAX];
+        SDL_Rect rects[PICKER_MAX];
+        int      count = 0;
+        GameSkills__PickerRects(skills, character, list, rects, &count);
+        for (int i = 0; i < count; i++) {
+            PadNav_Register(&rects[i]);
+        }
+    } else if (tree_open) {
+        for (int page = 1; page <= SKILL_PAGES; page++) {
+            const SDL_Rect tab = GameSkills__TabRect(page);
+            PadNav_Register(&tab);
+        }
+        for (int s = 0; s < skills->table->count; s++) {
+            if (skills->table->skills[s].page == skills->page) {
+                const SDL_Rect rect = GameSkills__IconRect(&skills->table->skills[s]);
+                PadNav_Register(&rect);
+            }
+        }
+        const int step = PadNav_TakeTabStep(); // (LB / RB: the trees)
+        if (step != 0) {
+            skills->page = ((skills->page - 1 + step + SKILL_PAGES) % SKILL_PAGES) + 1;
+        }
+    }
     if (!left_click) {
         return SKILLS_EVENT_NONE;
     }

@@ -20,6 +20,7 @@
 #include "game/SkillReport.h"
 #include "managers/AudioManager.h"
 #include "managers/InputManager.h"
+#include "managers/PadNav.h"
 #include "managers/VideoManager.h"
 #include "map/LevelTypes.h"
 #include "map/MapSession.h"
@@ -655,6 +656,7 @@ int main(int argc, char **argv) {
         }
 
         Multiplayer_Update(); // the hosted server and our connection, before the scene reads them
+        PadNav_Update(); // a controller in the menus: it moves the pointer and clicks (A skips a video too)
         VideoManager_IsPlayingVideo() ? VideoManager_Update(tick_delta) : Scene_UpdateCurrentScene(tick_delta);
         AudioManager_Update();
 
@@ -664,6 +666,7 @@ int main(int argc, char **argv) {
             VideoManager_Render();
         } else {
             Scene_RenderCurrentScene();
+            PadNav_Draw();
             Cursor_Draw();
         }
         Picture_EndFrame();

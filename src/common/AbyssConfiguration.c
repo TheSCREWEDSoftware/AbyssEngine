@@ -36,6 +36,8 @@ typedef struct AbyssConfiguration {
         int  mouse_speed_y;
         bool match_axes;  // one speed for both
         int  wheel_speed; // percent of the wheel's steps
+        bool pad_cursor;    // a controller in the menus: the stick moves the pointer (false: console-style focus)
+        int  pad_pointer;   // percent: how fast a stick moves the pointer
     } input;
     struct {
         char lobby[128];        // the lobby server ("host" or "host:port"), for Multiplayer › Browse › Online
@@ -328,6 +330,10 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             abyss_configuration.input.match_axes = IS_STR_EQUAL(value, "true");
         } else if (IS_STR_EQUAL(key, "wheelspeed")) {
             abyss_configuration.input.wheel_speed = v;
+        } else if (IS_STR_EQUAL(key, "padmenus")) {
+            abyss_configuration.input.pad_cursor = IS_STR_EQUAL(value, "cursor");
+        } else if (IS_STR_EQUAL(key, "padpointerspeed")) {
+            abyss_configuration.input.pad_pointer = v;
         }
     } else if (IS_STR_EQUAL(category, "mpqs")) {
         if (strlen(key) != 0) {
@@ -566,6 +572,8 @@ void AbyssConfiguration__SetSaneDefaults(void) {
     abyss_configuration.input.mouse_speed_y  = 100;
     abyss_configuration.input.match_axes     = true;
     abyss_configuration.input.wheel_speed    = 100;
+    abyss_configuration.input.pad_cursor     = false; // console style
+    abyss_configuration.input.pad_pointer    = 100;
     abyss_configuration.network.show_names   = true;
     abyss_configuration.network.show_circles = true;
 
@@ -618,6 +626,13 @@ void AbyssConfiguration_SetMouse(const int speed_x, const int speed_y, const boo
     abyss_configuration.input.mouse_speed_y = match_axes ? speed_x : speed_y;
     abyss_configuration.input.match_axes    = match_axes;
     abyss_configuration.input.wheel_speed   = wheel_speed;
+}
+
+bool AbyssConfiguration_GetPadCursor(void) { return abyss_configuration.input.pad_cursor; }
+int  AbyssConfiguration_GetPadPointerSpeed(void) { return abyss_configuration.input.pad_pointer; }
+void AbyssConfiguration_SetPad(const bool cursor, const int pointer_speed) {
+    abyss_configuration.input.pad_cursor  = cursor;
+    abyss_configuration.input.pad_pointer = pointer_speed < 10 ? 10 : (pointer_speed > 400 ? 400 : pointer_speed);
 }
 
 const char *AbyssConfiguration_GetLobby(void) { return abyss_configuration.network.lobby; }
@@ -694,6 +709,8 @@ bool AbyssConfiguration_Save(void) {
         {"network",  "ShowNames",    "", false, false},
         {"network",  "ShowCircles",  "", false, false},
         {"graphics", "ControlPanel", "", false, false},
+        {"input",    "PadMenus",     "", false, false},
+        {"input",    "PadPointerSpeed", "", false, false},
     };
     const int count = (int)(sizeof(settings) / sizeof(settings[0]));
     snprintf(settings[0].value, 64, "%s", abyss_configuration.graphics.scale_quality);
@@ -730,6 +747,8 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[19].value, 64, "%s", abyss_configuration.network.show_names ? "true" : "false");
     snprintf(settings[20].value, 64, "%s", abyss_configuration.network.show_circles ? "true" : "false");
     snprintf(settings[21].value, 64, "%s", abyss_configuration.graphics.modern_panel ? "Modern" : "Original");
+    snprintf(settings[22].value, 64, "%s", abyss_configuration.input.pad_cursor ? "Cursor" : "Console");
+    snprintf(settings[23].value, 64, "%d", abyss_configuration.input.pad_pointer);
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

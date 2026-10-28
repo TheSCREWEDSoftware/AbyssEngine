@@ -11,6 +11,7 @@
 #include "../drawing/TextBox.h"
 #include "../game/Character.h"
 #include "../managers/InputManager.h"
+#include "../managers/PadNav.h"
 #include "../net/Client.h"
 #include "SceneCharacterSelect.h"
 #include "SceneGame.h"
@@ -367,6 +368,9 @@ void CharacterCreate_Update(void *scene_ref, const uint64_t delta) {
             }
         }
         hero->hovered = false;
+        if (hero->state == HERO_IDLE) { // (a controller can get to them; the box round the body, as the hit test)
+            PadNav_Register(&(SDL_Rect){hero->x - 38, hero->y - 125, 77, 176});
+        }
         if (hero->state == HERO_IDLE && CharacterCreate__HitTest(hero, mouse_x, mouse_y)) {
             hovered = h;
         }
@@ -379,6 +383,8 @@ void CharacterCreate_Update(void *scene_ref, const uint64_t delta) {
     }
 
     // Checkboxes
+    PadNav_Register(&(SDL_Rect){CHECK_X, EXPANSION_Y, CHECK_SIZE + 160, CHECK_SIZE});
+    PadNav_Register(&(SDL_Rect){CHECK_X, HARDCORE_Y, CHECK_SIZE + 160, CHECK_SIZE});
     if (clicked && mouse_x >= CHECK_X && mouse_x < CHECK_X + CHECK_SIZE + 160) {
         if (mouse_y >= EXPANSION_Y && mouse_y < EXPANSION_Y + CHECK_SIZE) {
             const bool locked =
