@@ -488,9 +488,17 @@ amulet (and back), rerolling a magic item with three perfect gems, magic weapons
 prismatic amulet and garnet / cobalt / coral / jade rings, repairing with a rune, unsocketing, unique and rare weapons
 and armor made exceptional or elite (their magic kept), **crafted items** (Hit Power, Blood, Caster and Safety: the
 magic item can be its exceptional or elite version too). Low quality weapons and armor made normal again (Ral or
-Ort and a chipped gem) are in too; the Pandemonium portals aren't yet. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
+Ort and a chipped gem) are in too. **The cow level**: Wirt's body in Tristram gives his leg; transmute it with a Tome of Town Portal
 in the Rogue Encampment, once Baal is beaten on that difficulty, and you're taken to the Moo Moo Farm (Hell Bovines and
 the Cow King). What's inside is kept with the character; any cube you carry opens it.
+
+**Pandemonium** (Hell): the Countess, the Summoner and Nihlathak can drop the Keys of Terror, Hate and Destruction.
+The three keys transmuted in Harrogath take you to one of Matron's Den (Lilith), the Forgotten Sands (Uber Duriel) or
+the Furnace of Pain (Uber Izual), one not yet opened this game; those three drop Diablo's Horn, Baal's Eye and
+Mephisto's Brain, and the three organs transmuted in Harrogath take you to Uber Tristram, where Uber Mephisto, Uber
+Diablo and Uber Baal wait. The last of the three to fall leaves the **Hellfire Torch**. An Uber beaten stays beaten
+for the game. **The Diablo Clone** (the single player way): sell The Stone of Jordan to a merchant and Diablo walks
+the earth: he's in the next area that's made, out of town, and leaves **Annihilus**.
 In multiplayer games the bosses the presets leave out are there from the start, the same for everyone.
 
 ## Text mode

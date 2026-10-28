@@ -171,6 +171,7 @@ struct GameInventory {
     // cell x + y * INVENTORY_W + page * INVENTORY_PAGE)
     bool identifying;
     bool portal_allowed; // a Town Portal can be read here (not in town)
+    bool sold_jordan;    // the Stone of Jordan was sold (GameInventory_TakeSoldJordan)
     bool id_from_belt;
     int  id_where;
 };
@@ -483,9 +484,21 @@ static void GameInventory__Sell(GameInventory *inventory, Character *character, 
     const int price = Shop_SellPrice(inventory->shop, item, inventory->difficulty);
     const int limit = Inventory_GoldLimit(character);
     character->gold = character->gold + price > limit ? limit : character->gold + price;
+    char name[96];
+    char line2[96];
+    Affixes_Name(item, name, sizeof(name), line2, sizeof(line2));
+    if (item->quality == ITEM_UNIQUE && !item->unidentified && strcmp(name, "The Stone of Jordan") == 0) {
+        inventory->sold_jordan = true; // (Diablo walks the earth)
+    }
     Shop_Take(inventory->shop, item);
     snprintf(inventory->sound, sizeof(inventory->sound), "item_gold");
     (void)message;
+}
+
+bool GameInventory_TakeSoldJordan(GameInventory *inventory) {
+    const bool sold        = inventory->sold_jordan;
+    inventory->sold_jordan = false;
+    return sold;
 }
 
 bool GameInventory_StashOpen(const GameInventory *inventory) { return inventory->stash_open; }

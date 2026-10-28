@@ -131,6 +131,7 @@ static const OutdoorArea outdoor_areas[] = {
       "Act 1 - Pond"}                                                                                                                   },
     // Act 2
     {41,  8, "Act 2 - Desert Border ",          NULL, NULL,   0, 0,  {"Act 2 - Desert Tomb 1"},                 {A2_DESERT}             },
+    {134, 8, "Act 2 - Desert Border ",          NULL, NULL,   0, 0,  {NULL},                                    {A2_DESERT}             }, // the Forgotten Sands
     {42,  8, "Act 2 - Desert Border ",          NULL, NULL,   0, 0,  {"Act 2 - Desert Tomb 1"},                 {A2_DESERT}             },
     {43,
      8,      "Act 2 - Desert Border ",
@@ -287,6 +288,9 @@ static const MazeArea maze_areas[] = {
     {128, "Act 5 - Baal",      "Act 5 - Baal Prev",      "Act 5 - Baal Next",             NULL,                         10, 0, 0},
     {129, "Act 5 - Baal",      "Act 5 - Baal Prev",      "Act 5 - Baal Next",             "Act 5 - Baal Waypoint",      10, 0, 0},
     {130, "Act 5 - Baal",      "Act 5 - Baal Prev",      "Act 5 - Baal Next",             NULL,                         10, 0, 0},
+    // Pandemonium: Matron's Den (crypt), the Furnace of Pain (lava)
+    {133, "Act 1 - Crypt",     NULL,                     NULL,                            NULL,                         12, 0, 0},
+    {135, "Act 5 - Lava",      NULL,                     NULL,                            NULL,                         8,  0, 0},
 };
 
 #define STRIP_LEVEL_ID 110 // Bloody Foothills
@@ -306,6 +310,7 @@ typedef struct LevelInfo {
     int  id;
     char name[48];
     int  act;
+    int  palette; // Levels.txt Pal
     int  size_x;
     int  size_y;
     int  sub_type; // LvlSub.txt decorations
@@ -489,6 +494,7 @@ static bool Builder__GetLevel(const int level_id, LevelInfo *info) {
         snprintf(info->name, sizeof(info->name), "%s",
                  DataTable_GetString(t, row, DataTable_GetColumnIndex(t, "LevelName")));
         info->act                            = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "Act"));
+        info->palette                        = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "Pal"));
         info->size_x                         = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "SizeX"));
         info->size_y                         = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "SizeY"));
         info->sub_type                       = DataTable_GetInt(t, row, DataTable_GetColumnIndex(t, "SubType"));
@@ -2195,6 +2201,9 @@ Map *LevelBuilder_Build(const int level_id, uint32_t seed) {
     }
     if (map != NULL && (level_id == STRIP_LEVEL_ID || Builder__Outdoor(level_id) != NULL)) {
         Map_FillSeams(map); // (outdoors: no black gaps between the pieces)
+    }
+    if (map != NULL && level.palette != level.act && level.palette >= 0 && level.palette <= 4) {
+        map->palette = level.palette; // (Act 5's lava areas: Act 4's colours)
     }
     if (map != NULL && level_id == 74) {
         Map_JoinPieces(map, 4); // (the Arcane Sanctuary's walkways stop short of each other)

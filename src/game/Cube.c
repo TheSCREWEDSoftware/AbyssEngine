@@ -122,7 +122,9 @@ typedef struct RecipeInput {
 
 typedef enum OutputKind { OUT_NEW, OUT_USETYPE, OUT_USEITEM, OUT_COW_PORTAL } OutputKind;
 
-static bool cube_portal = false; // Cube_TakePortal
+static CubePortal    cube_portal = CUBE_NO_PORTAL; // Cube_TakePortal
+static InventoryItem portal_inputs[CUBE_MAX];      // what went into it (Cube_GiveBack)
+static int           portal_input_count = 0;
 
 typedef struct RecipeMod {
     char code[16];
@@ -232,8 +234,13 @@ static bool Cube__ParseOutput(const char *text, Recipe *recipe) {
                 recipe->kind = OUT_USETYPE;
             } else if (strcmp(token, "useitem") == 0) {
                 recipe->kind = OUT_USEITEM;
-            } else if (strcmp(token, "Cow Portal") == 0) {
-                recipe->kind = OUT_COW_PORTAL; // Wirt's leg and a Tome of Town Portal: the Moo Moo Farm
+            } else if (strcmp(token, "Cow Portal") == 0 || strcmp(token, "Pandemonium Portal") == 0 ||
+                       strcmp(token, "Pandemonium Finale Portal") == 0) {
+                // Wirt's leg and a Tome of Town Portal: the Moo Moo Farm; the three keys: one of Pandemonium's three
+                // areas; the three organs: Uber Tristram
+                recipe->kind = OUT_COW_PORTAL;
+                snprintf(recipe->code, sizeof(recipe->code), "%c",
+                         token[0] == 'C' ? 'c' : (strstr(token, "Finale") ? 'f' : 'p'));
             } else if (strchr(token, ' ') == NULL && strlen(token) < sizeof(recipe->code) && token[0] != '\0') {
                 recipe->kind = OUT_NEW;
                 snprintf(recipe->code, sizeof(recipe->code), "%.7s", token);
@@ -333,10 +340,17 @@ static void Cube__Load(void) {
     DataTable_Destroy(&t);
 }
 
-bool Cube_TakePortal(void) {
-    const bool portal = cube_portal;
-    cube_portal       = false;
+CubePortal Cube_TakePortal(void) {
+    const CubePortal portal = cube_portal;
+    cube_portal             = CUBE_NO_PORTAL;
     return portal;
+}
+
+void Cube_GiveBack(Character *character) {
+    for (int i = 0; i < portal_input_count; i++) {
+        Cube_Add(character, &portal_inputs[i].item);
+    }
+    portal_input_count = 0;
 }
 
 void Cube_Release(void) {
@@ -429,8 +443,12 @@ bool Cube_Transmute(Character *character, char *message, const size_t size) {
             continue;
         }
         if (recipe->kind == OUT_COW_PORTAL) {
+            portal_input_count = character->cube_count;
+            memcpy(portal_inputs, character->cube, sizeof(InventoryItem) * (size_t)character->cube_count);
             character->cube_count = 0;
-            cube_portal           = true;
+            cube_portal           = recipe->code[0] == 'c'   ? CUBE_COW_PORTAL
+                                    : recipe->code[0] == 'f' ? CUBE_FINALE_PORTAL
+                                                             : CUBE_PANDEMONIUM_PORTAL;
             snprintf(message, size, "A red portal opens...");
             return true;
         }

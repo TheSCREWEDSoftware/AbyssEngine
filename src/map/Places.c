@@ -17,7 +17,7 @@
 
 // Whole-area presets left out
 static const int excluded_levels[] = {
-    136, // Uber Tristram (a copy of Tristram)
+    0, // (none now: Uber Tristram, 136, is Pandemonium's finale)
 };
 
 static Place *places      = NULL;

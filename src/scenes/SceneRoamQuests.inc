@@ -128,7 +128,8 @@ static void Roam__CheckQuests(SceneRoam *roam, const uint64_t now) {
         case QUEST_KILL: {
             const int boss = Roam__QuestBoss(roam, quest);
             if (boss < 0) {
-                if (quest->spawn && !roam->online) { // (multiplayer: already put in with the map, Roam__PlaceQuestObjects)
+                if (quest->spawn &&
+                    !roam->online) { // (multiplayer: already put in with the map, Roam__PlaceQuestObjects)
                     Roam__SpawnQuestBoss(roam, quest, area);
                 }
             } else if (!Roam__IsAlive(&roam->units[boss]) &&
@@ -645,9 +646,14 @@ static void Roam__CallAncients(SceneRoam *roam, const Unit *altar, const bool hi
 }
 
 // A monster died: what the quests take from it
+static void Roam__UberKilled(SceneRoam *roam, const Unit *victim);
+
 static void Roam__QuestKill(SceneRoam *roam, const Unit *victim) {
     if (!roam->game || roam->character == NULL || victim->is_object || victim->ally) {
         return;
+    }
+    if (strncmp(victim->id, "uber", 4) == 0) {
+        Roam__UberKilled(roam, victim);
     }
     const bool council = strncmp(victim->id, "councilmember", 13) == 0;
     if (council && Roam__QuestOpen(roam, 2, 2) && Roam__FindItem(roam, "qf2") == NULL) {
@@ -685,30 +691,146 @@ static void Roam__QuestKill(SceneRoam *roam, const Unit *victim) {
     }
 }
 
-// The cube made the cow level's portal: in the Rogue Encampment, once Baal is beaten (on that difficulty), you go
+// The cube made a red portal: the cow level's (in the Rogue Encampment, once Baal is beaten on that difficulty), or
+// Pandemonium's (in Harrogath, in Hell: the three keys open Matron's Den, the Forgotten Sands or the Furnace of Pain,
+// one not yet opened this game; the three organs Uber Tristram). You go through at once.
 static void Roam__CowLevel(SceneRoam *roam) {
-    if (!Cube_TakePortal()) {
+    const CubePortal portal = Cube_TakePortal();
+    if (portal == CUBE_NO_PORTAL) {
         return;
     }
-    const int baal = Roam__QuestIndex(4, 6);
-    if (roam->area_level != 1) {
-        Roam__ShowMessage(roam, "The portal can only be opened in the Rogue Encampment.");
-    } else if (baal >= 0 && *Roam__QuestState(roam, baal) == QUEST_OPEN) {
-        Roam__ShowMessage(roam, "Nothing happens: the cows wait until Baal is beaten.");
-    } else {
-        const int place = Roam__FindPlace(39);
-        if (place >= 0) {
+    int level = -1;
+    if (portal == CUBE_COW_PORTAL) {
+        const int baal = Roam__QuestIndex(4, 6);
+        if (roam->area_level != 1) {
+            Roam__ShowMessage(roam, "The portal can only be opened in the Rogue Encampment.");
+        } else if (baal >= 0 && *Roam__QuestState(roam, baal) == QUEST_OPEN) {
+            Roam__ShowMessage(roam, "Nothing happens: the cows wait until Baal is beaten.");
+        } else {
+            level = 39;
             Roam__ShowMessage(roam, "Moo.");
-            roam->inventory_panel = false;
-            Roam__Teleport(roam, place);
-            return;
+        }
+    } else if (roam->area_level != 109 || Roam__Difficulty(roam) < 2) {
+        Roam__ShowMessage(roam, "That portal only opens in Harrogath, in Hell.");
+    } else if (portal == CUBE_FINALE_PORTAL) {
+        level = 136;
+        Roam__ShowMessage(roam, "A red portal to Tristram opens...");
+    } else {
+        int left[3];
+        int count = 0;
+        for (int p = 0; p < 3; p++) {
+            if (!(roam->pandemonium_opened & (1 << p))) {
+                left[count++] = p;
+            }
+        }
+        if (count == 0) {
+            Roam__ShowMessage(roam, "All three of Pandemonium's portals have been opened this game.");
+        } else {
+            const int pick            = left[Roam__Roll(0, count - 1)];
+            roam->pandemonium_opened |= 1 << pick;
+            level                     = 133 + pick;
+            Roam__ShowMessage(roam, pick == 0 ? "A red portal to Matron's Den opens..."
+                                              : (pick == 1 ? "A red portal to the Forgotten Sands opens..."
+                                                           : "A red portal to the Furnace of Pain opens..."));
         }
     }
-    // (not opened: the leg and the tome come back)
-    Item leg  = Inventory_NewItem("leg");
-    Item tome = Inventory_NewItem("tbk");
-    Cube_Add(roam->character, &leg);
-    Cube_Add(roam->character, &tome);
+    const int place = level > 0 ? Roam__FindPlace(level) : -1;
+    if (place >= 0) {
+        roam->inventory_panel = false;
+        Roam__Teleport(roam, place);
+        return;
+    }
+    Cube_GiveBack(roam->character); // (not opened: what went in comes back)
+}
+
+// Pandemonium's Ubers, in their areas until they're beaten this game: Lilith in Matron's Den, Uber Duriel in the
+// Forgotten Sands, Uber Izual in the Furnace of Pain; Uber Mephisto, Diablo and Baal in Uber Tristram. And the Diablo
+// Clone when he walks the earth.
+static void Roam__PlaceUbers(SceneRoam *roam) {
+    static const struct {
+        int         level;
+        const char *id;
+        const char *name;
+    } ubers[] = {
+        {133, "uberandariel", "Lilith"       },
+        {134, "uberduriel",   "Uber Duriel"  },
+        {135, "uberizual",    "Uber Izual"   },
+        {136, "ubermephisto", "Uber Mephisto"},
+        {136, "uberdiablo",   "Uber Diablo"  },
+        {136, "uberbaal",     "Uber Baal"    },
+    };
+    for (size_t u = 0; u < sizeof(ubers) / sizeof(ubers[0]); u++) {
+        const MapArea *area = Roam__MapAreaFor(roam, ubers[u].level);
+        if (area == NULL || (roam->ubers_killed & (1 << u))) {
+            continue;
+        }
+        const float left = (float)area->x0 * MAP_SUBTILES;
+        const float top  = (float)area->y0 * MAP_SUBTILES;
+        const float w    = (float)(area->x1 - area->x0 + 1) * MAP_SUBTILES;
+        const float h    = (float)(area->y1 - area->y0 + 1) * MAP_SUBTILES;
+        float       x    = 0.0f;
+        float       y    = 0.0f;
+        float       best = -1.0f;
+        for (int t = 0; t < 40; t++) { // far from where you come in (in Tristram: round the middle)
+            float sx;
+            float sy;
+            Roam__ArrivalSpot(roam->map, left + (w * (float)Roam__Roll(20, 80) / 100.0f),
+                              top + (h * (float)Roam__Roll(20, 80) / 100.0f), &sx, &sy);
+            const float far =
+                ubers[u].level == 136 || roam->online
+                    ? (float)(40 - t)
+                    : Roam__Distance(sx, sy, roam->player.x, roam->player.y); // (multiplayer: the same for everyone)
+            if (Map_IsWalkable(roam->map, (int)sx, (int)sy) && far > best) {
+                best = far;
+                x    = sx;
+                y    = sy;
+            }
+        }
+        Unit *boss = best >= 0.0f ? Roam__AddUnit(roam, "monsters", ubers[u].id, x, y) : NULL;
+        if (boss != NULL) {
+            snprintf(boss->name, sizeof(boss->name), "%s", ubers[u].name);
+            boss->boss = true;
+        }
+    }
+    if (roam->clone_walks && !roam->in_town && roam->area_level != 136) {
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, roam->player.x + 20.0f, roam->player.y + 10.0f, &x, &y);
+        Unit *clone = Roam__AddUnit(roam, "monsters", "uberdiablo", x, y);
+        if (clone != NULL) {
+            snprintf(clone->name, sizeof(clone->name), "Diablo Clone");
+            clone->boss       = true;
+            clone->clone      = true;
+            roam->clone_walks = false;
+            Roam__ShowMessage(roam, "Diablo walks the earth!");
+        }
+    }
+}
+
+// A unique of that base dropped (the Hellfire Torch, Annihilus: their base's only unique at that level)
+static void Roam__DropUnique(SceneRoam *roam, const char *code, const int level, const float x, const float y) {
+    Item item = Inventory_NewItem(code);
+    if (item.code[0] != '\0' && Affixes_RollQuality(&item, level, ITEM_UNIQUE)) {
+        Roam__PutOnGround(roam, &item, x, y);
+    }
+}
+
+// An Uber beaten: marked for the game; the last of Tristram's three leaves the Hellfire Torch, the Diablo Clone
+// Annihilus
+static void Roam__UberKilled(SceneRoam *roam, const Unit *victim) {
+    static const char *ids[] = {"uberandariel", "uberduriel", "uberizual", "ubermephisto", "uberdiablo", "uberbaal"};
+    if (victim->clone) {
+        Roam__DropUnique(roam, "cm1", 110, victim->x, victim->y); // Annihilus
+        return;
+    }
+    for (int u = 0; u < 6; u++) {
+        if (strcmp(victim->id, ids[u]) == 0 && (u < 3 || roam->area_level == 136)) {
+            roam->ubers_killed |= 1 << u;
+            if (u >= 3 && (roam->ubers_killed & 0x38) == 0x38) {
+                Roam__DropUnique(roam, "cm2", 110, victim->x, victim->y); // the Hellfire Torch
+            }
+        }
+    }
 }
 
 // Meshif and the Jade Figurine: he gives you the Golden Bird for it (the quest then waits at Alkor)
@@ -823,6 +945,7 @@ static void Roam__PlaceTownFolk(SceneRoam *roam) {
 
 static void Roam__PlaceQuestObjects(SceneRoam *roam) {
     Roam__PlacePrisons(roam);
+    Roam__PlaceUbers(roam);
     Roam__PlaceTownFolk(roam);
     // Multiplayer: the Ancients wait out of sight by their altar
     for (int i = 0; roam->online && i < roam->unit_count; i++) {

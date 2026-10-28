@@ -86,6 +86,8 @@ void GameInventory_SetSharedStash(GameInventory *inventory, bool allowed);
 // How many pages the stash and the shared stash have (Options > Gameplay; never fewer than have items on them)
 void GameInventory_SetStashPages(GameInventory *inventory, int pages, int shared_pages);
 bool GameInventory_StashOpen(const GameInventory *inventory);
+// The Stone of Jordan was just sold to a merchant (once per call): the Diablo Clone walks the earth
+bool GameInventory_TakeSoldJordan(GameInventory *inventory);
 bool GameInventory_IsOverStash(const GameInventory *inventory, int mouse_x, int mouse_y); // (or the cube)
 bool GameInventory_CubeOpen(const GameInventory *inventory); // the Horadric Cube on the left (right click it to open)
 // A merchant's store on the left (NULL closes it): click an item to buy it (Shift: potions into the belt), put an item

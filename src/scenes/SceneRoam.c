@@ -300,6 +300,7 @@ typedef struct Unit {
     bool            ally;        // summoned by the player: fights the monsters
     const SkillRow *summoned_by; // the skill that called it
     uint64_t        ally_until;  // gone at this time (0: stays)
+    bool            clone;       // the Diablo Clone (he leaves Annihilus)
     bool            corpse_used; // a corpse a skill has already been used on (Find Item, Find Potion, Grim Ward)
     bool            decoy;       // the Amazon's Decoy: stands there drawing the monsters, never strikes
     bool            shadow;      // the Assassin's Shadow Warrior / Master: fights with your own skills
@@ -542,12 +543,15 @@ typedef struct SceneRoam {
     int      other_colors[NET_MAX_PLAYERS];
     int      other_count;
     uint64_t last_sent;
-    uint64_t last_monsters; // the map's owner: monsters last sent at
-    uint64_t last_allies;   // our summons last sent at
-    int      attack_other;  // PvP: the player being attacked (their id), 0 = none
-    uint64_t storm_next;    // Thunder Storm's next bolt
-    uint64_t berserk_until; // Berserk: your defense gone until then
-    uint64_t frenzy_until;  // Frenzy: quicker while you keep hitting
+    uint64_t last_monsters;      // the map's owner: monsters last sent at
+    uint64_t last_allies;        // our summons last sent at
+    int      attack_other;       // PvP: the player being attacked (their id), 0 = none
+    uint64_t storm_next;         // Thunder Storm's next bolt
+    int      pandemonium_opened; // this game's red portals opened: bits for Matron's Den, Forgotten Sands, Furnace
+    int      ubers_killed;       // this game's Ubers beaten (bits: Lilith, Duriel, Izual, Mephisto, Diablo, Baal)
+    bool     clone_walks;        // the Stone of Jordan was sold: the Diablo Clone comes in the next area
+    uint64_t berserk_until;      // Berserk: your defense gone until then
+    uint64_t frenzy_until;       // Frenzy: quicker while you keep hitting
     int      frenzy_level;
     // A channelled skill (Inferno, Arctic Blast): the right button still held, where the mouse is, the next burst
     bool     channel_held;
@@ -5706,6 +5710,10 @@ static bool Roam__UpdateGamePanels(SceneRoam *roam, const int mouse_x, const int
     Roam__KeepHireling(roam);
     Roam__KeepHirelingScreen(roam);
     Roam__CowLevel(roam);
+    if (roam->inventory_ui != NULL && GameInventory_TakeSoldJordan(roam->inventory_ui) && !roam->online) {
+        roam->clone_walks = true; // (he comes in the next area you go into, out of town)
+        Roam__ShowMessage(roam, "The Stone of Jordan is sold: Diablo walks the earth.");
+    }
     if (roam->online) {
         Roam__KeepTrade(roam);
     }

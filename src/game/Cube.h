@@ -23,8 +23,11 @@ bool Cube_Carried(const Character *character); // a cube in the inventory
 // Transmute: the recipe whose inputs are exactly what's inside, made. False (with why) when nothing matches.
 bool Cube_Transmute(Character *character, char *message, size_t size);
 
-// The recipe that opens the cow level was just made: the game takes you there (once per call)
-bool Cube_TakePortal(void);
+// A recipe that opens a red portal was just made (once per call): the cow level's, one of Pandemonium's (the three
+// keys) or its finale's (the three organs). Cube_GiveBack puts what went in back in the cube when it can't open here.
+typedef enum CubePortal { CUBE_NO_PORTAL, CUBE_COW_PORTAL, CUBE_PANDEMONIUM_PORTAL, CUBE_FINALE_PORTAL } CubePortal;
+CubePortal Cube_TakePortal(void);
+void       Cube_GiveBack(Character *character);
 
 void Cube_Release(void);
 
