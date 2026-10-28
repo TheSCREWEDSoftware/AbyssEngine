@@ -80,6 +80,9 @@ static DC6 *DC6__FromStream(MpqStream *stream) {
 
 void DC6_Destroy(struct DC6 **dc6) {
     assert(dc6 != NULL);
+    if (*dc6 == NULL) {
+        return; // (never loaded: the automap of a play-test you never opened it in)
+    }
 
     const uint32_t total_frames = DC6_GetTotalFrameCount(*dc6);
     for (uint32_t i = 0; i < total_frames; i++) {
