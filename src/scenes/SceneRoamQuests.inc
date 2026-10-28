@@ -327,6 +327,42 @@ static void Roam__ClaimQuest(SceneRoam *roam, const int index) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The quest log (Q): the acts' quests on the left, with where each one stands
 
+// Like the game's quest log: a quest clicked plays again what its giver said when they set it (their words in the
+// box at the top and their voice), "akara_act1_q1_init" and its string A1Q1InitAkara. False when there's none.
+static bool Roam__ReplayQuest(SceneRoam *roam, const int index) {
+    const Quest *quest = Quests_Get(index);
+    if (quest == NULL || quest->giver == NULL) {
+        return false;
+    }
+    Unit giver;
+    memset(&giver, 0, sizeof(giver));
+    snprintf(giver.id, sizeof(giver.id), "%s", quest->giver);
+    char text_name[24];
+    char sound_name[24];
+    Roam__NpcSpeechNames(&giver, text_name, sizeof(text_name), sound_name, sizeof(sound_name));
+    char key[64];
+    snprintf(key, sizeof(key), "A%dQ%dInit%s", quest->act + 1, quest->number, text_name);
+    const char *text = Roam__NpcString(key);
+    if (text == NULL) {
+        return false;
+    }
+    while (*text >= '0' && *text <= '9') {
+        text++; // (the game's scrolling speed, on a line of its own)
+    }
+    while (*text == '\n' || *text == '\r') {
+        text++;
+    }
+    char sound[64];
+    snprintf(sound, sizeof(sound), "%s_act%d_q%d_init", sound_name, quest->act + 1, quest->number);
+    Roam__CloseSpeech(roam);
+    snprintf(roam->speech_text, sizeof(roam->speech_text), "%s", text);
+    const int ms     = Sounds_PlaySpeech(sound);
+    roam->speech_ms  = ms > 0 ? ms : 2500 + ((int)strlen(text) * 55);
+    roam->speech_at  = SDL_GetTicks64();
+    roam->speech_npc = SPEECH_REPLAY; // (no one to walk away from)
+    return true;
+}
+
 static bool Roam__UpdateQuestPanel(SceneRoam *roam, const int mouse_x, const int mouse_y, const bool click) {
     if (!roam->quest_panel) {
         return false;
@@ -337,6 +373,21 @@ static bool Roam__UpdateQuestPanel(SceneRoam *roam, const int mouse_x, const int
     if (click && mouse_y >= 34 && mouse_y < 58) {
         const int act   = (mouse_x - 10) / 60;
         roam->quest_act = act >= 0 && act < 5 ? act : roam->quest_act;
+    } else if (click && mouse_y >= 64) {
+        // A quest's row: what its giver said, again
+        int row = 0;
+        for (int q = 0; q < QUEST_COUNT; q++) {
+            if (Quests_Get(q)->act != roam->quest_act) {
+                continue;
+            }
+            if (mouse_y < 64 + ((row + 1) * 60)) {
+                if (!Roam__ReplayQuest(roam, q)) {
+                    Roam__ShowMessage(roam, "Nothing to hear again for that one.");
+                }
+                break;
+            }
+            row++;
+        }
     }
     return true;
 }
@@ -353,7 +404,7 @@ static void Roam__DrawQuestPanel(SceneRoam *roam) {
     SDL_RenderDrawRect(sdl_renderer, &panel);
     static const char *difficulty_names[3] = {"Normal", "Nightmare", "Hell"};
     char               text[96];
-    snprintf(text, sizeof(text), "Quests  (%s)", difficulty_names[Roam__Difficulty(roam)]);
+    snprintf(text, sizeof(text), "Quests  (%s)   click one to hear it again", difficulty_names[Roam__Difficulty(roam)]);
     Label_SetText(roam->item_label, text);
     Label_SetColor(roam->item_label, 0xC7, 0xB3, 0x77, 0xFF);
     Label_Draw(roam->item_label, 12, 10);

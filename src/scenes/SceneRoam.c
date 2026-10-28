@@ -91,6 +91,7 @@
 #define ARRIVE_DISTANCE 0.15f
 
 // Combat
+#define SPEECH_REPLAY     -2    // speech_npc: the quest log replaying a quest's words
 #define AGGRO_RANGE       10.0f // sub-tiles
 #define ATTACK_RANGE      1.6f
 #define ATTACK_COOLDOWN   900  // ms between a monster's attacks
@@ -644,7 +645,7 @@ typedef struct SceneRoam {
     char         speech_text[3000];
     uint64_t     speech_at;
     int          speech_ms;
-    int          speech_npc;   // unit index, -1 = nobody's talking
+    int          speech_npc;   // unit index, -1 = nobody's talking, SPEECH_REPLAY = the quest log playing it again
     bool         text_mode;    // shown as text (AbyssEngine --text): speech goes to the message line
     int          text_view;    // text mode: 0 the map, 1 your items, 2 a store
     int          text_pick;    // your items: the one picked (-1 none)

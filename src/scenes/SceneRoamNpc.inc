@@ -397,7 +397,8 @@ static bool Roam__UpdateSpeech(SceneRoam *roam, const bool click) {
     }
     const Unit *unit =
         roam->speech_npc >= 0 && roam->speech_npc < roam->unit_count ? &roam->units[roam->speech_npc] : NULL;
-    if (unit == NULL || Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) > NPC_RANGE + 4.0f ||
+    if ((roam->speech_npc != SPEECH_REPLAY &&
+         (unit == NULL || Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) > NPC_RANGE + 4.0f)) ||
         SDL_GetTicks64() > roam->speech_at + (uint64_t)roam->speech_ms + 1500) {
         Roam__CloseSpeech(roam);
         return false;
@@ -415,10 +416,13 @@ static void Roam__DrawSpeech(SceneRoam *roam) {
         return;
     }
     // Wrapped to the box (the strings have their own line breaks too)
-    enum { SPEECH_LINES = 48, SPEECH_W = 500 };
-    char lines[SPEECH_LINES][160];
-    int  count = 0;
-    char word_line[160];
+    enum { SPEECH_LINES = 48 };
+    // (beside the quest log when it's open: a quest played again from it)
+    const int SPEECH_W = roam->quest_panel ? 420 : 500;
+    const int centre   = roam->quest_panel ? GAME_PANEL_W + ((800 - GAME_PANEL_W) / 2) : 400;
+    char      lines[SPEECH_LINES][160];
+    int       count = 0;
+    char      word_line[160];
     word_line[0]  = '\0';
     const char *c = roam->speech_text;
     while (*c != '\0' && count < SPEECH_LINES) {
@@ -451,7 +455,7 @@ static void Roam__DrawSpeech(SceneRoam *roam) {
     }
     const int      line_h  = 18;
     const int      visible = 9;
-    const SDL_Rect box     = {400 - (SPEECH_W / 2) - 14, 60, SPEECH_W + 28, (visible * line_h) + 16};
+    const SDL_Rect box     = {centre - (SPEECH_W / 2) - 14, 60, SPEECH_W + 28, (visible * line_h) + 16};
     SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 200);
     SDL_RenderFillRect(sdl_renderer, &box);
@@ -472,7 +476,7 @@ static void Roam__DrawSpeech(SceneRoam *roam) {
         Label_SetText(roam->item_label, lines[l]);
         int w = 0;
         Label_GetSize(roam->item_label, &w, NULL);
-        Label_Draw(roam->item_label, 400 - (w / 2), y);
+        Label_Draw(roam->item_label, centre - (w / 2), y);
     }
     SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
