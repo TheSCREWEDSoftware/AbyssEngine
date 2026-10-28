@@ -1351,6 +1351,16 @@ static Map *Builder__BuildOutdoor(const OutdoorArea *area, const LevelInfo *leve
 
     DS1Cell    ground;
     const DS1 *ground_source = borders.pieces[EDGE_N][0];
+    // Act 5's highlands and the plateau: the ground between the pieces is the one the barricade pieces are drawn on (their
+    // edges meet it without a seam; the cliff borders' own ground is the other kind)
+    if (level->id == 111 || level->id == 112) {
+        const Preset *fill = area->fills[0] != NULL ? Builder__FindPreset(area->fills[0]) : NULL;
+        const DS1    *ds1  = fill != NULL && fill->file_count > 0 ? Builder__LoadDS1(fill->files[0]) : NULL;
+        DS1Cell       test;
+        if (ds1 != NULL && Builder__FindGround(ds1, &test)) {
+            ground_source = ds1;
+        }
+    }
     if (!Builder__FindGround(ground_source, &ground)) {
         return NULL;
     }
