@@ -142,6 +142,7 @@ static bool MonsterStats__Get(const char *monstats_id, const int area_level, Mon
         const char        *el_mode  = DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "El1Mode"));
         const char        *el_type  = DataTable_GetString(monstats, row, DataTable_GetColumnIndex(monstats, "El1Type"));
         static const char *types[5] = {"", "fire", "cold", "ltng", "pois"};
+        stats->mana_drain           = strcmp(el_type, "mana") == 0 && el_mode[0] == 'A';
         for (int e = 1; e < 5 && strcmp(el_mode, "A1") == 0; e++) {
             if (strcmp(el_type, types[e]) == 0) {
                 stats->element   = e;

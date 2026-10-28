@@ -66,6 +66,100 @@ static bool Roam__MonsterShoots(SceneRoam *roam, Unit *unit, const float tx, con
     return true;
 }
 
+// Diablo's Bone Prison: while one of its walls stands you stay inside it
+static void Roam__KeepInPrison(SceneRoam *roam, const uint64_t now) {
+    if (now >= roam->prison_until) {
+        return;
+    }
+    bool standing = false;
+    for (int i = 0; i < roam->unit_count && !standing; i++) {
+        const Unit *wall = &roam->units[i];
+        standing         = strncmp(wall->id, "boneprison", 10) == 0 && Roam__IsAlive(wall) &&
+                   Roam__Distance(wall->x, wall->y, roam->prison_x, roam->prison_y) < 4.0f;
+    }
+    if (!standing) {
+        roam->prison_until = 0; // broken out
+        return;
+    }
+    Unit       *player = &roam->player;
+    const float away   = Roam__Distance(player->x, player->y, roam->prison_x, roam->prison_y);
+    if (away > 1.8f) {
+        player->x = player->target_x = roam->prison_x + ((player->x - roam->prison_x) / away * 1.8f);
+        player->y = player->target_y = roam->prison_y + ((player->y - roam->prison_y) / away * 1.8f);
+        roam->moving                 = false;
+        Roam__ClearPath(player);
+    }
+}
+
+// The bosses' own spells (monstats skills the engine does by hand): Diablo's cold touch (it freezes you) and Bone
+// Prison (walls round you), Baal's tentacles (they come up round you). True when it was one of them.
+static bool Roam__BossSpell(SceneRoam *roam, Unit *unit, const SkillRow *spell, const float tx, const float ty,
+                            const float distance, const uint64_t now) {
+    if (spell->do_func == 100) { // DiabCold: up close only
+        if (distance > 4.0f || !Roam__IsAlive(&roam->player)) {
+            return false;
+        }
+        int low    = 0;
+        int high   = 0;
+        int frames = 0;
+        SkillData_ElementalDamage(NULL, spell, unit->spell_level, &low, &high, &frames);
+        Roam__ChillMe(roam, (frames > 0 ? frames : 100) * 40, now);
+        roam->player.frozen_until = now + (uint64_t)((frames > 0 ? frames : 100) * 40) / 2; // (frozen, then slowed)
+        Roam__Damage(roam, &roam->player, Roam__Roll(low > 0 ? low : 15, high > low ? high : 25), now);
+        return true;
+    }
+    if (spell->do_func == 104) { // DiabPrison
+        if (now < roam->prison_until || roam->online) {
+            return false;
+        }
+        roam->prison_x     = tx;
+        roam->prison_y     = ty;
+        roam->prison_until = now + 12000;
+        for (int k = 0; k < 8; k++) {
+            const float angle = (float)k * (float)M_PI / 4.0f;
+            const float x     = tx + (cosf(angle) * 2.5f);
+            const float y     = ty + (sinf(angle) * 2.5f);
+            if (!Map_IsWalkable(roam->map, (int)x, (int)y)) {
+                continue;
+            }
+            char id[16];
+            snprintf(id, sizeof(id), "boneprison%d", 1 + (k % 4));
+            Unit *wall = Roam__AddUnit(roam, "monsters", id, x, y);
+            if (wall != NULL) {
+                snprintf(wall->name, sizeof(wall->name), "Bone Prison");
+                wall->damage_min = wall->damage_max = 0;
+                wall->speed                         = 0.0f;
+                wall->experience                    = 0;
+                wall->treasure[0]                   = '\0';
+                wall->max_hp = wall->hp = 200 + (unit->level * 20);
+            }
+        }
+        return true;
+    }
+    if (spell->do_func == 140) { // Baal Tentacle
+        if (roam->online) {
+            return false;
+        }
+        for (int k = 0; k < 5; k++) {
+            const float angle = (float)Roam__Roll(0, 359) * 0.01745f;
+            float       x;
+            float       y;
+            Roam__ArrivalSpot(roam->map, tx + (cosf(angle) * 3.0f), ty + (sinf(angle) * 3.0f), &x, &y);
+            char id[16];
+            snprintf(id, sizeof(id), "baaltentacle%d", 1 + (k % 5));
+            Unit *tentacle = Roam__AddUnit(roam, "monsters", id, x, y);
+            if (tentacle != NULL) {
+                tentacle->speed       = 0.0f;
+                tentacle->experience  = 0;
+                tentacle->treasure[0] = '\0';
+                tentacle->provoked    = true;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 // Casters: now and then, in range and in sight, a bolt (or a nova round them)
 static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, const float ty, const float distance,
                                const uint64_t now) {
@@ -83,6 +177,17 @@ static bool Roam__MonsterCasts(SceneRoam *roam, Unit *unit, const float tx, cons
         unit->spell       = unit->spells[pick];
         unit->spell_level = unit->spell_levels[pick];
         spell             = unit->spell;
+    }
+    if (spell->do_func == 100 || spell->do_func == 104 || spell->do_func == 140) {
+        if (!Roam__BossSpell(roam, unit, spell, tx, ty, distance, now)) {
+            return false;
+        }
+        Roam__TurnTowards(&unit->turn, unit->x, unit->y, tx, ty);
+        Roam__ClearPath(unit);
+        Roam__SetState(unit, UNIT_ATTACK, now);
+        unit->ranged_swing = true;
+        unit->next_attack  = now + ATTACK_COOLDOWN;
+        return true;
     }
     // The spell's own damage at its level (skills.txt EMin/EMax and their per-level growth), else the monster's blow
     int damage[ELEMENT_COUNT] = {0};

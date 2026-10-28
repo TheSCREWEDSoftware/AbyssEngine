@@ -253,8 +253,9 @@ typedef struct Unit {
     char            shot[32];
     const SkillRow *spell;
     int             spell_level;
-    const SkillRow *spells[4]; // all the missile and nova spells it has (a boss's several), picked between
-    int             spell_levels[4];
+    const SkillRow *spells[8]; // all the missile and nova spells it has (a boss's several), picked between
+    int             spell_levels[8];
+    bool            cloned; // Baal: his clone has come (at half his life)
     int             spell_count;
     uint64_t        next_spell;
     const SkillRow *hex;  // a curse it casts on you (Amplify Damage, Weaken, Decrepify); NULL none
@@ -547,6 +548,8 @@ typedef struct SceneRoam {
     uint64_t last_allies;        // our summons last sent at
     int      attack_other;       // PvP: the player being attacked (their id), 0 = none
     uint64_t storm_next;         // Thunder Storm's next bolt
+    float    prison_x, prison_y; // Diablo's Bone Prison round you: you can't leave it while a wall stands
+    uint64_t prison_until;
     int      pandemonium_opened; // this game's red portals opened: bits for Matron's Den, Forgotten Sands, Furnace
     int      ubers_killed;       // this game's Ubers beaten (bits: Lilith, Duriel, Izual, Mephisto, Diablo, Baal)
     bool     clone_walks;        // the Stone of Jordan was sold: the Diablo Clone comes in the next area
@@ -1136,6 +1139,7 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
         memcpy(unit->resist, stats.resist, sizeof(unit->resist));
         unit->element        = stats.element;
         unit->element_chance = stats.element_chance;
+        unit->mana_burn      = unit->mana_burn || stats.mana_drain; // (the Gloams: as much mana as life)
         unit->element_min    = stats.element_min;
         unit->element_max    = stats.element_max;
         // Archers' arrows; casters' bolts and novas (a skill with a missile that the engine has)
@@ -1148,8 +1152,12 @@ static bool Roam__InitUnit(Unit *unit, const char *base, const char *id, const f
             const SkillRow *spell = stats.skill[s][0] != '\0' ? SkillData_Get(stats.skill[s]) : NULL;
             const char     *name = spell != NULL ? (spell->missile[0] != '\0' ? spell->missile : spell->missile_a) : "";
             const int       level = stats.skill_level[s] > 0 ? stats.skill_level[s] : 1;
-            if (spell != NULL && (spell->kind == SKILL_KIND_MISSILE || spell->kind == SKILL_KIND_NOVA) &&
-                MissileData_Get(name) != NULL && unit->spell_count < 4) {
+            // (and the bosses' own: Diablo's cold touch and Bone Prison, Baal's tentacles)
+            const bool own = spell != NULL && (spell->do_func == 100 || spell->do_func == 104 || spell->do_func == 140);
+            if (spell != NULL &&
+                (own || ((spell->kind == SKILL_KIND_MISSILE || spell->kind == SKILL_KIND_NOVA) &&
+                         MissileData_Get(name) != NULL)) &&
+                unit->spell_count < 8) {
                 unit->spells[unit->spell_count]         = spell;
                 unit->spell_levels[unit->spell_count++] = level;
                 if (unit->spell == NULL) {
@@ -1413,6 +1421,8 @@ static void Roam__Wear(SceneRoam *roam, const bool weapon) {
     }
 }
 
+static void Roam__ArrivalSpot(const Map *map, float x, float y, float *out_x, float *out_y);
+
 static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t now) {
     if (!Roam__IsAlive(unit)) {
         return;
@@ -1454,6 +1464,27 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
         }
     }
     unit->hp -= amount;
+    if (roam->game && !roam->online && !unit->cloned && unit->hp > 0 && unit->hp * 2 < unit->max_hp &&
+        (strcmp(unit->id, "baalcrab") == 0 || strcmp(unit->id, "uberbaal") == 0)) {
+        // Baal at half his life: his clone comes, as strong as he is now
+        unit->cloned = true;
+        float x;
+        float y;
+        Roam__ArrivalSpot(roam->map, unit->x + 3.0f, unit->y - 2.0f, &x, &y);
+        const int hp    = unit->hp;
+        const int index = (int)(unit - roam->units);
+        Unit     *clone = Roam__AddUnit(roam, "monsters", "baalclone", x, y);
+        unit            = &roam->units[index]; // (the units may have moved)
+        if (clone != NULL) {
+            snprintf(clone->name, sizeof(clone->name), "Baal");
+            clone->cloned     = true;
+            clone->max_hp     = unit->max_hp;
+            clone->hp         = hp;
+            clone->provoked   = true;
+            clone->experience = 0;
+            Roam__ShowMessage(roam, "Baal splits in two!");
+        }
+    }
     if (unit->hp <= 0) {
         unit->hp = 0;
         if (roam->game && unit != &roam->player && Roam__RunsMonsters(roam)) {
@@ -3906,6 +3937,7 @@ static void Roam__ReleaseCharges(SceneRoam *roam, Unit *target, int rolled[ELEME
 }
 
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now);
+static void Roam__KeepInPrison(SceneRoam *roam, const uint64_t now);
 
 // Feral Rage's and Maul's charges: each blow that lands adds one (up to the skill's most), for a while
 static int Roam__DruidCharge(SceneRoam *roam, const SkillRow *skill, const int level, const uint64_t now) {
@@ -4522,6 +4554,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
             }
         }
     }
+    Roam__KeepInPrison(roam, now);
     Roam__SetState(player, (roam->moving || key_walking) ? UNIT_WALK : UNIT_IDLE, now);
 
     // A footstep as each foot comes down (the start and the middle of the walk cycle)

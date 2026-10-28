@@ -34,10 +34,11 @@ typedef struct MonsterStats {
     // Element order)
     int resist[5];
     // Its attack's elemental damage (El1, when it's for the first attack): element (0: none), chance in percent, range
-    int element;
-    int element_chance;
-    int element_min;
-    int element_max;
+    int  element;
+    int  element_chance;
+    bool mana_drain; // its blows drain mana (El1Type mana: the Gloams)
+    int  element_min;
+    int  element_max;
 } MonsterStats;
 
 bool MonsterStats_Get(const char *monstats_id, MonsterStats *stats); // false if unknown
