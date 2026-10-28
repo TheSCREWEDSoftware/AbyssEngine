@@ -1907,7 +1907,41 @@ static void Roam__TakePortal(SceneRoam *roam, const Unit *unit);
 static void Roam__PlacePortals(SceneRoam *roam);
 static void Roam__UseWell(SceneRoam *roam);
 
+// The Kurast Sewers' stairs down (objects.txt OperateFn 44) stay shut until the lever by them (OperateFn 45) is
+// pulled: the way out at them doesn't take you until then
+static bool Roam__StairsShut(const SceneRoam *roam, const MapExit *exit) {
+    for (int i = 0; i < roam->unit_count; i++) {
+        const Unit *stairs = &roam->units[i];
+        if (stairs->is_object && stairs->object.operate_fn == 44 && strcmp(stairs->object_mode, "on") != 0 &&
+            stairs->x >= (float)exit->x0 - 4.0f && stairs->x <= (float)exit->x1 + 4.0f &&
+            stairs->y >= (float)exit->y0 - 4.0f && stairs->y <= (float)exit->y1 + 4.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The lever: the stairs near it open (multiplayer: for everyone, as the lever's use is shared)
+static void Roam__PullLever(SceneRoam *roam, const Unit *lever, const uint64_t now) {
+    for (int i = 0; i < roam->unit_count; i++) {
+        Unit *stairs = &roam->units[i];
+        if (stairs->is_object && stairs->object.operate_fn == 44 &&
+            Roam__Distance(stairs->x, stairs->y, lever->x, lever->y) < 20.0f) {
+            snprintf(stairs->object_mode, sizeof(stairs->object_mode), "on");
+            if (stairs->object.has_mode[1] && stairs->object.frame_count[1] > 0) {
+                Roam__SetState(stairs, UNIT_OPERATE, now);
+            }
+            Sounds_Play("object_stairs", SOUND_KIND_SFX);
+        }
+    }
+    Sounds_Play("object_sewer_lever", SOUND_KIND_SFX);
+    Roam__ShowMessage(roam, "Stairs open somewhere near.");
+}
+
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
+    if (unit->object.operate_fn == 45) {
+        Roam__PullLever(roam, unit, now);
+    }
     if (unit->object.operate_fn == 70 && roam->area_level == 131 && roam->game && !roam->online &&
         roam->baal_wave < 6) {
         Roam__ShowMessage(roam, "Baal won't let you pass while his minions stand.");
@@ -7298,6 +7332,11 @@ static void Roam__Update(SceneRoam *roam) {
                                                                 roam->player.target_y <= (float)exit->y1 + 3.0f));
         if (exit == NULL) {
             roam->exits_armed = true;
+        } else if (roam->exits_armed && meant && Roam__StairsShut(roam, exit)) {
+            roam->exits_armed = false; // the Kurast Sewers' stairs: shut until their lever's pulled
+            roam->moving      = false;
+            Roam__ClearPath(&roam->player);
+            Roam__ShowMessage(roam, "The stairs are shut: a lever nearby opens them.");
         } else if (roam->exits_armed && meant) {
             roam->moving = false;
             Roam__ClearPath(&roam->player);
