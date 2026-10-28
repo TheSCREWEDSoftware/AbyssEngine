@@ -47,7 +47,7 @@ ScaleQuality = nearest      # nearest, linear or best: how the 800x600 picture i
 InitialScale = 1.0          # window = 800x600 times this, unless Resolution is set
 FullScreen = false          # Alt+Enter toggles full screen while running
 # Resolution = 1080p        # 720p, 1080p, 1440p, 4k or e.g. 1600x1200 (the game keeps its 4:3 shape)
-FrameRate = 60              # frames a second at most: 25 = Classic (the game's), 60 = Modern, unlimited
+FrameRate = 60              # frames a second at most: 25 = Original (the game's), 60 = Modern, unlimited
 Brightness = 50             # 0-100 each; 50 = the picture as the game made it
 Contrast = 50
 Gamma = 50

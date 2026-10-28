@@ -56,12 +56,12 @@ cmake_dependent_option(DEBUG_SHOW_OPTIONS_DEBUG "Show the Debug tab in Options (
                        ON "DEBUG_FEATURES" OFF)
 
 # --- Defaults ---------------------------------------------------------------------------------------------------------
-# Classic: like Diablo II (click to walk, worn gear comes off when picked up, the game's control panel); Modern: keys to
+# Original: like Diablo II (click to walk, worn gear comes off when picked up, the game's control panel); Modern: keys to
 # walk, gear stays worn until put down, the Modern control panel. Players can change each one in Options.
-set(DEFAULT_STYLE "Classic" CACHE STRING "Default style of the controls and settings: Classic (like Diablo II) or Modern")
-set_property(CACHE DEFAULT_STYLE PROPERTY STRINGS Classic Modern)
-if (NOT DEFAULT_STYLE MATCHES "^(Classic|Modern)$")
-    message(FATAL_ERROR "DEFAULT_STYLE must be Classic or Modern (it's \"${DEFAULT_STYLE}\")")
+set(DEFAULT_STYLE "Original" CACHE STRING "Default style of the controls and settings: Original (like Diablo II) or Modern")
+set_property(CACHE DEFAULT_STYLE PROPERTY STRINGS Original Modern)
+if (NOT DEFAULT_STYLE MATCHES "^(Original|Classic|Modern)$") # (Classic: the old name for Original)
+    message(FATAL_ERROR "DEFAULT_STYLE must be Original or Modern (it's \"${DEFAULT_STYLE}\")")
 endif ()
 
 option(WITHOUT_GIT "Don't ask git for the commit shown on the main menu" OFF)

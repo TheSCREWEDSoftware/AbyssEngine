@@ -94,8 +94,8 @@ static const char *scale_quality_names[] = {"Sharp pixels (nearest)", "Smooth (l
 #define FRAME_STEPS 7
 static const int   frame_steps[FRAME_STEPS]      = {10, 15, 20, 30, 45, 60, 0};
 static const char *frame_step_names[FRAME_STEPS] = {"Slowest", "Slower", "Slow", "Medium", "Fast", "Faster", "Fastest"};
-static const char *panel_choices[2]              = {"Classic (the game's)", "Modern"};
-static const char *frame_modes[]                 = {"Classic: 25 a second (the game's)", "Modern: 60 a second",
+static const char *panel_choices[2]              = {"Original (the game's)", "Modern"};
+static const char *frame_modes[]                 = {"Original: 25 a second (the game's)", "Modern: 60 a second",
                                                     "Your own (the slider)"};
 #define FRAME_CLASSIC 25
 #define FRAME_MODERN  60
@@ -113,11 +113,11 @@ static const char *picture_names[PICTURE_COUNT] = {"Brightness", "Contrast", "Ga
 static const char *volume_names[VOLUME_COUNT] = {"Master", "Music", "Sound effects", "Interface", "Speech"};
 
 static const char *movement_choices[MOVEMENT_TYPE_COUNT] = {
-    "Classic: click to walk and attack",
+    "Original: click to walk and attack",
     "Modern: keys walk, mouse attacks",
     "Combined: both",
 };
-static const char *pickup_choices[2]  = {"Classic: comes off at once", "Modern: worn until put down"};
+static const char *pickup_choices[2]  = {"Original: comes off at once", "Modern: worn until put down"};
 static const char *automap_choices[2] = {"Full view", "Corner"};
 
 static const char *movement_help[MOVEMENT_TYPE_COUNT] = {

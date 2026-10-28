@@ -36,7 +36,7 @@ void AbyssConfiguration_SetScaleQuality(const char *quality); // nearest, linear
 void AbyssConfiguration_SetVolumes(float master, float music, float sfx, float ui);
 bool AbyssConfiguration_Save(void);
 
-// Single Player's control panel: Classic (the game's) or Modern (CMake DEFAULT_STYLE picks the default)
+// Single Player's control panel: Original (the game's) or Modern (CMake DEFAULT_STYLE picks the default)
 bool AbyssConfiguration_GetModernPanel(void);
 void AbyssConfiguration_SetModernPanel(bool modern);
 

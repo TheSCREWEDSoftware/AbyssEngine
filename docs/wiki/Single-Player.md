@@ -78,7 +78,7 @@ the left skill, a spot for dropping items on the ground (between the skills), th
 <!-- keys:begin (generated: AbyssEngine --export-controls DIR --defaults, then keys-single-player.md) -->
 | Action | Mouse | Keyboard | Controller | What it does |
 |---|---|---|---|---|
-| Move / attack / use | `Mouse Left` | - | - | Classic: walk where you click, attack what you click, open what you click |
+| Move / attack / use | `Mouse Left` | - | - | Original: walk where you click, attack what you click, open what you click |
 | Move up | - | `Up` | `Pad Left Stick Up` | Modern and Combined movement: walk towards the top of the screen |
 | Move down | - | `Down` | `Pad Left Stick Down` | Modern and Combined movement |
 | Move left | - | `Left` | `Pad Left Stick Left` | Modern and Combined movement |
@@ -221,7 +221,7 @@ page number under the grid, next to the gold). The square button in its bottom c
 - **Click** an item to pick it up; it follows the mouse. **Click** again to put it down: in the grid (a green patch
   shows where), or in a slot it suits. Putting it on another item swaps them. Close the inventory with an item on the
   mouse and it goes back where it came from (or anywhere it fits; with no room at all it stays on the mouse).
-- **Picking up what you wear**: **Classic** (the game's way) takes it off at once; **Modern** (Options › Gameplay ›
+- **Picking up what you wear**: **Original** (the game's way) takes it off at once; **Modern** (Options › Gameplay ›
   Worn gear) leaves it worn, faded in its slot, until you put it in the grid or another slot.
 - **Wearing**: an item goes only where it suits (a helm on the head, a shield in a hand, ...) and only if you meet its
   requirements; ones you can't use yet are tinted red, with their unmet requirements in red. A two-handed weapon needs

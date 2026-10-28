@@ -29,7 +29,7 @@ typedef struct AbyssConfiguration {
         int   brightness; // 0..100, 50 = the game's picture
         int   contrast;
         int   gamma;
-        bool  modern_panel; // the control panel: Classic (the game's) or Modern
+        bool  modern_panel; // the control panel: Original (the game's) or Modern
     } graphics;
     struct {
         int  mouse_speed_x; // percent (100 = as the system moves it)
@@ -250,7 +250,9 @@ void AbyssConfiguration_SetValue(const char *category, const char *key, const ch
             LOG_DEBUG("Setting resolution to %dx%d", width, height);
         } else if (IS_STR_EQUAL(key, "framerate")) {
             abyss_configuration.graphics.frame_rate =
-                IS_STR_EQUAL(value, "unlimited") ? 0 : (IS_STR_EQUAL(value, "classic") ? 25 : atoi(value));
+                IS_STR_EQUAL(value, "unlimited")
+                    ? 0
+                    : ((IS_STR_EQUAL(value, "classic") || IS_STR_EQUAL(value, "original")) ? 25 : atoi(value));
         } else if (IS_STR_EQUAL(key, "brightness") || IS_STR_EQUAL(key, "contrast") || IS_STR_EQUAL(key, "gamma")) {
             int v                                                                    = atoi(value);
             v                                                                        = v < 0 ? 0 : (v > 100 ? 100 : v);
@@ -727,7 +729,7 @@ bool AbyssConfiguration_Save(void) {
     snprintf(settings[18].value, 64, "%d", abyss_configuration.network.color);
     snprintf(settings[19].value, 64, "%s", abyss_configuration.network.show_names ? "true" : "false");
     snprintf(settings[20].value, 64, "%s", abyss_configuration.network.show_circles ? "true" : "false");
-    snprintf(settings[21].value, 64, "%s", abyss_configuration.graphics.modern_panel ? "Modern" : "Classic");
+    snprintf(settings[21].value, 64, "%s", abyss_configuration.graphics.modern_panel ? "Modern" : "Original");
 
     // Read it all, then write it back with those lines changed (and any missing ones added to their section)
     FILE  *in         = fopen(abyss_configuration.ini_path, "r");

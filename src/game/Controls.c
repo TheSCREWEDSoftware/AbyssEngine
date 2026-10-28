@@ -25,7 +25,7 @@ static const ActionInfo actions[ACTION_COUNT] = {
                             "Move / attack / use",                  GROUP_MOVEMENT,
                             A,                                                         true,
                             {"Mouse Left"},
-                            "Classic: walk where you click, attack what you click, open what you click"                                                                },
+                            "Original: walk where you click, attack what you click, open what you click"                                                               },
     [ACTION_MOVE_UP]     = {"move_up",
                             "Move up",                              GROUP_MOVEMENT,
                             A,                                                         true,

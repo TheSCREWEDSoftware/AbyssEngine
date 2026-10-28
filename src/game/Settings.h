@@ -27,7 +27,7 @@ typedef struct GameplaySettings {
     bool         corner_automap;  // the automap (Tab) small in the top right corner, rather than over the whole view
 } GameplaySettings;
 
-// The defaults' style (CMake DEFAULT_STYLE / meson default_style): Classic like Diablo II, or Modern
+// The defaults' style (CMake DEFAULT_STYLE / meson default_style): Original like Diablo II, or Modern
 #ifdef ABYSS_DEFAULT_MODERN
 #define DEFAULT_STYLE_MODERN true
 #else

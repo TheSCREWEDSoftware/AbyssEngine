@@ -41,7 +41,7 @@ like the rest of that tab, so the game doesn't stop you using it in someone else
 <!-- keys:begin (generated: AbyssEngine --export-controls DIR --defaults, then keys-free-roam.md) -->
 | Action | Mouse | Keyboard | Controller | What it does |
 |---|---|---|---|---|
-| Move / attack / use | `Mouse Left` | - | - | Classic: walk where you click, attack what you click, open what you click |
+| Move / attack / use | `Mouse Left` | - | - | Original: walk where you click, attack what you click, open what you click |
 | Move up | - | `Up` | `Pad Left Stick Up` | Modern and Combined movement: walk towards the top of the screen |
 | Move down | - | `Down` | `Pad Left Stick Down` | Modern and Combined movement |
 | Move left | - | `Left` | `Pad Left Stick Left` | Modern and Combined movement |

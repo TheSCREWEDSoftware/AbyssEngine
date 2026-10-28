@@ -16,7 +16,7 @@ In **CMake GUI**, tick **Grouped**: these appear under **DEBUG**. All are on by 
 
 | CMake | Meson | Default | What it does |
 |-------|-------|---------|--------------|
-| `DEFAULT_STYLE` | `default_style` | `Classic` | The starting style of every control and setting that has a **Classic** (Diablo II's) and a **Modern** way: the type of movement (click to walk, or keys to walk), picking up worn gear (it comes off at once, or stays worn until put down), and the control panel. Players can still change each one in Options. The frame rate's default is Modern (60) either way. |
+| `DEFAULT_STYLE` | `default_style` | `Original` | The starting style of every control and setting that has an **Original** (Diablo II's; `Classic`, the old name, still works) and a **Modern** way: the type of movement (click to walk, or keys to walk), picking up worn gear (it comes off at once, or stays worn until put down), and the control panel. Players can still change each one in Options. The frame rate's default is Modern (60) either way. |
 
 ```bash
 cmake -S . -B build -DDEFAULT_STYLE=Modern

@@ -11,7 +11,7 @@
 
 static const char *profile_names[CONTROL_PROFILES]     = {"All classes", "Amazon",    "Sorceress", "Necromancer",
                                                           "Paladin",     "Barbarian", "Druid",     "Assassin"};
-static const char *movement_names[MOVEMENT_TYPE_COUNT] = {"Classic", "Modern", "Combined"};
+static const char *movement_names[MOVEMENT_TYPE_COUNT] = {"Original", "Modern", "Combined"};
 
 static GameplaySettings gameplay[CONTROL_PROFILES];
 static bool             own_gameplay[CONTROL_PROFILES];
@@ -170,7 +170,9 @@ void Settings_Load(void) {
         if (strcmp(key, "Movement") == 0) {
             for (int m = 0; m < MOVEMENT_TYPE_COUNT; m++) {
                 gameplay[profile].movement =
-                    strcmp(value, movement_names[m]) == 0 ? (MovementType)m : gameplay[profile].movement;
+                    strcmp(value, movement_names[m]) == 0 || (m == 0 && strcmp(value, "Classic") == 0) // (the old name)
+                        ? (MovementType)m
+                        : gameplay[profile].movement;
             }
         } else if (strcmp(key, "SeeThroughObstructions") == 0) {
             gameplay[profile].see_through = strcmp(value, "true") == 0;
@@ -212,7 +214,7 @@ void Settings_Save(void) {
         if (p == 0) {
             fprintf(file,
                     "[Gameplay]\n"
-                    "# Classic (click to walk and attack, like Diablo II), Modern (movement keys to walk, mouse or\n"
+                    "# Original (click to walk and attack, like Diablo II), Modern (movement keys to walk, mouse or\n"
                     "# the attack key to attack, like Diablo III / IV) or Combined (both)\n");
         } else {
             fprintf(file, "[Gameplay.%s]\n", profile_names[p]);
@@ -237,10 +239,10 @@ void Settings_Save(void) {
         }
         fprintf(file, "Automap = %s\n", gameplay[p].corner_automap ? "Corner" : "Full");
         if (p == 0) {
-            fprintf(file, "# Classic: picking up something you wear takes it off at once, like the game; Modern: it\n"
+            fprintf(file, "# Original: picking up something you wear takes it off at once, like the game; Modern: it\n"
                           "# stays worn until you put it down somewhere else\n");
         }
-        fprintf(file, "WornGearPickup = %s\n", gameplay[p].modern_pickup ? "Modern" : "Classic");
+        fprintf(file, "WornGearPickup = %s\n", gameplay[p].modern_pickup ? "Modern" : "Original");
         if (p == 0) {
             fprintf(file, "# Pages of the inventory grid, 1 to 255 (Single Player; a multiplayer game sets its own)\n");
         }
