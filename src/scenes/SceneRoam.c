@@ -303,6 +303,7 @@ typedef struct Unit {
     uint64_t        ally_until;  // gone at this time (0: stays)
     bool            clone;       // the Diablo Clone (he leaves Annihilus)
     bool            wave;        // one of Baal's minion waves (the Throne of Destruction)
+    int             pad_partner; // an Arcane Sanctuary pad: the unit index of the one it takes you to (-1 none)
     bool            corpse_used; // a corpse a skill has already been used on (Find Item, Find Potion, Grim Ward)
     bool            decoy;       // the Amazon's Decoy: stands there drawing the monsters, never strikes
     bool            shadow;      // the Assassin's Shadow Warrior / Master: fights with your own skills
@@ -537,28 +538,29 @@ typedef struct SceneRoam {
     TextBox *seed_box; // Free Roam: world seed (in the Places panel)
 
     // Multiplayer: the other players, chat, and the game clock (game speed)
-    bool     online;
-    Unit     others[NET_MAX_PLAYERS];
-    int      other_ids[NET_MAX_PLAYERS];
-    char     other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
-    int      other_state_count[NET_MAX_PLAYERS + 1];
-    int      other_colors[NET_MAX_PLAYERS];
-    int      other_count;
-    uint64_t last_sent;
-    uint64_t last_monsters;      // the map's owner: monsters last sent at
-    uint64_t last_allies;        // our summons last sent at
-    int      attack_other;       // PvP: the player being attacked (their id), 0 = none
-    uint64_t storm_next;         // Thunder Storm's next bolt
-    int      baal_wave;          // the Throne of Destruction: Baal's wave on (1-5), 0 not begun, 6 all beaten
-    uint64_t baal_wave_at;       // the next wave comes then (0: when this one's beaten)
-    float    prison_x, prison_y; // Diablo's Bone Prison round you: you can't leave it while a wall stands
-    uint64_t prison_until;
-    int      pandemonium_opened; // this game's red portals opened: bits for Matron's Den, Forgotten Sands, Furnace
-    int      ubers_killed;       // this game's Ubers beaten (bits: Lilith, Duriel, Izual, Mephisto, Diablo, Baal)
-    bool     clone_walks;        // the Stone of Jordan was sold: the Diablo Clone comes in the next area
-    uint64_t berserk_until;      // Berserk: your defense gone until then
-    uint64_t frenzy_until;       // Frenzy: quicker while you keep hitting
-    int      frenzy_level;
+    bool       online;
+    Unit       others[NET_MAX_PLAYERS];
+    int        other_ids[NET_MAX_PLAYERS];
+    char       other_states[NET_MAX_PLAYERS + 1][UNIT_STATES][32]; // by player id: their buffs and aura (to be seen)
+    int        other_state_count[NET_MAX_PLAYERS + 1];
+    int        other_colors[NET_MAX_PLAYERS];
+    int        other_count;
+    uint64_t   last_sent;
+    uint64_t   last_monsters;      // the map's owner: monsters last sent at
+    uint64_t   last_allies;        // our summons last sent at
+    int        attack_other;       // PvP: the player being attacked (their id), 0 = none
+    uint64_t   storm_next;         // Thunder Storm's next bolt
+    const Map *pads_paired;        // the map whose Arcane pads were last paired (Roam__PadPartner)
+    int        baal_wave;          // the Throne of Destruction: Baal's wave on (1-5), 0 not begun, 6 all beaten
+    uint64_t   baal_wave_at;       // the next wave comes then (0: when this one's beaten)
+    float      prison_x, prison_y; // Diablo's Bone Prison round you: you can't leave it while a wall stands
+    uint64_t   prison_until;
+    int        pandemonium_opened; // this game's red portals opened: bits for Matron's Den, Forgotten Sands, Furnace
+    int        ubers_killed;       // this game's Ubers beaten (bits: Lilith, Duriel, Izual, Mephisto, Diablo, Baal)
+    bool       clone_walks;        // the Stone of Jordan was sold: the Diablo Clone comes in the next area
+    uint64_t   berserk_until;      // Berserk: your defense gone until then
+    uint64_t   frenzy_until;       // Frenzy: quicker while you keep hitting
+    int        frenzy_level;
     // A channelled skill (Inferno, Arctic Blast): the right button still held, where the mouse is, the next burst
     bool     channel_held;
     float    channel_x, channel_y;
@@ -1938,6 +1940,51 @@ static void Roam__PullLever(SceneRoam *roam, const Unit *lever, const uint64_t n
     Roam__ShowMessage(roam, "Stairs open somewhere near.");
 }
 
+// The Arcane Sanctuary's pads come in pairs, like the game's: each one takes you to its partner on another platform,
+// and that one takes you back. Paired once a map, nearest first: the two closest pads on different platforms (rooms)
+// are a pair, then the next closest of those left, and so on. -1 when it has none (an odd one out).
+static int Roam__PadPartner(SceneRoam *roam, const Unit *pad) {
+    if (roam->pads_paired != roam->map) {
+        roam->pads_paired = roam->map;
+        int pads[64];
+        int count = 0;
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *unit = &roam->units[i];
+            if (unit->is_object && unit->object.operate_fn == 27) {
+                unit->pad_partner = -1;
+                if (count < 64) {
+                    pads[count++] = i;
+                }
+            }
+        }
+        for (;;) {
+            int   a    = -1;
+            int   b    = -1;
+            float best = 1e9f;
+            for (int p = 0; p < count; p++) {
+                const Unit *one = &roam->units[pads[p]];
+                for (int q = p + 1; q < count && one->pad_partner < 0; q++) {
+                    const Unit *two = &roam->units[pads[q]];
+                    const float d   = Roam__Distance(one->x, one->y, two->x, two->y);
+                    const int   ra  = Map_RoomAt(roam->map, one->x, one->y);
+                    const int   rb  = Map_RoomAt(roam->map, two->x, two->y);
+                    if (two->pad_partner < 0 && d > 20.0f && (ra != rb || ra == 0) && d < best) {
+                        best = d;
+                        a    = pads[p];
+                        b    = pads[q];
+                    }
+                }
+            }
+            if (a < 0) {
+                break;
+            }
+            roam->units[a].pad_partner = b;
+            roam->units[b].pad_partner = a;
+        }
+    }
+    return pad->pad_partner;
+}
+
 static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
     if (unit->object.operate_fn == 45) {
         Roam__PullLever(roam, unit, now);
@@ -1952,10 +1999,11 @@ static void Roam__Operate(SceneRoam *roam, Unit *unit, const uint64_t now) {
         return;
     }
     if (unit->object.operate_fn == 27) {
-        // A teleportation pad (the Arcane Sanctuary): to the nearest pad on another platform
-        int   best     = -1;
-        float distance = 1e9f;
-        for (int i = 0; i < roam->unit_count; i++) {
+        // A teleportation pad (the Arcane Sanctuary): to its partner across the gap (else the nearest pad on another
+        // platform)
+        int   best     = Roam__PadPartner(roam, unit);
+        float distance = best >= 0 ? 0.0f : 1e9f;
+        for (int i = 0; i < roam->unit_count && best < 0; i++) {
             const Unit *pad = &roam->units[i];
             const float d   = Roam__Distance(pad->x, pad->y, unit->x, unit->y);
             if (pad != unit && pad->is_object && pad->object.operate_fn == 27 && d > 20.0f && d < distance) {
@@ -3258,6 +3306,7 @@ static void Roam__Teleport(SceneRoam *roam, const int place_index) {
         Map_Destroy(&roam->map);
     }
     roam->map         = map;
+    roam->pads_paired = NULL; // (paired again for this map)
     roam->borrowed    = false;
     roam->place       = place_index;
     roam->area_level  = place->level_id;
