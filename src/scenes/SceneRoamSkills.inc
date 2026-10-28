@@ -1463,6 +1463,33 @@ static void Roam__ItemCasts(SceneRoam *roam, const int type, const Unit *target,
     }
 }
 
+// Telekinesis on what's under the mouse: gold, potions, scrolls and keys picked up from afar, a chest, door, shrine
+// or the like opened. True when there was something.
+static bool Roam__Telekinesis(SceneRoam *roam, const uint64_t now) {
+    const float range = 25.0f;
+    if (roam->hover_item >= 0 && roam->hover_item < roam->ground_count) {
+        const GroundItem *ground = &roam->ground[roam->hover_item];
+        const char       *code   = ground->item.code;
+        const bool small = strcmp(code, "gld") == 0 || strncmp(code, "hp", 2) == 0 || strncmp(code, "mp", 2) == 0 ||
+                           strncmp(code, "rv", 2) == 0 || strcmp(code, "tsc") == 0 || strcmp(code, "isc") == 0 ||
+                           strcmp(code, "key") == 0 || strcmp(code, "yps") == 0 || strcmp(code, "vps") == 0 ||
+                           strcmp(code, "wms") == 0;
+        if (small && Roam__Distance(ground->x, ground->y, roam->player.x, roam->player.y) <= range) {
+            Roam__PickUp(roam, roam->hover_item);
+            return true;
+        }
+    }
+    if (roam->hovered >= 0 && roam->hovered < roam->unit_count) {
+        Unit *unit = &roam->units[roam->hovered];
+        if (unit->is_object && Roam__Distance(unit->x, unit->y, roam->player.x, roam->player.y) <= range &&
+            unit->object.operate_fn != 15) { // (not through a Town Portal)
+            Roam__Operate(roam, unit, now);
+            return true;
+        }
+    }
+    return false;
+}
+
 // The Barbarian's corpse skills (Find Potion, Find Item, Grim Ward): the corpse nearest the spot, not yet used, in
 // reach
 static int Roam__UsableCorpse(const SceneRoam *roam, const float x, const float y) {
@@ -1553,6 +1580,19 @@ static bool Roam__SpecialSkill(SceneRoam *roam, const SkillRow *s, const int lev
                 damage[ELEMENT_PHYSICAL] = Roam__Roll(1 + level, 4 + (level * 2));
             }
             Roam__SkillHit(roam, target, damage, cold, poison, true, now);
+            const float away = Roam__Distance(target->x, target->y, player->x, player->y);
+            if (s->do_func == 21 && Roam__RunsMonsters(roam) && !target->boss && away > 0.01f &&
+                Roam__Roll(1, 100) <= s->params[1]) { // and now and then knocks it back
+                float kx;
+                float ky;
+                Roam__ArrivalSpot(roam->map, target->x + ((target->x - player->x) / away * 3.0f),
+                                  target->y + ((target->y - player->y) / away * 3.0f), &kx, &ky);
+                if (Map_IsWalkable(roam->map, (int)kx, (int)ky)) {
+                    target->x = target->target_x = kx;
+                    target->y = target->target_y = ky;
+                    Roam__ClearPath(target);
+                }
+            }
         }
         return true;
     case 51: { // Mind Blast: everything round the spot is struck
@@ -1963,6 +2003,11 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
         Sounds_Play("cursor_cantdo", SOUND_KIND_UI);
         return true;
     }
+    if (s != NULL && s->do_func == 21 && Roam__Telekinesis(roam, now)) {
+        roam->mana -= cost;
+        Roam__TakeCharge(roam, s, charged);
+        return true;
+    }
     if (s != NULL && (s->do_func == 69 || s->do_func == 72 || s->do_func == 75) &&
         Roam__UsableCorpse(roam, hovered >= 0 ? roam->units[hovered].x : x, hovered >= 0 ? roam->units[hovered].y : y) <
             0) {
@@ -2120,6 +2165,11 @@ static void Roam__SkillPulse(SceneRoam *roam, const uint64_t now) {
         if (s->element < 0 || (s->do_func != 29 && s->do_func != 124)) {
             continue;
         }
+        if (s->do_func == 29) { // Thunder Storm: a bolt every so often, quicker with its level (perdelay)
+            if (now < roam->storm_next) {
+                continue;
+            }
+        }
         int   target   = -1;
         float distance = 15.0f;
         for (int i = 0; i < roam->unit_count; i++) {
@@ -2131,6 +2181,11 @@ static void Roam__SkillPulse(SceneRoam *roam, const uint64_t now) {
             }
         }
         if (target >= 0) {
+            if (s->do_func == 29) { // (the next one after the delay; the pulse comes each second)
+                const int dm     = SkillData_Eval(roam->character, s, roam->buffs[b].level, "dm56");
+                const int frames = ((100 - dm) * s->params[3] / 100) + s->params[2];
+                roam->storm_next = now + ((uint64_t)(frames > 25 ? frames : 25) * 40) - 100;
+            }
             int damage[ELEMENT_COUNT];
             int cold   = 0;
             int poison = 0;

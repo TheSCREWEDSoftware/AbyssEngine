@@ -545,6 +545,7 @@ typedef struct SceneRoam {
     uint64_t last_monsters; // the map's owner: monsters last sent at
     uint64_t last_allies;   // our summons last sent at
     int      attack_other;  // PvP: the player being attacked (their id), 0 = none
+    uint64_t storm_next;    // Thunder Storm's next bolt
     // Grim Wards: corpses turned into totems the monsters run from, while they last
     struct {
         float    x, y, radius;
@@ -1416,6 +1417,28 @@ static void Roam__Damage(SceneRoam *roam, Unit *unit, int amount, const uint64_t
         if (to_mana > 0) {
             roam->mana = fminf((float)Character_MaxMana(roam->character),
                                roam->mana + ((float)amount * (float)to_mana / 100.0f));
+        }
+        // Energy Shield: its share of the blow comes off your mana instead (so much mana a point, in sixteenths)
+        for (int b = 0; b < roam->buff_count; b++) {
+            const SkillRow *shield = roam->buffs[b].skill;
+            if (shield == NULL || shield->do_func != 23 || strcmp(shield->id, "Energy Shield") != 0 ||
+                (roam->buffs[b].until != 0 && now >= roam->buffs[b].until)) {
+                continue;
+            }
+            const int   level   = roam->buffs[b].level;
+            const int   percent = SkillData_Eval(roam->character, shield, level, shield->calc[0]);
+            const int   mult    = SkillData_Eval(roam->character, shield, level, shield->calc[1]);
+            int         soaked  = amount * (percent < 95 ? percent : 95) / 100;
+            const float cost    = (float)(mult > 1 ? mult : 1) / 16.0f;
+            if ((float)soaked * cost > roam->mana) {
+                soaked = (int)(roam->mana / cost); // (as much as the mana left covers)
+            }
+            roam->mana -= (float)soaked * cost;
+            amount     -= soaked;
+            break;
+        }
+        if (amount <= 0) {
+            return;
         }
     }
     unit->hp -= amount;
