@@ -1345,6 +1345,29 @@ static const char *Affixes__String(const char *key, const char *fallback) {
     return text != NULL ? text : fallback;
 }
 
+// A string from the game's tables with a number in it ("+%d to Fire Skills"): the number goes where "%d" (or "%+d")
+// is and "%%" becomes "%"; the text is never used as a format itself, so whatever a mod's string table holds, nothing
+// else in it is read as a formatting directive
+static void Affixes__WithNumber(char *out, const size_t size, const char *pattern, const int value) {
+    size_t at   = 0;
+    bool   done = false;
+    for (const char *c = pattern; *c != '\0' && at + 1 < size; c++) {
+        if (c[0] == '%' && c[1] == '%') {
+            out[at++] = '%';
+            c++;
+        } else if (!done && c[0] == '%' && (c[1] == 'd' || (c[1] == '+' && c[2] == 'd'))) {
+            const int written  = snprintf(out + at, size - at, c[1] == '+' ? "%+d" : "%d", value);
+            at                 = written > 0 ? at + (size_t)written : at;
+            at                 = at < size ? at : size - 1;
+            c                 += c[1] == '+' ? 2 : 1;
+            done               = true;
+        } else {
+            out[at++] = *c;
+        }
+    }
+    out[at] = '\0';
+}
+
 // The skill's name and its class (-1: none) from its skills.txt row
 static int Affixes__SkillName(const int row, char *name, const size_t size) {
     const SkillRow *skill = SkillData_ByRow(row);
@@ -1375,7 +1398,7 @@ void Affixes_ModText(const ItemMod *mod, char *text, const size_t size) {
         char      key[24];
         snprintf(key, sizeof(key), "StrSklTabItem%d", class_tab_keys[tab_class][mod->param % 3]);
         char line[96];
-        snprintf(line, sizeof(line), Affixes__String(key, "+%d to Skills"), mod->value);
+        Affixes__WithNumber(line, sizeof(line), Affixes__String(key, "+%d to Skills"), mod->value);
         snprintf(text, size, "%s %s", line, Affixes__String(class_only_keys[tab_class], ""));
         return;
     }
