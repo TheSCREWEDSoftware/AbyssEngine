@@ -253,6 +253,19 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
             }
         }
     }
+    // Berserk leaves you without defense a while; Frenzy quickens your walk while you keep hitting
+    if (now < roam->berserk_until) {
+        character->bonus[BONUS_DEFENSE_PCT] -= 100;
+    }
+    if (now < roam->frenzy_until) {
+        const SkillRow *frenzy = SkillData_Get("Frenzy");
+        for (int a = 0; frenzy != NULL && a < SKILL_AURA_STATS; a++) {
+            if (strcmp(frenzy->aura_stat[a], "velocitypercent") == 0) {
+                character->bonus[BONUS_SPEED_PCT] +=
+                    SkillData_Eval(character, frenzy, roam->frenzy_level, frenzy->aura_calc[a]);
+            }
+        }
+    }
     // Feral Rage's charges quicken you (the game's own sum: from 10% with one to near 70% with many)
     if (roam->charges > 0 && roam->charge_skill != NULL && roam->charge_skill->do_func == 120 &&
         strcmp(roam->charge_skill->id, "Feral Rage") == 0 && now < roam->charges_until) {

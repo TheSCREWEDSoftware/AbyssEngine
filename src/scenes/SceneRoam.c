@@ -546,6 +546,9 @@ typedef struct SceneRoam {
     uint64_t last_allies;   // our summons last sent at
     int      attack_other;  // PvP: the player being attacked (their id), 0 = none
     uint64_t storm_next;    // Thunder Storm's next bolt
+    uint64_t berserk_until; // Berserk: your defense gone until then
+    uint64_t frenzy_until;  // Frenzy: quicker while you keep hitting
+    int      frenzy_level;
     // A channelled skill (Inferno, Arctic Blast): the right button still held, where the mouse is, the next burst
     bool     channel_held;
     float    channel_x, channel_y;
@@ -3935,6 +3938,34 @@ static void Roam__SkillBlow(SceneRoam *roam, const SkillRow *skill, const int le
         for (int e = 0; e < 3; e++) {
             rolled[elements[e]] += base * SkillData_Eval(roam->character, skill, level, skill->calc[e]) / 100;
         }
+    } else if (skill->do_func == 150 || (skill->start_func == 32 && strcmp(skill->id, "Stun") == 0)) {
+        // Smite and Stun: the monster stunned a while (it doesn't move)
+        const int frames = skill->do_func == 150 ? SkillData_Eval(roam->character, skill, level, skill->calc[1])
+                                                 : skill->params[0] + (skill->params[1] * (level - 1));
+        if (Roam__RunsMonsters(roam) && frames > 0 && !target->boss) {
+            const uint64_t until = now + ((uint64_t)frames * 40);
+            target->frozen_until = until > target->frozen_until ? until : target->frozen_until;
+        }
+    } else if (skill->start_func == 32 && strcmp(skill->id, "Bash") == 0 && Roam__RunsMonsters(roam) &&
+               !target->boss) { // Bash: knocked back
+        const float away = Roam__Distance(target->x, target->y, roam->player.x, roam->player.y);
+        float       kx;
+        float       ky;
+        if (away > 0.01f) {
+            Roam__ArrivalSpot(roam->map, target->x + ((target->x - roam->player.x) / away * 2.0f),
+                              target->y + ((target->y - roam->player.y) / away * 2.0f), &kx, &ky);
+            if (Map_IsWalkable(roam->map, (int)kx, (int)ky)) {
+                target->x = target->target_x = kx;
+                target->y = target->target_y = ky;
+                Roam__ClearPath(target);
+            }
+        }
+    } else if (skill->start_func == 39) { // Berserk: your defense gone for a while
+        const int frames    = SkillData_Eval(roam->character, skill, level, skill->aura_length);
+        roam->berserk_until = now + ((uint64_t)(frames > 0 ? frames : 25) * 40);
+    } else if (skill->do_func == 9 && strcmp(skill->id, "Frenzy") == 0) { // Frenzy: quicker with each blow
+        roam->frenzy_level = level;
+        roam->frenzy_until = now + 3000;
     } else if (skill->do_func == 122) { // Hunger
         *life_steal += SkillData_Eval(roam->character, skill, level, skill->calc[1]);
         *mana_steal += SkillData_Eval(roam->character, skill, level, skill->calc[2]);
@@ -3997,6 +4028,20 @@ static void Roam__IronMaiden(SceneRoam *roam, Unit *unit, const int damage, cons
     }
 }
 
+// A blow with a skill that strikes more than once: Double Swing, Double Throw and Frenzy twice, Dragon Talon its kicks
+static void Roam__SkillStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
+    const SkillRow *skill   = roam->game ? roam->melee_skill : NULL;
+    int             strikes = 1;
+    if (skill != NULL && (skill->do_func == 70 || skill->do_func == 74 || strcmp(skill->id, "Frenzy") == 0)) {
+        strikes = 2;
+    } else if (skill != NULL && skill->do_func == 42) {
+        strikes = SkillData_Eval(roam->character, skill, roam->melee_level, skill->calc[0]);
+    }
+    for (int s = 0; s < (strikes < 1 ? 1 : (strikes > 6 ? 6 : strikes)) && Roam__IsAlive(target); s++) {
+        Roam__PlayerStrikes(roam, target, now);
+    }
+}
+
 // The player's blow lands: in the game it can miss (attack rating against defense, levels), and kills give
 // experience
 static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
@@ -4009,7 +4054,9 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
     }
     const Character *c   = roam->character;
     const bool       big = target->boss || target->rank == RANK_UNIQUE || target->rank == RANK_SUPER_UNIQUE;
-    const bool sure_hit  = roam->game && !big && Affixes_Total(c, MOD_IGNORE_DEFENSE) > 0; // Ignore Target's Defense
+    const bool       sure_hit =
+        roam->game && ((!big && Affixes_Total(c, MOD_IGNORE_DEFENSE) > 0) || // Ignore Target's Defense
+                       (skill != NULL && skill->do_func == 150));            // (Smite always lands)
     if (roam->game) {
         ar += (target->undead ? Affixes_Total(c, MOD_ATTACK_UNDEAD) : 0) +
               (target->demon ? Affixes_Total(c, MOD_ATTACK_DEMON) : 0);
@@ -4083,9 +4130,15 @@ static void Roam__PlayerStrikes(SceneRoam *roam, Unit *target, const uint64_t no
         target->poison_ours     = true;
         rolled[ELEMENT_POISON]  = 0;
     }
-    int damage = 0;
+    int        damage  = 0;
+    const bool berserk = roam->game && skill != NULL && skill->start_func == 39; // (its damage is magic: unresisted)
     for (int e = 0; e < ELEMENT_COUNT; e++) {
-        damage += Roam__Resisted(rolled[e], target->resist[e]);
+        damage += berserk && e == ELEMENT_PHYSICAL ? rolled[e] : Roam__Resisted(rolled[e], target->resist[e]);
+    }
+    if (roam->game && skill != NULL && skill->do_func == 64) {
+        // Sacrifice: some of what it does comes off your own life
+        const int cost  = damage * SkillData_Eval(roam->character, skill, level, skill->calc[1]) / 100;
+        roam->player.hp = roam->player.hp - cost > 1 ? roam->player.hp - cost : 1;
     }
     if (roam->game) {
         // Life and mana stolen with each blow that lands (from its physical damage, like the game)
@@ -4318,7 +4371,7 @@ static void Roam__UpdatePlayer(SceneRoam *roam, const float seconds, const uint6
                 Unit *target = &roam->units[roam->attack_target];
                 if (Roam__Distance(player->x, player->y, target->x, target->y) <= ATTACK_RANGE + 0.5f) {
                     target->provoked = true;
-                    Roam__PlayerStrikes(roam, target, now);
+                    Roam__SkillStrikes(roam, target, now);
                 }
             }
             const Unit *other = NULL;
