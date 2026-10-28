@@ -562,6 +562,8 @@ typedef struct SceneRoam {
     bool       clone_walks;        // the Stone of Jordan was sold: the Diablo Clone comes in the next area
     uint64_t   berserk_until;      // Berserk: your defense gone until then
     uint64_t   frenzy_until;       // Frenzy: quicker while you keep hitting
+    uint64_t   concentrate_until;  // Concentrate: its defense while you keep at it
+    int        concentrate_level;
     int        frenzy_level;
     // A channelled skill (Inferno, Arctic Blast): the right button still held, where the mouse is, the next burst
     bool     channel_held;
@@ -4153,6 +4155,25 @@ static void Roam__SkillBlow(SceneRoam *roam, const SkillRow *skill, const int le
     } else if (skill->do_func == 9 && strcmp(skill->id, "Frenzy") == 0) { // Frenzy: quicker with each blow
         roam->frenzy_level = level;
         roam->frenzy_until = now + 3000;
+    } else if (skill->do_func == 50) { // Dragon Tail: a kick that bursts into fire round the monster
+        int fire[ELEMENT_COUNT] = {0};
+        fire[ELEMENT_FIRE] =
+            rolled[ELEMENT_PHYSICAL] * SkillData_Eval(roam->character, skill, level, skill->calc[0]) / 100;
+        rolled[ELEMENT_FIRE] += fire[ELEMENT_FIRE];
+        for (int i = 0; i < roam->unit_count && Roam__RunsMonsters(roam); i++) {
+            Unit *other = &roam->units[i];
+            if (other != target && Roam__IsAlive(other) && Roam__IsCombatant(other) && !other->ally && !other->npc &&
+                Roam__Distance(other->x, other->y, target->x, target->y) < 4.0f) {
+                Roam__SkillHit(roam, other, fire, 0, 0, true, now);
+            }
+        }
+        Roam__SpawnEffect(roam, "fistsoffireexplode", target->x, target->y, 0.0f, 1.0f);
+    } else if (skill->start_func == 32 && strcmp(skill->id, "Concentrate") == 0) {
+        roam->concentrate_until = now + 1500; // (its defense while you keep at it)
+        roam->concentrate_level = level;
+    } else if (skill->do_func == 2 && strcmp(skill->id, "Impale") == 0) {
+        Roam__Wear(roam, true); // (hard on the weapon, like the game's)
+        Roam__Wear(roam, true);
     } else if (skill->do_func == 122) { // Hunger
         *life_steal += SkillData_Eval(roam->character, skill, level, skill->calc[1]);
         *mana_steal += SkillData_Eval(roam->character, skill, level, skill->calc[2]);
@@ -4219,10 +4240,23 @@ static void Roam__IronMaiden(SceneRoam *roam, Unit *unit, const int damage, cons
 static void Roam__SkillStrikes(SceneRoam *roam, Unit *target, const uint64_t now) {
     const SkillRow *skill   = roam->game ? roam->melee_skill : NULL;
     int             strikes = 1;
-    if (skill != NULL && (skill->do_func == 70 || skill->do_func == 74 || strcmp(skill->id, "Frenzy") == 0)) {
-        strikes = 2;
-    } else if (skill != NULL && skill->do_func == 42) {
-        strikes = SkillData_Eval(roam->character, skill, roam->melee_level, skill->calc[0]);
+    if (skill != NULL &&
+        (skill->do_func == 70 || skill->do_func == 74 || skill->do_func == 46 || strcmp(skill->id, "Frenzy") == 0)) {
+        strikes = 2; // (Dragon Claw: a blow with each claw)
+    } else if (skill != NULL && (skill->do_func == 42 || strcmp(skill->id, "Zeal") == 0)) {
+        strikes = SkillData_Eval(roam->character, skill, roam->melee_level, skill->calc[0]); // its kicks, its swings
+    } else if (skill != NULL && skill->do_func == 7) {
+        strikes = 3; // Jab: a quick run of thrusts
+    } else if (skill != NULL && strcmp(skill->id, "Fend") == 0) {
+        // Fend: every monster in reach, one thrust each
+        for (int i = 0; i < roam->unit_count; i++) {
+            Unit *other = &roam->units[i];
+            if (other != target && Roam__IsAlive(other) && Roam__IsCombatant(other) && !other->ally && !other->npc &&
+                !other->is_object &&
+                Roam__Distance(other->x, other->y, roam->player.x, roam->player.y) <= ATTACK_RANGE + 0.5f) {
+                Roam__PlayerStrikes(roam, other, now);
+            }
+        }
     }
     for (int s = 0; s < (strikes < 1 ? 1 : (strikes > 6 ? 6 : strikes)) && Roam__IsAlive(target); s++) {
         Roam__PlayerStrikes(roam, target, now);

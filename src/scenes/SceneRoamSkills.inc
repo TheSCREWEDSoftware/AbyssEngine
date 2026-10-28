@@ -253,6 +253,16 @@ static void Roam__UpdateSkillBonuses(SceneRoam *roam, const uint64_t now) {
             }
         }
     }
+    // Concentrate: more defense while you keep striking with it
+    if (now < roam->concentrate_until) {
+        const SkillRow *concentrate = SkillData_Get("Concentrate");
+        for (int a = 0; concentrate != NULL && a < SKILL_AURA_STATS; a++) {
+            if (strcmp(concentrate->aura_stat[a], "skill_armor_percent") == 0) {
+                character->bonus[BONUS_DEFENSE_PCT] +=
+                    SkillData_Eval(character, concentrate, roam->concentrate_level, concentrate->aura_calc[a]);
+            }
+        }
+    }
     // Berserk leaves you without defense a while; Frenzy quickens your walk while you keep hitting
     if (now < roam->berserk_until) {
         character->bonus[BONUS_DEFENSE_PCT] -= 100;
