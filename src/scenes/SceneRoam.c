@@ -735,9 +735,10 @@ typedef struct SceneRoam {
     bool            cast_fired;  // its effect has happened (half way through the animation)
     const SkillRow *melee_skill; // the skill the swing under way uses (Bash, Jab, ...), NULL = a plain attack
     int             melee_level;
-    float           bone_armor; // damage it still soaks up
-    uint64_t        aura_tick;  // the aura's next pulse (Prayer's healing, Holy Fire's damage, ...)
-    uint64_t        next_cast;  // holding the button: when to cast again
+    float           bone_armor;  // damage it still soaks up
+    uint64_t        aura_tick;   // the aura's next pulse (Prayer's healing, Holy Fire's damage, ...)
+    uint64_t        next_cast;   // holding the button: when to cast again
+    uint64_t        delay_until; // skills with a delay (Meteor, Blizzard, ...) can't be used again until then
 } SceneRoam;
 
 static void Roam__TogglePanel(SceneRoam *roam, RoamPanel panel);

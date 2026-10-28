@@ -64,6 +64,7 @@ typedef struct SkillRow {
     char calc[4][SKILL_CALC_MAX];
     bool progressive; // a charge-up attack (Tiger Strike, Fists of Fire, ...): each blow that lands adds a charge
     int  progressive_damage; // prgdam: what its charges do (1 damage, 2 life and mana stolen, 3 Phoenix, 4 elemental)
+    int  delay;              // frames before a skill with a delay can be used again (Meteor, Blizzard, Fire Wall, ...)
     bool finishing;          // a finishing move (Dragon Talon, Dragon Claw, ...): lets the charges go
     SkillKind kind;
 } SkillRow;

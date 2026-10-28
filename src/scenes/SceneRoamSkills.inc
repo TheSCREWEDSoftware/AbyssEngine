@@ -1997,6 +1997,12 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
     } else if (s != NULL && skill >= 0 && skill < CHARACTER_SKILLS && roam->character->skill_levels[skill] == 0) {
         Affixes_ItemSkillLevel(roam->character, s->row, &charged);
     }
+    if (s != NULL && s->delay > 0 && now < roam->delay_until) {
+        if (!roam->prev_right) {
+            Sounds_Play("cursor_cantdo", SOUND_KIND_UI); // (the game's skill delay: not yet; held down, it waits)
+        }
+        return true;
+    }
     const float cost = s != NULL && !charged ? SkillData_ManaCost(s, level) : 0.0f;
     if (roam->mana < cost) {
         Roam__ShowMessage(roam, "Not enough mana.");
@@ -2031,6 +2037,9 @@ static bool Roam__UseSkill(SceneRoam *roam, const int skill, const float x, cons
     }
     roam->mana -= cost;
     Roam__TakeCharge(roam, s, charged);
+    if (s != NULL && s->delay > 0) {
+        roam->delay_until = now + ((uint64_t)s->delay * 40);
+    }
     roam->cast_skill    = s;
     roam->cast_level    = level;
     roam->cast_target   = hovered;

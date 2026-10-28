@@ -123,6 +123,7 @@ static void SkillData__Load(void) {
         s->progressive        = INT("progressive") != 0;
         s->progressive_damage = INT("prgdam");
         s->finishing          = INT("finishing") != 0;
+        s->delay              = INT("delay");
         s->aura               = INT("aura") != 0;
         s->passive            = INT("passive") != 0;
         s->left_ok            = INT("leftskill") != 0;
