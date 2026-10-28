@@ -4673,7 +4673,40 @@ static void Roam__SpreadOut(SceneRoam *roam) {
     }
 }
 
+// The game's rooms: awake are the monsters in a room a player is in or next to (a built map's presets; a map that's one
+// file is one room, and goes by distance). Worked out once a frame into awake[room]; NULL when there are no rooms
+static uint8_t *Roam__AwakeRooms(const SceneRoam *roam) {
+    const Map *map = roam->map;
+    if (map == NULL || map->rooms == NULL || map->room_count <= 0) {
+        return NULL;
+    }
+    uint8_t *awake = calloc((size_t)map->room_count + 1, 1);
+    FAIL_IF_NULL(awake);
+    int rooms[NET_MAX_PLAYERS + 1];
+    int count      = 0;
+    rooms[count++] = Map_RoomAt(map, roam->player.x, roam->player.y);
+    for (int o = 0; o < roam->other_count && count < NET_MAX_PLAYERS + 1; o++) {
+        rooms[count++] = Map_RoomAt(map, roam->others[o].x, roam->others[o].y);
+    }
+    for (int r = 1; r <= map->room_count; r++) {
+        for (int p = 0; p < count && !awake[r]; p++) {
+            awake[r] = rooms[p] > 0 && Map_RoomsTouch(map, r, rooms[p]);
+        }
+    }
+    return awake;
+}
+
+static bool Roam__Awake(const SceneRoam *roam, const uint8_t *awake, const Unit *unit) {
+    const float distance = Roam__NearestPlayer(roam, unit->x, unit->y);
+    const int   room     = awake != NULL && !unit->ally ? Map_RoomAt(roam->map, unit->x, unit->y) : 0;
+    if (room <= 0) {
+        return distance <= ACTIVE_DISTANCE; // (no rooms here: about two screens)
+    }
+    return awake[room] && distance <= ACTIVE_DISTANCE * 1.5f; // (a room and its neighbours; a huge one not all of it)
+}
+
 static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64_t now) {
+    uint8_t       *awake        = Roam__AwakeRooms(roam);
     Unit          *player       = &roam->player;
     const bool     player_alive = Roam__IsAlive(player) && now >= roam->safe_until; // can be fought
     const bool     runs         = Roam__RunsMonsters(roam); // multiplayer: or the map's owner does, and tells us
@@ -4681,10 +4714,11 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
 
     for (int i = 0; i < roam->unit_count; i++) {
         Unit *unit = &roam->units[i];
-        // Like the game's rooms: only what's near a player is awake. The rest of the act waits where it is (and picks
-        // up again when someone comes near), so a joined-up act of hundreds of monsters costs only what's around.
-        if (Roam__NearestPlayer(roam, unit->x, unit->y) > ACTIVE_DISTANCE && unit->state != UNIT_DYING &&
-            i != roam->attack_target) {
+        // Like the game's rooms: only what's in a player's room or the rooms next to it is awake. The rest of the act
+        // waits where it is (and picks up again when someone comes near), so a joined-up act of hundreds of monsters
+        // costs only what's around.
+        if (!Roam__Awake(roam, awake, unit) && unit->state != UNIT_DYING && i != roam->attack_target &&
+            !(unit->provoked && Roam__NearestPlayer(roam, unit->x, unit->y) <= ACTIVE_DISTANCE)) {
             continue;
         }
         if (unit->ally) {
@@ -4938,6 +4972,7 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
     if (runs) {
         Roam__SpreadOut(roam);
     }
+    free(awake);
 }
 
 // The living unit nearest the mouse (within reach), -1 if none

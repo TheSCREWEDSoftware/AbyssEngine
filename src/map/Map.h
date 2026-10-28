@@ -93,6 +93,13 @@ typedef struct Map {
     int        entity_capacity;
     MapEntity *entities;
 
+    // The game's rooms: each preset stamped in (Map_StampDS1) is one, numbered from 1 per cell (0: none), with its
+    // bounds in tiles. NULL for a map that's one file (a town, an editor map): then it's all one room
+    uint16_t *rooms;
+    int       room_count;
+    int       room_capacity;
+    int16_t (*room_rects)[4]; // x0, y0, x1, y1 (inclusive)
+
     uint8_t *blocked; // per sub-tile: blocked by something standing there (objects), NULL = nothing
     uint8_t *opened;  // per sub-tile: walkable whatever its tiles say (Map_OpenThinWalls), NULL = none
 
@@ -146,6 +153,10 @@ void Map_FillGaps(Map *map, int widest);
 // Separate walkable pieces a short gap (up to widest empty cells along a row or column) apart get a strip of floor
 // joining them (the Arcane Sanctuary's walkways); the joins made
 int Map_JoinPieces(Map *map, int widest);
+
+// The room (1..room_count) a sub-tile is in, 0 none; whether two rooms touch (or are the same)
+int  Map_RoomAt(const Map *map, float subtile_x, float subtile_y);
+bool Map_RoomsTouch(const Map *map, int a, int b);
 // Walkable parts you can't reach from (start_x, start_y) (sub-tiles) that are cut off by no more than thickness
 // sub-tiles of blocked ground in a cell without walls (a doorway whose sides' flags close it) are opened up; the
 // sub-tiles opened

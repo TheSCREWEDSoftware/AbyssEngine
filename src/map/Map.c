@@ -424,12 +424,56 @@ Map *Map_CreateEmpty(const int width, const int height, const int act) {
     map->act       = act < 0 ? 0 : (act > 4 ? 4 : act);
     map->dt1_masks = calloc((size_t)w * (size_t)h, sizeof(uint64_t));
     FAIL_IF_NULL(map->dt1_masks);
+    map->rooms = calloc((size_t)w * (size_t)h, sizeof(uint16_t));
+    FAIL_IF_NULL(map->rooms);
     snprintf(map->name, sizeof(map->name), "Untitled");
     return map;
 }
 
+// A new room with these bounds (tiles); 0 when there's no room for more
+static int Map__NewRoom(Map *map, const int x0, const int y0, const int x1, const int y1) {
+    if (map->rooms == NULL || map->room_count >= 65535) {
+        return 0;
+    }
+    if (map->room_count >= map->room_capacity) {
+        const int capacity = map->room_capacity > 0 ? map->room_capacity * 2 : 64;
+        void     *grown    = realloc(map->room_rects, sizeof(map->room_rects[0]) * (size_t)capacity);
+        FAIL_IF_NULL(grown);
+        map->room_rects    = grown;
+        map->room_capacity = capacity;
+    }
+    int16_t *rect = map->room_rects[map->room_count++];
+    rect[0]       = (int16_t)x0;
+    rect[1]       = (int16_t)y0;
+    rect[2]       = (int16_t)x1;
+    rect[3]       = (int16_t)y1;
+    return map->room_count;
+}
+
+int Map_RoomAt(const Map *map, const float subtile_x, const float subtile_y) {
+    const int tx = (int)(subtile_x / MAP_SUBTILES);
+    const int ty = (int)(subtile_y / MAP_SUBTILES);
+    if (map->rooms == NULL || subtile_x < 0.0f || subtile_y < 0.0f || tx >= map->width || ty >= map->height) {
+        return 0;
+    }
+    return map->rooms[(ty * map->width) + tx];
+}
+
+bool Map_RoomsTouch(const Map *map, const int a, const int b) {
+    if (a == b) {
+        return true;
+    }
+    if (a <= 0 || b <= 0 || a > map->room_count || b > map->room_count) {
+        return false;
+    }
+    const int16_t *ra = map->room_rects[a - 1];
+    const int16_t *rb = map->room_rects[b - 1];
+    return ra[0] <= rb[2] + 1 && rb[0] <= ra[2] + 1 && ra[1] <= rb[3] + 1 && rb[1] <= ra[3] + 1;
+}
+
 void Map_StampDS1(Map *map, const DS1 *ds1, const int tx, const int ty, const unsigned flags) {
-    uint64_t mask = 0;
+    const int room = Map__NewRoom(map, tx, ty, tx + ds1->width - 1, ty + ds1->height - 1);
+    uint64_t  mask = 0;
     for (int f = 0; f < ds1->file_count; f++) {
         const int index  = Map__AddDt1(map, ds1->files[f]);
         mask            |= (index >= 0 && index < 64) ? (1ull << index) : 0;
@@ -473,12 +517,23 @@ void Map_StampDS1(Map *map, const DS1 *ds1, const int tx, const int ty, const un
                 // Decorations add their tile sets to what the cell already uses
                 map->dt1_masks[target] = filled_only ? (map->dt1_masks[target] | mask) : mask;
             }
+            if (room > 0 && used && (!filled_only || map->rooms[target] == 0)) {
+                map->rooms[target] = (uint16_t)room; // (a decoration doesn't make its own room of a filled cell)
+            }
         }
     }
     Map__AddPresetEntities(map, ds1, tx, ty, flags);
 }
 
 void Map_StampMap(Map *map, const Map *source, const int tx, const int ty) {
+    // The source's rooms, as rooms of this map (one, the whole of it, when it had none)
+    const int first = map->room_count;
+    for (int r = 0; source->rooms != NULL && r < source->room_count; r++) {
+        const int16_t *rect = source->room_rects[r];
+        Map__NewRoom(map, rect[0] + tx, rect[1] + ty, rect[2] + tx, rect[3] + ty);
+    }
+    const int whole =
+        source->rooms == NULL ? Map__NewRoom(map, tx, ty, tx + source->width - 1, ty + source->height - 1) : 0;
     // The source's tile sets, as indices in this map
     int remap[MAP_MAX_DT1];
     for (int d = 0; d < source->dt1_count; d++) {
@@ -512,6 +567,10 @@ void Map_StampMap(Map *map, const Map *source, const int tx, const int ty) {
             }
             if (source->shadows[s].prop1 != 0) {
                 map->shadows[t] = source->shadows[s];
+            }
+            if (used && map->rooms != NULL) {
+                const int room = source->rooms != NULL ? (source->rooms[s] > 0 ? first + source->rooms[s] : 0) : whole;
+                map->rooms[t]  = (uint16_t)(room < 65536 ? room : 0);
             }
             if (used && map->dt1_masks != NULL) {
                 uint64_t mask = all;
@@ -935,6 +994,8 @@ void Map_Destroy(Map **map_ref) {
     free(map->blocked);
     free(map->opened);
     free(map->dt1_masks);
+    free(map->rooms);
+    free(map->room_rects);
     free(map->area_of);
     free(map->tile_index);
     free(map->anim_frames);
