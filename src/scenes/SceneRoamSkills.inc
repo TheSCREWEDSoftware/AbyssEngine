@@ -609,6 +609,9 @@ static int Roam__NextChainTarget(const SceneRoam *roam, const Missile *missile, 
 static bool Roam__MissileHitsUnit(SceneRoam *roam, Missile *missile, const int index, const uint64_t now) {
     Unit *unit = &roam->units[index];
     Roam__MissileNoteHit(missile, index);
+    if (missile->skill != NULL && strcmp(missile->skill->id, "Holy Bolt") == 0 && !unit->undead) {
+        return false; // (it only hurts the undead: through the rest)
+    }
     if (missile->uses_ar && roam->game) {
         const int ar =
             roam->player.attack_rating + (int)((float)roam->player.attack_rating * missile->ar_bonus / 100.0f);
@@ -739,6 +742,24 @@ static void Roam__UpdateMissiles(SceneRoam *roam, const float seconds, const uin
         }
         missile->speed =
             fminf(missile->info->max_speed, fmaxf(0.0f, missile->speed + (missile->info->accel * seconds)));
+        if (missile->ours && !missile->harmless && missile->skill != NULL &&
+            (strcmp(missile->skill->id, "Guided Arrow") == 0 || strcmp(missile->skill->id, "Bone Spirit") == 0)) {
+            // Homing (missiles.txt pSrvDoFunc 7): it turns towards the nearest monster it hasn't hit
+            const int next = Roam__NextChainTarget(roam, missile, missile->x, missile->y);
+            if (next >= 0) {
+                const float tx  = roam->units[next].x - missile->x;
+                const float ty  = roam->units[next].y - missile->y;
+                const float len = sqrtf((tx * tx) + (ty * ty));
+                if (len > 0.01f) {
+                    const float turn  = fminf(1.0f, seconds * 6.0f); // (a curve, not a snap)
+                    missile->dx      += ((tx / len) - missile->dx) * turn;
+                    missile->dy      += ((ty / len) - missile->dy) * turn;
+                    const float d     = sqrtf((missile->dx * missile->dx) + (missile->dy * missile->dy));
+                    missile->dx      /= d > 0.0f ? d : 1.0f;
+                    missile->dy      /= d > 0.0f ? d : 1.0f;
+                }
+            }
+        }
         const float nx = missile->x + (missile->dx * missile->speed * seconds);
         const float ny = missile->y + (missile->dy * missile->speed * seconds);
         missile->x     = nx;
@@ -986,6 +1007,14 @@ static void Roam__Nova(SceneRoam *roam, const SkillRow *s, const int level, cons
         if (any) {
             Roam__SkillHit(roam, unit, damage, cold, poison, true, now);
         }
+        if (strcmp(s->id, "Howl") == 0 && !unit->boss) {
+            // Howl: they run from you a while (its length, in frames)
+            unit->flee_until = now + (uint64_t)SkillData_Eval(roam->character, s, level, s->calc[0]) * 40 + 2000;
+        } else if (strcmp(s->id, "War Cry") == 0 && !unit->boss) {
+            // War Cry: stunned a moment (Param1 frames, Param2 more a level)
+            const uint64_t until = now + (uint64_t)(s->params[0] + (s->params[1] * (level - 1))) * 40;
+            unit->frozen_until   = until > unit->frozen_until ? until : unit->frozen_until;
+        }
         if (s->aura_length[0] != '\0' && s->aura_stat[0][0] != '\0') {
             // Battle Cry: lowers their defense and damage for a while
             unit->curse       = s;
@@ -1112,10 +1141,12 @@ static void Roam__Curse(SceneRoam *roam, const SkillRow *s, const int level, con
     const float    radius = Roam__SkillRadius(roam, s, level, SKILL_CURSE_RADIUS);
     const int      frames = s->aura_length[0] != '\0' ? SkillData_Eval(roam->character, s, level, s->aura_length) : 250;
     const uint64_t until  = now + ((uint64_t)(frames > 0 ? frames : 250) * 40);
+    const float    cx     = s->do_func == 47 ? roam->player.x : tx; // (Cloak of Shadows: round you)
+    const float    cy     = s->do_func == 47 ? roam->player.y : ty;
     for (int i = 0; i < roam->unit_count; i++) {
         Unit *unit = &roam->units[i];
         if (!Roam__IsAlive(unit) || unit->is_object || unit->npc || unit->ally ||
-            Roam__Distance(unit->x, unit->y, tx, ty) > radius) {
+            Roam__Distance(unit->x, unit->y, cx, cy) > radius) {
             continue;
         }
         unit->curse       = s;

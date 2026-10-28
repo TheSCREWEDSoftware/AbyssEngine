@@ -1684,6 +1684,11 @@ static int Roam__DefenseAgainstUs(const SceneRoam *roam, const Unit *target) {
             if (strcmp(target->curse->aura_stat[a], "armorclass") == 0) {
                 defense +=
                     SkillData_Eval(roam->character, target->curse, target->curse_level, target->curse->aura_calc[a]);
+            } else if (strcmp(target->curse->aura_stat[a], "skill_armor_percent") == 0) { // Cloak of Shadows
+                defense +=
+                    defense *
+                    SkillData_Eval(roam->character, target->curse, target->curse_level, target->curse->aura_calc[a]) /
+                    100;
             }
         }
     }
@@ -5038,6 +5043,10 @@ static void Roam__UpdateUnits(SceneRoam *roam, const float seconds, const uint64
         float target_y  = 0.0f;
         int   target_id = 0;
         bool  target    = Roam__MonsterTarget(roam, unit, player_alive, &target_x, &target_y, &target_id);
+        if (target && unit->curse != NULL && now < unit->curse_until && unit->curse->do_func == 47 &&
+            Roam__Distance(unit->x, unit->y, target_x, target_y) > 2.0f) {
+            target = false; // Cloak of Shadows: blinded, it doesn't see you unless you're on top of it
+        }
         // Our summons are fought too, when they're nearer than the player
         const int nearer_ally =
             Roam__AllyNear(roam, unit, target ? Roam__Distance(unit->x, unit->y, target_x, target_y) : AGGRO_RANGE);
