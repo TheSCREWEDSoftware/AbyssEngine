@@ -43,13 +43,25 @@ controls files below into a folder without opening a window (add `--defaults` fo
 | `MouseSpeedX`, `MouseSpeedY` | `25` to `300` (shown as `0.25x` to `3.00x`) | Pointer speed, `100` (`1.00x`) = the system's own. At any other speed the game moves its own pointer from the mouse's movement, so the mouse stays in the window while it has the focus (Alt+Tab to leave) |
 | `WheelSpeed` | `25` to `400` (`0.25x` to `4.00x`) | How far each wheel notch scrolls lists and zooms the Map Editor; fine-stepping wheels and touchpads add up their part steps |
 
+**Input colours** (in the list and in the Configure window):
+
+| Colour | Means | |
+|---|---|---|
+| White | Only this action uses the input | Fine |
+| **Orange** | Another action uses it too, but the two never work at the same time: each action works in Single Player, in Free Roam / the Testing Grounds, or in both, and these two don't share one (Single Player's **C**, character screen, and Free Roam's **C**, combat) | Fine: whichever is active fires |
+| **Red** | Another action uses it and both work at the same time | A clash: only the first in the list fires; change one of them |
+
+The coloured stripe at the start of each row is something else: the action's group (Movement blue, Combat and skills
+red, Belt yellow, Screens green, Automap teal, View purple, Chat grey, Free Roam orange), the same colours as the
+**Show** list.
+
 **Controls tab**, the ArmA way:
 
 - **Show:** picks a group (Movement, Combat and skills, Belt, Screens, Automap, View, Chat, Free Roam), each with its
   colour in the list. A coloured bar on each row is its group; with **Everything** each group starts under a heading
   in its colour. Actions marked `*` aren't in the engine yet. Scroll with the wheel, or click or drag the scrollbar.
-- Inputs are white, **orange** when the same input is also on an action that's never active at the same time (fine),
-  **red** when it clashes with one that is (only the first in the list fires). Point at an action to see what it does.
+- Inputs are coloured by whether something else uses them too (see **Input colours** above). Point at an action to
+  see what it does.
 - **Double click** an action (or click its inputs) to change them, in the **Configure action** window: press any key
   or gamepad button to add it (Ctrl / Shift / Alt held make a combination; a modifier on its own is added when you let
   go of it; the same key twice quickly makes it a double tap, "2x K"; gamepad buttons and stick directions are added
