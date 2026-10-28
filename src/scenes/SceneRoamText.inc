@@ -109,6 +109,22 @@ static void Roam__TextItemName(const Item *item, char *text, const size_t size) 
     }
 }
 
+// Appends to the frame being built, never past its end: where the text now ends (snprintf's return is what it would
+// have written, which can be more than there was room for)
+static int Roam__TextAppend(char *out, const int size, const int at, const char *format, ...) {
+    if (at < 0 || at >= size - 1) {
+        return size > 0 ? size - 1 : 0;
+    }
+    va_list args;
+    va_start(args, format);
+    const int written = vsnprintf(out + at, (size_t)(size - at), format, args);
+    va_end(args);
+    if (written < 0) {
+        return at;
+    }
+    return at + written < size - 1 ? at + written : size - 1;
+}
+
 // The list in the map's place; returns where the output got to
 static int Roam__TextList(SceneRoam *roam, char *out, int at, const int size, const int rows) {
     const Character *c    = roam->character;
@@ -117,8 +133,8 @@ static int Roam__TextList(SceneRoam *roam, char *out, int at, const int size, co
 #define TEXT_LINE(...)                                                                                                 \
     do {                                                                                                               \
         if (line < rows && at < size - 300) {                                                                          \
-            at += snprintf(out + at, (size_t)(size - at), __VA_ARGS__);                                                \
-            at += snprintf(out + at, (size_t)(size - at), "\x1b[0m\x1b[K\n");                                          \
+            at = Roam__TextAppend(out, size, at, __VA_ARGS__);                                                         \
+            at = Roam__TextAppend(out, size, at, "\x1b[0m\x1b[K\n");                                                   \
             line++;                                                                                                    \
         }                                                                                                              \
     } while (0)
@@ -159,7 +175,7 @@ static int Roam__TextList(SceneRoam *roam, char *out, int at, const int size, co
         }
     }
     while (line < rows && at < size - 20) {
-        at += snprintf(out + at, (size_t)(size - at), "\x1b[K\n");
+        at = Roam__TextAppend(out, size, at, "\x1b[K\n");
         line++;
     }
 #undef TEXT_LINE
@@ -400,7 +416,7 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
     TextCell *grid     = calloc((size_t)(cols * map_rows), sizeof(TextCell));
     if (grid == NULL || roam->map == NULL) {
         free(grid);
-        return snprintf(out, (size_t)size, "Loading...\n");
+        return Roam__TextAppend(out, size, 0, "Loading...\n");
     }
     Automap_Reveal(roam->automap, roam->player.x, roam->player.y); // (what's been seen: m shows it)
     const int sub_w = roam->map->width * MAP_SUBTILES;
@@ -467,7 +483,7 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
         roam->text_warned = SDL_GetTicks64();
     }
     // The grid, with a colour code only where it changes (or the list that's open in its place)
-    int at    = snprintf(out, (size_t)size, "%s\x1b[H", (hit || low) && !roam->text_quiet ? "\a" : "");
+    int at    = Roam__TextAppend(out, size, 0, "%s\x1b[H", (hit || low) && !roam->text_quiet ? "\a" : "");
     int color = -1;
     if (roam->text_view == TEXT_VIEW_STORE && !GameInventory_ShopOpen(roam->inventory_ui)) {
         roam->text_view = TEXT_VIEW_MAP; // (walked away from the store)
@@ -479,13 +495,15 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
         for (int c = 0; c < cols; c++) {
             const TextCell *cell = &grid[(r * cols) + c];
             if (cell->color != color) {
-                at    += snprintf(out + at, (size_t)(size - at), "\x1b[%dm", cell->color);
-                color  = cell->color;
+                at    = Roam__TextAppend(out, size, at, "\x1b[%dm", cell->color);
+                color = cell->color;
             }
-            out[at++] = cell->ch;
+            if (at < size - 1) {
+                out[at++] = cell->ch;
+            }
         }
-        at    += snprintf(out + at, (size_t)(size - at), "\x1b[0m\x1b[K\n");
-        color  = -1;
+        at    = Roam__TextAppend(out, size, at, "\x1b[0m\x1b[K\n");
+        color = -1;
     }
     free(grid);
 
@@ -493,31 +511,31 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
     const Character   *c                   = roam->character;
     static const char *difficulty_names[3] = {"", " (Nightmare)", " (Hell)"};
     if (c != NULL) {
-        at += snprintf(
-            out + at, (size_t)(size - at),
+        at = Roam__TextAppend(
+            out, size, at,
             "\x1b[97m%s\x1b[0m, level %d %s   \x1b[91mLife %d/%d\x1b[0m   \x1b[94mMana %d/%d\x1b[0m   Gold %d   "
             "%s%s\x1b[K\n",
             c->name, c->level, Character_ClassName(c->class_id), roam->player.hp, roam->player.max_hp, (int)roam->mana,
             Character_MaxMana(c), c->gold, Roam__AreaName(roam), difficulty_names[Roam__Difficulty(roam)]);
     }
-    const uint64_t now  = SDL_GetTicks64();
-    at                 += snprintf(out + at, (size_t)(size - at), "%s\x1b[K\n",
-                   roam->player.state == UNIT_DEAD ? "You died." : (now < roam->message_until ? roam->message : ""));
+    const uint64_t now = SDL_GetTicks64();
+    at                 = Roam__TextAppend(out, size, at, "%s\x1b[K\n",
+                          roam->player.state == UNIT_DEAD ? "You died."
+                                                                          : (now < roam->message_until ? roam->message : ""));
     if (roam->npc_menu >= 0) {
-        at += snprintf(out + at, (size_t)(size - at), "%s:", roam->units[roam->npc_menu].name);
+        at = Roam__TextAppend(out, size, at, "%s:", roam->units[roam->npc_menu].name);
         for (int o = 0; o < roam->npc_option_count && at < size - 200; o++) {
-            at += snprintf(out + at, (size_t)(size - at), "  %d) %s", o + 1,
-                           Roam__NpcOptionText(roam, roam->npc_options[o]));
+            at = Roam__TextAppend(out, size, at, "  %d) %s", o + 1, Roam__NpcOptionText(roam, roam->npc_options[o]));
         }
-        at += snprintf(out + at, (size_t)(size - at), "\x1b[K\n");
+        at = Roam__TextAppend(out, size, at, "\x1b[K\n");
     } else {
         const int near = Roam__TextNearest(roam, 15.0f, 0);
         if (near >= 0) {
-            const Unit *unit  = &roam->units[near];
-            at               += snprintf(out + at, (size_t)(size - at), "Near: %s (%d%% life)\x1b[K\n", unit->name,
-                           unit->max_hp > 0 ? unit->hp * 100 / unit->max_hp : 0);
+            const Unit *unit = &roam->units[near];
+            at               = Roam__TextAppend(out, size, at, "Near: %s (%d%% life)\x1b[K\n", unit->name,
+                                  unit->max_hp > 0 ? unit->hp * 100 / unit->max_hp : 0);
         } else {
-            at += snprintf(out + at, (size_t)(size - at), "\x1b[K\n");
+            at = Roam__TextAppend(out, size, at, "\x1b[K\n");
         }
     }
     const char *keys =
@@ -527,7 +545,7 @@ int Game_TextRender(void *scene_ref, char *out, const int size, int cols, int ro
                    ? "w wear   u use   x drop   s sell   p to the stash   b to the cube   other: none"
                    : "a-z pick   A-Z take from the stash   1-9 from the cube   0 transmute   i/Esc back")
             : "wasd qezc move  f fight  r/l skill  u use/talk  g pick up  1-4 potion  i items  m map  t town  Q quit";
-    at += snprintf(out + at, (size_t)(size - at), "\x1b[90m%s\x1b[0m\x1b[K\n\x1b[J", keys);
+    at = Roam__TextAppend(out, size, at, "\x1b[90m%s\x1b[0m\x1b[K\n\x1b[J", keys);
     return at;
 }
 
