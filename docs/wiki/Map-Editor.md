@@ -128,6 +128,5 @@ end
 Cell bits: `prop1` (bits 0-7, 0 = empty), sequence/sub-index (8-13), orientation (14-19), style/main-index (20-25),
 hidden (31).
 
-## Not done yet
-
-- The game's objects (chests, waypoints...) in opened areas
+Opening one of the game's areas brings its units in too: the monsters and town folk its preset places, and its
+objects (chests, waypoints, torches, doors, ...), counted under the tile sets ("41 units").
