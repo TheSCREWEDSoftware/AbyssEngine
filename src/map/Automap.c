@@ -366,6 +366,20 @@ void Automap_Reveal(Automap *automap, const float subtile_x, const float subtile
             }
         }
     }
+    // Like the game: the whole room you're in (a built area's presets: outdoors a block, indoors a room of the maze)
+    const Map *map  = automap->map;
+    const int  room = Map_RoomAt(map, subtile_x, subtile_y);
+    if (room <= 0 || seen->width != map->width || seen->height != map->height) {
+        return;
+    }
+    const int16_t *rect = map->room_rects[room - 1];
+    for (int ty = rect[1] > 0 ? rect[1] : 0; ty <= rect[3] && ty < seen->height; ty++) {
+        for (int tx = rect[0] > 0 ? rect[0] : 0; tx <= rect[2] && tx < seen->width; tx++) {
+            if (map->rooms[(ty * map->width) + tx] == room) {
+                seen->tiles[(ty * seen->width) + tx] = 1;
+            }
+        }
+    }
 }
 
 bool Automap_TileSeen(Automap *automap, const int tile_x, const int tile_y) {
